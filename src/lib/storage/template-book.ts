@@ -194,13 +194,16 @@ export async function createBookFromPlan(
       }
     }
     // The books already there move down one, in the order the user left them
-    // (as createBook, #338).
+    // (as createBook, #338). Their `modifiedAt` is this write's time, not the
+    // plan's: a plan can be held before it is written, and a neighbour edited
+    // meanwhile must not have its stamp moved back (#1463).
+    const writtenAt = Date.now();
     for (const [index, row] of byShelfPosition(shelf).entries()) {
       if (row.shelfPosition !== index + 1) {
         await books.put({
           ...row,
           shelfPosition: index + 1,
-          modifiedAt: plan.modifiedAt,
+          modifiedAt: writtenAt,
         });
       }
     }

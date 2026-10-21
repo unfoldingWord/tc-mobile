@@ -186,17 +186,31 @@ describe("createBookFromPlan", () => {
   });
 
   it("lands at the top of the shelf, in the first free placeholder slot", async () => {
-    await createBook("Mark", null, 1_000);
-    await createBook("", null, 2_000);
+    const mark = await createBook("Mark", null, 1_000);
+    const blank = await createBook("", null, 2_000);
     const plan = planOf("bible-book-min.json");
     const book = await createBookFromPlan(plan, idsFor(plan));
     const shelf = await listBooks();
-    expect(shelf.map((b) => b.id)).toEqual([
-      book.id,
-      ...shelf.slice(1).map((b) => b.id),
-    ]);
+    expect(shelf.map((b) => b.id)).toEqual([book.id, blank.id, mark.id]);
     expect(shelf.map((b) => b.shelfPosition)).toEqual([0, 1, 2]);
     expect(book.number).toBe(2);
+  });
+
+  it("never moves a shifted neighbour's modifiedAt back to the plan's time", async () => {
+    // The plan is made at NOW; the neighbour was written after it, before
+    // the plan was submitted.
+    const plan = planOf("bible-book-min.json");
+    const later = NOW + 60_000;
+    const mark = await createBook("Mark", null, later);
+    await createBookFromPlan(plan, idsFor(plan));
+    const stored = await getBook(mark.id);
+    expect(stored?.shelfPosition).toBe(1);
+    expect(stored?.modifiedAt).toBeGreaterThanOrEqual(later);
+    expect(stored).toEqual({
+      ...mark,
+      shelfPosition: 1,
+      modifiedAt: stored?.modifiedAt,
+    });
   });
 
   it("is idempotent: re-running the same create writes nothing new", async () => {
