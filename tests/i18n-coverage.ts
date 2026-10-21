@@ -3,7 +3,8 @@ import path from "node:path";
 
 import ts from "typescript";
 
-import type { Strings } from "@/lib/strings";
+import type { RestartSubject, Strings } from "@/lib/strings";
+import type { LicenceId } from "@/types/template";
 import { ENGLISH_ONLY } from "@/lib/i18n/english-only";
 import { stringsEn } from "@/lib/strings";
 
@@ -67,6 +68,58 @@ export function keyProblems(
   return problems;
 }
 
+/**
+ * The domain of every literal-union parameter type a function entry takes,
+ * declared once. Each is written as a `Record` over the union, so adding a
+ * member to the type fails `npm run typecheck` here until it is listed, and
+ * `unionMembers` reads the declared type back so a test proves the list equals
+ * it. A union type with no row here throws in `argVectors`.
+ */
+const RESTART_SUBJECT: Record<RestartSubject, true> = {
+  recording: true,
+  changes: true,
+  cutAudio: true,
+};
+const LICENCE_ID: Record<LicenceId, true> = {
+  "CC-BY-SA-4.0": true,
+  "CC-BY-4.0": true,
+  "CC0-1.0": true,
+  "all-rights-reserved": true,
+};
+export const UNION_DOMAINS: Readonly<Record<string, readonly string[]>> = {
+  RestartSubject: Object.keys(RESTART_SUBJECT),
+  LicenceId: Object.keys(LICENCE_ID),
+};
+
+/** Where each union alias is declared, relative to this directory. */
+const UNION_FILES = ["../src/lib/strings.ts", "../src/types/template.ts"];
+
+/** The members of the string-literal union alias `name`, in the file declaring it. */
+export function unionMembers(name: string): string[] {
+  const members: string[] = [];
+  for (const rel of UNION_FILES) {
+    const file = path.resolve(import.meta.dirname, rel);
+    const source = ts.createSourceFile(
+      path.basename(file),
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true
+    );
+    source.forEachChild((node) => {
+      if (!ts.isTypeAliasDeclaration(node) || node.name.text !== name) return;
+      const parts = ts.isUnionTypeNode(node.type)
+        ? node.type.types
+        : [node.type];
+      for (const part of parts)
+        if (ts.isLiteralTypeNode(part) && ts.isStringLiteral(part.literal))
+          members.push(part.literal.text);
+        else throw new Error(`${name}: not a string-literal union`);
+    });
+  }
+  if (members.length === 0) throw new Error(`no union alias ${name}`);
+  return members;
+}
+
 /** The parameter types of every function entry, read from `strings.ts`. */
 function signatures(): Map<string, string[]> {
   const file = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
@@ -110,13 +163,23 @@ const SIGNATURES = signatures();
 /** The function entries of `English`, so a test can floor what it covers. */
 export const FUNCTION_ENTRIES = [...SIGNATURES.keys()];
 
+/** The most vectors one call of `argVectors` may return; a bigger product throws. */
+const MAX_VECTORS = 256;
+
 /**
- * Every argument vector worth trying for `name`: numbers all `n` (or, when
- * `distinct`, `n` plus their position, so parity can tell two counts apart),
- * strings a sentinel each, booleans in every combination. A type this does not
- * know throws, so a new parameter type cannot slip past unexercised.
+ * Every argument vector worth trying for `name`: each parameter's whole
+ * domain, crossed. A nullable parameter takes `null` as well as a value;
+ * numbers are `n` (or, when `distinct`, `n` plus their position, so parity can
+ * tell two counts apart); strings a sentinel and the empty string; booleans
+ * both; a literal union every member (`UNION_DOMAINS`). A type this does not know throws, so a new parameter type cannot slip
+ * past unexercised, and so does a product over `MAX_VECTORS`, so the cap is
+ * never a silent truncation.
  */
-function argVectors(name: string, n: number, distinct = false): unknown[][] {
+export function argVectors(
+  name: string,
+  n: number,
+  distinct = false
+): unknown[][] {
   const types = SIGNATURES.get(name);
   if (!types) throw new Error(`no function entry ${name}`);
   let vectors: unknown[][] = [[]];
@@ -124,20 +187,25 @@ function argVectors(name: string, n: number, distinct = false): unknown[][] {
     vectors = vectors.flatMap((v) => values.map((x) => [...v, x]));
   };
   types.forEach((type, i) => {
-    if (type === "...readonly string[]") {
+    const nullable = type.endsWith(" | null");
+    const base = nullable ? type.slice(0, -" | null".length) : type;
+    const orNull = (values: readonly unknown[]): readonly unknown[] =>
+      nullable ? [null, ...values] : values;
+    if (base === "...readonly string[]") {
       push(["SENTa" + i]);
       push(["SENTb" + i]);
-    } else if (type === "number" || type === "number | null")
-      push([distinct ? n + i : n]);
-    else if (type === "string" || type === "string | null") push(["SENT" + i]);
-    else if (type === "boolean") push([true, false]);
-    else if (type === "RestartSubject") push(["recording"]);
+    } else if (base === "number") push(orNull([distinct ? n + i : n]));
+    else if (base === "string") push(orNull(["SENT" + i, ""]));
+    else if (base === "boolean") push([true, false]);
+    else if (UNION_DOMAINS[base]) push(orNull(UNION_DOMAINS[base]));
     else throw new Error(`${name}: unknown parameter type ${type}`);
   });
+  if (vectors.length > MAX_VECTORS)
+    throw new Error(`${name}: ${vectors.length} vectors exceed ${MAX_VECTORS}`);
   return vectors;
 }
 
-function call(table: Strings, name: string, args: unknown[]): string {
+export function call(table: Strings, name: string, args: unknown[]): string {
   const entry = (table as unknown as Record<string, unknown>)[name];
   return (entry as (...a: unknown[]) => string).apply(table, args);
 }
@@ -171,6 +239,24 @@ function isolate(
 
 /** The counts every plural entry is exercised with (#1481). */
 const COUNTS = [0, 1, 2, 3, 5, 11, 21, 100, 1_000_000];
+
+/**
+ * `COUNTS` plus, for each CLDR category `Intl.PluralRules(tag)` reports, the
+ * smallest counts that reach it (up to 3 each), so a category the fixed list
+ * misses for this locale is still rendered.
+ */
+export function countsFor(tag: string): number[] {
+  const rules = new Intl.PluralRules(tag);
+  const found = new Map<string, number[]>();
+  for (let n = 0; n <= 1000; n++) {
+    const list = found.get(rules.select(n)) ?? [];
+    if (list.length < 3) list.push(n);
+    found.set(rules.select(n), list);
+  }
+  return [...new Set([...COUNTS, ...[...found.values()].flat()])].sort(
+    (a, b) => a - b
+  );
+}
 
 /**
  * Plural forms keyed by the categories the locale needs. `recorded` is the
