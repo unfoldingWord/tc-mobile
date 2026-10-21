@@ -43,8 +43,8 @@ import { templateRef } from "./validate";
 /**
  * A chapter or segment title for a template key, or `undefined` for none.
  *
- * @pivotpending #253: supplied by the storage half's caller, as
- * {@link planBookFromTemplate}.
+ * @pivotpending #246: supplied by the template picker, which plans a package
+ * with {@link planBookFromTemplate}.
  */
 export type TitleResolver = (
   kind: "chapter" | "segment",
@@ -56,7 +56,7 @@ type TemplateProvenance = Extract<Book["provenance"], { kind: "template" }>;
 /** The domain row's own field names, typed as set: a planned row has a time. */
 type Stamped<T, K extends keyof T> = { readonly [P in K]: NonNullable<T[P]> };
 
-/** @pivotpending #253: read by the storage half, as {@link planBookFromTemplate}. */
+/** Read by the storage half, `lib/storage/template-book.ts` (#253). */
 export interface PlannedSegment
   extends
     Pick<Segment, "index" | "reference">,
@@ -66,7 +66,7 @@ export interface PlannedSegment
   readonly title: string | null;
 }
 
-/** @pivotpending #253: read by the storage half, as {@link planBookFromTemplate}. */
+/** Read by the storage half, `lib/storage/template-book.ts` (#253). */
 export interface PlannedChapter
   extends
     Pick<Chapter, "number">,
@@ -76,7 +76,7 @@ export interface PlannedChapter
   readonly segments: readonly PlannedSegment[];
 }
 
-/** @pivotpending #253: read by the storage half, as {@link planBookFromTemplate}. */
+/** Read by the storage half, `lib/storage/template-book.ts` (#253). */
 export interface BookPlan extends Stamped<
   Book,
   "createdAt" | "updatedAt" | "modifiedAt"
@@ -87,9 +87,9 @@ export interface BookPlan extends Stamped<
 }
 
 /**
- * @pivotpending #253: the storage half (one idempotent transaction that
- * writes the book, its chapters and its segments) consumes this plan; it waits
- * on open PR #1550, which changes `lib/storage/books.ts`.
+ * @pivotpending #246: the template picker calls this and hands the plan to
+ * `createBookFromPlan` (`lib/storage/template-book.ts`, #253), which writes
+ * the book, its chapters and its segments in one transaction.
  */
 export function planBookFromTemplate(
   pkg: TemplatePackage,
