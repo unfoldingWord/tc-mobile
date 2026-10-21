@@ -86,7 +86,9 @@ describe("the gate is red, each for its named reason", () => {
       d.type.flavorType.currentScope = { OBS: ["1:1-8"] };
     });
     expect(validateBundleMetadata(doc).length).toBeGreaterThan(0);
-    expect(reasons(doc).join("\n")).toMatch(/currentScope/);
+    expect(reasons(doc)).toContain(
+      "/type/flavorType/currentScope propertyNames"
+    );
   });
 
   it("refuses shortStatements and licenses together", () => {
