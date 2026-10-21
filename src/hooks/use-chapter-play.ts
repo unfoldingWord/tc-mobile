@@ -73,6 +73,7 @@ export function useChapterPlay(
       primeContext: () => {
         void resumeAudioContext().catch((cause: unknown) => {
           console.error("Could not resume the audio context", cause);
+          report(cause, "chapter-play");
         });
       },
       claimSharedContext: () => claimSharedContext(),
