@@ -41,11 +41,18 @@ export type RestartSubject = "recording" | "changes" | "cutAudio";
 /**
  * An entry that reuses another entry calls it through `this`:
  * `chapterHeading` falls back to `this.chapterName`, `shareBookPartial`
- * returns `this.shareMissing`, and a few more reach `this.couldNotBeIncluded` or
- * `this.trail`, whose words are English (#1481 moves those two into the table).
- * `tests/strings-self-reference.test.ts` pins which entries these are, so a
- * new one fails there and is sent back here. Byte-for-byte copies drifted, and
- * an alias cannot.
+ * returns `this.shareMissing`, and a few more reach `this.segmentHeading` or
+ * `this.trail`. `tests/strings-self-reference.test.ts` pins which entries these
+ * are, so a new one fails there and is sent back here. Byte-for-byte copies
+ * drifted, and an alias cannot.
+ *
+ * An alias returns the other entry's output whole. It never builds a sentence
+ * around it (#1483, `docs/i18n/glossary.md`). A sentence is written out whole
+ * in its own entry, with a placeholder for each value that varies, because a
+ * sentence built around "Chapter 3" or "{n} segments" keeps that phrase's
+ * grammar where a language may need another case or order. The same test pins
+ * the few that still sit inside other text: names, and one join of two whole
+ * sentences, each with its reason.
  *
  * WHY `this` AND NOT `strings.<entry>` (#169, #1480). `strings` below is a
  * live binding that `installStrings` repoints at the active locale's table.
@@ -75,13 +82,6 @@ export type RestartSubject = "recording" | "changes" | "cutAudio";
  * different words.
  */
 export const stringsEn = {
-  // The verb every "did not make it into what's being shared" sentence uses
-  // (#1481: an entry, so a locale states its own). `shareMissing`,
-  // `shareBookMissing`, `shareAllMissing` and `shareBookMissingAndPartial` all
-  // end here, so a tightening of the wording lands in one place.
-  couldNotBeIncluded(subject: string): string {
-    return `${subject} could not be included.`;
-  },
   // The trail at the top of a screen: where you are, outermost first. The
   // separator is stated here and nowhere else (#169, #1481). Parts are whole
   // names, never clauses of a sentence. Nothing here handles a reading
@@ -118,11 +118,21 @@ export const stringsEn = {
   booksEmptyTeach: "A book holds the chapters you record.",
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
+  // The whole row name in each form (#1483), and the book's name goes in
+  // last: a name that happens to contain "{n}" stays as typed.
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
-    `${name}, ${plural(chapters, {
-      one: "{n} chapter",
-      other: "{n} chapters",
-    })}, ${expanded ? "expanded" : "collapsed"}`,
+    plural(
+      chapters,
+      expanded
+        ? {
+            one: "{name}, {n} chapter, expanded",
+            other: "{name}, {n} chapters, expanded",
+          }
+        : {
+            one: "{name}, {n} chapter, collapsed",
+            other: "{name}, {n} chapters, collapsed",
+          }
+    ).replace("{name}", () => name),
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
   /**
@@ -148,7 +158,7 @@ export const stringsEn = {
    * and the Segments breadcrumb resolve the name, so they never diverge.
    *
    * It CALLS `chapterName` rather than spelling the default a second time, for
-   * the reason `shareBookPartial` and `menuOpenWithFailures` both give below:
+   * the reason `shareBookPartial` gives below:
    * the two were byte-for-byte copies, and a copy edit to one leaves the other
    * saying the old thing. No call of either can tell a copy from an alias —
    * they agree until the day they are meant to differ — so
@@ -672,14 +682,13 @@ export const stringsEn = {
   // The same three lines for a chapter on the Books screen (#953 PR2b). Said
   // by the chapter's number, which is what renumbers: a typed name such as
   // "Mark 6" stays as it is (the DRI's pick), so it would not say where the
-  // chapter landed.
+  // chapter landed. Whole sentences (#1483): each says "chapter" in its own
+  // words rather than wrapping `chapterName`'s.
   chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
-  chapterReorderMoved(from: number, to: number): string {
-    return `${this.chapterName(from)} is now chapter ${to}.`;
-  },
-  chapterReorderStayed(n: number): string {
-    return `${this.chapterName(n)} stayed where it was.`;
-  },
+  chapterReorderMoved: (from: number, to: number): string =>
+    `Chapter ${from} is now chapter ${to}.`,
+  chapterReorderStayed: (n: number): string =>
+    `Chapter ${n} stayed where it was.`,
   // The same three lines for a book on the Books screen (#338). Said by the
   // book's heading (its name, or its placeholder), since a book has no number
   // that follows its place; the landing is its new place on the shelf, from 1.
@@ -817,11 +826,12 @@ export const stringsEn = {
   // Neutral on the cause: `missing` counts every segment whose audio did not
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
-  shareMissing(n: number): string {
-    return this.couldNotBeIncluded(
-      plural(n, { one: "{n} segment", other: "{n} segments" })
-    );
-  },
+  // Each form is the whole sentence (#1483).
+  shareMissing: (n: number): string =>
+    plural(n, {
+      one: "{n} segment could not be included.",
+      other: "{n} segments could not be included.",
+    }),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter's own name (#264) is free text too and is sanitised the same
@@ -869,11 +879,11 @@ export const stringsEn = {
     "Could not share this book. Sharing a book works in the tC Mobile app.",
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
-  shareBookMissing(n: number): string {
-    return this.couldNotBeIncluded(
-      plural(n, { one: "{n} chapter", other: "{n} chapters" })
-    );
-  },
+  shareBookMissing: (n: number): string =>
+    plural(n, {
+      one: "{n} chapter could not be included.",
+      other: "{n} chapters could not be included.",
+    }),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -961,21 +971,38 @@ export const stringsEn = {
   // `partialChapters ?? 0` from an optional field (`share-error-copy.ts`), and
   // a missing count must still read "an included chapter", as the ternary
   // did, rather than claim "0 included chapters" about a gap that exists.
+  //
+  // The second sentence is written out whole for each pair of counts (#1483),
+  // rather than as two count phrases spliced into one frame: the chapter
+  // scope picks the row, the segment count picks the form within it, and
+  // `{chapters}` holds the chapter count where a form names it. The two whole
+  // sentences are still joined with a space; that join is the next slice of
+  // #1483.
   shareBookMissingAndPartial(
     chapters: number,
     segments: number,
     partialChapters: number
   ): string {
-    return `${this.shareBookMissing(chapters)} ${this.couldNotBeIncluded(
-      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${plural(
-        Math.max(partialChapters, 1),
-        {
-          "=1": "an included chapter",
-          one: "{n} included chapter",
-          other: "{n} included chapters",
-        }
-      )}`
-    )}`;
+    const scope = Math.max(partialChapters, 1);
+    const bySegments = (one: string, other: string): string =>
+      plural(segments, { one, other }).replaceAll("{chapters}", () =>
+        String(scope)
+      );
+    const partial = plural(scope, {
+      "=1": bySegments(
+        "{n} segment of an included chapter could not be included.",
+        "{n} segments of an included chapter could not be included."
+      ),
+      one: bySegments(
+        "{n} segment of {chapters} included chapter could not be included.",
+        "{n} segments of {chapters} included chapter could not be included."
+      ),
+      other: bySegments(
+        "{n} segment of {chapters} included chapters could not be included.",
+        "{n} segments of {chapters} included chapters could not be included."
+      ),
+    });
+    return `${this.shareBookMissing(chapters)} ${partial}`;
   },
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
@@ -1032,8 +1059,7 @@ export const stringsEn = {
   // The record-path arms ARE the take-recovery panel's discard copy, read from
   // those keys rather than written out a second time (#805 item 1): both
   // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
-  // own comment says the two share one shape. The arrows run only after
-  // `strings` is initialised, as `menuOpenWithFailures` already relies on.
+  // own comment says the two share one shape.
   saveFailedDiscard(editOnly: boolean, armed: boolean): string {
     return armed
       ? editOnly
@@ -1249,11 +1275,11 @@ export const stringsEn = {
   // lines above already name: finished segments take much less room.
   shareAllStorage:
     "This phone does not have room to prepare your work. Mark finished segments, then try again.",
-  shareAllMissing(n: number): string {
-    return this.couldNotBeIncluded(
-      plural(n, { one: "{n} book", other: "{n} books" })
-    );
-  },
+  shareAllMissing: (n: number): string =>
+    plural(n, {
+      one: "{n} book could not be included.",
+      other: "{n} books could not be included.",
+    }),
   shareAllIncomplete: (n: number): string =>
     plural(n, {
       one: "{n} chapter could not be included in full.",
@@ -1346,14 +1372,16 @@ export const stringsEn = {
   // Replaces the plain "Open menu" name while the log is non-empty, so the one
   // control that leads to the report announces that it does.
   //
-  // Reads `failuresMarker` rather than spelling the phrase out again (#169).
-  // The two used to be byte-identical, so a later edit to one would have left
-  // the panel and the control it opens saying different things about the same
-  // number — and a count phrase is now a plural TABLE, which is a worse thing
-  // to keep two copies of than a sentence was.
-  menuOpenWithFailures(n: number): string {
-    return `Open menu. ${this.failuresMarker(n)}.`;
-  },
+  // Whole sentences (#1483), not `failuresMarker` with a stop appended: a
+  // language may word the count differently once it ends a sentence. The
+  // English must still say what the marker says, so the panel and the
+  // control it opens agree about the number; `tests/strings-plural.test.ts`
+  // pins that equality for English.
+  menuOpenWithFailures: (n: number): string =>
+    plural(n, {
+      one: "Open menu. {n} problem recorded.",
+      other: "Open menu. {n} problems recorded.",
+    }),
   // Said in the menu, above the two actions. Deliberately not "the app
   // crashed": most entries are a single failed write the translator never saw,
   // and alarming a person about work that is still on the phone is its own harm.
