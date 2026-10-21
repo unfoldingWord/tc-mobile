@@ -450,7 +450,9 @@ what was captured"; this one does light ≡), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
-save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
+save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
+delete of the held take's pending row (same file, `"pending-take-write"`,
+`"pending-take-delete"`, #38), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
