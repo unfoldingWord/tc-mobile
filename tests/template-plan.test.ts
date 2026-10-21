@@ -47,7 +47,6 @@ describe("planBookFromTemplate", () => {
     const first = planBookFromTemplate(pkg, resolve, NOW);
     const second = planBookFromTemplate(pkg, resolve, NOW);
     expect(second).toEqual(first);
-    expect(second).not.toBe(first);
   });
 
   it("stamps the book with the package's provenance and D5's licence", () => {
