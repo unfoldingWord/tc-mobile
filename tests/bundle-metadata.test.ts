@@ -279,7 +279,9 @@ describe("the flavour rule (ADR 0014 point 2)", () => {
 
   it("takes the custom flavour, with no scope, for a span with one verse null", () => {
     const doc = buildBundleMetadata(
-      bookInput([seg(1, { ...MARK_1_1_8, startVerse: 5, endVerse: null }, MP3)]),
+      bookInput([
+        seg(1, { ...MARK_1_1_8, startVerse: 5, endVerse: null }, MP3),
+      ]),
       PROJECT
     ) as {
       type: { flavorType: Record<string, unknown> };
@@ -346,9 +348,7 @@ describe("meta.normalization is NFC, and the strings written are", () => {
     };
     expect(doc.identification.name.en).toBe("Café");
     expect(doc.localizedNames["book-mrk"]!.short.en).toBe("Café");
-    expect(doc.languages[0]!.name.en).toBe(
-      "Kiswahilí".normalize("NFC")
-    );
+    expect(doc.languages[0]!.name.en).toBe("Kiswahilí".normalize("NFC"));
   });
 });
 
