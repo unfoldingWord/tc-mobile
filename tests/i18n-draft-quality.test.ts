@@ -6,9 +6,16 @@ import { describe, expect, it } from "vitest";
 import { LOCALES, activeLocale, setActiveLocale } from "@/lib/locale";
 import { LOCALE_OVERRIDES } from "@/lib/i18n/locales";
 import { plural } from "@/lib/plural";
-import { stringsEn, type Strings } from "@/lib/strings";
+import { stringsEn, type RestartSubject, type Strings } from "@/lib/strings";
 
-import { FUNCTION_ENTRIES, argVectors, call, countsFor } from "./i18n-coverage";
+import {
+  FUNCTION_ENTRIES,
+  UNION_DOMAINS,
+  argVectors,
+  call,
+  countsFor,
+  unionMembers,
+} from "./i18n-coverage";
 
 /**
  * Machine gates for AI-drafted translations (#1485): a draft that left English
@@ -350,6 +357,50 @@ describe("i18n draft quality gates (#1485)", () => {
         bookHeading((n) => `الكتاب ${String(n).padStart(3, "0")}`)
       )
     ).toEqual([]);
+  });
+
+  it("declares a domain for every function entry and every union equals its type", () => {
+    for (const name of FUNCTION_ENTRIES)
+      expect(() => argVectors(name, 1), name).not.toThrow();
+    for (const [name, members] of Object.entries(UNION_DOMAINS))
+      expect([...members].sort(), name).toEqual(unionMembers(name).sort());
+    const vectors = argVectors("restartArmed", 1);
+    for (const subject of unionMembers("RestartSubject"))
+      expect(vectors.map((v) => v[0])).toContain(subject);
+  });
+
+  it("exercises every literal-union member: an untranslated restart branch fails, a full translation passes", () => {
+    const lose = "اضغط مرة أخرى لإعادة البدء وفقدان";
+    const cut = "والصوت الذي قطعته";
+    const restart = (translated: readonly string[]): Partial<Strings> => {
+      const text = (subject: string, also: boolean): string => {
+        if (subject === "cutAudio") return `${lose} الصوت الذي قطعته`;
+        const what = subject === "recording" ? "هذا التسجيل" : "هذه التغييرات";
+        return also ? `${lose} ${what} ${cut}` : `${lose} ${what}`;
+      };
+      return {
+        restartArmed: (subject: RestartSubject, also: boolean) =>
+          translated.includes(subject)
+            ? text(subject, also)
+            : stringsEn.restartArmed(subject, also),
+      } as unknown as Partial<Strings>;
+    };
+    expect(
+      tableProblems("ar", restart(["recording", "changes", "cutAudio"]))
+    ).toEqual([]);
+    for (const missing of ["changes", "cutAudio"])
+      expect(
+        tableProblems(
+          "ar",
+          restart(
+            ["recording", "changes", "cutAudio"].filter((s) => s !== missing)
+          )
+        ),
+        missing
+      ).toContain("restartArmed: equals the English text");
+    expect(tableProblems("ar", restart(["recording"])).length).toBeGreaterThan(
+      0
+    );
   });
 
   it("generates null for a nullable parameter and counts for every category", () => {

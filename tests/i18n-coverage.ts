@@ -3,7 +3,7 @@ import path from "node:path";
 
 import ts from "typescript";
 
-import type { Strings } from "@/lib/strings";
+import type { RestartSubject, Strings } from "@/lib/strings";
 import { ENGLISH_ONLY } from "@/lib/i18n/english-only";
 import { stringsEn } from "@/lib/strings";
 
@@ -67,6 +67,44 @@ export function keyProblems(
   return problems;
 }
 
+/**
+ * The domain of every literal-union parameter type a function entry takes,
+ * declared once. Each is written as a `Record` over the union, so adding a
+ * member to the type fails `npm run typecheck` here until it is listed, and
+ * `unionMembers` reads the declared type back so a test proves the list equals
+ * it. A union type with no row here throws in `argVectors`.
+ */
+const RESTART_SUBJECT: Record<RestartSubject, true> = {
+  recording: true,
+  changes: true,
+  cutAudio: true,
+};
+export const UNION_DOMAINS: Readonly<Record<string, readonly string[]>> = {
+  RestartSubject: Object.keys(RESTART_SUBJECT),
+};
+
+/** The members of the string-literal union alias `name` in `strings.ts`. */
+export function unionMembers(name: string): string[] {
+  const file = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
+  const source = ts.createSourceFile(
+    "strings.ts",
+    readFileSync(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true
+  );
+  const members: string[] = [];
+  source.forEachChild((node) => {
+    if (!ts.isTypeAliasDeclaration(node) || node.name.text !== name) return;
+    const parts = ts.isUnionTypeNode(node.type) ? node.type.types : [node.type];
+    for (const part of parts)
+      if (ts.isLiteralTypeNode(part) && ts.isStringLiteral(part.literal))
+        members.push(part.literal.text);
+      else throw new Error(`${name}: not a string-literal union`);
+  });
+  if (members.length === 0) throw new Error(`no union alias ${name}`);
+  return members;
+}
+
 /** The parameter types of every function entry, read from `strings.ts`. */
 function signatures(): Map<string, string[]> {
   const file = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
@@ -118,7 +156,7 @@ const MAX_VECTORS = 256;
  * domain, crossed. A nullable parameter takes `null` as well as a value;
  * numbers are `n` (or, when `distinct`, `n` plus their position, so parity can
  * tell two counts apart); strings a sentinel and the empty string; booleans
- * both. A type this does not know throws, so a new parameter type cannot slip
+ * both; a literal union every member (`UNION_DOMAINS`). A type this does not know throws, so a new parameter type cannot slip
  * past unexercised, and so does a product over `MAX_VECTORS`, so the cap is
  * never a silent truncation.
  */
@@ -144,7 +182,7 @@ export function argVectors(
     } else if (base === "number") push(orNull([distinct ? n + i : n]));
     else if (base === "string") push(orNull(["SENT" + i, ""]));
     else if (base === "boolean") push([true, false]);
-    else if (base === "RestartSubject") push(["recording"]);
+    else if (UNION_DOMAINS[base]) push(orNull(UNION_DOMAINS[base]));
     else throw new Error(`${name}: unknown parameter type ${type}`);
   });
   if (vectors.length > MAX_VECTORS)
