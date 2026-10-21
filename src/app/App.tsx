@@ -17,6 +17,7 @@ import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
 import { isPhoneCheckRunning } from "@/hooks/use-phone-check";
+import { usePhoneLocale } from "@/hooks/phone-locale";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
   holdsUnsavedAudio,
@@ -98,6 +99,9 @@ export function App() {
   );
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
+  // Follow the phone's language (#1538, ADR 0015 (e)): a take is open from
+  // the moment the recorder leaves idle, and no words change under it.
+  usePhoneLocale(audio.recorderState !== "idle");
   // ONE erase for both entry points — the recorder menu and the Segments-row
   // overflow menu (#160, L-12). Held here rather than in each screen so a
   // single in-flight guard covers both, instead of that resting on the sheet

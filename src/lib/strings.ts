@@ -1485,8 +1485,8 @@ export type Strings = {
 /**
  * The table the UI reads. A live ES binding: importers see the table that
  * `installStrings` last installed, not the one that existed when they were
- * evaluated. English until something installs another (no locale is chosen at
- * runtime yet), so every existing `strings.<name>` reads the same words.
+ * evaluated. English until `installLocale` (`lib/i18n/locales.ts`) installs
+ * the table the phone's language resolves to (ADR 0015).
  *
  * Read it at the point of use. A module-scope `const x = strings.name` would
  * freeze whichever table was installed when that module loaded.

@@ -20,7 +20,7 @@
  * import upward (AGENTS.md's onion rule) and the sentences those layers return
  * have the same counts in them.
  */
-import { SHIPPED_LOCALE } from "./locale";
+import { activeLocale } from "./locale";
 
 /**
  * CLDR's plural categories — the keys a forms table may carry.
@@ -66,7 +66,7 @@ type PluralForms = {
 /**
  * `Intl.PluralRules` construction is not free and these labels render on every
  * list row, so keep one per locale. The map is keyed by the locale string as
- * passed; there is one entry in practice.
+ * passed, so it grows by one entry per locale the app has counted in.
  */
 const rules = new Map<string, Intl.PluralRules>();
 
@@ -98,16 +98,16 @@ function rulesFor(locale: string): Intl.PluralRules {
  * Every `{n}` is replaced, not just the first: a form is free to name the count
  * twice.
  *
- * `locale` defaults to `SHIPPED_LOCALE.tag` — the build's one locale, the same
- * value `<html lang>` and the manifest are written from (`lib/locale.ts`, #697)
- * — rather than to a `"en"` of its own. An independent default would have been
- * a second source of truth the moment the first one moved, which is the exact
- * note QA and George both left on #673 while #697 was still in flight.
+ * `locale` defaults to `activeLocale().tag`, the locale whose table is
+ * installed (`lib/locale.ts`, ADR 0015 (b)), rather than to a `"en"` or a build
+ * constant of its own. An independent default would be a second source of
+ * truth: a French table counting by English rules the moment the phone's
+ * language moved, which is the note QA and George both left on #673.
  */
 export function plural(
   n: number,
   forms: PluralForms,
-  locale: string = SHIPPED_LOCALE.tag
+  locale: string = activeLocale().tag
 ): string {
   const category = rulesFor(locale).select(n) as PluralCategory;
   // The exact arm is matched on the number, never on the locale's category.

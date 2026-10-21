@@ -7,12 +7,17 @@
  * `pending.ts` is the list that says which keys are allowed to be in that
  * state. `tests/strings-locale-coverage.test.ts` is the build-time check.
  *
- * Nothing selects a table at runtime yet (ADR 0015 owns that): this module
- * only builds and names them.
+ * `installLocale` is the one place a table and its locale are installed;
+ * `hooks/phone-locale.ts` chooses which (ADR 0015).
  */
 
-import { LOCALES } from "../locale";
-import { stringsEn, type Strings } from "../strings";
+import {
+  LOCALES,
+  SHIPPED_LOCALE,
+  setActiveLocale,
+  type Locale,
+} from "../locale";
+import { installStrings, stringsEn, type Strings } from "../strings";
 
 import { table as ar } from "./ar";
 import { table as es } from "./es";
@@ -56,4 +61,38 @@ export function buildTable(
     throw new Error(`buildTable: "${tag}" is not a supported locale`);
   }
   return { ...stringsEn, ...overrides };
+}
+
+/**
+ * The locales the resolver may pick: English, and each language whose table
+ * has every English key (ADR 0015 (g): a screen is wholly in one language, so
+ * an incomplete locale is skipped rather than shown half English).
+ *
+ * Read from the tables themselves, not from `pending.ts`: the tables are the
+ * fact, and the pending list is the ratchet the coverage test keeps in step
+ * with them. Called at each resolution, so it is never a stale snapshot.
+ */
+export function completeLocales(): Locale[] {
+  const keys = Object.keys(stringsEn);
+  return LOCALES.filter((locale) => {
+    if (locale === SHIPPED_LOCALE) return true;
+    const overrides = LOCALE_OVERRIDES[locale.tag];
+    if (overrides === undefined) return false;
+    const entries = overrides as Readonly<Record<string, unknown>>;
+    // Own and defined: `buildTable` spreads own entries, and an `undefined`
+    // would replace the English one with nothing.
+    return keys.every(
+      (key) => Object.hasOwn(entries, key) && entries[key] !== undefined
+    );
+  });
+}
+
+/**
+ * Make `locale` the running one: its table becomes `strings`, and it becomes
+ * `activeLocale()`, which `plural()` counts by. One call, so the words and the
+ * count rule cannot come from two locales.
+ */
+export function installLocale(locale: Locale): void {
+  installStrings(buildTable(locale.tag));
+  setActiveLocale(locale);
 }
