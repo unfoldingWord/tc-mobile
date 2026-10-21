@@ -274,7 +274,7 @@ export interface Tombstone {
  * transcoded since. Everything else, a first take included (an empty buffer),
  * is `inline`.
  */
-type PendingTakeBase =
+export type PendingTakeBase =
   | {
       readonly kind: "stored";
       readonly sourceClipId: ClipId;
