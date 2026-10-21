@@ -32,8 +32,9 @@ source is a new package.
 ## What a package is
 
 A package is one JSON file: an ordered list of chapters, each an ordered list
-of segments, with an optional passage span per segment. Titles are not in that
-file; they ship as separate tables, one per language (see "Title tables").
+of segments, with an optional passage span per segment, and the package's own
+`title`. Chapter and segment titles are not in that file; they ship as
+separate tables, one per language (see "Title tables").
 
 A package holds one book or one collection. A whole New Testament is
 therefore a set of packages, one per book. How a phone groups them is the
@@ -147,9 +148,11 @@ package file and three table files.
 ### What a missing key does on the phone
 
 A key the table lacks has no title, and that is never an error
-(`types/template.ts:110-111`). In plain words: the phone shows no title for
-that chapter or segment, and the book still opens, records, edits and shares as
-it did. The title falls back to none; the book is never broken.
+(`types/template.ts:110-111`). In plain words: the lookup gives no title for
+that chapter or segment, and it does not fail. That the book then still opens,
+records, edits and shares as it did is the intended behaviour once a screen
+reads titles; nothing in `src/` calls `titleFor` yet, so no test or device run
+backs it.
 
 `titleFor` returns no title, and never throws, in each of these cases
 (`validate.ts:361-375`):
@@ -200,11 +203,15 @@ never compares versions. The rules below are an assumption: they are the
 reading of #1467, not a decision the requirements owner has recorded, so
 confirm them before the first source relies on them.
 
-- Patch: a fix that changes no key and no span (a typo in `attribution`, a
+- Patch: no key added, dropped or retargeted (a typo in `attribution`, a
   corrected `thumbnail` path).
-- Minor: keys added, or a span corrected. Nothing a book holds goes missing.
+- Minor: keys added. Every key an existing book already holds still names the
+  same passage.
 - Major: keys dropped or content reorganised. Books holding a dropped key lose
   its title (see above) and keep their recordings.
+- A span that moves under an existing key breaks the rule under "Keys"; give
+  the new passage a new key instead. Do not ship a span change under a stable
+  key while this list is still an assumption.
 - A published version is never edited. A change is a new version.
 
 Title tables carry the package `version` and must match it exactly
