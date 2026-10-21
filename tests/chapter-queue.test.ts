@@ -568,6 +568,209 @@ describe("createChapterQueue", () => {
     expect(q.state()).toBe("idle");
   });
 
+  describe("teardown when a handle or the floor throws", () => {
+    /** The harness's deps, with every handle's stop/elapsed made to throw. */
+    function throwing(
+      h: ReturnType<typeof harness>,
+      what: { stop?: Error; elapsed?: Error }
+    ): ChapterQueueDeps {
+      return {
+        ...h.deps,
+        play: (samples, offset, onEnded) => {
+          const real = h.deps.play(samples, offset, onEnded) as QueueHandle;
+          return {
+            stop: () => {
+              real.stop();
+              if (what.stop) throw what.stop;
+            },
+            elapsed: () => {
+              if (what.elapsed) throw what.elapsed;
+              return real.elapsed();
+            },
+          };
+        },
+      };
+    }
+
+    /** The run's settled value or rejection, or "pending" if neither. */
+    const outcomeOf = (run: Promise<unknown>) => {
+      const settled = run.then(
+        (v) => ({ resolved: v }),
+        (e: unknown) => ({ rejected: e })
+      );
+      return () =>
+        Promise.race([settled, flush().then(() => "pending" as const)]);
+    };
+
+    it("isCurrent false and a throwing stop: rejects, never releases the new holder's floor", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 1], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      h.supersede();
+      nth(h.plays, 0).end();
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(0);
+      expect(q.state()).toBe("idle");
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("supersede() with a throwing stop: rejects, never releases", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      h.supersede();
+      q.supersede();
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(0);
+      expect(q.state()).toBe("idle");
+      nth(h.plays, 0).end();
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("pause() with a throwing stop: rejects, releases once, keeps the place", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      nth(h.plays, 0).elapsed = 1;
+      expect(q.pause()).toEqual({ index: 0, offsetSeconds: 1 });
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("paused");
+      nth(h.plays, 0).end();
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("stop() with a throwing stop: rejects, releases once, ends idle", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      q.stop();
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("idle");
+      nth(h.plays, 0).end();
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("pause() with a throwing elapsed still stops the clip and settles", async () => {
+      const h = harness();
+      const boom = new Error("elapsed");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { elapsed: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      expect(q.pause()).toEqual({ index: 0, offsetSeconds: 0 });
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("paused");
+    });
+
+    it("a non-finite elapsed keeps the clip's start offset, not NaN", async () => {
+      const h = harness();
+      const q = createChapterQueue(entries(["a", 4]), h.deps);
+      void q.play();
+      await flush();
+      nth(h.plays, 0).elapsed = Number.NaN;
+      expect(q.progress()).toBe(0);
+      expect(q.pause()).toEqual({ index: 0, offsetSeconds: 0 });
+    });
+
+    it("a superseded hand-off whose stop throws rejects, never 'superseded'", async () => {
+      const h = harness();
+      const arrive = deferred<QueueHandle>();
+      const boom = new Error("stop");
+      let stops = 0;
+      const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+        ...h.deps,
+        play: () => arrive.promise,
+      });
+      const outcome = outcomeOf(q.play());
+      await flush();
+      h.supersede();
+      arrive.resolve({
+        stop: () => {
+          stops++;
+          throw boom;
+        },
+        elapsed: () => 0,
+      });
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(stops).toBe(1);
+      expect(h.releases).toBe(0);
+    });
+
+    it("a hand-off that arrives after pause() reports its throwing stop", async () => {
+      const h = harness();
+      const arrive = deferred<QueueHandle>();
+      const boom = new Error("stop");
+      let stops = 0;
+      const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+        ...h.deps,
+        play: () => arrive.promise,
+      });
+      const outcome = outcomeOf(q.play());
+      await flush();
+      q.pause();
+      expect(await outcome()).toEqual({ resolved: "paused" });
+      arrive.resolve({
+        stop: () => {
+          stops++;
+          throw boom;
+        },
+        elapsed: () => 0,
+      });
+      await flush();
+      expect(stops).toBe(1);
+      expect(h.failures).toEqual([{ segmentId: "a", cause: boom }]);
+    });
+
+    it("an empty play() with a throwing release rejects instead of throwing", async () => {
+      const h = harness();
+      const boom = new Error("release");
+      const q = createChapterQueue([], {
+        ...h.deps,
+        release: () => {
+          throw boom;
+        },
+      });
+      let run: Promise<unknown> | undefined;
+      expect(() => {
+        run = q.play();
+      }).not.toThrow();
+      await expect(run).rejects.toBe(boom);
+    });
+  });
+
   it("play() during a run returns that run, not a false 'stopped'", async () => {
     const h = harness();
     const q = createChapterQueue(entries(["a", 1]), h.deps);

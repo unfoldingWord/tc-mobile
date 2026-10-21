@@ -23,11 +23,20 @@
  * each load, hand-off and gap, NOT while a clip is sounding: when the floor
  * moves mid-clip the hook must call `supersede()` (or `pause()`/`stop()`),
  * which stops the sound at once. A resume is a fresh claim, which the hook
- * swaps in before calling `resume()`. A seam that throws outside `load`/`play`
- * (`onFailure`, `wait`, `isCurrent`, `release`, a handle's `stop`) rejects the
- * run promise with that cause after stopping the sound and releasing the floor
- * at most once — including a `release` thrown from `pause()` or `stop()`, which
- * return normally and leave that rejection as the error's one channel.
+ * swaps in before calling `resume()`.
+ *
+ * Every way a run ends — natural end, `pause()`, `stop()`, `supersede()`, a
+ * false `isCurrent`, a seam that throws — goes through one settler, `endRun`.
+ * It first makes the run dead (a late `onEnded`, wait or hand-off starts
+ * nothing), then tries each call that can throw (a handle's `stop`, `release`)
+ * on its own, then settles the run promise exactly once: with the outcome when
+ * nothing threw, otherwise rejected with the cause (an `AggregateError` when
+ * several threw). It releases the floor at most once, and never after the
+ * floor was lost (`supersede()`, or `isCurrent` false). `pause()` and `stop()`
+ * return normally even then; the run's rejection is the error's one channel.
+ * The one throw with no run left to reject — the stop of a clip whose hand-off
+ * arrived after `pause()`/`stop()` had settled the run — goes to `onFailure`.
+ * A throwing or non-finite `elapsed()` falls back to the clip's start offset.
  *
  * Which segments belong to a chapter is the caller's accessor
  * (`chapter.segmentIds` today). `buildChapterPlaylist` is the one place that
@@ -125,7 +134,10 @@ export interface ChapterQueueDeps<Samples = Int16Array> {
    * back into this queue: a `play()` from inside it would orphan the run.
    */
   release: () => void;
-  /** One clip could not be loaded or played; it is skipped. Once per clip. */
+  /**
+   * One clip could not be loaded or played, and is skipped; or a clip that
+   * arrived after its run had ended could not be stopped. Once per clip.
+   */
   onFailure: (segmentId: SegmentId, cause: unknown) => void;
 }
 
@@ -217,15 +229,30 @@ export function createChapterQueue<Samples = Int16Array>(
   const at = (i: number, within: number) =>
     total <= 0 ? null : Math.min(1, ((starts[i] ?? 0) + within) / total);
 
+  /**
+   * Where the current clip is, clamped to its length. A non-finite
+   * `elapsed()` falls back to where the clip started; a throwing one does
+   * too, and its cause goes to `faults` when given (else it propagates).
+   */
+  function withinClip(faults: unknown[] | null): number {
+    let e = clipOffset;
+    if (phase === "playing" && handle) {
+      try {
+        const v = handle.elapsed();
+        if (Number.isFinite(v)) e = v;
+      } catch (cause) {
+        if (!faults) throw cause;
+        faults.push(cause);
+      }
+    }
+    return Math.min(Math.max(e, 0), lenAt(index));
+  }
+
   function progress(): number | null {
     if (phase === "idle") return null;
     if (phase === "paused") return pausedFraction;
     if (phase === "gap") return at(index, lenAt(index));
-    if (phase === "playing" && handle) {
-      const e = Math.min(Math.max(handle.elapsed(), 0), lenAt(index));
-      return at(index, e);
-    }
-    return at(index, Math.min(clipOffset, lenAt(index)));
+    return at(index, withinClip(null));
   }
 
   async function fetchClip(i: number): Promise<Fetched<Samples>> {
@@ -236,11 +263,16 @@ export function createChapterQueue<Samples = Int16Array>(
     }
   }
 
-  function skip(i: number, cause: unknown): void {
-    failed++;
+  /** Hand one clip's failure to the caller, once per clip. */
+  function report(i: number, cause: unknown): void {
     if (reported.has(entryAt(i).segmentId)) return;
     reported.add(entryAt(i).segmentId);
     deps.onFailure(entryAt(i).segmentId, cause);
+  }
+
+  function skip(i: number, cause: unknown): void {
+    failed++;
+    report(i, cause);
   }
 
   function reset(): void {
@@ -253,93 +285,106 @@ export function createChapterQueue<Samples = Int16Array>(
     run = null;
   }
 
-  /** The floor moved: stop our sound, do not release theirs. */
-  function superseded(): void {
-    handle?.stop();
-    runId++;
-    const halt = haltRun;
-    reset();
-    halt?.resolve("superseded");
+  /** Stop one sound; a throw is collected, never escapes. */
+  function tryStop(h: QueueHandle | null, faults: unknown[]): void {
+    if (!h) return;
+    try {
+      h.stop();
+    } catch (cause) {
+      faults.push(cause);
+    }
   }
 
-  /**
-   * Give the floor back for pause/stop, then settle the halted run. Their
-   * `runId++` has already cut the loop off, so if `release` throws, the run
-   * promise is the only place left to report it: it rejects with the cause,
-   * and the hook that awaits it reports it (lib/ has no funnel of its own).
-   */
-  function releaseAndSettle(
-    halt: typeof haltRun,
-    outcome: ChapterQueueOutcome
-  ): void {
+  /** Give the floor back; a throw is collected, never escapes. */
+  function tryRelease(faults: unknown[]): void {
     try {
       deps.release();
     } catch (cause) {
-      if (!halt) throw cause;
-      halt.reject(cause);
+      faults.push(cause);
+    }
+  }
+
+  function faultOf(faults: readonly unknown[]): unknown {
+    return faults.length === 1
+      ? faults[0]
+      : new AggregateError(faults, "chapter queue: more than one call threw");
+  }
+
+  /**
+   * The one way a run ends. Commits first — the run id moves and the run's
+   * state is taken — so nothing below can leave it live; then each call that
+   * can throw is tried on its own; then the run settles exactly once.
+   * `release` is false when the floor is no longer ours (`floorLost`).
+   */
+  function endRun(
+    outcome: ChapterQueueOutcome,
+    opts: {
+      release: boolean;
+      faults?: unknown[];
+      /** A handle that arrived but was never stored as `handle`. */
+      arriving?: QueueHandle;
+      paused?: { pos: QueuePosition; fraction: number | null };
+    }
+  ): void {
+    runId++;
+    const sounding = handle;
+    const halt = haltRun;
+    const wakeLoop = wake;
+    reset();
+    if (opts.paused) {
+      phase = "paused";
+      pausedAt = opts.paused.pos;
+      pausedFraction = opts.paused.fraction;
+    }
+    const faults = opts.faults ?? [];
+    tryStop(sounding, faults);
+    if (opts.arriving !== sounding) tryStop(opts.arriving ?? null, faults);
+    // The loop wakes into a dead run and returns.
+    wakeLoop?.();
+    if (opts.release) tryRelease(faults);
+    if (!halt) {
+      // No run to settle (a stop while paused: nothing sounds, no floor held).
+      // Should a call still have thrown, the caller is the only channel left.
+      if (faults.length > 0) throw faultOf(faults);
       return;
     }
-    halt?.resolve(outcome);
+    if (faults.length > 0) halt.reject(faultOf(faults));
+    else halt.resolve(outcome);
+  }
+
+  /** The floor moved: stop our sound, do not release theirs. */
+  function superseded(arriving?: QueueHandle): void {
+    endRun("superseded", { release: false, arriving });
   }
 
   function begin(from: QueuePosition): Promise<ChapterQueueOutcome> {
     const id = ++runId;
     const p = new Promise<ChapterQueueOutcome>((resolve, reject) => {
       haltRun = { resolve, reject };
-      loop(id, from).then(
-        (outcome) => {
-          // A run that was halted from outside has already resolved.
-          if (id === runId && outcome !== null) resolve(outcome);
-        },
-        (cause: unknown) => {
-          // A seam threw. A run pause/stop/supersede ended has settled already.
-          if (id !== runId) return;
-          runId++;
-          // `reset()` runs before the final release, so a throwing release
-          // is not called twice.
-          const held = phase !== "idle";
-          const faults: unknown[] = [cause];
-          try {
-            handle?.stop();
-          } catch (stopCause) {
-            faults.push(stopCause);
-          }
-          reset();
-          if (held) {
-            try {
-              deps.release();
-            } catch (releaseCause) {
-              faults.push(releaseCause);
-            }
-          }
-          reject(
-            faults.length === 1
-              ? cause
-              : new AggregateError(
-                  faults,
-                  "chapter queue: a seam threw, then cleanup threw"
-                )
-          );
+      void loop(id, from).catch((cause: unknown) => {
+        if (id !== runId) {
+          // This run was already ended and settled, and nothing of it is left
+          // to stop or release; there is no promise left to reject. Only a
+          // seam the ended run had in flight can land here (a cut-off wait,
+          // or `onFailure` throwing while reporting a late stop below).
+          return;
         }
-      );
+        // Still this run: a lost floor would have ended it through
+        // `superseded()` first, so the floor is ours to give back.
+        endRun("stopped", { release: true, faults: [cause] });
+      });
     });
     run = p;
     return p;
   }
 
-  /**
-   * Returns an outcome when the run ends by itself, or null when pause/stop
-   * halted it (they resolve the run themselves).
-   */
-  async function loop(
-    id: number,
-    from: QueuePosition
-  ): Promise<ChapterQueueOutcome | null> {
-    /** True when this run must not go on; settles the supersede case. */
-    const halted = (): boolean => {
+  /** Plays from `from` to the end; every ending goes through `endRun`. */
+  async function loop(id: number, from: QueuePosition): Promise<void> {
+    /** True when this run must not go on; ends it if the floor moved. */
+    const halted = (arriving?: QueueHandle): boolean => {
       if (id !== runId) return true;
       if (deps.isCurrent()) return false;
-      superseded();
+      superseded(arriving);
       return true;
     };
 
@@ -351,7 +396,7 @@ export function createChapterQueue<Samples = Int16Array>(
       phase = "loading";
       handle = null;
       const loaded = await pending;
-      if (halted()) return null;
+      if (halted()) return;
       pending = i + 1 < n ? fetchClip(i + 1) : pending;
       if (!loaded.ok) {
         skip(i, loaded.cause);
@@ -369,45 +414,51 @@ export function createChapterQueue<Samples = Int16Array>(
           if (id === runId) ended();
         });
       } catch (cause) {
-        if (halted()) return null;
+        if (halted()) return;
         skip(i, cause);
         offset = 0;
         continue;
       }
+      if (id !== runId) {
+        // pause()/stop() settled this run while the clip was on its way, so
+        // a throwing stop has no run left to reject: report it as this clip's.
+        try {
+          h.stop();
+        } catch (cause) {
+          report(i, cause);
+        }
+        return;
+      }
       let stale: boolean;
       try {
-        stale = halted();
+        stale = halted(h);
       } catch (cause) {
-        // `h` is not `handle` yet, so the fault path cannot reach it.
-        h.stop();
+        // Make the fault path's `endRun` stop it.
+        handle = h;
         throw cause;
       }
-      if (stale) {
-        h.stop();
-        return null;
-      }
+      if (stale) return;
       handle = h;
       phase = "playing";
       // It sounded, even if a pause cuts it short before `onEnded`.
       anyPlayed = true;
       wake = ended;
       await done;
+      if (halted()) return;
       wake = null;
-      if (halted()) return null;
       handle = null;
       offset = 0;
 
       if (i + 1 < n) {
         phase = "gap";
         await deps.wait(SEGMENT_GAP_SECONDS * 1000);
-        if (halted()) return null;
+        if (halted()) return;
       }
     }
 
-    reset();
-    deps.release();
-    if (n > 0 && !anyPlayed && failed > 0) return "failed";
-    return "finished";
+    endRun(n > 0 && !anyPlayed && failed > 0 ? "failed" : "finished", {
+      release: true,
+    });
   }
 
   return {
@@ -415,8 +466,11 @@ export function createChapterQueue<Samples = Int16Array>(
       if (phase === "paused") return Promise.resolve("paused");
       if (run) return run;
       if (n === 0) {
-        deps.release();
-        return Promise.resolve("empty");
+        const faults: unknown[] = [];
+        tryRelease(faults);
+        return faults.length > 0
+          ? Promise.reject(faultOf(faults))
+          : Promise.resolve("empty");
       }
       anyPlayed = false;
       failed = 0;
@@ -426,28 +480,18 @@ export function createChapterQueue<Samples = Int16Array>(
 
     pause() {
       if (phase === "idle" || phase === "paused") return null;
-      const fraction = progress();
+      const faults: unknown[] = [];
       let pos: QueuePosition;
+      let fraction: number | null;
       if (phase === "gap") {
         pos = { index: index + 1, offsetSeconds: 0 };
-      } else if (phase === "playing" && handle) {
-        const e = Math.min(Math.max(handle.elapsed(), 0), lenAt(index));
-        pos = { index, offsetSeconds: e };
+        fraction = at(index, lenAt(index));
       } else {
-        pos = { index, offsetSeconds: clipOffset };
+        const e = withinClip(faults);
+        pos = { index, offsetSeconds: e };
+        fraction = at(index, e);
       }
-      handle?.stop();
-      handle = null;
-      runId++;
-      run = null;
-      const halt = haltRun;
-      haltRun = null;
-      wake?.();
-      wake = null;
-      phase = "paused";
-      pausedAt = pos;
-      pausedFraction = fraction;
-      releaseAndSettle(halt, "paused");
+      endRun("paused", { release: true, faults, paused: { pos, fraction } });
       return pos;
     },
 
@@ -461,20 +505,13 @@ export function createChapterQueue<Samples = Int16Array>(
 
     stop() {
       if (phase === "idle") return;
-      const wasPaused = phase === "paused";
-      handle?.stop();
-      runId++;
-      const halt = haltRun;
-      wake?.();
-      reset();
-      if (wasPaused) halt?.resolve("stopped");
-      else releaseAndSettle(halt, "stopped");
+      // Paused, the floor was already given back.
+      endRun("stopped", { release: phase !== "paused" });
     },
 
     supersede() {
       // Paused or idle, the queue holds no floor and no sound.
       if (phase === "idle" || phase === "paused") return;
-      wake?.();
       superseded();
     },
 
