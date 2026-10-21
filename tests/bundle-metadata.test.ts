@@ -8,7 +8,12 @@ import type {
   BundleBookInput,
   BundleSegmentInput,
 } from "@/lib/export/bundle/input";
-import { buildBundleMetadata, scopeString } from "@/lib/export/bundle/metadata";
+import { InvalidExportTimeError } from "@/lib/export/bundle/input";
+import {
+  buildBundleMetadata,
+  scopeString,
+  USFM_BOOK_CODES,
+} from "@/lib/export/bundle/metadata";
 import { buildProjectManifest } from "@/lib/export/bundle/project";
 import type { ClipMeta } from "@/types/audio";
 import type {
@@ -529,5 +534,153 @@ describe("project.json lists every segment, with the reason where audio is missi
   it("survives a JSON round trip unchanged", () => {
     const manifest = buildProjectManifest(referencedBook());
     expect(JSON.parse(JSON.stringify(manifest))).toEqual(manifest);
+  });
+});
+
+/** An audio piece with its clip's sample rate set, for the formats block. */
+function atRate(base: BundleAudio, sampleRate: number): BundleAudio {
+  return { ...base, clip: { ...base.clip, sampleRate } };
+}
+
+type FlavorDoc = {
+  type: {
+    flavorType: {
+      name: string;
+      flavor: { formats?: Record<string, { samplingRate: number }> };
+      currentScope?: unknown;
+    };
+  };
+};
+
+describe("formats come from the clips (George round 1, Medium 1)", () => {
+  it("writes the clips' own rate, not 44100, for a 16000 Hz take", () => {
+    const doc = buildBundleMetadata(
+      bookInput([
+        seg(1, MARK_1_1_8, atRate(MP3, 16000)),
+        seg(2, MARK_1_9_13, atRate(WAV, 16000)),
+      ]),
+      PROJECT
+    ) as FlavorDoc;
+    const formats = doc.type.flavorType.flavor.formats!;
+    expect(formats.mp3!.samplingRate).toBe(16000);
+    expect(formats.wav!.samplingRate).toBe(16000);
+    expect(validateBundleMetadata(doc)).toEqual([]);
+  });
+
+  it("takes the custom flavour when two mp3 clips differ in rate", () => {
+    const doc = buildBundleMetadata(
+      bookInput([
+        seg(1, MARK_1_1_8, atRate(MP3, 16000)),
+        seg(2, MARK_1_9_13, atRate(MP3, 44100)),
+      ]),
+      PROJECT
+    ) as FlavorDoc;
+    expect(doc.type.flavorType.name).toBe("parascriptural");
+    expect(doc.type.flavorType).not.toHaveProperty("currentScope");
+    expect(validateBundleMetadata(doc)).toEqual([]);
+  });
+
+  it("lets mp3 and wav differ from each other when each is uniform", () => {
+    const doc = buildBundleMetadata(
+      bookInput([
+        seg(1, MARK_1_1_8, atRate(MP3, 16000)),
+        seg(2, MARK_1_9_13, WAV),
+      ]),
+      PROJECT
+    ) as FlavorDoc;
+    const formats = doc.type.flavorType.flavor.formats!;
+    expect([formats.mp3!.samplingRate, formats.wav!.samplingRate]).toEqual([
+      16000, 44100,
+    ]);
+  });
+});
+
+describe("a half-null verse span is not a reference (George round 1, Medium 2)", () => {
+  it.each([
+    ["end verse null", { ...MARK_1_1_8, startVerse: 5, endVerse: null }],
+    ["start verse null", { ...MARK_1_1_8, startVerse: null, endVerse: 5 }],
+  ])("takes the custom flavour with no scope when the %s", (_l, span) => {
+    const doc = buildBundleMetadata(
+      bookInput([seg(1, span, MP3), seg(2, MARK_1_9_13, WAV)]),
+      PROJECT
+    ) as FlavorDoc & {
+      ingredients: Record<string, Record<string, unknown>>;
+    };
+    expect(doc.type.flavorType.name).toBe("parascriptural");
+    expect(doc.type.flavorType).not.toHaveProperty("currentScope");
+    expect(Object.values(doc.ingredients).some((i) => "scope" in i)).toBe(
+      false
+    );
+    expect(validateBundleMetadata(doc)).toEqual([]);
+  });
+});
+
+describe("user strings are NFC, as meta.normalization says (George round 1, Low)", () => {
+  it("normalises the book name, the language name and the tag", () => {
+    const decomposed = "Café"; // e + combining acute
+    const input = {
+      ...bookInput([seg(1, MARK_1_1_8, MP3)], {
+        languageCode: "sw",
+      }),
+      bookName: decomposed,
+      languageName: "Kiswahilí",
+    };
+    const doc = buildBundleMetadata(input, PROJECT) as {
+      identification: { name: { en: string } };
+      languages: { name: { en: string } }[];
+      localizedNames: Record<string, { short: { en: string } }>;
+    };
+    expect(doc.identification.name.en).toBe("Café");
+    expect(doc.languages[0]!.name.en).toBe("Kiswahilí".normalize("NFC"));
+    expect(doc.localizedNames["book-mrk"]!.short.en).toBe("Café");
+  });
+});
+
+describe("exportedAt must be a time", () => {
+  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
+    "throws a named error for %s, in both builders",
+    (exportedAt) => {
+      const input = { ...referencedBook(), exportedAt };
+      expect(() => buildBundleMetadata(input, PROJECT)).toThrow(
+        InvalidExportTimeError
+      );
+      expect(() => buildProjectManifest(input)).toThrow(InvalidExportTimeError);
+    }
+  );
+});
+
+describe("USFM codes and multi-chapter paths", () => {
+  it("USFM_BOOK_CODES equals the vendored schema's bookId enum", () => {
+    const schema = JSON.parse(
+      readFileSync(
+        path.resolve(
+          import.meta.dirname,
+          "fixtures/scripture-bundle/schema-1.0.0/common.schema.json"
+        ),
+        "utf8"
+      )
+    ) as { definitions: { bookId: { enum: string[] } } };
+    expect([...USFM_BOOK_CODES].sort()).toEqual(
+      [...schema.definitions.bookId.enum].sort()
+    );
+  });
+
+  it("numbers a second chapter c002 from its position, not its number", () => {
+    const one = referencedBook();
+    const first = one.chapters[0]!;
+    const second = {
+      chapter: { ...first.chapter, id: "ch-2" as ChapterId, number: 9 },
+      segments: [
+        seg(3, { ...MARK_1_1_8, startChapter: 2, endChapter: 2 }, MP3),
+      ],
+    };
+    const doc = buildBundleMetadata(
+      { ...one, chapters: [first, second] },
+      PROJECT
+    ) as { ingredients: Record<string, unknown> };
+    expect(Object.keys(doc.ingredients)).toContain(
+      "ingredients/audio/c002/s001.mp3"
+    );
+    expect(validateBundleMetadata(doc)).toEqual([]);
   });
 });

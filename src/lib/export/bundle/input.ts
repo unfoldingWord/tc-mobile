@@ -76,3 +76,22 @@ export function segmentIngredientPath(
 }
 
 export const PROJECT_INGREDIENT_PATH = "ingredients/tc-mobile/project.json";
+
+/** `exportedAt` was not a finite epoch-millisecond time. */
+export class InvalidExportTimeError extends Error {
+  constructor(value: number) {
+    super(
+      `exportedAt must be a finite epoch time in milliseconds, got ${value}`
+    );
+    this.name = "InvalidExportTimeError";
+  }
+}
+
+/** The export time as ISO 8601; throws {@link InvalidExportTimeError} if it is not a time. */
+export function exportTimeIso(ms: number): string {
+  const date = new Date(ms);
+  if (!Number.isFinite(ms) || Number.isNaN(date.getTime())) {
+    throw new InvalidExportTimeError(ms);
+  }
+  return date.toISOString();
+}

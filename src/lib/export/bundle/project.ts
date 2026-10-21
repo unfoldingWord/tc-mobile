@@ -6,6 +6,7 @@
  */
 
 import {
+  exportTimeIso,
   missingAudioReason,
   segmentIngredientPath,
   type BundleBookInput,
@@ -66,7 +67,7 @@ export function buildProjectManifest(input: BundleBookInput): ProjectManifest {
   return {
     schemaVersion: PROJECT_SCHEMA_VERSION,
     app: { name: "tC Mobile", version: input.appVersion },
-    exportedAt: new Date(input.exportedAt).toISOString(),
+    exportedAt: exportTimeIso(input.exportedAt),
     book: {
       id: book.id,
       name: book.name,

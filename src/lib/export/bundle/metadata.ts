@@ -5,11 +5,11 @@
  * No zip, no clock, no storage; the caller serialises it and writes it last.
  */
 
-import type { ClipMeta } from "@/types/audio";
 import type { SegmentRef } from "@/types/domain";
 import type { LicenceId } from "@/types/template";
 
 import {
+  exportTimeIso,
   PROJECT_INGREDIENT_PATH,
   segmentIngredientPath,
   type BundleBookInput,
@@ -32,7 +32,7 @@ export type BundleMetadata = Record<string, unknown>;
  * (`common.schema.json` `bookId`, v1.0.0). `OBS` is not one, which is why an
  * Open Bible Stories book takes the custom flavour.
  */
-const USFM_BOOK_CODES: ReadonlySet<string> = new Set(
+export const USFM_BOOK_CODES: ReadonlySet<string> = new Set(
   (
     "GEN EXO LEV NUM DEU JOS JDG RUT 1SA 2SA 1KI 2KI 1CH 2CH EZR NEH EST JOB PSA PRO " +
     "ECC SNG ISA JER LAM EZK DAN HOS JOL AMO OBA JON MIC NAM HAB ZEP HAG ZEC MAL MAT " +
@@ -83,8 +83,40 @@ function copyright(licence: LicenceId | null): Record<string, unknown> {
   };
 }
 
-function isoTime(ms: number): string {
-  return new Date(ms).toISOString();
+/** `meta.normalization` says NFC, so every user string written is made so. */
+function nfc(text: string): string {
+  return text.normalize("NFC");
+}
+
+/**
+ * A span is a reference only when it is complete: both verses set, or both
+ * null (whole chapters). Exactly one null is not a state the template
+ * validator lets in (`lib/templates/validate.ts:127`) though the type allows
+ * it; here it counts as no reference, so it cannot widen to a whole chapter.
+ */
+function completeSpan(span: SegmentRef | null): SegmentRef | null {
+  if (span === null) return null;
+  return (span.startVerse === null) === (span.endVerse === null) ? span : null;
+}
+
+/**
+ * The one sample rate every clip of `encoding` shares, `null` when they
+ * differ, and `undefined` when there are none.
+ */
+function uniformRate(
+  input: BundleBookInput,
+  encoding: "mp3" | "pcm"
+): number | null | undefined {
+  const rates = new Set<number>();
+  for (const c of input.chapters) {
+    for (const s of c.segments) {
+      if (s.audio?.clip.encoding === encoding) {
+        rates.add(s.audio.clip.sampleRate);
+      }
+    }
+  }
+  if (rates.size === 0) return undefined;
+  return rates.size === 1 ? [...rates][0]! : null;
 }
 
 interface Recorded {
@@ -102,26 +134,18 @@ export function buildBundleMetadata(
   project: BundleFileDigest
 ): BundleMetadata {
   const { book } = input;
-  // meta.normalization declares NFC, so the free-text strings are made NFC.
-  const defaultLocale = input.defaultLocale.normalize("NFC");
-  const bookName = input.bookName.normalize("NFC");
-  const exportedAt = isoTime(input.exportedAt);
+  const exportedAt = exportTimeIso(input.exportedAt);
+  const bookName = nfc(input.bookName);
+  const locale = nfc(input.defaultLocale);
 
   const recorded: Recorded[] = [];
   input.chapters.forEach((chapterInput, ci) => {
     chapterInput.segments.forEach((segmentInput, si) => {
       const audio = segmentInput.audio;
       if (audio === null) return;
-      const reference = segmentInput.segment.reference;
       recorded.push({
         ingredient: segmentIngredientPath(ci + 1, si + 1, audio.clip.encoding),
-        // A span with one verse null is outside SegmentSpan's three states;
-        // treated as no reference rather than widened to the whole chapter.
-        scope:
-          reference !== null &&
-          (reference.startVerse === null) === (reference.endVerse === null)
-            ? reference
-            : null,
+        scope: completeSpan(segmentInput.segment.reference),
         entry: {
           checksum: { md5: audio.md5 },
           mimeType: audio.clip.encoding === "mp3" ? "audio/mpeg" : "audio/wav",
@@ -131,26 +155,17 @@ export function buildBundleMetadata(
     });
   });
 
-  // `formats` states one sampling rate per codec, so it is read from the clips;
-  // codecs whose clips disagree cannot be described and take the custom flavour.
-  const rates = new Map<ClipMeta["encoding"], Set<number>>();
-  for (const c of input.chapters) {
-    for (const s of c.segments) {
-      if (s.audio === null) continue;
-      const { encoding, sampleRate } = s.audio.clip;
-      const set = rates.get(encoding) ?? new Set<number>();
-      set.add(sampleRate);
-      rates.set(encoding, set);
-    }
-  }
-  const uniformRates = [...rates.values()].every((set) => set.size === 1);
-
   // ADR 0014 point 2: audioTranslation only when every recorded segment has a
   // reference, all in one USFM book. No recorded segment at all: custom.
   const books = new Set(recorded.map((r) => r.scope?.book ?? null));
   const sole = books.size === 1 ? [...books][0]! : null;
+  const mp3Rate = uniformRate(input, "mp3");
+  const wavRate = uniformRate(input, "pcm");
+  // Every number in `formats` comes from the clips; clips that disagree on a
+  // rate cannot be described by one format entry, so the book is custom.
+  const ratesAgree = mp3Rate !== null && wavRate !== null;
   const usfm =
-    sole !== null && USFM_BOOK_CODES.has(sole) && uniformRates ? sole : null;
+    sole !== null && USFM_BOOK_CODES.has(sole) && ratesAgree ? sole : null;
 
   const ingredients: Record<string, unknown> = {};
   for (const r of recorded) {
@@ -172,24 +187,26 @@ export function buildBundleMetadata(
     const scopes = [
       ...new Set(recorded.map((r) => scopeString(r.scope as SegmentRef))),
     ];
-    // Mono and 16-bit are invariants, not readings: ClipMeta carries neither,
-    // and every clip is stored as mono Int16 PCM (CANONICAL_CHANNELS).
     const formats: Record<string, unknown> = {};
-    const mp3Rate = rates.get("mp3");
+    // Mono and 16-bit are invariants of capture, not measurements: everything
+    // the app stores is mono 16-bit PCM (`lib/audio/format.ts:4`,
+    // `CANONICAL_CHANNELS = 1` at `:16`, `Int16Array` samples in
+    // `types/audio.ts` `Clip`), and the MP3 encoder is built from that PCM with
+    // `CANONICAL_CHANNELS` (`lib/audio/mp3.ts:73`). Only the rate is read from
+    // the clips.
     if (mp3Rate !== undefined) {
       formats.mp3 = {
         compression: "mp3",
         trackConfiguration: "1/0 (Mono)",
-        samplingRate: [...mp3Rate][0]!,
+        samplingRate: mp3Rate,
       };
     }
-    const pcmRate = rates.get("pcm");
-    if (pcmRate !== undefined) {
+    if (wavRate !== undefined) {
       formats.wav = {
         compression: "wav",
         trackConfiguration: "1/0 (Mono)",
         bitDepth: 16,
-        samplingRate: [...pcmRate][0]!,
+        samplingRate: wavRate,
       };
     }
     flavorType = {
@@ -204,7 +221,7 @@ export function buildBundleMetadata(
     };
     extra.localizedNames = {
       [`book-${usfm.toLowerCase()}`]: {
-        short: { [defaultLocale]: bookName },
+        short: { [locale]: bookName },
       },
     };
   } else {
@@ -214,10 +231,10 @@ export function buildBundleMetadata(
     };
   }
 
-  const tag = book.languageCode?.trim() || "und";
-  const languageName =
-    input.languageName?.normalize("NFC") ??
-    (tag === "und" ? "Undetermined" : tag);
+  const tag = nfc(book.languageCode?.trim() || "und");
+  const languageName = nfc(
+    input.languageName ?? (tag === "und" ? "Undetermined" : tag)
+  );
 
   return {
     format: "scripture burrito",
@@ -226,9 +243,9 @@ export function buildBundleMetadata(
       category: "source",
       generator: {
         softwareName: "tC Mobile",
-        softwareVersion: input.appVersion,
+        softwareVersion: nfc(input.appVersion),
       },
-      defaultLocale,
+      defaultLocale: locale,
       dateCreated: exportedAt,
       normalization: "NFC",
     },
@@ -240,11 +257,11 @@ export function buildBundleMetadata(
         // Revision stays "1": nothing stores an export count (ADR 0014 point 5).
         tcmobile: { [book.id]: { revision: "1", timestamp: exportedAt } },
       },
-      name: { [defaultLocale]: bookName },
+      name: { [locale]: bookName },
     },
     confidential: false,
     type: { flavorType },
-    languages: [{ tag, name: { [defaultLocale]: languageName } }],
+    languages: [{ tag, name: { [locale]: languageName } }],
     ...extra,
     copyright: copyright(book.licence),
     ingredients,
