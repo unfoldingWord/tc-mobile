@@ -467,3 +467,18 @@ export function declarationValue(body: string, property: string): string {
   }
   return value;
 }
+
+/**
+ * A shared chapter file's audio: the bytes after its one leading ID3v2 tag
+ * (#252). Throws when the file has no tag, or when the audio after it opens
+ * with a second one, so a suite comparing audio also pins "exactly one tag".
+ */
+export function audioAfterId3v2(file: Uint8Array): Uint8Array {
+  const isTag = (at: number) =>
+    file[at] === 0x49 && file[at + 1] === 0x44 && file[at + 2] === 0x33;
+  if (!isTag(0)) throw new Error("audioAfterId3v2: no ID3v2 tag");
+  const size = (file[6]! << 21) | (file[7]! << 14) | (file[8]! << 7) | file[9]!;
+  const end = 10 + size;
+  if (isTag(end)) throw new Error("audioAfterId3v2: a second ID3v2 tag");
+  return file.subarray(end);
+}

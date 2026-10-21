@@ -27,7 +27,9 @@
  * - **No tag survives into the middle.** A leading ID3v2 tag, a trailing ID3v1
  *   tag and a leading Xing/Info/VBRI metadata frame are dropped; any other
  *   trailing bytes refuse the piece. The joined stream carries no tag at all,
- *   which is what a whole-chapter encode by the same encoder produces too.
+ *   which is what a whole-chapter encode by the same encoder produces too. A
+ *   share puts exactly one tag in front of it afterwards (`id3.ts`, #252), and
+ *   refuses a stream that already has one, so tags never stack.
  *
  * Gaps and the encoder delay. Each piece decodes as
  *

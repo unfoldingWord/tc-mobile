@@ -8,6 +8,7 @@ import { reportFailure } from "@/hooks/report-failure";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { exportBookZip } from "@/lib/export/book";
 import { exportChapterMp3 } from "@/lib/export/chapter";
+import { chapterFileParts } from "@/lib/export/chapter-tag";
 import {
   addChapter,
   addSegment,
@@ -270,7 +271,9 @@ describe("Share Book through the spool is the old archive, byte for byte (#1003)
       if (result === null) continue;
       const entry = new ZipPassThrough(nameChapter(chapter.number));
       zip.add(entry);
-      entry.push(result.mp3, true);
+      // The tag goes in ahead of the MP3, as the export pushes it (#252).
+      const parts = await chapterFileParts(chapter.id, result.mp3);
+      parts.forEach((part, i) => entry.push(part, i === parts.length - 1));
     }
     zip.end();
     return new Uint8Array(await new Blob(parts).arrayBuffer());
