@@ -520,6 +520,7 @@ export function useAudioSession(): UseAudioSession {
       // will not resume a suspended context once the activation is spent.
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
+        reportFailure(cause, "playback-tap-resume");
       });
       // Held across the clip read and decode below, until `playSamples` has
       // taken its own claim: a `devicechange` or a hide in that window only
@@ -872,8 +873,13 @@ export function useAudioSession(): UseAudioSession {
         // Chapter play pauses, keeping its place (#1468; an orchestrator call
         // of 2026-10-19, revisited at the Sprint 6 design pass), BEFORE the
         // drop, so the drop is not left waiting on a chapter. A single take
-        // still keeps playing, as above.
-        chapterPlayer.pause();
+        // still keeps playing, as above. A throw from the pause is reported
+        // and must not skip the drop (#1559).
+        try {
+          chapterPlayer.pause();
+        } catch (cause) {
+          reportFailure(cause, "chapter-play");
+        }
         dropSharedContextWhenIdle();
         return;
       }

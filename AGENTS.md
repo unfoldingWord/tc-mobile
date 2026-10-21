@@ -482,7 +482,12 @@ Play gets a fresh one, a failed `close()` of it, `"playback-context-close"`,
 #1213), the catch sites around it in `hooks/use-audio-session.ts`
 (`"playback-take"`, `"playback-buffer"`, and a segment whose audio is
 missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
-`playSamples` already wrote), a shared context that reports `"running"`
+`playSamples` already wrote), chapter play (`hooks/chapter-player.ts` and
+`hooks/use-chapter-play.ts`, `"chapter-play"`: its playlist read, its hand-offs
+and its in-tap `resumeAudioContext()` rejection, #1468, #1559; the hide-path
+pause is wrapped so a throw is reported under the same context and the context
+drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
+(`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -508,7 +513,7 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-mic/record-start, the in-tap `resumeAudioContext()` calls before Play and
+mic/record-start, the in-tap `resumeAudioContext()` calls on a buffer Play and
 on sheet open (`use-audio-session.ts`), the recorder's preview path, and share _send_
 (`hooks/share-flow.ts`). Routing those is follow-up work — and it is
 not a one-line change, because `SaveFailed` replaces the tree the way the
