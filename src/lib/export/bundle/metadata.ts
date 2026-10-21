@@ -68,15 +68,17 @@ const LICENCE_URLS: Partial<Record<LicenceId, string>> = {
  * ADR 0014 point 6. `licenses` and `shortStatements` are a `oneOf`, so exactly
  * one is ever written.
  *
- * OPEN (#1567, for the requirements owner, Round 5): the row for a book whose
- * licence is `null` ("not chosen yet") or one the app has no URL for. It is
- * written as all rights reserved, the ADR's fallback, until that answer lands.
+ * A book whose licence is `null` or anything but the three CC licences says
+ * "No licence chosen." and nothing more. The DRI's pick, 2026-10-21 (#1567,
+ * after the schema finding that `copyright` is required and needs one of
+ * `licenses`, `shortStatements` or `publicDomain`): "No licence chosen."
+ * This replaces ADR 0014 point 6's all-rights-reserved fallback.
  */
 function copyright(licence: LicenceId | null): Record<string, unknown> {
   const url = licence === null ? undefined : LICENCE_URLS[licence];
   if (url !== undefined) return { licenses: [{ url }] };
   return {
-    shortStatements: [{ statement: "All rights reserved.", lang: "en" }],
+    shortStatements: [{ statement: "No licence chosen." }],
   };
 }
 

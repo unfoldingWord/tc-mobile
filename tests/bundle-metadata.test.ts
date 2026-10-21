@@ -325,14 +325,14 @@ describe("copyright (ADR 0014 point 6): licenses and shortStatements never toget
   });
 
   it.each(["all-rights-reserved", null] as const)(
-    "writes %s as shortStatements (open on #1567 for null)",
+    "writes %s as exactly the statement No licence chosen. (DRI, #1567)",
     (licence) => {
       const doc = buildBundleMetadata(
         bookInput([seg(1, null, MP3)], { licence }),
         PROJECT
       ) as { copyright: unknown };
       expect(doc.copyright).toEqual({
-        shortStatements: [{ statement: "All rights reserved.", lang: "en" }],
+        shortStatements: [{ statement: "No licence chosen." }],
       });
     }
   );
