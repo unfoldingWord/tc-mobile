@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { StoragePressureBanner } from "@/components/storage-pressure-banner";
 import type { StoragePressureNotice } from "@/components/storage-pressure-notice";
 import type { UseLibraryShare } from "@/hooks/use-library-share";
@@ -373,6 +374,7 @@ describe("Books shows the banner where the #247 line was", () => {
     const layers = new Map<string, Layer>();
     return mount(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {

@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { COVER_COLOUR_KEYS } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -98,6 +99,7 @@ async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer,
         popLayer,

@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import {
   createBook,
   deleteBook,
@@ -126,6 +127,7 @@ async function mountShelf(): Promise<BookId> {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {

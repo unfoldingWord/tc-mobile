@@ -12,6 +12,8 @@ import {
 } from "react";
 
 import { AboutPanel } from "./about-panel";
+import { ChapterPlayControl } from "./chapter-play-control";
+import { chapterRowStatus } from "./chapter-row-status";
 import type { LicenseText } from "./licenses";
 import { Control } from "./control";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
@@ -43,6 +45,7 @@ import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookCoverColour } from "@/hooks/use-book-cover-colour";
 import { useBookShare } from "@/hooks/use-book-share";
+import type { ChapterAudio } from "@/hooks/use-audio-session";
 import { useBooks } from "@/hooks/use-books";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import {
@@ -128,6 +131,8 @@ type BooksLayerId =
   | "books:about-text";
 
 interface BooksScreenProps {
+  /** Chapter play (#1469): the row controls' view of the audio session. */
+  audio: ChapterAudio;
   /** Open a chapter's Segments screen. Owned by App (slice 4) for navigation. */
   onOpenChapter: (chapterId: ChapterId) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
@@ -145,6 +150,7 @@ interface BooksScreenProps {
  * because the next thing they do is add a chapter to it.
  */
 export function BooksScreen({
+  audio,
   onOpenChapter,
   pushLayer,
   popLayer,
@@ -166,6 +172,7 @@ export function BooksScreen({
     moveChapter,
     moveBook,
   } = useBooks();
+  const { chapterPlay, stopChapter } = audio;
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
   // as empty would show "start a book" and a live New Book over a shelf that
@@ -725,6 +732,7 @@ export function BooksScreen({
     () => ({
       ...libraryShare,
       prepare: (zipFilename, nameBook, nameChapter) => {
+        stopChapter();
         openLibraryShareLayer();
         return libraryShare.prepare(zipFilename, nameBook, nameChapter);
       },
@@ -733,7 +741,7 @@ export function BooksScreen({
         return libraryShare.send();
       },
     }),
-    [libraryShare, openLibraryShareLayer]
+    [libraryShare, openLibraryShareLayer, stopChapter]
   );
 
   // The global menu's ONE open and ONE close. Every entry point — the ≡, the
@@ -832,14 +840,31 @@ export function BooksScreen({
     // (`use-scroll-to-new.ts`), so it is there for exhaustiveness.
   }, [books, deleteTargetId, newBookSeed, newChapter, rowReveal]);
 
-  const toggle = useCallback((id: BookId) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  // Whether `chapterPlay` is about a chapter of this book (#1469). A row a
+  // collapse hides, or a book a delete removes, must not keep playing under
+  // a screen that no longer shows it; another book's chapter is none of this
+  // book's business.
+  const playsInBook = useCallback(
+    (id: BookId) =>
+      chapterPlay.chapterId !== null &&
+      (books.find((b) => b.bookId === id)?.chapters ?? []).some(
+        (c) => c.chapterId === chapterPlay.chapterId
+      ),
+    [books, chapterPlay.chapterId]
+  );
+
+  const toggle = useCallback(
+    (id: BookId) => {
+      if (expanded.has(id) && playsInBook(id)) stopChapter();
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [expanded, playsInBook, stopChapter]
+  );
 
   // `+` (and the empty state's CTA) no longer create anything: they open the
   // naming dialog first (#314). The field is pre-filled with the placeholder the
@@ -1335,6 +1360,9 @@ export function BooksScreen({
   const onPrepareBookShare = useCallback(() => {
     if (!shareMenuBook) return;
     focusRestore.capture();
+    // A share encodes while the screen is held; a chapter must not keep
+    // playing under it (#1469). After the capture, which has to come first.
+    stopChapter();
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
@@ -1364,6 +1392,7 @@ export function BooksScreen({
     shareMenuBook,
     shareMenuBookName,
     onCloseShareMenu,
+    stopChapter,
   ]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
@@ -1577,6 +1606,9 @@ export function BooksScreen({
     // No share reset here: arming does NOT reset the share (Keep returns to
     // the sheet as it was), so the tail below resets it when it closes the
     // sheet, on either outcome.
+    // Before the first await: the book's chapters are about to go, and the
+    // tap is the moment to end its sound (#1469).
+    if (playsInBook(deleteTargetId)) stopChapter();
     void (async () => {
       const result = await deleteBook(deleteTargetId);
       // A double-tap's second call is refused, not answered: the first delete is
@@ -1617,7 +1649,16 @@ export function BooksScreen({
       // hand-off above still decides where focus lands.
       onCloseShareMenu();
     })();
-  }, [books, deleteBook, deleteTargetId, layers, onCloseShareMenu, rowReveal]);
+  }, [
+    books,
+    deleteBook,
+    deleteTargetId,
+    layers,
+    onCloseShareMenu,
+    playsInBook,
+    rowReveal,
+    stopChapter,
+  ]);
 
   // The delete ask's focus (#980). On the render the ask appears, land on Keep:
   // the sheet's `<Menu>` does not refocus, because it never closed. Again
@@ -1991,6 +2032,7 @@ export function BooksScreen({
               <BookItem
                 key={book.bookId}
                 book={book}
+                audio={audio}
                 onHoldStart={bookGesture.holdStart(index)}
                 lifted={bookDrag?.fromIndex === index}
                 // While a book is lifted: it follows the finger and the books
@@ -2394,6 +2436,8 @@ interface ChapterReorder {
 
 interface BookItemProps {
   book: BookCard;
+  /** Chapter play, for this book's rows (#1469). */
+  audio: ChapterAudio;
   expanded: boolean;
   onToggle: () => void;
   onNewChapter: () => void;
@@ -2425,6 +2469,7 @@ interface BookItemProps {
 
 function BookItem({
   book,
+  audio,
   expanded,
   onToggle,
   onNewChapter,
@@ -2557,6 +2602,7 @@ function BookItem({
             <ChapterItem
               key={chapter.chapterId}
               chapter={chapter}
+              audio={audio}
               onOpen={() => onOpenChapter(chapter.chapterId)}
               guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
@@ -2583,6 +2629,7 @@ function BookItem({
 
 interface ChapterItemProps {
   chapter: ChapterRow;
+  audio: ChapterAudio;
   onOpen: () => void;
   /** This row is the guided step (#604). */
   guided: boolean;
@@ -2601,6 +2648,7 @@ interface ChapterItemProps {
 
 function ChapterItem({
   chapter,
+  audio,
   onOpen,
   guided,
   setNode,
@@ -2610,6 +2658,7 @@ function ChapterItem({
 }: ChapterItemProps) {
   // The passage label the facilitator set (#264), else "Chapter {number}".
   const heading = strings.chapterHeading(chapter.name, chapter.number);
+  const status = chapterRowStatus(audio.chapterPlay, chapter.chapterId);
   return (
     <li
       ref={(el) => setNode(chapter.chapterId, el)}
@@ -2635,13 +2684,31 @@ function ChapterItem({
       >
         <O4ChapterFace chapter={chapter} />
       </button>
+      {/* A sibling of the row button, never inside it: a button in a button is
+          invalid, and a tap or a hold here must not reach the row's open and
+          lift handlers (#1469). It sits over the slot the row's face keeps
+          for it (`books-chapter-go`). */}
+      <ChapterPlayControl
+        heading={heading}
+        recordedCount={chapter.recordedCount}
+        status={status}
+        pausedFraction={audio.chapterPlay.pausedFraction}
+        // Playing and loading pause; every other state plays, which resumes
+        // a paused chapter and retries a failed one (`playChapter`).
+        onPress={() =>
+          status === "playing" || status === "loading"
+            ? audio.pauseChapter()
+            : audio.playChapter(chapter.chapterId)
+        }
+        readProgress={audio.readChapterProgress}
+      />
     </li>
   );
 }
 
 /**
  * The chapter row's face (#942, state 03): the number in a 44 badge, the
- * chapter's title line, one progress dot per segment, and a chevron.
+ * chapter's title line, one progress dot per segment, and the room for the play control.
  *
  * All of it is decoration — the row button's own name (`strings.openChapter`)
  * already carries the heading, typed title included — so each part is
@@ -2685,9 +2752,10 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
           ))}
         </span>
       </span>
-      <span className="books-chapter-go" aria-hidden="true">
-        <Icon name="chevron-right" size={28} />
-      </span>
+      {/* The room the play control takes (#1469): the chevron's slot, now a
+          44px one. Empty on purpose, so the dots' column is derived from a
+          stylesheet width and not from a hand-kept number. */}
+      <span className="books-chapter-go" aria-hidden="true" />
     </>
   );
 }
@@ -2733,10 +2801,11 @@ function dotStates(chapter: ChapterRow): SegmentRowState[] {
  * − 2 × (10 + 1) (`.books-card`'s padding and border)
  * − (12 + 16) (`.books-chapter`'s left and right padding)
  * − 44 (`.books-chapter-num`) − 2 × 14 (the row's two gaps)
- * − 28 (the chevron) = 154. `tests/books-o4.test.ts` re-derives it from the
- * stylesheets.
+ * − 44 (`.books-chapter-go`, the play control's slot, #1469) = 138. It was 154
+ * while a 28px chevron held that slot. `tests/books-o4.test.ts` re-derives it
+ * from the stylesheets.
  */
-const DOT_COLUMN = 154;
+const DOT_COLUMN = 138;
 /** Size/gap steps, largest first (the design reference, §3). */
 const DOT_STEPS: readonly (readonly [number, number])[] = [
   [13, 6],
