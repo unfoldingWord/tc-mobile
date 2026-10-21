@@ -12,6 +12,7 @@ import { PlayheadOverlay } from "@/components/playhead-overlay";
 import { render } from "./render";
 import {
   cssRule,
+  declarationValue,
   region,
   stripComments,
   stripCssComments,
@@ -146,7 +147,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(knob).toMatch(/width:\s*30px/);
     expect(knob).toMatch(/height:\s*56px/);
     expect(knob).toMatch(/border-radius:\s*15px/);
-    expect(knob).toMatch(/background:\s*var\(--s-select\)/);
+    expect(declarationValue(knob, "background")).toBe("var(--s-select)");
   });
 
   it("12 editing: the knob sits at the bar's bottom, not its vertical middle (#1102)", () => {
