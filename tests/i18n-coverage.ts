@@ -103,7 +103,11 @@ export const FUNCTION_ENTRIES = [...SIGNATURES.keys()];
  * strings a sentinel each, booleans in every combination. A type this does not
  * know throws, so a new parameter type cannot slip past unexercised.
  */
-function argVectors(name: string, n: number, distinct = false): unknown[][] {
+export function argVectors(
+  name: string,
+  n: number,
+  distinct = false
+): unknown[][] {
   const types = SIGNATURES.get(name);
   if (!types) throw new Error(`no function entry ${name}`);
   let vectors: unknown[][] = [[]];
@@ -124,7 +128,7 @@ function argVectors(name: string, n: number, distinct = false): unknown[][] {
   return vectors;
 }
 
-function call(table: Strings, name: string, args: unknown[]): string {
+export function call(table: Strings, name: string, args: unknown[]): string {
   const entry = (table as unknown as Record<string, unknown>)[name];
   return (entry as (...a: unknown[]) => string).apply(table, args);
 }
