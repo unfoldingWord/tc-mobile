@@ -788,7 +788,8 @@ names what it leaves undecided where the record shows something.
     - Settles: ADR 0014's Open 2b in part (see the ADR).
     - Answered later by the DRI, 2026-10-21 (Round 5, U1b): for a book whose
       licence is "Other" or not chosen yet, the export copyright is "Say
-      nothing" (ADR 0014 point 6).
+      nothing", carried as the statement "No licence chosen." (the DRI's
+      pick, verbatim: "\"No licence chosen.\""; ADR 0014 point 6).
     - Still open (Round 5, U1a, for the requirements owner): D5-licence's
       option lists "all rights reserved" and S19 lists CC0, CC BY and CC BY-SA
       plus "Other". Whether "Other" is the same as all rights reserved is not

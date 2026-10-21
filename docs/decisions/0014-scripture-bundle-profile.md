@@ -220,17 +220,20 @@ Mapped from the book's licence (the v12 field the storage work adds):
 | CC BY 4.0                                            | `{"licenses": [{"url": "https://creativecommons.org/licenses/by/4.0/"}]}`       |
 | CC0                                                  | `{"licenses": [{"url": "https://creativecommons.org/publicdomain/zero/1.0/"}]}` |
 | All rights reserved                                  | `{"shortStatements": [{"statement": "All rights reserved.", "lang": "en"}]}`    |
-| "Other", or not chosen yet (R20: empty until shared) | no copyright statement: `{"shortStatements": [{"statement": ""}]}` (see below)  |
+| "Other", or not chosen yet (R20: empty until shared) | `{"shortStatements": [{"statement": "No licence chosen."}]}` (see below)        |
 
-**"Other" and "not chosen yet" say nothing.** The DRI decided on 2026-10-21
-(Round 5, U1b: the export copyright for a book whose licence is "Other" or not
-chosen yet), verbatim: "Say nothing". This replaces the earlier assumption that
-such a book is treated as all rights reserved. The schema still requires the
-`copyright` key on a source bundle, and an absent key or `{}` fails it (observed
-by running the pinned schema gate on the audio example). The one shape observed
-to validate with no words in it is a single `shortStatements` entry whose
-`statement` is empty. That carrier is the author's inference from that probe,
-not a decision; the metadata builder confirms it against the gate.
+**"Other" and "not chosen yet" claim no licence.** The DRI decided on
+2026-10-21 (Round 5, U1b: the export copyright for a book whose licence is
+"Other" or not chosen yet), verbatim: "Say nothing". This replaces the earlier
+assumption that such a book is treated as all rights reserved. The schema
+requires the `copyright` key on a source bundle, and an absent key or `{}` fails
+it (observed by running the pinned schema gate on the audio example), so "say
+nothing" needed a carrier. The DRI chose it the same day, verbatim: "\"No
+licence chosen.\"". The row is a `shortStatements` entry whose `statement` is
+"No licence chosen.". It is not an empty string and not "All rights reserved."
+The choice refines "Say nothing": the file claims no licence and no rights
+position, and only says that none was chosen. Whether the entry carries a
+`lang` is not decided.
 
 `licenses` and `shortStatements` are **never both**: the schema is a `oneOf`,
 and the two together fail with `passingSchemas [1,2]` (observed). A full
@@ -391,8 +394,9 @@ This is the document the validation run called `custom-x-tcMobileAudio`.
      and CC BY-SA, and "Other" puts no licence in the file name.
    - **Answered by the DRI, 2026-10-21 (Round 5, U1b):** for a book whose
      licence is "Other" or not chosen yet, the export copyright is "Say
-     nothing". The metadata carries no copyright statement for those books, and
-     point 6's "All rights reserved" fallback is replaced.
+     nothing", carried as a `shortStatements` entry with the statement "No
+     licence chosen." (the DRI's pick, verbatim: "\"No licence chosen.\""). Point
+     6's "All rights reserved" fallback is replaced.
    - **Still open, for the requirements owner (Round 5, U1a):** whether "Other"
      is the same as `all-rights-reserved`, the value the template contract and
      point 6's table carry. S19 lists CC0, CC BY and CC BY-SA plus "Other" and
