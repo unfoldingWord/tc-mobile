@@ -11,6 +11,65 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-21 (day) — Sprint 5 day 3: the 2.0 roadmap and its first waves, Spanish and French AI drafts live on develop, Scripture Bundle export end to end in tests, 39 PRs merged
+
+One coordinator session in orchestrator mode. The tester group ran 1.1.1 today; no device results are recorded here.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **2.0 roadmap** (from the requirements owner's 65 answers): launch waves A–F, accept ADR 0014, put Round 5 to the requirements owner on the project site, and update the sprint goal. Plan: `v2-roadmap-2026-10-21` (coordinator notes, not in the repo). The Sprint 5 milestone description carries the new goal.
+- **Standing direction:** "no need ot wait on me, come to me with strategic questions, but try to handle tactical issues and the review bench so i dont need to handle copy paste or other small tasks." And: "note that technical questions are for me". Technical questions go to the DRI, not the requirements owner.
+- **ADR 0014:** "Accept, Open 1 'no answer by 10-21' (Recommended)".
+- **U1b, the licence statement when none is chosen:** "Say nothing", refined to "\"No licence chosen.\"" because the bundle schema requires a `copyright` object.
+- **U2b:** "we have about and light/dark mode. lets add a settings screen as we will have new settings controls coming soon with v2 im sure". Filed as #1575.
+- **U3:** "we will have to discussi this, make it a question on the review artifact".
+- **U6c:** "Leave them as they are (Recommended)".
+- **Spanish:** "On, in the next tester build (Recommended)".
+- **Languages, standing rule:** "Yes, each goes on like Spanish (Recommended)". An AI draft that passes the machine gates goes live in the next tester build. Production waits for a promotion the DRI approves. Arabic waits for the right-to-left device pass.
+- **#1571 layout:** "Compact header, steps first (Recommended)".
+- **#1570 at the cap:** "Fix + round 5, hard stop (Recommended)".
+- **#1571 past the cap:** "Native apps only, round 6 hard stop (Recommended)". Browser steps are #1589.
+
+### Completed
+
+- **Merged to develop (39):** #1509, #1494, #1497, #1530, #1529, #1535, #1531, #1536 (#38 slice 1), #1534, #1441 (v2 plan), #1533, #1539, #1541, #1540 (#38 slice 2), #1543, #1537, #1544, #1506, #1554, #1555, #1550, #1547, #1561, #1558, #1560, #1563, #1573, #1577, #1553, #1572 (supersedes #1498), #1574, #1576, #1583, #1586, #1570, #1588, #1591, #1571 and #1592.
+- **Translations:**
+  - The locale registry, runtime language choice (ADR 0015) and the machine gates for AI drafts (#1553) are in.
+  - Spanish (#1586) and French (#1592) are AI-drafted and complete on develop. They turn on in the next tester build for a phone set to either language, and production waits for a promotion the DRI approves. No reader of either language has checked any of the text.
+  - #1571's 7 new mic-step sentences broke Spanish coverage in CI. Its head carried Spanish for them, and French carried them when it merged.
+- **Scripture Bundle export, built and tested in Node:**
+  - streaming MD5 (#1530);
+  - metadata against the pinned v1.0.0 schema (#1537, #1574);
+  - the licence tag in file names (#1573) and ID3 tags (#1577, #1583);
+  - the zip writer, read back in a test (#1588).
+  - Not run on a phone.
+- **Audio:** the chapter play queue and hook (#1506, #1550), and play a chapter from its row (#1561). The loudness chain is shared with the phone-check bench (#1576). #1591 reports a rejected resume of the in-tap audio context to the failure log.
+- **Templates:** Open Bible Stories as the first template package (#1533), the package contract v0 (#1539), plan a book from a package (#1554), and create a book from that plan in one transaction (#1558).
+- **Closed:** #1465, #1466, #1471, #1476, #1478, #1479, #1482, #1483, #1484, #1556, #1565, #1566, #1567, #1568, #1587 and #1590. #1565–#1568, #1587 and #1590 were filed today and closed today.
+- **Filed and still open:** #1564 (pending-take lifecycle design note), #1575 (Settings screen), #1578 (installed-web-app mic steps), #1579 (licence follow-ups), #1580, #1582, #1584 (loudness edge cases), #1585, #1589 (browser mic steps), #1594 (English zoom labels promise a visible extent) and #1595 (French Lows from review).
+- **Project site:** Round 5 is on the Review page. The questions the DRI answered today (U1b, U2b, U6a, U6c) are recorded there as final, so the requirements owner does not see them as open. U3 is not final: it is a discussion card for the DRI and the requirements owner.
+
+### Not run
+
+- **The 1.1.1 device check.** No results reached this session. #1518 and #1521 wait on them.
+- **No export, translation, template or play-queue path from today has run on a phone.**
+
+### In progress
+
+- **#1593:** the design note for the #38 slice 3 rebuild (#1546 is parked under its round-7 hard stop). Frank round 3 found that a pending row's stored base clip can be deleted by cleanup. The fix lane widens the clip-keeping rule to pending rows. Earlier rounds added a durable per-take disposition record, with fail-safe keep when the reason is unknown.
+- **#1581** (a contributor's trademark text in `LICENSE`): George round 1 has two Mediums, placement inside the MIT grant and over-broad wording. It needs the DRI's call on legal wording.
+- **#1521** is bench-clean and held for the 1.1.1 device check.
+
+### Next steps
+
+1. Merge #1593 when both lenses are clean at its head, then start rebuild PR 1 (the v13 step and the compatibility rules).
+2. Put #1581's wording to the DRI.
+3. When the 1.1.1 device check passes: merge #1521 and close #1518.
+4. Next language drafts under the standing rule: pt, id, sw, hi, ru, zh-Hans. Arabic waits for the right-to-left device pass.
+5. #1575 Settings and the #1579 Books-shelf item.
+
 ## 2026-10-20 (day) — Sprint 5 day 2: v1.1.1 to TestFlight and the APK for the iOS silent switch, the v12 schema and its write paths on develop, 19 PRs merged
 
 One coordinator session in orchestrator mode.
