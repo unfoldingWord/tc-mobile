@@ -86,8 +86,11 @@ default, the text there says to keep using it.
 
    **Keep only the right file.** A browser may warn that an app file can "harm
    your device". Before a participant chooses to keep it, check that the file
-   the warning names is `app-release.apk` from the releases page. A warning on
-   any other file means stop: do not keep it. <!-- source: docs/tester-install.md
+   the warning names is `app-release.apk` from the releases page. A browser may
+   add a number to a second download of the same file, such as
+   `app-release (1).apk`; that is fine when it came from the releases page. The
+   same name from a chat, an email or another tab is not. A warning on any
+   other file means stop: do not keep it. <!-- source: docs/tester-install.md
    "Android" step 2 (the same guard); gh issue #248, comment 2026-09-24 -->
 
    **In short:** an Android phone opens `app-release.apk` from the newest
