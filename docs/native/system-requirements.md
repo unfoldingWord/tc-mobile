@@ -298,9 +298,12 @@ share step writes a file as well: Share Book builds a zip of chapter MP3s
   draft; the tree does not enforce it).
 - A take stops by itself at 20 minutes and is then saved. A passage longer
   than 20 minutes needs more than one recording; splitting it into segments is
-  the normal way to work. (Sources, the low-memory caveat on that save, and why
-  the listing carries no separate length warning: "Open question 4" above and
-  the facilitator runbook §3. Neither belongs in the listing text.)
+  the normal way to work.
+
+<!-- Not listing text. Sources, the low-memory caveat on that save, and why
+     the listing carries no separate length warning: "Open question 4" above
+     and the facilitator runbook §3. -->
+
 - RAM and processor class: **not stated.** See the open items.
 
 **Web (PWA)**
