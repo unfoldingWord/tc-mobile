@@ -8,7 +8,7 @@ import { LOCALE_OVERRIDES } from "@/lib/i18n/locales";
 import { plural } from "@/lib/plural";
 import { stringsEn, type Strings } from "@/lib/strings";
 
-import { COUNTS, FUNCTION_ENTRIES, argVectors, call } from "./i18n-coverage";
+import { FUNCTION_ENTRIES, argVectors, call, countsFor } from "./i18n-coverage";
 
 /**
  * Machine gates for AI-drafted translations (#1485): a draft that left English
@@ -138,6 +138,8 @@ function draftProblems(
   en: string,
   value: string
 ): string[] {
+  // Legitimate empty output (both heading arguments null) has nothing to check.
+  if (en === "" && value === "") return [];
   return [
     ...englishLeak(tag, key, en, value),
     ...scriptProblems(tag, key, value),
@@ -157,7 +159,7 @@ function tableProblems(tag: string, overrides: Partial<Strings>): string[] {
     } else if (typeof value === "function" && typeof en === "function") {
       // Every count, rendered under its own locale's plural rule, so a defect
       // confined to `two`/`few`/`many` is reached.
-      for (const n of COUNTS) {
+      for (const n of countsFor(tag)) {
         for (const args of argVectors(key, n)) {
           problems.push(
             ...draftProblems(
@@ -329,6 +331,38 @@ describe("i18n draft quality gates (#1485)", () => {
       "shareMissing: leaked null-ish text"
     );
     expect(activeLocale().tag).toBe("en");
+  });
+
+  it("exercises nullable parameters: untranslated fallback fails, translated passes", () => {
+    const bookHeading = (fallback: (n: number) => string): Partial<Strings> =>
+      ({
+        bookHeading: (name: string | null, number: number | null) =>
+          name ?? (number === null ? "" : fallback(number)),
+      }) as unknown as Partial<Strings>;
+    const untranslated = tableProblems(
+      "ar",
+      bookHeading((n) => `Book ${String(n).padStart(3, "0")}`)
+    );
+    expect(untranslated).toContain("bookHeading: equals the English text");
+    expect(
+      tableProblems(
+        "ar",
+        bookHeading((n) => `الكتاب ${String(n).padStart(3, "0")}`)
+      )
+    ).toEqual([]);
+  });
+
+  it("generates null for a nullable parameter and counts for every category", () => {
+    const vectors = argVectors("bookHeading", 3);
+    expect(vectors).toContainEqual([null, null]);
+    expect(vectors).toContainEqual([null, 3]);
+    expect(vectors).toContainEqual(["SENT0", null]);
+    for (const tag of ["en", "ar", "ru", "fr"]) {
+      const rules = new Intl.PluralRules(tag);
+      const reached = new Set(countsFor(tag).map((n) => rules.select(n)));
+      for (let n = 0; n <= 1000; n++)
+        expect(reached).toContain(rules.select(n));
+    }
   });
 
   describe("real tables (green while a table is empty)", () => {
