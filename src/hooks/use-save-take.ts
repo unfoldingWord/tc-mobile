@@ -404,24 +404,27 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     []
   );
 
-  const commit = useCallback(async (take: PendingTake): Promise<boolean> => {
-    // Synchronous, before the first await: this is what a second tap in the
-    // same frame reads. `performSaveTake` runs synchronously up to its own first
-    // await too, so the slot transitions keep their ordering.
-    savingRef.current = true;
-    try {
-      return await performSaveTake(take, {
-        update: writeSlot,
-        onSaved: () => onSavedRef.current?.(),
-        requestSweep: () => void requestTranscodeSweep(),
-      });
-    } finally {
-      // Safe in a `finally` where `setPending(null)` is not: this releases a
-      // guard rather than dropping the samples, and a guard left set would lock
-      // out the retry the failure path exists to offer.
-      savingRef.current = false;
-    }
-  }, [writeSlot]);
+  const commit = useCallback(
+    async (take: PendingTake): Promise<boolean> => {
+      // Synchronous, before the first await: this is what a second tap in the
+      // same frame reads. `performSaveTake` runs synchronously up to its own first
+      // await too, so the slot transitions keep their ordering.
+      savingRef.current = true;
+      try {
+        return await performSaveTake(take, {
+          update: writeSlot,
+          onSaved: () => onSavedRef.current?.(),
+          requestSweep: () => void requestTranscodeSweep(),
+        });
+      } finally {
+        // Safe in a `finally` where `setPending(null)` is not: this releases a
+        // guard rather than dropping the samples, and a guard left set would lock
+        // out the retry the failure path exists to offer.
+        savingRef.current = false;
+      }
+    },
+    [writeSlot]
+  );
 
   /**
    * Persist a recording as an insert/append into the segment's existing audio.
