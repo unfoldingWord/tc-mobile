@@ -11,6 +11,8 @@ its body and empties it.
 
 ## Fixed
 
+- A recording whose save had not finished when the app closed is now saved by itself the next time the app opens; if that save fails, the usual recovery screen appears (#1546)
+
 ## Removed
 
 ## Security
