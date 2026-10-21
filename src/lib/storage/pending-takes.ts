@@ -170,6 +170,12 @@ export function encodePendingBase(
  *
  * `source` is the stored clip behind `existing`, passed only when the buffer
  * is that clip unchanged (see `encodePendingBase`).
+ *
+ * `target` is the take the save replaces (`StoredPendingTake.target`), put in
+ * the same `put` as the row, so no row that survives a kill lacks it. It may be
+ * a read still in flight: it is awaited before this transaction opens, so the
+ * transaction still names `pendingTakes` only. `undefined`, or a read that
+ * rejects, writes the row without it (refused and kept as `no-target`).
  */
 export async function writePendingTake(
   take: NewTake,
@@ -177,6 +183,7 @@ export async function writePendingTake(
     readonly source?: StoredClipSource | null;
     readonly sampleRate?: number;
     readonly now?: number;
+    readonly target?: TakeId | null | Promise<TakeId | null | undefined>;
   } = {}
 ): Promise<PendingWriteResult> {
   let row: StoredPendingTake;
@@ -204,6 +211,19 @@ export async function writePendingTake(
     // is unaffected; the caller reports this.
     return { ok: false, cause };
   }
+
+  // Awaited only when it is a read, so a known value adds no turn before the
+  // transaction opens (a delete called after this must still queue behind it).
+  let target: TakeId | null | undefined;
+  try {
+    target = opts.target instanceof Promise ? await opts.target : opts.target;
+  } catch {
+    // The read of the take this save replaces failed; the caller reports it.
+    // The row is still worth writing: without `target` it is kept and never
+    // saved blind.
+    target = undefined;
+  }
+  if (target !== undefined) row = { ...row, target };
 
   try {
     const db = await getDb();
@@ -287,21 +307,7 @@ export function markPendingRefusal(
   );
 }
 
-/**
- * Record on a row the take its save replaces (`StoredPendingTake.target`),
- * on the same terms as `markPendingRefusal`. Never rejects.
- */
-export function markPendingTarget(
-  segmentId: SegmentId,
-  clipId: ClipId,
-  target: TakeId | null
-): Promise<PendingWriteResult> {
-  return markRow(segmentId, clipId, (held) =>
-    held.target === target ? null : { ...held, target }
-  );
-}
-
-/** The two marks' one transaction; `mark` returns `null` for "already so". */
+/** The mark's one transaction; `mark` returns `null` for "already so". */
 async function markRow(
   segmentId: SegmentId,
   clipId: ClipId,

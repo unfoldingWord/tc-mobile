@@ -12,7 +12,6 @@ import { isMissingSegmentFailure } from "@/lib/storage/stale-target";
 import { deleteClip, newClipId } from "@/lib/storage/clips";
 import {
   deletePendingTake,
-  markPendingTarget,
   writePendingTake,
 } from "@/lib/storage/pending-takes";
 import {
@@ -69,19 +68,20 @@ function reportPendingResult(
  */
 function holdPendingTake(take: PendingTake): Promise<unknown> | null {
   if (pendingGivenUp.has(take.clipId)) return null;
-  const written = writePendingTake(take);
+  // The take this save replaces (`StoredPendingTake.target`), read as the save
+  // begins: this read is asked for before `saveTake`'s transaction, so it
+  // cannot see this take. It rides the row's own put rather than a later mark,
+  // so a row that survives a kill always carries it. A failed read writes the
+  // row without it, which the replay refuses and keeps, never saves blind.
+  const target = getSegment(take.segmentId).then(
+    (s) => s?.activeTakeId ?? null,
+    (cause: unknown) => {
+      reportPendingResult("pending-take-write")({ ok: false, cause });
+      return undefined;
+    }
+  );
+  const written = writePendingTake(take, { target });
   void written.then(reportPendingResult("pending-take-write"));
-  // Then the take this save replaces (`StoredPendingTake.target`), read as the
-  // save begins (after it lands, it names this take: the row reads `"saved"`)
-  // and marked once the write has, since that transaction names `pendingTakes`
-  // only. A row that never gets it is refused and kept, never saved blind.
-  const segment = getSegment(take.segmentId);
-  void Promise.all([segment, written])
-    .then(([s]) =>
-      markPendingTarget(take.segmentId, take.clipId, s?.activeTakeId ?? null)
-    )
-    .catch((cause: unknown) => ({ ok: false, cause }))
-    .then(reportPendingResult("pending-take-write"));
   return written;
 }
 

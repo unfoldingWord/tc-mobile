@@ -35,7 +35,6 @@ import {
   deletePendingTake,
   listPendingTakes,
   markPendingRefusal,
-  markPendingTarget,
   writePendingTake,
 } from "@/lib/storage/pending-takes";
 import { getDb } from "@/lib/storage/db";
@@ -142,10 +141,8 @@ const writeRow = async (
 ): Promise<void> => {
   // The target the hook records: the segment's active take as the save began.
   const target = (await getSegment(take.segmentId))?.activeTakeId ?? null;
-  const written = await writePendingTake(take, opts);
+  const written = await writePendingTake(take, { ...opts, target });
   if (!written.ok) throw written.cause;
-  const marked = await markPendingTarget(take.segmentId, take.clipId, target);
-  if (!marked.ok) throw marked.cause;
 };
 
 const refused = (r: FailureReport[]) =>
@@ -486,6 +483,39 @@ describe("recoverPendingTakes — a row the save hook wrote", () => {
     await vi.waitFor(async () =>
       expect((await rows()).map((r) => r.target)).toEqual([null])
     );
+
+    await launch().run();
+
+    expect(await activeClip(segmentId)).toBe(take.clipId);
+    expect(refused(reports)).toEqual([]);
+  });
+
+  it("puts the target in the row's first write, so a row a kill leaves can still be finished", async () => {
+    // Every value put into `pendingTakes`: a kill can land after any of them,
+    // so each one must be a row the replay will finish.
+    const puts: unknown[] = [];
+    const put = IDBObjectStore.prototype.put;
+    const spy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (this: IDBObjectStore, value, key) {
+        if (this.name === "pendingTakes") puts.push(value);
+        return put.call(this, value, key);
+      });
+    const segmentId = await freshSegment();
+    const take = startSave(null, newTake(segmentId));
+    vi.mocked(saveTake).mockRejectedValueOnce(new Error("killed"));
+    let held: PendingTake | null = take;
+    await performSaveTake(take, {
+      update: (t) => {
+        held = t(held);
+      },
+      requestSweep: () => {},
+    });
+    await vi.waitFor(async () => expect(await rows()).toHaveLength(1));
+    spy.mockRestore();
+
+    expect(puts.length).toBeGreaterThan(0);
+    for (const value of puts) expect(value).toMatchObject({ target: null });
 
     await launch().run();
 
