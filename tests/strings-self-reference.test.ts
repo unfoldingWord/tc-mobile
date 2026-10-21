@@ -34,8 +34,9 @@ import { describe, expect, it } from "vitest";
 
 const FILE = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
 
-/** The module's own functions that carry wording or layout of their own. */
-const HELPERS = new Set(["couldNotBeIncluded", "trail"]);
+/** The module's own functions that carry wording or layout of their own. Empty
+ * since #1481 moved `couldNotBeIncluded` and `trail` into the table. */
+const HELPERS = new Set<string>();
 
 /**
  * The names `strings.ts` imports. Neither carries wording: `plural` picks a
@@ -204,7 +205,7 @@ describe("table entries that reach outside their own arguments (#169)", () => {
 
   it("is exactly the set the per-locale slice has to resolve within its own table", () => {
     expect(refs).toEqual({
-      chapterBreadcrumb: ["trail"],
+      chapterBreadcrumb: ["this.trail"],
       chapterHeading: ["this.chapterName"],
       chapterReorderMoved: ["this.chapterName"],
       chapterReorderStayed: ["this.chapterName"],
@@ -212,23 +213,23 @@ describe("table entries that reach outside their own arguments (#169)", () => {
       editSegmentFinished: ["this.segmentHeading"],
       menuOpenWithFailures: ["this.failuresMarker"],
       openSegment: ["this.segmentHeading"],
-      recorderBreadcrumb: ["this.segmentHeading", "trail"],
+      recorderBreadcrumb: ["this.segmentHeading", "this.trail"],
       saveFailedDiscard: [
         "this.takeRecoverDiscard",
         "this.takeRecoverDiscardArmed",
       ],
       saveFailedDiscardHint: ["this.takeRecoverDiscardHint"],
       shareAllFolder: ["this.shareNameFallback"],
-      shareAllMissing: ["couldNotBeIncluded"],
+      shareAllMissing: ["this.couldNotBeIncluded"],
       shareBookFilename: ["this.shareNameFallback"],
-      shareBookMissing: ["couldNotBeIncluded"],
+      shareBookMissing: ["this.couldNotBeIncluded"],
       shareBookMissingAndPartial: [
-        "couldNotBeIncluded",
+        "this.couldNotBeIncluded",
         "this.shareBookMissing",
       ],
       shareBookPartial: ["this.shareMissing"],
       shareFilename: ["this.chapterName"],
-      shareMissing: ["couldNotBeIncluded"],
+      shareMissing: ["this.couldNotBeIncluded"],
     });
   });
 });
@@ -278,12 +279,10 @@ describe("the reader itself", () => {
   const probe = (body: string) =>
     outwardReferences(`export const stringsEn = {\n${body}\n} as const;`).refs;
 
-  it("sees a call through the binding, and a helper call", () => {
-    expect(
-      probe(
-        "a: (n: number) => `x ${strings.b(n)}`,\nb: (n: number) => trail(`${n}`),"
-      )
-    ).toEqual({ a: ["strings.b"], b: ["trail"] });
+  it("sees a call through the binding", () => {
+    expect(probe("a: (n: number) => `x ${strings.b(n)}`,")).toEqual({
+      a: ["strings.b"],
+    });
   });
 
   it("records a call through this, and does not confuse it with the binding", () => {
