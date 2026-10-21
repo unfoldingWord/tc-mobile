@@ -291,12 +291,14 @@ Shape calls inside that decision (tactical, made here):
   `no-target` and `superseded` (below).
 - **`target` is optional** (#38 slice 3, PR #1546): the segment's active take
   when the save began, which the save replaces (`null` for a first take). The
-  save hook reads it as the save begins and writes it in the row's own put, so
-  a row that outlives a kill carries it. The launch replay
+  write reads it inside its own transaction (over `pendingTakes` and
+  `segments`, opened before `saveTake`'s) and puts it with the row, so a row
+  that outlives a kill carries it, and a delete called after the write always
+  lands after the put. The launch replay
   saves a row, on every attempt including Retry, only while the active take is
   still `target`. A newer save in between means `superseded`: the row is kept
   and marked, never saved over the newer take. A row without `target` (written
-  before it existed, or after the read of the active take failed) is refused and kept as
+  before it existed) is refused and kept as
   `no-target`. No migration.
 - **Not stored:** `state`, `kind`, `attempts`. They describe the current
   session's save attempt, not the audio.

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { getSegment } from "@/lib/storage/books";
 import {
   clearSegmentTake,
   saveReplayedTake,
@@ -68,40 +67,13 @@ function reportPendingResult(
  */
 function holdPendingTake(take: PendingTake): Promise<unknown> | null {
   if (pendingGivenUp.has(take.clipId)) return null;
-  // The take this save replaces (`StoredPendingTake.target`), read as the save
-  // begins: this read is asked for before `saveTake`'s transaction, so it
-  // cannot see this take. It rides the row's own put rather than a later mark,
-  // so a row that survives a kill always carries it. A failed read writes the
-  // row without it, which the replay refuses and keeps, never saves blind.
-  const target = getSegment(take.segmentId).then(
-    (s) => s?.activeTakeId ?? null,
-    (cause: unknown) => {
-      reportPendingResult("pending-take-write")({ ok: false, cause });
-      return undefined;
-    }
-  );
-  const written = writePendingTake(take, { target });
+  // The row carries the take this save replaces, read in the write's own
+  // transaction, which opens before `saveTake`'s and before any delete called
+  // after this (`writePendingTake`).
+  const written = writePendingTake(take);
   void written.then(reportPendingResult("pending-take-write"));
-  const prior = pendingWrites.get(take.clipId);
-  const all = prior ? Promise.all([prior, written]) : written;
-  pendingWrites.set(take.clipId, all);
-  void all.then(() => {
-    if (pendingWrites.get(take.clipId) === all)
-      pendingWrites.delete(take.clipId);
-  });
   return written;
 }
-
-/**
- * Each take's pending-row writes still in flight, by `clipId`.
- *
- * A write handed the `target` read opens its transaction only once that read
- * lands, so a delete called meanwhile (a confirmed Discard) would commit first
- * and then lose to the put, and the next launch would save the discarded take
- * (George, PR #1546 round 6). So `releasePendingTake` waits for these before
- * it deletes. `writePendingTake` never rejects, so neither does the wait.
- */
-const pendingWrites = new Map<ClipId, Promise<unknown>>();
 
 /**
  * Takes whose pending row was given up after a quota failure, by `clipId`.
@@ -134,15 +106,12 @@ function givePendingUp(
 /**
  * Remove a take's pending row once it is no longer pending: the save landed,
  * or the translator confirmed the discard. Conditional on `clipId` in the
- * store, so it never removes a newer take's row. Not awaited either. Chained
- * after this take's writes still in flight (`pendingWrites`), so the delete
- * always lands after their puts.
+ * store, so it never removes a newer take's row. Not awaited either.
  */
 function releasePendingTake(take: PendingTake): void {
-  const writes = pendingWrites.get(take.clipId) ?? Promise.resolve();
-  void writes
-    .then(() => deletePendingTake(take.segmentId, take.clipId))
-    .then(reportPendingResult("pending-take-delete"));
+  void deletePendingTake(take.segmentId, take.clipId).then(
+    reportPendingResult("pending-take-delete")
+  );
 }
 
 /**

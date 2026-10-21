@@ -202,13 +202,38 @@ describe("writePendingTake — get-or-create in one transaction", () => {
     );
   });
 
-  it("asks IndexedDB for pendingTakes only, so saveTake is never queued behind it", async () => {
+  it("reads its target in its own one transaction, over pendingTakes and segments", async () => {
+    // One transaction, so a delete called after it queues behind its put
+    // (George, PR #1546 round 6); `segments`, for the target read.
     const segmentId = await freshSegment();
     const raw = unwrap(await getDb());
     const spy = vi.spyOn(raw, "transaction");
     await writePendingTake(take(segmentId), { now: 1 });
     const scopes = spy.mock.calls.map((call) => [call[0]].flat());
-    expect(scopes).toEqual([["pendingTakes"]]);
+    expect(scopes).toEqual([["pendingTakes", "segments"]]);
+    expect((await onlyRow()).target).toBeNull();
+  });
+
+  it("never fails the save after it when its own put runs out of room", async () => {
+    // What the old pendingTakes-only scope protected: `saveTake` may wait for
+    // this one short transaction, but its quota failure only aborts itself.
+    const segmentId = await freshSegment();
+    const t = take(segmentId);
+    const put = IDBObjectStore.prototype.put;
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+      this: IDBObjectStore,
+      ...args: Parameters<IDBObjectStore["put"]>
+    ) {
+      if (this.name === "pendingTakes") {
+        throw new DOMException("disk full", "QuotaExceededError");
+      }
+      return put.apply(this, args);
+    });
+    const write = writePendingTake(t, { now: 1 });
+    const saved = await saveTake(segmentId, t.clipId, ramp(50), RATE);
+    expect(saved.clipId).toBe(t.clipId);
+    expect((await write).ok).toBe(false);
+    expect(await rows()).toEqual([]);
   });
 
   it("lets a saveTake started while it is still in flight land", async () => {
@@ -321,9 +346,7 @@ describe("listPendingTakes", () => {
 
 describe("loadPendingRecipe — reading a row back", () => {
   const writeAndRead = async (t: NewTake, source: ClipMeta | null = null) => {
-    // The hook writes the take the save replaces with the row; the recipe
-    // tests below are about the base, so any target will do.
-    await writePendingTake(t, { now: 1, source, target: null });
+    await writePendingTake(t, { now: 1, source });
     const row = await onlyRow();
     return row;
   };

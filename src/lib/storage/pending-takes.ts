@@ -22,11 +22,10 @@
  *   - No function here rejects or throws. A failure is returned as a value,
  *     because `lib/` cannot reach the failure log (`hooks/report-failure.ts`);
  *     the hook that calls this reports it.
- *   - Every write and delete asks IndexedDB for `pendingTakes` ONLY. Readwrite
- *     transactions are queued only behind transactions whose store lists
- *     overlap, and `saveTake`'s (`openTakeTx` in `takes.ts`) does not name this
- *     store, so the two run side by side (bar `saveReplayedTake`, which
- *     starts no pending write of its own).
+ *   - The write names `pendingTakes` and `segments` (it reads its `target`
+ *     there), so a `saveTake` called after it waits for that one short
+ *     transaction and no longer; a quota failure of the put aborts only it.
+ *     Every other function here names `pendingTakes` only.
  *   - The caller does not await the write before saving: the hook starts the
  *     write before the commit, and the delete once the save lands or the
  *     translator confirms a discard, and awaits neither.
@@ -61,7 +60,6 @@ import type {
   PendingTakeBase,
   SegmentId,
   StoredPendingTake,
-  TakeId,
 } from "@/types/domain";
 
 /**
@@ -171,11 +169,13 @@ export function encodePendingBase(
  * `source` is the stored clip behind `existing`, passed only when the buffer
  * is that clip unchanged (see `encodePendingBase`).
  *
- * `target` is the take the save replaces (`StoredPendingTake.target`), put in
- * the same `put` as the row, so no row that survives a kill lacks it. It may be
- * a read still in flight: it is awaited before this transaction opens, so the
- * transaction still names `pendingTakes` only. `undefined`, or a read that
- * rejects, writes the row without it (refused and kept as `no-target`).
+ * The row's `target` (the take this save replaces) is read in this same
+ * transaction, over `pendingTakes` and `segments`, and goes into the one put
+ * (George, PR #1546 rounds 5 and 6). Nothing is awaited before it opens but
+ * `getDb()`, so a delete or a newer put called after this one queues behind
+ * it, and a `saveTake` called after it queues on `segments` until it ends, so
+ * the read never sees this save's own take. That wait is one short
+ * transaction: a quota failure here aborts it and the save goes on.
  */
 export async function writePendingTake(
   take: NewTake,
@@ -183,7 +183,6 @@ export async function writePendingTake(
     readonly source?: StoredClipSource | null;
     readonly sampleRate?: number;
     readonly now?: number;
-    readonly target?: TakeId | null | Promise<TakeId | null | undefined>;
   } = {}
 ): Promise<PendingWriteResult> {
   let row: StoredPendingTake;
@@ -212,27 +211,17 @@ export async function writePendingTake(
     return { ok: false, cause };
   }
 
-  // Awaited only when it is a read, so a known value adds no turn before the
-  // transaction opens (a delete called after this must still queue behind it).
-  // While a read is awaited, no transaction is open, so a delete called now
-  // commits first: a caller that passes a read chains its deletes after this
-  // write (`use-save-take.ts`, `pendingWrites`).
-  let target: TakeId | null | undefined;
-  try {
-    target = opts.target instanceof Promise ? await opts.target : opts.target;
-  } catch {
-    // The read of the take this save replaces failed; the caller reports it.
-    // The row is still worth writing: without `target` it is kept and never
-    // saved blind.
-    target = undefined;
-  }
-  if (target !== undefined) row = { ...row, target };
-
   try {
     const db = await getDb();
-    const tx = db.transaction("pendingTakes", "readwrite", DURABILITY);
+    const tx = db.transaction(
+      ["pendingTakes", "segments"],
+      "readwrite",
+      DURABILITY
+    );
     try {
-      const held = await tx.store.get(row.segmentId);
+      const segment = await tx.objectStore("segments").get(row.segmentId);
+      row = { ...row, target: segment?.activeTakeId ?? null };
+      const held = await tx.objectStore("pendingTakes").get(row.segmentId);
       if (
         held &&
         (held.clipId === row.clipId || held.createdAt > row.createdAt)
@@ -240,7 +229,7 @@ export async function writePendingTake(
         await tx.done;
         return { ok: true, outcome: "kept" };
       }
-      await tx.store.put(row);
+      await tx.objectStore("pendingTakes").put(row);
       await tx.done;
       return { ok: true, outcome: "written" };
     } catch (cause) {
