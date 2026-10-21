@@ -11,6 +11,7 @@ import {
   memoryArchiveSink,
 } from "@/lib/export/book";
 import { exportChapterMp3 } from "@/lib/export/chapter";
+import { chapterFileParts } from "@/lib/export/chapter-tag";
 import {
   addChapter,
   addSegment,
@@ -229,7 +230,9 @@ async function oldPathArchive(
     if (result === null) continue;
     const entry = new ZipPassThrough(nameChapter(chapter.number));
     zip.add(entry);
-    entry.push(result.mp3, true);
+    // The tag goes in ahead of the MP3, as the export pushes it (#252).
+    const parts = await chapterFileParts(chapter.id, result.mp3);
+    parts.forEach((part, i) => entry.push(part, i === parts.length - 1));
   }
   zip.end();
   return concat(chunks);
