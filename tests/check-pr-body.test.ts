@@ -444,6 +444,11 @@ describe("checkBody — red, one case per field", () => {
     ["a placeholder", "<none | follows pattern (x) | changes taste (y)>"],
     ["follows pattern with no citation", "follows pattern"],
     ["an unknown state", "mostly none"],
+    ["a TBD citation", "follows pattern (TBD)"],
+    ["an N/A citation", "follows pattern (N/A)"],
+    ["a placeholder citation", "follows pattern (<file>)"],
+    ["a later link", "changes taste (later)"],
+    ["a placeholder link", "changes taste (<link>)"],
   ])("flags Taste impact that is %s", (_l, taste) => {
     const missing = checkBody(body({ taste }));
     expect(missing).toHaveLength(1);

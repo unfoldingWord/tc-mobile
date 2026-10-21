@@ -210,7 +210,15 @@ function doneWhenItems(section) {
 }
 
 const TASTE =
-  /^(?:none|follows pattern\s*\(\s*\S[^)]*\)|changes taste\s*\(\s*\S[^)]*\))\s*\.?$/i;
+  /^(?:none|follows pattern\s*\(([^)]*)\)|changes taste\s*\(([^)]*)\))\s*\.?$/i;
+
+/** A Taste impact of none, or a state whose citation is a real answer. */
+function tasteOk(value) {
+  const m = TASTE.exec((value ?? "").trim());
+  if (m === null) return false;
+  const cite = m[1] ?? m[2];
+  return cite === undefined || isAnswer(cite);
+}
 const NON_EMPTY = ["Changes", "Review evidence", "Device checks"];
 
 /** The list of problems with a body; empty when it is complete. */
@@ -266,7 +274,7 @@ export function checkBody(raw) {
     );
   }
   need(
-    !TASTE.test(fieldValue(own("taste"), "Taste impact:") ?? ""),
+    !tasteOk(fieldValue(own("taste"), "Taste impact:")),
     "Taste: `Taste impact:` needs none, follows pattern (citation) or changes taste (link)"
   );
   for (const label of ["Reuse", "Production lines", "File size"]) {
