@@ -125,6 +125,39 @@ describe("PermissionPanel settings steps (#1569)", () => {
     expect(panel().querySelector(".o4-err-steps")).toBeNull();
   });
 
+  it("steps mode: compact header, and the long sentence is absent", () => {
+    const sentence = strings.micOsBlocked;
+    const container = render(
+      createElement(PermissionPanel, {
+        message: sentence,
+        onRetry: () => {},
+        onBack: () => {},
+        settingsPlatform: "ios-safari",
+      })
+    );
+    const head = one(container, ".o4-err-head");
+    expect(head.querySelector(".o4-err-circle--compact")).not.toBeNull();
+    expect(one(head, '[role="alert"]').textContent).toBe(strings.micOffTitle);
+    expect(container.textContent).not.toContain(sentence);
+    expect(container.querySelector(".o4-err-sub")).toBeNull();
+  });
+
+  it("first refusal keeps the old layout: big circle, sentence under the title", () => {
+    const sentence = strings.micOsBlocked;
+    const container = render(
+      createElement(PermissionPanel, {
+        message: sentence,
+        onRetry: () => {},
+        onBack: () => {},
+        settingsPlatform: null,
+      })
+    );
+    expect(container.querySelector(".o4-err-head")).toBeNull();
+    expect(container.querySelector(".o4-err-circle--compact")).toBeNull();
+    expect(one(container, ".o4-err-sub").textContent).toBe(sentence);
+    expect(one(container, '[role="alert"]').textContent).toContain(sentence);
+  });
+
   it("keeps the steps outside the alert and Retry and Back present", () => {
     const container = panel("android-app");
     const alert = one(container, '[role="alert"]');

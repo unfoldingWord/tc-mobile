@@ -55,13 +55,16 @@ test("the second-refusal steps leave Retry and Back on screen and scrollable", a
   await expect(retry).toBeVisible();
   // First refusal: the panel as it always was.
   await expect(page.locator(".o4-err-steps")).toHaveCount(0);
+  await expect(page.locator(".o4-err-title")).toContainText(
+    "Your device is not letting the app use the microphone"
+  );
 
   await retry.click();
   const steps = page.locator(".o4-err-steps li");
   await expect(steps).toHaveCount(4);
-  await expect(page.locator(".o4-err-title")).toContainText(
-    "Your device is not letting the app use the microphone"
-  );
+  // The steps showing: the compact header, and the long sentence is gone.
+  await expect(page.locator(".o4-err-head")).toBeVisible();
+  await expect(page.locator(".o4-err-title")).toHaveText("Microphone is off");
 
   const viewport = page.viewportSize()!;
   for (const control of [retry, back]) {
@@ -78,13 +81,12 @@ test("the second-refusal steps leave Retry and Back on screen and scrollable", a
     await page.screenshot({ path: process.env.MIC_STEPS_SHOT });
   }
 
-  // The last step can be brought into view by scrolling the panel's body,
-  // and doing so does not move Retry or Back.
-  const before = (await retry.boundingBox())!;
-  await steps.last().scrollIntoViewIfNeeded();
-  const lastBox = (await steps.last().boundingBox())!;
-  expect(lastBox.y).toBeGreaterThanOrEqual(0);
-  expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(viewport.height);
-  const after = (await retry.boundingBox())!;
-  expect(after.y).toBe(before.y);
+  // All four steps are on screen WITHOUT scrolling, above Retry. Scrolling
+  // the body stays as a fallback for a shorter screen.
+  const retryTop = (await retry.boundingBox())!.y;
+  for (let i = 0; i < 4; i++) {
+    const box = (await steps.nth(i).boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(retryTop);
+  }
 });

@@ -106,21 +106,43 @@ export function PermissionPanel({
   return (
     <div className="o4-err o4-err-split flex flex-1 flex-col items-center px-[22px] text-center">
       <div className="o4-err-body">
-        <span
-          className="o4-err-circle o4-err-circle--denied"
-          aria-hidden="true"
-        >
-          <Icon name="mic" size={58} />
-        </span>
-        {/* D15 (#948): the title is always "Microphone is off", and the
+        {settingsPlatform !== null ? (
+          // The steps are showing (#1569): a compact header, the circle shrunk
+          // to a small icon beside the title, and no refusal sentence. The
+          // steps say what to do, and the title alone keeps the alert's
+          // meaning, so nothing is held back for screen readers.
+          <div className="o4-err-head">
+            <span
+              className="o4-err-circle o4-err-circle--denied o4-err-circle--compact"
+              aria-hidden="true"
+            >
+              <Icon name="mic" size={26} />
+            </span>
+            <p role="alert" className="o4-err-title text-ink">
+              {strings.micOffTitle}
+            </p>
+          </div>
+        ) : (
+          <>
+            <span
+              className="o4-err-circle o4-err-circle--denied"
+              aria-hidden="true"
+            >
+              <Icon name="mic" size={58} />
+            </span>
+            {/* D15 (#948): the title is always "Microphone is off", and the
           recorder's refusal sentence, when there is one, is a second line
           under it. The sentence sits INSIDE the alert `<p>` because it is
           the part the async permission refine updates in place, so it must
           stay in the live region; the buttons stay outside it (#276). */}
-        <p role="alert" className="o4-err-title text-ink">
-          {strings.micOffTitle}
-          {message !== null && <span className="o4-err-sub">{message}</span>}
-        </p>
+            <p role="alert" className="o4-err-title text-ink">
+              {strings.micOffTitle}
+              {message !== null && (
+                <span className="o4-err-sub">{message}</span>
+              )}
+            </p>
+          </>
+        )}
         {settingsPlatform !== null && (
           <ol className="o4-err-steps" aria-label={strings.micStepsLabel}>
             {micSettingsSteps(settingsPlatform).map((step) => (
