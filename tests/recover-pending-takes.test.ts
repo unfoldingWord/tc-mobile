@@ -594,9 +594,9 @@ describe("recoverPendingTakes — a Discard while the target read is slow (Georg
     const update = (t: (h: PendingTake | null) => PendingTake | null) => {
       held = t(held);
     };
-    expect(await performSaveTake(take, { update, requestSweep: () => {} })).toBe(
-      false
-    );
+    expect(
+      await performSaveTake(take, { update, requestSweep: () => {} })
+    ).toBe(false);
 
     // The translator confirms Discard; then the read lands.
     await performDiscardTake(held, update);
