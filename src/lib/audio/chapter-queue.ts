@@ -24,8 +24,10 @@
  * moves mid-clip the hook must call `supersede()` (or `pause()`/`stop()`),
  * which stops the sound at once. A resume is a fresh claim, which the hook
  * swaps in before calling `resume()`. A seam that throws outside `load`/`play`
- * (`onFailure`, `wait`, `isCurrent`, `release`) rejects the run promise with
- * that cause after stopping the sound and releasing the floor at most once.
+ * (`onFailure`, `wait`, `isCurrent`, `release`, a handle's `stop`) rejects the
+ * run promise with that cause after stopping the sound and releasing the floor
+ * at most once — including a `release` thrown from `pause()` or `stop()`, which
+ * return normally and leave that rejection as the error's one channel.
  *
  * Which segments belong to a chapter is the caller's accessor
  * (`chapter.segmentIds` today). `buildChapterPlaylist` is the one place that
@@ -118,7 +120,10 @@ export interface ChapterQueueDeps<Samples = Int16Array> {
   wait: (ms: number) => Promise<void>;
   /** False once anything else has taken the floor. */
   isCurrent: () => boolean;
-  /** Give the floor back. Called when the queue is done with it. */
+  /**
+   * Give the floor back. Called when the queue is done with it. Must not call
+   * back into this queue: a `play()` from inside it would orphan the run.
+   */
   release: () => void;
   /** One clip could not be loaded or played; it is skipped. Once per clip. */
   onFailure: (segmentId: SegmentId, cause: unknown) => void;
@@ -200,7 +205,11 @@ export function createChapterQueue<Samples = Int16Array>(
   let anyPlayed = false;
   let failed = 0;
   const reported = new Set<SegmentId>();
-  let haltRun: ((o: ChapterQueueOutcome) => void) | null = null;
+  /** Settles the active run from outside the loop (pause, stop, supersede). */
+  let haltRun: {
+    resolve: (o: ChapterQueueOutcome) => void;
+    reject: (cause: unknown) => void;
+  } | null = null;
   /** The active run's promise; null when idle or paused. */
   let run: Promise<ChapterQueueOutcome> | null = null;
   let wake: (() => void) | null = null;
@@ -250,13 +259,33 @@ export function createChapterQueue<Samples = Int16Array>(
     runId++;
     const halt = haltRun;
     reset();
-    halt?.("superseded");
+    halt?.resolve("superseded");
+  }
+
+  /**
+   * Give the floor back for pause/stop, then settle the halted run. Their
+   * `runId++` has already cut the loop off, so if `release` throws, the run
+   * promise is the only place left to report it: it rejects with the cause,
+   * and the hook that awaits it reports it (lib/ has no funnel of its own).
+   */
+  function releaseAndSettle(
+    halt: typeof haltRun,
+    outcome: ChapterQueueOutcome
+  ): void {
+    try {
+      deps.release();
+    } catch (cause) {
+      if (!halt) throw cause;
+      halt.reject(cause);
+      return;
+    }
+    halt?.resolve(outcome);
   }
 
   function begin(from: QueuePosition): Promise<ChapterQueueOutcome> {
     const id = ++runId;
     const p = new Promise<ChapterQueueOutcome>((resolve, reject) => {
-      haltRun = resolve;
+      haltRun = { resolve, reject };
       loop(id, from).then(
         (outcome) => {
           // A run that was halted from outside has already resolved.
@@ -269,20 +298,28 @@ export function createChapterQueue<Samples = Int16Array>(
           // `reset()` runs before the final release, so a throwing release
           // is not called twice.
           const held = phase !== "idle";
-          handle?.stop();
+          const faults: unknown[] = [cause];
+          try {
+            handle?.stop();
+          } catch (stopCause) {
+            faults.push(stopCause);
+          }
           reset();
-          let fault = cause;
           if (held) {
             try {
               deps.release();
             } catch (releaseCause) {
-              fault = new AggregateError(
-                [cause, releaseCause],
-                "chapter queue: a seam threw, then release threw"
-              );
+              faults.push(releaseCause);
             }
           }
-          reject(fault);
+          reject(
+            faults.length === 1
+              ? cause
+              : new AggregateError(
+                  faults,
+                  "chapter queue: a seam threw, then cleanup threw"
+                )
+          );
         }
       );
     });
@@ -337,7 +374,15 @@ export function createChapterQueue<Samples = Int16Array>(
         offset = 0;
         continue;
       }
-      if (halted()) {
+      let stale: boolean;
+      try {
+        stale = halted();
+      } catch (cause) {
+        // `h` is not `handle` yet, so the fault path cannot reach it.
+        h.stop();
+        throw cause;
+      }
+      if (stale) {
         h.stop();
         return null;
       }
@@ -402,8 +447,7 @@ export function createChapterQueue<Samples = Int16Array>(
       phase = "paused";
       pausedAt = pos;
       pausedFraction = fraction;
-      deps.release();
-      halt?.("paused");
+      releaseAndSettle(halt, "paused");
       return pos;
     },
 
@@ -423,8 +467,8 @@ export function createChapterQueue<Samples = Int16Array>(
       const halt = haltRun;
       wake?.();
       reset();
-      if (!wasPaused) deps.release();
-      halt?.("stopped");
+      if (wasPaused) halt?.resolve("stopped");
+      else releaseAndSettle(halt, "stopped");
     },
 
     supersede() {

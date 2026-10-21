@@ -451,6 +451,123 @@ describe("createChapterQueue", () => {
     expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
   });
 
+  it("a throwing release in pause() rejects the run instead of stranding it", async () => {
+    const h = harness();
+    const boom = new Error("release");
+    let releases = 0;
+    const q = createChapterQueue(entries(["a", 4], ["b", 1]), {
+      ...h.deps,
+      release: () => {
+        releases++;
+        throw boom;
+      },
+    });
+    const settled = q.play().then(
+      () => "resolved",
+      (e: unknown) => e
+    );
+    await flush();
+    nth(h.plays, 0).elapsed = 1;
+    expect(q.pause()).toEqual({ index: 0, offsetSeconds: 1 });
+    expect(await Promise.race([settled, flush().then(() => "pending")])).toBe(
+      boom
+    );
+    expect(releases).toBe(1);
+    expect(q.state()).toBe("paused");
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("a throwing release in stop() rejects the run instead of stranding it", async () => {
+    const h = harness();
+    const boom = new Error("release");
+    let releases = 0;
+    const q = createChapterQueue(entries(["a", 4], ["b", 1]), {
+      ...h.deps,
+      release: () => {
+        releases++;
+        throw boom;
+      },
+    });
+    const settled = q.play().then(
+      () => "resolved",
+      (e: unknown) => e
+    );
+    await flush();
+    q.stop();
+    expect(await Promise.race([settled, flush().then(() => "pending")])).toBe(
+      boom
+    );
+    expect(releases).toBe(1);
+    expect(nth(h.plays, 0).stops).toBe(1);
+    expect(q.state()).toBe("idle");
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("a throwing hand-off guard still stops the clip that just arrived", async () => {
+    const h = harness();
+    const arrive = deferred<QueueHandle>();
+    const stops: number[] = [];
+    const handle: QueueHandle = { stop: () => stops.push(1), elapsed: () => 0 };
+    const boom = new Error("token");
+    let guardThrows = false;
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      play: () => arrive.promise,
+      isCurrent: () => {
+        if (guardThrows) throw boom;
+        return true;
+      },
+    });
+    const run = q.play();
+    const settled = expect(run).rejects.toBe(boom);
+    await flush();
+    guardThrows = true;
+    arrive.resolve(handle);
+    await settled;
+    expect(stops).toHaveLength(1);
+    expect(q.state()).toBe("idle");
+  });
+
+  it("a throwing stop in the fault path still settles the run", async () => {
+    const h = harness();
+    const boom = new Error("token");
+    const stopCause = new Error("stop");
+    let guardThrows = false;
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      play: (samples, offset, onEnded) => {
+        const real = h.deps.play(samples, offset, onEnded) as QueueHandle;
+        return {
+          ...real,
+          stop: () => {
+            real.stop();
+            throw stopCause;
+          },
+        };
+      },
+      isCurrent: () => {
+        if (guardThrows) throw boom;
+        return true;
+      },
+    });
+    const settled = q.play().then(
+      () => "resolved",
+      (e: unknown) => e
+    );
+    await flush();
+    guardThrows = true;
+    nth(h.plays, 0).end();
+    const fault = await Promise.race([settled, flush().then(() => "pending")]);
+    expect(fault).toBeInstanceOf(AggregateError);
+    expect((fault as AggregateError).errors).toEqual([boom, stopCause]);
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+  });
+
   it("play() during a run returns that run, not a false 'stopped'", async () => {
     const h = harness();
     const q = createChapterQueue(entries(["a", 1]), h.deps);
