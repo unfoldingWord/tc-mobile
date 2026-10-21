@@ -20,13 +20,15 @@ import { describe, expect, it } from "vitest";
  *   - JSX text, whitespace collapsed;
  *   - a JSX child expression (`{"Share"}`, `{busy ? "Saving" : x}`);
  *   - the value of every JSX attribute, unless its name is on `NON_UI_PROPS`
- *     below or starts with `data-`;
+ *     below or starts with `data-`; a component enum (`ENUM_PROPS`) is read
+ *     only when its value has a space in it;
  *   - the value of an object-literal property whose key reads as visible
  *     (`label`, `title`, `*Label`, …), the shape a menu item list takes.
  *
  * Only the strings an expression can RESULT in are read: a literal, a
- * template's fixed text, both arms of `?:`, and the operands of `??`, `||` and
- * `&&` that can be its value. A literal that is compared (`x === "line"`) or
+ * template's fixed text, an array literal's elements, both arms of `?:`, both
+ * operands of `+`, and the operands of `??`, `||` and `&&` that can be its
+ * value. A literal that is compared (`x === "line"`) or
  * passed as an argument (`restartLabel("cutAudio", true)`) is not a result,
  * so it is not read. Comments are not nodes, so no prose can satisfy or trip
  * this. A string with no letter in it (`·`, `/`, `,`) passes: a symbol is not
@@ -119,12 +121,28 @@ const NON_UI_PROPS: ReadonlyMap<string, string> = new Map([
     "aria-live",
     "aria-current",
   ].map((name) => [name, "an HTML or ARIA keyword"] as const),
-  // This app's component enums: an icon name, a tone, a variant or a state
-  // token that a component maps to a glyph or a class, never to words.
-  ...["icon", "ctaIcon", "glyph", "name", "tone", "variant", "current"].map(
-    (name) => [name, "a component enum, mapped to a glyph or a class"] as const
-  ),
 ]);
+
+/**
+ * This app's component enums: an icon name, a tone, a variant or a state
+ * token that a component maps to a glyph or a class, never to words. `name`
+ * is one only on `<Icon>`: `O4BookHead` and `O4BookDeleteAsk` render their
+ * `name` as text. A value with a space in it is still flagged, because
+ * `book-open` is a token and `Close menu` is not.
+ */
+const ENUM_PROPS: ReadonlySet<string> = new Set([
+  "icon",
+  "ctaIcon",
+  "glyph",
+  "tone",
+  "variant",
+  "current",
+]);
+const TAG_ENUM_PROPS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["Icon", new Set(["name"])],
+]);
+const isEnumProp = (tag: string, name: string): boolean =>
+  ENUM_PROPS.has(name) || TAG_ENUM_PROPS.get(tag)?.has(name) === true;
 
 /**
  * Names that read as visible. Used for object-literal keys, and to prove that
@@ -145,24 +163,26 @@ const VISIBLE_EXACT = new Set([
   "headline",
   "text",
   "children",
+  // `dangerouslySetInnerHTML={{ __html: … }}` puts this value on screen.
+  "__html",
 ]);
 const VISIBLE_SUFFIX = /(Label|Title|Text|Caption|Headline|Heading)$/;
 const readsVisible = (name: string): boolean =>
   VISIBLE_EXACT.has(name) || VISIBLE_SUFFIX.test(name);
 
 /**
- * Literals that stay, each with the reason it is not copy. Keyed by file and
- * value, so an entry covers one string in one file and a second copy
- * elsewhere still fails. An entry that no longer matches anything fails too
+ * Literals that stay, each with the reason it is not copy. Keyed by file,
+ * place (`text`, or the prop's name) and value, so an entry covers one string
+ * in one place in one file and a second copy elsewhere still fails. An entry that no longer matches anything fails too
  * (see the tree test), so this list cannot outlive what it excuses.
  */
 const ALLOWED: ReadonlyMap<string, string> = new Map([
   [
-    "src/components/build-stamp.tsx: v",
+    "src/components/build-stamp.tsx: text: v",
     "the version prefix in the tester build stamp (`v1.1.0 · abc1234`); the footer is aria-hidden and the stamp is a technical identifier, not a sentence",
   ],
   [
-    "src/components/about-panel.tsx: unfoldingWord/tc-mobile",
+    "src/components/about-panel.tsx: text: unfoldingWord/tc-mobile",
     "the source repository's path, a proper name shown as link text; the link's spoken name is `strings.aboutVisitAppSource`",
   ],
 ]);
@@ -191,8 +211,17 @@ function resultStrings(node: ts.Expression): string[] {
   if (ts.isConditionalExpression(node)) {
     return [...resultStrings(node.whenTrue), ...resultStrings(node.whenFalse)];
   }
+  if (ts.isArrayLiteralExpression(node)) {
+    // React renders each element of an array child.
+    return node.elements.flatMap((el) =>
+      resultStrings(ts.isSpreadElement(el) ? el.expression : el)
+    );
+  }
   if (ts.isBinaryExpression(node)) {
     const op = node.operatorToken.kind;
+    if (op === ts.SyntaxKind.PlusToken) {
+      return [...resultStrings(node.left), ...resultStrings(node.right)];
+    }
     if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
       return resultStrings(node.right);
     }
@@ -222,6 +251,7 @@ function visibleLiterals(source: ts.SourceFile): Finding[] {
       add(node, "text", [node.text]);
     } else if (ts.isJsxAttribute(node)) {
       const name = node.name.getText(source);
+      const tag = node.parent.parent.tagName.getText(source);
       const init = node.initializer;
       if (
         init !== undefined &&
@@ -230,7 +260,14 @@ function visibleLiterals(source: ts.SourceFile): Finding[] {
       ) {
         const value = ts.isJsxExpression(init) ? init.expression : init;
         if (value !== undefined && !ts.isJsxElement(value)) {
-          add(node, name, resultStrings(value as ts.Expression));
+          const values = resultStrings(value as ts.Expression);
+          add(
+            node,
+            name,
+            isEnumProp(tag, name)
+              ? values.filter((v) => /\s/.test(v.trim()))
+              : values
+          );
         }
       }
     } else if (
@@ -306,8 +343,26 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
     expect(probe(`<Confirm confirmLabel={x ?? "Delete"} />`)).toEqual([
       "confirmLabel: Delete",
     ]);
+    expect(probe(`<p>{x || "Saving"}</p>`)).toEqual(["child: Saving"]);
     // Deny by default: a visible prop with a name no list knows still fails.
     expect(probe(`<Toast message="Hello" />`)).toEqual(["message: Hello"]);
+    // `name` is an enum on `<Icon>` only; `O4BookHead` renders it as text.
+    expect(probe(`<O4BookHead name="Untitled" />`)).toEqual([
+      "name: Untitled",
+    ]);
+    // A component enum with a space in it is words, not a token.
+    expect(probe(`<Control icon="Close menu" />`)).toEqual([
+      "icon: Close menu",
+    ]);
+  });
+
+  it("flags an array element, a `+` operand and inner HTML", () => {
+    expect(probe(`<p>{["Share"]}</p>`)).toEqual(["child: Share"]);
+    expect(probe(`<p>{c ? ["Share"] : null}</p>`)).toEqual(["child: Share"]);
+    expect(probe(`<p>{"Share " + n}</p>`)).toEqual(["child: Share"]);
+    expect(probe(`<p dangerouslySetInnerHTML={{ __html: "Share" }} />`)).toEqual(
+      ["__html: Share"]
+    );
     expect(probe(`<Menu items={[{ label: "Share", href: "/s" }]} />`)).toEqual([
       "label: Share",
     ]);
@@ -330,7 +385,11 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
   });
 
   it("cannot put a visible name on the non-UI list", () => {
-    const leaks = [...NON_UI_PROPS.keys()].filter(readsVisible);
+    const leaks = [
+      ...NON_UI_PROPS.keys(),
+      ...ENUM_PROPS,
+      ...[...TAG_ENUM_PROPS.values()].flatMap((names) => [...names]),
+    ].filter(readsVisible);
     expect(leaks).toEqual([]);
     for (const name of ["aria-label", "title", "alt", "placeholder", "label"]) {
       expect(readsVisible(name)).toBe(true);
@@ -358,7 +417,7 @@ describe("no visible literal in app/, components/ or hooks/ (#1483 slice 3)", ()
       const rel = path.relative(ROOT, file).split(path.sep).join("/");
       const source = parseTsx(file, readFileSync(file, "utf8"));
       for (const { line, where, value } of visibleLiterals(source)) {
-        const key = `${rel}: ${value}`;
+        const key = `${rel}: ${where}: ${value}`;
         if (ALLOWED.has(key)) {
           used.add(key);
           continue;
