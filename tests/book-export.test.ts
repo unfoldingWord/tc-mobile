@@ -21,7 +21,7 @@ import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
 import { getDb } from "@/lib/storage/db";
 import type { BookId } from "@/types/domain";
-import { clearAllStores, testCodec } from "./support";
+import { audioAfterId3v2, clearAllStores, testCodec } from "./support";
 
 const samples = (n: number, value: number): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -126,7 +126,9 @@ describe("exportBookZip", () => {
     const { chapters } = await resolveBookChapters(bookId);
     for (const chapter of chapters) {
       const solo = await chapterExport.exportChapterMp3(chapter.id, codec);
-      expect(entries[nameChapter(chapter.number)]).toEqual(solo!.mp3);
+      expect(audioAfterId3v2(entries[nameChapter(chapter.number)]!)).toEqual(
+        solo!.mp3
+      );
     }
   });
 
@@ -478,7 +480,9 @@ describe("exportBookZip — Finished chapters are joined, not re-encoded (#1004)
     const { chapters } = await resolveBookChapters(bookId);
     for (const chapter of chapters) {
       const solo = await chapterExport.exportChapterMp3(chapter.id, codec);
-      expect(entries[nameChapter(chapter.number)]).toEqual(solo!.mp3);
+      expect(audioAfterId3v2(entries[nameChapter(chapter.number)]!)).toEqual(
+        solo!.mp3
+      );
     }
     expect(codec.encodeMp3).not.toHaveBeenCalled();
   });
@@ -520,8 +524,14 @@ describe("exportBookZip after a chapter move (#953)", () => {
       "Chapter 3.mp3",
     ]);
     // Each name now holds the audio of the chapter that moved into that slot.
-    expect(entries["Chapter 1.mp3"]).toEqual(solo.get(before[2]!.id));
-    expect(entries["Chapter 2.mp3"]).toEqual(solo.get(before[0]!.id));
-    expect(entries["Chapter 3.mp3"]).toEqual(solo.get(before[1]!.id));
+    expect(audioAfterId3v2(entries["Chapter 1.mp3"]!)).toEqual(
+      solo.get(before[2]!.id)
+    );
+    expect(audioAfterId3v2(entries["Chapter 2.mp3"]!)).toEqual(
+      solo.get(before[0]!.id)
+    );
+    expect(audioAfterId3v2(entries["Chapter 3.mp3"]!)).toEqual(
+      solo.get(before[1]!.id)
+    );
   });
 });

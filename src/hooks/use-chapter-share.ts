@@ -7,6 +7,7 @@ import {
   useShareFlow,
 } from "./share-flow";
 import { exportChapterMp3, withEncodeSteps } from "@/lib/export/chapter";
+import { chapterFileParts } from "@/lib/export/chapter-tag";
 import { highestChapterNumber } from "@/lib/storage/books";
 import type { ChapterId } from "@/types/domain";
 
@@ -83,8 +84,11 @@ export function useChapterShare(): UseChapterShare {
             // The width of the chapter's number comes from its whole book
             // (#1233), so this file is named as Share Book would name it.
             const highest = await highestChapterNumber(chapterId);
+            // The ID3 tag (#252) and the MP3 go into the File as two parts,
+            // so the MP3 is not copied.
+            const parts = await chapterFileParts(chapterId, result.mp3);
             if (!isCurrent()) return null;
-            const file = new File([result.mp3], nameFile(highest), {
+            const file = new File(parts, nameFile(highest), {
               type: "audio/mpeg",
             });
             return { file, missing: result.missing };

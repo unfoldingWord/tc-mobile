@@ -138,7 +138,7 @@ describe("the report's DSP section", () => {
       "  - Stages: high-pass 400 ms, K-weight 300 ms, true peak 600 ms, gain under 1 ms, limiter 700 ms",
       "- Working set: 300.0 KB",
       "- Output checksum: cold 1234abcd, warm 1234abcd",
-      "- Measured: -24.3 LUFS ungated, true peak -3.5 dBTP, gain +5.3 dB, limiter at most 1.5 dB",
+      "- Measured: -24.3 LUFS integrated, true peak -3.5 dBTP, gain +5.3 dB, limiter at most 1.5 dB",
     ]);
   });
 

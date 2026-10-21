@@ -201,7 +201,7 @@ function dspLines(dsp: ProbeOutcome<DspResult> | null): string[] {
   const loudness =
     cold.loudnessLufs === null
       ? "no signal"
-      : `${cold.loudnessLufs.toFixed(1)} LUFS ungated`;
+      : `${cold.loudnessLufs.toFixed(1)} LUFS integrated`;
   const peak =
     cold.truePeakDbtp === null
       ? "no signal"

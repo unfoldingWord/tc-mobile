@@ -390,10 +390,11 @@ use of recordings beyond that community's own work, such as training a
 language model or other data collection, is opt-in and clearly explained to the
 people recording. The wording and the author's reading of its consequences are
 in [ADR 0012](docs/decisions/0012-recordings-belong-to-the-community.md), which
-is Proposed until the requirements owner confirms its wording. The owner has
+the requirements owner marked Accepted on 2026-10-19 (S15). The owner has
 defined "the community" as the team that made the recording and has said the
 principle stays internal for now (the ADR records both); read it before scoping
-such a feature, and do not treat the reading as accepted.
+such a feature. The acceptance covers the principle's wording, not the author's
+reading of its consequences, which stays a reading.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
@@ -481,7 +482,12 @@ Play gets a fresh one, a failed `close()` of it, `"playback-context-close"`,
 #1213), the catch sites around it in `hooks/use-audio-session.ts`
 (`"playback-take"`, `"playback-buffer"`, and a segment whose audio is
 missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
-`playSamples` already wrote), a shared context that reports `"running"`
+`playSamples` already wrote), chapter play (`hooks/chapter-player.ts` and
+`hooks/use-chapter-play.ts`, `"chapter-play"`: its playlist read, its hand-offs
+and its in-tap `resumeAudioContext()` rejection, #1468, #1559; the hide-path
+pause is wrapped so a throw is reported under the same context and the context
+drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
+(`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -507,7 +513,7 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-mic/record-start, the in-tap `resumeAudioContext()` calls before Play and
+mic/record-start, the in-tap `resumeAudioContext()` calls on a buffer Play and
 on sheet open (`use-audio-session.ts`), the recorder's preview path, and share _send_
 (`hooks/share-flow.ts`). Routing those is follow-up work — and it is
 not a one-line change, because `SaveFailed` replaces the tree the way the
@@ -1099,8 +1105,12 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
    none of it is built. A4's share shape is unchanged: Share Chapter is one
    concatenated MP3 to the OS share sheet, Share Book is a zip of chapter MP3s.
    The background is still `docs/research/prior-art.md` §4.
-6. **No Shema Studio source access.** Tim asked us to read it; there is no
-   public repo. Someone needs to ask Han.
+6. **Shema Studio source access: superseded for v2.** The requirements owner
+   asked us to read its source, and there is no public repo. R9 (2026-10-19),
+   `bundle-only`, "Scripture Bundle only in v2", carries the note: "Shema Studio
+   import/export will be v3-required." So import and export with Shema Studio
+   are a v3 item; what R9 says does not cover any other reason to read its
+   source.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
    Reference audio is out of Phase 1 (D5). B0 (#26) **removed** the timing seam
    and the narration path and superseded ADR 0007 — both are gone from `src/`.

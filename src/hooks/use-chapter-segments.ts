@@ -31,6 +31,7 @@ import { strings } from "@/lib/strings";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { ClipMeta, Peaks } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
+import type { LicenceId } from "@/types/template";
 import type { SegmentRow } from "@/types/view";
 
 /**
@@ -122,6 +123,8 @@ interface ChapterView {
    * treats as "not threaded").
    */
   readonly bookCoverHex: string | null;
+  /** The book's licence (#1566), or `null` when none is chosen or the book could not be read. */
+  readonly bookLicence: LicenceId | null;
   readonly chapterNumber: number;
   /** The facilitator's passage label, or null ⇒ show "Chapter {number}" (#264). */
   readonly chapterName: string | null;
@@ -151,6 +154,7 @@ export async function loadChapterView(
           resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
         )
       : null,
+    bookLicence: book?.licence ?? null,
     chapterNumber: chapter.number,
     chapterName: chapter.name,
     rows,
@@ -280,6 +284,7 @@ function stamp(
 export function useChapterSegments(chapterId: ChapterId) {
   const [bookName, setBookName] = useState("");
   const [bookCoverHex, setBookCoverHex] = useState<string | null>(null);
+  const [bookLicence, setBookLicence] = useState<LicenceId | null>(null);
   const [chapterNumber, setChapterNumber] = useState(0);
   const [chapterName, setChapterName] = useState<string | null>(null);
   const [rows, setRows] = useState<SegmentRow[]>([]);
@@ -407,6 +412,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         if (cancelled) return;
         setBookName(view.bookName);
         setBookCoverHex(view.bookCoverHex);
+        setBookLicence(view.bookLicence);
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
         // Retire every override this load started after — including ids it
@@ -827,6 +833,7 @@ export function useChapterSegments(chapterId: ChapterId) {
   return {
     bookName,
     bookCoverHex,
+    bookLicence,
     chapterNumber,
     chapterName,
     rows,

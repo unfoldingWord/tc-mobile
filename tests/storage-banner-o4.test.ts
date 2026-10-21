@@ -302,6 +302,27 @@ describe("the button runs the library share", () => {
     expect(share.send).not.toHaveBeenCalled();
   });
 
+  it("names each chapter with its book's licence (#1579)", async () => {
+    const container = await mount(
+      createElement(StoragePressureBanner, {
+        notice: low,
+        share: shareSurface(),
+      })
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>("button.o4-storage-share")!
+        .click()
+    );
+    const nameChapter = share.prepare.mock.calls[0]![2];
+    expect(
+      nameChapter({ name: "Mark", number: 1, licence: "CC0-1.0" }, 3, null, 3)
+    ).toBe("Mark - 03 Chapter 3 (CC0 1.0).mp3");
+    expect(
+      nameChapter({ name: "Mark", number: 1, licence: null }, 3, null, 3)
+    ).toBe("Mark - 03 Chapter 3.mp3");
+  });
+
   it("tap 2 hands the armed archive to the share sheet", async () => {
     share.status = "ready";
     const container = await mount(

@@ -19,6 +19,8 @@ import {
 } from "../locale";
 import { installStrings, stringsEn, type Strings } from "../strings";
 
+import { ENGLISH_ONLY } from "./english-only";
+
 import { table as ar } from "./ar";
 import { table as es } from "./es";
 import { table as fr } from "./fr";
@@ -65,7 +67,9 @@ export function buildTable(
 
 /**
  * The locales the resolver may pick: English, and each language whose table
- * has every English key (ADR 0015 (g): a screen is wholly in one language, so
+ * has every translatable English key, which is every key but the
+ * English-only ones (S11, `english-only.ts`: no language file may carry
+ * those, so they cannot count against a language) (ADR 0015 (g): a screen is wholly in one language, so
  * an incomplete locale is skipped rather than shown half English).
  *
  * Read from the tables themselves, not from `pending.ts`: the tables are the
@@ -73,7 +77,7 @@ export function buildTable(
  * with them. Called at each resolution, so it is never a stale snapshot.
  */
 export function completeLocales(): Locale[] {
-  const keys = Object.keys(stringsEn);
+  const keys = Object.keys(stringsEn).filter((key) => !ENGLISH_ONLY.has(key));
   return LOCALES.filter((locale) => {
     if (locale === SHIPPED_LOCALE) return true;
     const overrides = LOCALE_OVERRIDES[locale.tag];

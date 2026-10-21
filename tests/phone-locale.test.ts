@@ -120,12 +120,21 @@ describe("applyPhoneLocale, at launch", () => {
     expect(activeLocale().tag).toBe("fr");
   });
 
-  it("ships English today: the real tables are all incomplete", () => {
+  it("ships English for a language whose real table is incomplete", () => {
     empty(tables.fr);
     empty(tables.ar);
-    applyPhoneLocale(["fr", "ar", "es", "zh-TW"]);
+    applyPhoneLocale(["fr", "ar", "zh-TW"]);
     expect(activeLocale()).toBe(SHIPPED_LOCALE);
     expect(word()).toBe("Menu");
+  });
+
+  it("ships Spanish to a Spanish phone, from the real es table (#1585)", () => {
+    empty(tables.fr);
+    empty(tables.ar);
+    applyPhoneLocale(["fr", "es-419"]);
+    expect(activeLocale().tag).toBe("es");
+    expect(word()).toBe("Menú");
+    expect(document.documentElement.lang).toBe("es");
   });
 });
 

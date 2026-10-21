@@ -205,7 +205,7 @@ export interface DspBenchResult {
   readonly workingSetBytes: number;
   /** A hash of the apply pass's output, so an engine cannot skip the work. */
   readonly checksum: number;
-  /** Ungated K-weighted loudness, or null for silence. */
+  /** Gated integrated loudness (BS.1770), or null when no block passes the gates. */
   readonly loudnessLufs: number | null;
   /** True peak of the high-passed input, or null for silence. */
   readonly truePeakDbtp: number | null;
