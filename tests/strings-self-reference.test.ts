@@ -39,13 +39,14 @@ const FILE = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
 const HELPERS = new Set<string>();
 
 /**
- * The names `strings.ts` imports. Neither carries wording: `plural` picks a
- * form the caller supplies and `filenameSafe` strips characters, so neither
- * belongs in `HELPERS` (the per-locale slice of #169 decides `plural`'s fate
+ * The names `strings.ts` imports. None carries wording: `plural` picks a
+ * form the caller supplies, `filenameSafe` strips characters, `licenceTag`
+ * returns a licence's proper name for a filename (#1566) and `LicenceId` is a
+ * type, so none belongs in `HELPERS` (the per-locale slice of #169 decides `plural`'s fate
  * on its own). Pinned so a new import cannot bring a wording helper in from
  * outside the walker's sight.
  */
-const IMPORTS = ["filenameSafe", "plural"];
+const IMPORTS = ["LicenceId", "filenameSafe", "licenceTag", "plural"];
 
 /**
  * Every name `strings.ts` binds at top level, by kind: values (functions,

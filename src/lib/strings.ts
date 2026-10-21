@@ -32,8 +32,10 @@
  * this table moved; that was true before #700 and is not the case this move
  * rests on now.
  */
+import { licenceTag } from "@/lib/export/licence-tag";
 import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
+import type { LicenceId } from "@/types/template";
 
 /** What an armed restart destroys, named: `restartArmed` and `restartGone`. */
 export type RestartSubject = "recording" | "changes" | "cutAudio";
@@ -853,17 +855,20 @@ export const stringsEn = {
     book: string,
     chapter: number,
     chapterName: string | null = null,
-    highest: number = chapter
+    highest: number = chapter,
+    licence: LicenceId | null = null
   ): string {
     const width = Math.max(2, String(Math.max(chapter, highest)).length);
     // ASCII digits and a space, so its length is its UTF-8 byte count.
     const number = `${String(chapter).padStart(width, "0")} `;
-    const label = filenameSafe(chapterName ?? "", number.length);
+    // The licence tag (#1566) sits before the extension and is ASCII too; its
+    // bytes come out of the chapter label's budget, so the name still fits.
+    const tag = licenceTag(licence);
+    const reserved = number.length + tag.length;
+    const label = filenameSafe(chapterName ?? "", reserved);
     return `${filenameSafe(book)} - ${number}${
-      label === ""
-        ? filenameSafe(this.chapterName(chapter), number.length)
-        : label
-    }.mp3`;
+      label === "" ? filenameSafe(this.chapterName(chapter), reserved) : label
+    }${tag}.mp3`;
   },
 
   // Share Book — the book-level ⋮ menu and its zip-of-chapter-MP3s share. Names
@@ -1019,8 +1024,12 @@ export const stringsEn = {
     "Could not prepare this to share. Try again — if it keeps happening, restart the app.",
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
-  shareBookFilename(book: string): string {
-    return `${filenameSafe(book) || this.shareNameFallback}.zip`;
+  // A Creative Commons licence adds its tag before the extension (#1566); its
+  // bytes are reserved from the book label.
+  shareBookFilename(book: string, licence: LicenceId | null = null): string {
+    const tag = licenceTag(licence);
+    const label = filenameSafe(book, tag.length) || this.shareNameFallback;
+    return `${label}${tag}.zip`;
   },
   // What a book is called in a share filename or folder when its name
   // sanitises to nothing ("///"), so no file is ".zip" and no folder is "".
@@ -1452,7 +1461,10 @@ export const stringsEn = {
   // ── Phone check (#1009) ──────────────────────────────────────────────────
   // A hidden tester screen, reached by five taps on the build stamp or by
   // `?check=phone`. Its words are for a tester filling in #974, not for a
-  // translator, but they are screen copy all the same and so live here. The
+  // translator, but they are screen copy all the same and so live here. They
+  // are English on purpose (S11-tester-screens, #1483): every `phoneCheck*`
+  // key is listed in `lib/i18n/english-only.ts`, which the coverage test pins
+  // to this group, so a new key here must be added there too. The
   // REPORT it produces is engineering data and is worded in
   // `lib/phone-check/report.ts` instead — see that file's docblock.
   phoneCheckTitle: "Phone check",
