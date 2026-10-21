@@ -98,11 +98,12 @@ const SIGNATURES = signatures();
 export const FUNCTION_ENTRIES = [...SIGNATURES.keys()];
 
 /**
- * Every argument vector worth trying for `name`: numbers all `n`, strings a
- * sentinel each, booleans in every combination. A type this does not know
- * throws, so a new parameter type cannot slip past unexercised.
+ * Every argument vector worth trying for `name`: numbers all `n` (or, when
+ * `distinct`, `n` plus their position, so parity can tell two counts apart),
+ * strings a sentinel each, booleans in every combination. A type this does not
+ * know throws, so a new parameter type cannot slip past unexercised.
  */
-function argVectors(name: string, n: number): unknown[][] {
+function argVectors(name: string, n: number, distinct = false): unknown[][] {
   const types = SIGNATURES.get(name);
   if (!types) throw new Error(`no function entry ${name}`);
   let vectors: unknown[][] = [[]];
@@ -113,7 +114,8 @@ function argVectors(name: string, n: number): unknown[][] {
     if (type === "...readonly string[]") {
       push(["SENTa" + i]);
       push(["SENTb" + i]);
-    } else if (type === "number" || type === "number | null") push([n]);
+    } else if (type === "number" || type === "number | null")
+      push([distinct ? n + i : n]);
     else if (type === "string" || type === "string | null") push(["SENT" + i]);
     else if (type === "boolean") push([true, false]);
     else if (type === "RestartSubject") push(["recording"]);
@@ -125,6 +127,33 @@ function argVectors(name: string, n: number): unknown[][] {
 function call(table: Strings, name: string, args: unknown[]): string {
   const entry = (table as unknown as Record<string, unknown>)[name];
   return (entry as (...a: unknown[]) => string).apply(table, args);
+}
+
+/**
+ * `table` with every function entry but `name` wrapped so the `plural()` forms
+ * it records are dropped when it returns: an entry is checked for its own
+ * forms, not for those of an entry it calls through `this`, which is checked
+ * on its own row (or is still pending).
+ */
+function isolate(
+  table: Strings,
+  name: string,
+  recorded: Array<Record<string, string>>
+): Strings {
+  const out: Record<string, unknown> = { ...table };
+  for (const [key, value] of Object.entries(table)) {
+    if (key === name || typeof value !== "function") continue;
+    const fn = value as (...a: unknown[]) => unknown;
+    out[key] = function (this: unknown, ...a: unknown[]): unknown {
+      const mark = recorded.length;
+      try {
+        return fn.apply(this, a);
+      } finally {
+        recorded.length = mark;
+      }
+    };
+  }
+  return out as unknown as Strings;
 }
 
 /** The counts every plural entry is exercised with (#1481). */
@@ -147,10 +176,11 @@ export function pluralProblems(
   const problems = new Set<string>();
   for (const name of own) {
     if (!SIGNATURES.has(name)) continue;
+    const isolated = isolate(table, name, recorded);
     for (const n of COUNTS)
       for (const args of argVectors(name, n)) {
         recorded.length = 0;
-        call(table, name, args);
+        call(isolated, name, args);
         for (const forms of recorded)
           for (const category of needed)
             if (!(category in forms))
@@ -174,7 +204,7 @@ export function parityProblems(
   const problems = new Set<string>();
   for (const name of own) {
     if (!SIGNATURES.has(name)) continue;
-    for (const args of argVectors(name, 4242)) {
+    for (const args of argVectors(name, 4242, true)) {
       const english = call(stringsEn, name, args);
       const mine = call(table, name, args);
       for (const arg of args) {

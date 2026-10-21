@@ -163,6 +163,24 @@ describe("the plural check, in both states", () => {
       )
     ).toEqual(['fr: shareMissing has no "many" form']);
   });
+
+  it("does not blame an entry for the forms of an English entry it calls", () => {
+    // George r1 #1531: the callee's `plural()` is its own row's concern.
+    const fixture = {
+      shareBookPartial(this: Strings, n: number): string {
+        const own = plural(n, { one: "un", many: "beaucoup", other: "des" });
+        return `${own} ${this.shareMissing(n)}`;
+      },
+    } as Partial<Strings>;
+    expect(
+      pluralProblems(
+        "fr",
+        buildTable("fr", fixture),
+        ["shareBookPartial"],
+        recorded
+      )
+    ).toEqual([]);
+  });
 });
 
 describe("the argument check, in both states", () => {
@@ -180,6 +198,20 @@ describe("the argument check, in both states", () => {
     expect(
       parityProblems("fr", buildTable("fr", fixture), ["chapterName"])
     ).toEqual(["fr: chapterName drops 4242"]);
+  });
+
+  it("tells two numeric arguments apart (Frank r1 #1531)", () => {
+    const check = (fixture: Partial<Strings>) =>
+      parityProblems("fr", buildTable("fr", fixture), ["shareItemsGoOut"]);
+    expect(
+      check({ shareItemsGoOut: (out: number, all: number) => `${out}/${all}` })
+    ).toEqual([]);
+    expect(check({ shareItemsGoOut: (out: number) => `${out} sortent` })).toEqual(
+      ["fr: shareItemsGoOut drops 4243"]
+    );
+    expect(
+      check({ shareItemsGoOut: (_out: number, all: number) => `sur ${all}` })
+    ).toEqual(["fr: shareItemsGoOut drops 4242"]);
   });
 });
 
