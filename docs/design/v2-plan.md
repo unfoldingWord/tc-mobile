@@ -700,3 +700,141 @@ made in Round 2.
 - Whether tester-only screens are translated, and whether a Traditional-Chinese
   phone can switch to Traditional text (R19).
 - The web message's wording (R3) and when import lands (R4).
+
+## Round 3 decisions recorded 2026-10-19
+
+The requirements owner answered a third set of twenty-two questions, S1 to S22,
+on the project site's review page on 2026-10-19. The question text, the option
+text and **the requirements owner's notes are quoted verbatim**. Where an answer
+has no option, only a note, the entry says "free text, no option". Where an
+answer has an option and no note, none was given. The S ids are this record's
+own and are not the earlier D, Q or R ids. Recording an answer is not building
+it: an entry's "Settles" line names what the answer bears on, and "Still open"
+names what it leaves undecided where the record shows something.
+
+1. **S1-story-template** — "1 · Finding things by story (#1435)". Decided
+   `story-template`: "A story template is the answer; the Book, Chapter,
+   Segment structure stays".
+2. **S2-append-waveform** — "2 · Wide waveform while appending (#1201)".
+   Decided `fine`: "Fine as it is".
+3. **S3-editor-optional** — "3 · Should the editor be optional? (#595)".
+   Decided `keep`: "Keep the editor as it is". Note: "Especially when
+   dealing with segments that have been named, it is much more cumbersome to
+   delete the entire segment than add it and move it into the right location
+   and rename it. It is much easier to simply re-record the segment. Leave as
+   is."
+4. **S4-speech** — "4 · How the app speaks to people who do not read (#1344)".
+   Decided `tts`: "The phone's own text-to-speech". Note: "Any user can use the
+   phone's own text to speech, comma. That does not create any new issues for
+   this app as long as the text strings are available to the phone operating
+   system so that it can be converted to audio by the operating system."
+5. **S5-after-interviews** — "5 · After the training interviews (#1271)".
+   Decided `no-change`: "No change". Note: "It worked really well to have a
+   separate microphone icon to indicate entering the recording studio. When we
+   explained to users that it was a recording studio and it gave them a
+   dedicated space for all recording and editing, they immediately appreciated
+   that."
+6. **S6-licence-when** — "6 · When the licence question appears (#1455)".
+   Decided `once-per-book`: "Once per book, with a way to change it later".
+7. **S7-id3** — "7 · Attribution inside the audio file (#252)". Decided
+   `id3-v2`: "Also write title, comment and copyright inside the MP3 in v2".
+   Note: "Everything that can be included in the metadata regarding the
+   copyright and licensing should be included. But nothing should be included
+   that potentially compromises the identity of the user."
+8. **S8-confidential** — "8 · Is the backup copy confidential? (#1474)".
+   Decided `no`: "Not confidential". Settles: ADR 0014's Open 2a.
+9. **S9-review-loop** — "9 · Review loop with the assistant (#1431)". Decided
+   `share-sheet`: "The share sheet is enough for v2". Note: "We may revisit
+   this in version three if the need is expressed. Otherwise we will just leave
+   it as sharing at the chapter level."
+10. **S10-level3-titles** — "10 · Level-3 template titles: v2 or later?
+    (#1441)". Decided `level3-desired`: "Level-3 titles are v2-desired, like
+    level-3 app text". Note: "V2 requires the top ten languages of level four.
+    Everything else is V2 desired or V3 required depending on time
+    constraints."
+11. **S11-tester-screens** — "11 · Are tester-only screens translated?".
+    Decided `english`: "English only". Note: "We will revisit if this is
+    needed."
+12. **S12-chapter-badge** — "12 · Chapter badge when a chapter has a name
+    (#1272)". Decided `name`: "Show the name only when there is one". Note:
+    "Include an option in the settings to always show the sequential chapter
+    number.By default it should show the chapter name when there is one, and
+    the sequential numbering if there is not a chapter name."
+    - Still open: R7 says every chapter carries the number someone types or the
+      template gives. Whether "sequential" means that number or the chapter's
+      place in the list is not recorded, and neither is where the setting
+      lives.
+13. **S13-duplicate-names** — "13 · Two books with the same name (#1272)".
+    Decided `block`: "Block it". Note: "require unique names for the books."
+14. **S14-long-names** — "14 · Reading a long name in full (#1284)". Decided
+    `tap-hold`: "Tap or hold a name to see it in full".
+15. **S15-consent-wording** — "15 · Mark the consent principle Accepted? (ADR
+    0012)". Decided `accept`: "Yes, mark it Accepted". Settles: ADR 0012 is
+    Accepted (see the ADR's status line).
+16. **S16-mic-refused** — "16 · Mic permission refused twice (#1089)". Decided
+    `steps`: "Steps for turning the microphone on in phone settings".
+17. **S17-unclear-menu** — "17 · Which menu options did the interviews show
+    were unclear? (#1212)". Free text, no option: "nothing to report,
+    leave as-is".
+18. **S18-icon-check** — "18 · Was the ten-minute icon-recognition sheet run at
+    the training, and are there filled sheets? (#249)". Free text, no option:
+    "not run, but all evidence indicates users understood without any
+    difficulty".
+19. **S19-arr-filename** — "19 · File name for books that stay "all rights
+    reserved" (#1455)". Decided `no-tag`: "Leave the tag off". Note: "Note: the
+    only license options to be included are CC0, CC BY, and CC BY-SA. If the
+    user selects "Other" the filename should not show any licensing
+    information."
+    - Settles: ADR 0014's Open 2b in part (see the ADR).
+    - Still open: D5-licence's option lists "all rights reserved" and S19
+      lists CC0, CC BY and CC BY-SA plus "Other". Whether "Other" is the same
+      as all rights reserved, and what an export writes for copyright when the
+      licence is "Other" or not chosen yet, are not recorded. They go to the
+      requirements owner as Round 5.
+20. **S20-video** — "20 · Video (#1434)". Decided `out`: "Not in scope".
+21. **S21-mic-level** — "21 · Mic input level (#359)". Decided `suggest`:
+    "Suggest raising it after a quiet first take".
+22. **S22-palettes** — "22 · Alternate colour palettes (#956)". Free text, no
+    option: "No alternate color palettes in v2. If requested by users, we'll
+    consider for v3".
+
+## Round 4: one decision, four not decided
+
+Round 4 is five questions that came out of the 2026-10-20 call. Only T4 is
+decided.
+
+### T4 is decided
+
+**T4-normalize-when** — "When does normalization run?" Decided `on-finished`:
+"When a segment is marked Finished". The DRI recorded it, with this note (the
+attribution prefix is replaced by a role): "[the DRI], Zulip 2026-10-20:
+"normalize should be on 'finalize segment' - not on export because at finalize
+it converts from wav (non-lossy format) to mp3 (lossy) so you want to run it
+before that step.""
+
+The requirements owner has not been recorded as confirming this. The call
+record has the requirements owner saying normalization could be a checked box
+on export. Whether a switch to turn it off exists, whether it is on by default,
+and what happens to segments finished before it ships are not recorded.
+
+### T1, T2, T3 and T5 are not decided
+
+These were asked and have **no final record and no answer from the requirements
+owner**. The lines below are picks by other roles, recorded as picks, not as
+decisions. Nothing in this repository should treat them as settled.
+
+- **T1** — "Restore in 1.2?" Options: "Yes: backup and restore both ship in
+  1.2" (`restore-1-2`), "Backup in 1.2; restore later, as R4 says"
+  (`backup-1-2`). Picks: the DRI and the PM both `restore-1-2`; the PM's note:
+  "As discussed in the meeting, to prevent data loss on upgrade or reinstall."
+  R4 (final) still says backup only in v2.
+- **T2** — "Where does a backup go?" Options: "microSD card and cloud; no
+  on-device copy" (`card-cloud`), "microSD card, cloud and an on-device copy"
+  (`card-cloud-device`). Picks: the DRI and the PM both `card-cloud-device`; the
+  DRI's note: "I think the user should choose. iphones dont have SD cards."
+- **T3** — "Which cloud first?" Options: "iCloud and Google Drive together"
+  (`both`), "iCloud first" (`icloud`), "Google Drive first" (`gdrive`). Pick:
+  the DRI `both`. The PM made no pick.
+- **T5** — "A level slider, and a limiter while recording?" Options: "Fully
+  automatic, no slider" (`auto`), "Add a slider for how loud" (`slider`).
+  Picks: the DRI and the PM both `auto`.

@@ -1,14 +1,19 @@
 # 0014 — The Scripture Bundle profile tC Mobile writes
 
-**Status:** Proposed · **Date:** 2026-10-19 · **DRI:** the dev lead drafts; the requirements owner answers the two product questions in "Open" · **Issue:** [#1474](https://github.com/unfoldingWord/tc-mobile/issues/1474), part of the v2 export epic [#1457](https://github.com/unfoldingWord/tc-mobile/issues/1457)
+**Status:** Accepted 2026-10-21 by the DRI, with Open 1 unanswered (see "Open") · **Date:** 2026-10-19 (drafted); 2026-10-21 (accepted) · **DRI:** the dev lead drafted it and accepted it; the requirements owner answered the product questions in "Open" · **Issue:** [#1474](https://github.com/unfoldingWord/tc-mobile/issues/1474), part of the v2 export epic [#1457](https://github.com/unfoldingWord/tc-mobile/issues/1457)
 
-This ADR is **Proposed**. It decides what the `metadata.json` of an exported
+This ADR is **Accepted**. It decides what the `metadata.json` of an exported
 book says, so the build lanes that write it (the metadata builder, the zip
-writer, the language question in #1492) have one thing to follow. It is
-Proposed rather than Accepted for two reasons: the requirements owner has not
-answered the two questions in "Open", and the spec's maintainers have not been
-asked to confirm points 1, 2 and 4 (also "Open"). No code follows from it until
-it is Accepted.
+writer, the language question in #1492) have one thing to follow.
+
+It was drafted Proposed for two reasons. The requirements owner had not
+answered the two product questions in "Open"; S8 and S19 (2026-10-19) answer
+them, one fully and one in part. The spec's maintainers had not been asked to
+confirm points 1, 2 and 4, and had given no answer by 2026-10-21. The DRI
+accepted it on 2026-10-21 with that second reason standing. The DRI's pick,
+verbatim: "Accept, Open 1 'no answer by 10-21' (Recommended)". Two points of the
+licence mapping stay visibly open (see "Open"); this acceptance does not settle
+them.
 
 ## Naming
 
@@ -202,7 +207,7 @@ a valid USFM reference.
 | `languages`                        | `[{tag, name: {<defaultLocale>: <name>}}]` from the book's language                                                                                   | R12 / #1492: asked once at export, stored on the book. Never omitted. If the facilitator skips the question the tag is `und` (BCP 47 "undetermined", validates) with the name "Undetermined"; whether skipping is allowed is #1492's call |
 | `performance` (audio flavour only) | `["singleVoice", "reading"]`                                                                                                                          | **assumption:** one person records, reading not drama. The schema requires exactly one of singleVoice/multipleVoice and one of reading/drama                                                                                              |
 | `formats` (audio flavour only)     | one entry per codec present: `mp3` and/or `wav`, each `{compression, trackConfiguration: "1/0 (Mono)", samplingRate: 44100}`, WAV with `bitDepth: 16` | `compression` enum is `mp3`/`wav` only (observed). `bitRate` is left out: the unit is not stated in the schema and I did not find it in the docs                                                                                          |
-| `confidential`                     | `false`                                                                                                                                               | **proposal**; asked of the requirements owner (see "Open")                                                                                                                                                                                |
+| `confidential`                     | `false`                                                                                                                                               | S8 (2026-10-19), "Not confidential": no longer a proposal (see "Open")                                                                                                                                                                    |
 | `localizedNames`                   | `book-<code>` only for a USFM-referenced book                                                                                                         | optional; each entry needs `short`                                                                                                                                                                                                        |
 
 ### 6. Copyright
@@ -363,13 +368,25 @@ This is the document the validation run called `custom-x-tcMobileAudio`.
    [prior-art](../research/prior-art.md) names) whether v1.0.0 is the right pin,
    whether `parascriptural` + `x-` is the right home for audio of books that
    have no USFM reference, and whether per-segment data in a sidecar is
-   acceptable. **A person posts it.** Answer: none yet; record the answer or
-   "no answer by <date>" here.
-2. **For the requirements owner, in the same PR:**
-   - Is `confidential: false` right for a copy whose purpose is to safeguard
-     the work off the device, or should the default be `true` (point 5)?
-   - Is the licence mapping in point 6 right, in particular "not chosen yet is
-     treated as all rights reserved", and who owns the OBS attribution wording?
+   acceptable. **A person posts it.** Answer: no answer by 2026-10-21. The DRI
+   accepted this ADR on that date with the question unanswered. A later answer
+   is recorded here, and a "no" is an amendment with the reason.
+2. **Answered by the requirements owner on 2026-10-19:**
+   - **2a, `confidential`.** S8-confidential, `no`: "Not confidential".
+     `confidential: false` (point 5) stands as decided.
+   - **2b, the licence mapping, in part.** S19-arr-filename, `no-tag`: "Leave
+     the tag off". Note: "Note: the only license options to be included are
+     CC0, CC BY, and CC BY-SA. If the user selects "Other" the filename should
+     not show any licensing information." So the licence options are CC0, CC BY
+     and CC BY-SA, and "Other" puts no licence in the file name.
+   - **Still open, put to the requirements owner as Round 5:**
+     - What an exported project writes for `copyright` when the licence is
+       "Other" or not chosen yet. Point 6 treats "not chosen yet" as all rights
+       reserved; that stays an **assumption**.
+     - Whether "Other" is the same as `all-rights-reserved`, the value the
+       template contract and point 6 carry. S19 lists CC0, CC BY and CC BY-SA
+       plus "Other" and does not name `all-rights-reserved`.
+   - Who owns the OBS attribution wording is also not answered.
 3. **Which desktop app "tC Desktop" is** and what it needs to open an audio
    bundle: a question for the translationCore 4 team (R11), tracked in the
    export epic, not here.

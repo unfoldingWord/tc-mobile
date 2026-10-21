@@ -390,10 +390,11 @@ use of recordings beyond that community's own work, such as training a
 language model or other data collection, is opt-in and clearly explained to the
 people recording. The wording and the author's reading of its consequences are
 in [ADR 0012](docs/decisions/0012-recordings-belong-to-the-community.md), which
-is Proposed until the requirements owner confirms its wording. The owner has
+the requirements owner marked Accepted on 2026-10-19 (S15). The owner has
 defined "the community" as the team that made the recording and has said the
 principle stays internal for now (the ADR records both); read it before scoping
-such a feature, and do not treat the reading as accepted.
+such a feature. The acceptance covers the principle's wording, not the author's
+reading of its consequences, which stays a reading.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
@@ -1099,8 +1100,10 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
    none of it is built. A4's share shape is unchanged: Share Chapter is one
    concatenated MP3 to the OS share sheet, Share Book is a zip of chapter MP3s.
    The background is still `docs/research/prior-art.md` §4.
-6. **No Shema Studio source access.** Tim asked us to read it; there is no
-   public repo. Someone needs to ask Han.
+6. **Shema Studio source access: superseded.** The requirements owner asked
+   us to read its source, and there is no public repo. R9 (2026-10-19) made
+   Shema Studio import and export v3-required ("Scripture Bundle only in v2"),
+   so nothing in v2 needs that access and nobody needs to ask for it now.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
    Reference audio is out of Phase 1 (D5). B0 (#26) **removed** the timing seam
    and the narration path and superseded ADR 0007 — both are gone from `src/`.
