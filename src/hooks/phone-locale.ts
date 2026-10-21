@@ -9,8 +9,7 @@
  *
  * Only locales whose tables are complete are candidates
  * (`completeLocales`, ADR 0015 (g)), so a screen is never half translated:
- * the walk goes on to the phone's next language and ends at English. No table
- * but English is complete today, so every phone still gets English.
+ * the walk goes on to the phone's next language and ends at English.
  *
  * NEVER UNDER A TAKE (ADR 0015 (e)). While a take is open the follower is not
  * listening, so a change waits; when the take closes it re-reads the phone's
