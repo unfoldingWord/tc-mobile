@@ -15,6 +15,7 @@ default, the text there says to keep using it.
 1. Whether to offer the browser version at the training (§2, step 1).
 2. Whether "share a very long book chapter by chapter" is a rule (§3).
 3. Whether participants file their own problem reports (§5, "Where reports go").
+   This one has no default yet: ask the requirements owner before the session.
 4. Which private address the problem-report file goes to (§5, "Where reports go").
 
 <!-- source: PR #1297 body, "For the requirements owner to confirm" items 1-4; no answer to any of them is on gh issue #248 as of 2026-10-05 -->
