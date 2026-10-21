@@ -14,7 +14,7 @@ vi.mock("@/lib/storage/takes", async (importOriginal) => {
 });
 
 import { recoverPendingTakes } from "@/hooks/recover-pending-takes";
-import { performResumeTake } from "@/hooks/use-save-take";
+import { performResumeTake, performSaveTake } from "@/hooks/use-save-take";
 import {
   subscribeToFailures,
   type FailureReport,
@@ -31,12 +31,18 @@ import {
   deletePendingTake,
   listPendingTakes,
   markPendingRefusal,
+  markPendingTarget,
   writePendingTake,
 } from "@/lib/storage/pending-takes";
 import { getDb } from "@/lib/storage/db";
 import { saveReplayedTake, saveTake } from "@/lib/storage/takes";
-import type { NewTake, PendingTake } from "@/lib/takes/pending-take";
-import type { SegmentId, StoredPendingTake, TakeId } from "@/types/domain";
+import {
+  retrySave,
+  startSave,
+  type NewTake,
+  type PendingTake,
+} from "@/lib/takes/pending-take";
+import type { SegmentId, StoredPendingTake } from "@/types/domain";
 import { clearAllStores } from "./support";
 
 /**
@@ -77,21 +83,40 @@ const launch = (
   between: () => Promise<void> = async () => {}
 ) => {
   let held: PendingTake | null = null;
-  const resume = vi.fn(async (take: NewTake, against: TakeId | null) => {
+  const effects = {
+    update: (t: (h: PendingTake | null) => PendingTake | null) => {
+      held = t(held);
+    },
+    requestSweep: () => {},
+  };
+  const resume = vi.fn(async (take: NewTake) => {
     await between();
-    return performResumeTake(
-      held,
-      take,
-      {
-        update: (t) => {
-          held = t(held);
-        },
-        requestSweep: () => {},
-      },
-      against
-    );
+    return performResumeTake(held, take, effects);
   });
-  return { resume, held: () => held, run: () => recoverPendingTakes(resume) };
+  // The recovery screen's Retry, minus React: `retryPendingTake`'s two steps.
+  const retry = () => {
+    const next = retrySave(held);
+    if (!next || next === held) throw new Error("Retry refused");
+    held = next;
+    return performSaveTake(next, effects);
+  };
+  return {
+    resume,
+    retry,
+    held: () => held,
+    run: () => recoverPendingTakes(resume),
+  };
+};
+
+/** A row as a build from before `target` existed wrote it. */
+const writeLegacyRow = async (take: NewTake): Promise<void> => {
+  await writeRow(take);
+  const db = await getDb();
+  const row = await db.get("pendingTakes", take.segmentId);
+  if (!row) throw new Error("no row");
+  const legacy: StoredPendingTake = { ...row };
+  delete (legacy as { target?: unknown }).target;
+  await db.put("pendingTakes", legacy);
 };
 
 /** The clip id behind a segment's active take, or undefined. */
@@ -111,8 +136,12 @@ const writeRow = async (
   take: NewTake,
   opts: { sampleRate?: number; now?: number } = {}
 ): Promise<void> => {
+  // The target the hook records: the segment's active take as the save began.
+  const target = (await getSegment(take.segmentId))?.activeTakeId ?? null;
   const written = await writePendingTake(take, opts);
   if (!written.ok) throw written.cause;
+  const marked = await markPendingTarget(take.segmentId, take.clipId, target);
+  if (!marked.ok) throw marked.cause;
 };
 
 const refused = (r: FailureReport[]) =>
@@ -223,14 +252,13 @@ describe("recoverPendingTakes — finishing the save on launch", () => {
 
     const result = await performResumeTake(
       slot,
-      newTake(segmentId),
+      { ...newTake(segmentId), replayTarget: null },
       {
         update: (t) => {
           slot = t(slot);
         },
         requestSweep: () => {},
-      },
-      null
+      }
     );
 
     expect(result).toBe("busy");
@@ -252,14 +280,13 @@ describe("recoverPendingTakes — finishing the save on launch", () => {
 
     const result = await performResumeTake(
       null,
-      newTake(segmentId),
+      { ...newTake(segmentId), replayTarget: null },
       {
         update: (t) => {
           live = t(live);
         },
         requestSweep: () => {},
-      },
-      null
+      }
     );
 
     expect(result).toBe("busy");
@@ -287,8 +314,10 @@ describe("recoverPendingTakes — another copy saved first (Frank, PR #1546)", (
     const db = await getDb();
     expect(await db.get("clipData", newer)).toBeDefined();
     expect(await db.get("clipData", replayed.clipId)).toBeUndefined();
-    // The overtaken row is dropped, and that is on record once.
-    expect(await rows()).toEqual([]);
+    // The overtaken audio is kept, refused, and on record once.
+    expect((await rows()).map((r) => r.refusalReported)).toEqual([
+      "superseded",
+    ]);
     expect(refused(reports)).toHaveLength(1);
     expect(app.held()).toBeNull();
   });
@@ -319,7 +348,113 @@ describe("recoverPendingTakes — another copy saved first (Frank, PR #1546)", (
     expect(await activeClip(second)).toBe(newer);
     const db = await getDb();
     expect(await db.get("clipData", newer)).toBeDefined();
-    expect(await rows()).toEqual([]);
+    // B's audio is kept as a refused row, never saved over the newer take.
+    const kept = await rows();
+    expect(kept.map((r) => [r.clipId, r.refusalReported])).toEqual([
+      [b.clipId, "superseded"],
+    ]);
+  });
+
+  it("refuses an old row beside a newer take saved before launch, and says so once", async () => {
+    const segmentId = await freshSegment();
+    const old = newTake(segmentId);
+    await writeRow(old);
+    // The old row's delete was lost, and a later save landed without a row.
+    const newer = newClipId();
+    await saveTake(segmentId, newer, samples(20, 7), CANONICAL_SAMPLE_RATE);
+    vi.mocked(saveTake).mockClear();
+
+    await launch().run();
+    await launch().run();
+
+    expect(await activeClip(segmentId)).toBe(newer);
+    expect(await (await getDb()).get("clipData", newer)).toBeDefined();
+    expect((await rows()).map((r) => [r.clipId, r.refusalReported])).toEqual([
+      [old.clipId, "superseded"],
+    ]);
+    expect(refused(reports)).toHaveLength(1);
+    expect(saveTake).not.toHaveBeenCalled();
+  });
+
+  it("keeps the precondition on Retry: a newer save after a failed replay survives", async () => {
+    const segmentId = await freshSegment();
+    const replayed = newTake(segmentId);
+    await writeRow(replayed);
+    vi.mocked(saveReplayedTake).mockRejectedValueOnce(
+      new Error("disk said no")
+    );
+    const app = launch();
+    await app.run();
+    expect(app.held()?.state).toBe("failed");
+
+    const newer = newClipId();
+    await saveTake(segmentId, newer, samples(20, 7), CANONICAL_SAMPLE_RATE);
+    vi.mocked(saveTake).mockClear();
+    expect(await app.retry()).toBe("stale");
+
+    expect(await activeClip(segmentId)).toBe(newer);
+    expect(saveTake).not.toHaveBeenCalled();
+    expect((await rows()).map((r) => [r.clipId, r.refusalReported])).toEqual([
+      [replayed.clipId, "superseded"],
+    ]);
+    expect(refused(reports)).toHaveLength(1);
+    expect(app.held()).toBeNull();
+  });
+
+  it("keeps the audio when Retry after a quota failure finds a newer save", async () => {
+    const segmentId = await freshSegment();
+    const replayed = newTake(segmentId);
+    await writeRow(replayed);
+    vi.mocked(saveReplayedTake).mockRejectedValueOnce(
+      new DOMException("disk full", "QuotaExceededError")
+    );
+    const app = launch();
+    await app.run();
+    expect(app.held()?.kind).toBe("quota");
+    // The quota rule gives the row up.
+    await vi.waitFor(async () => expect(await rows()).toEqual([]));
+
+    const newer = newClipId();
+    await saveTake(segmentId, newer, samples(20, 7), CANONICAL_SAMPLE_RATE);
+    expect(await app.retry()).toBe("stale");
+
+    expect(await activeClip(segmentId)).toBe(newer);
+    const kept = await rows();
+    expect(kept.map((r) => [r.clipId, r.refusalReported])).toEqual([
+      [replayed.clipId, "superseded"],
+    ]);
+    // The whole take's audio, as one inline buffer.
+    const base = kept[0]?.base;
+    expect(base?.kind === "inline" && new Int16Array(base.samples)).toEqual(
+      replayed.recorded
+    );
+    expect(refused(reports)).toHaveLength(1);
+    expect(app.held()).toBeNull();
+  });
+});
+
+describe("recoverPendingTakes — a row the save hook wrote", () => {
+  it("records the take the save replaces, so the next launch can finish it", async () => {
+    const segmentId = await freshSegment();
+    const take = startSave(null, newTake(segmentId));
+    // The app is killed mid-save: here, the save fails and nothing retries.
+    vi.mocked(saveTake).mockRejectedValueOnce(new Error("killed"));
+    let held: PendingTake | null = take;
+    await performSaveTake(take, {
+      update: (t) => {
+        held = t(held);
+      },
+      requestSweep: () => {},
+    });
+    // A first take: the save replaces nothing, and the row says so.
+    await vi.waitFor(async () =>
+      expect((await rows()).map((r) => r.target)).toEqual([null])
+    );
+
+    await launch().run();
+
+    expect(await activeClip(segmentId)).toBe(take.clipId);
+    expect(refused(reports)).toEqual([]);
   });
 });
 
@@ -350,6 +485,23 @@ describe("recoverPendingTakes — rows it cannot save", () => {
     expect(kept.map((r) => r.clipId)).toEqual([take.clipId]);
     expect(kept[0]?.refusalReported).toBe("sample-rate");
     expect(saveTake).not.toHaveBeenCalled();
+    expect(saveReplayedTake).not.toHaveBeenCalled();
+  });
+
+  it("keeps a row written before rows carried a target, and reports it on one launch only", async () => {
+    const segmentId = await freshSegment();
+    const take = newTake(segmentId);
+    await writeLegacyRow(take);
+
+    await launch().run();
+    await launch().run();
+
+    expect(refused(reports)).toHaveLength(1);
+    const kept = await rows();
+    expect(kept.map((r) => [r.clipId, r.refusalReported])).toEqual([
+      [take.clipId, "no-target"],
+    ]);
+    expect(saveReplayedTake).not.toHaveBeenCalled();
   });
 
   it("goes on to the next row after a refused one", async () => {

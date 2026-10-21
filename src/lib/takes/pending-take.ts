@@ -18,7 +18,7 @@
  *     its take was discarded (or replaced) cannot resurrect or clobber the slot.
  */
 
-import type { ClipId, SegmentId } from "@/types/domain";
+import type { ClipId, SegmentId, TakeId } from "@/types/domain";
 
 /**
  * Why a save failed, in the one word the recovery screen needs.
@@ -52,7 +52,7 @@ export type SaveFailureKind = "quota" | "downgrade" | "stale" | "unknown";
  * failure lands the take in the recovery screen for retry, exactly like a failed
  * write, instead of dropping it before the slot owns anything.
  */
-export interface PendingTake {
+export interface PendingTake extends Pick<NewTake, "replayTarget"> {
   /** Captured when the recording stopped, never re-derived from what is on screen. */
   readonly segmentId: SegmentId;
   /**
@@ -107,6 +107,8 @@ export interface NewTake {
   readonly finished: boolean;
   /** Whether this is an edit-only save rather than a recording (see `PendingTake`). */
   readonly editOnly: boolean;
+  /** Replayed takes only (#38): its row's `target`, kept across Retry. */
+  readonly replayTarget?: TakeId | null;
 }
 
 /**
@@ -131,6 +133,7 @@ export function startSave(
     offset: take.offset,
     finished: take.finished,
     editOnly: take.editOnly,
+    replayTarget: take.replayTarget,
     state: "saving",
     kind: null,
     attempts: 0,

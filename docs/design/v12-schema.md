@@ -287,7 +287,17 @@ Shape calls inside that decision (tactical, made here):
 - **`refusalReported` is optional** (#38 slice 3): the refusal the launch
   replay already logged for a row it keeps (`sample-rate`, `base-missing`,
   `base-changed`), so the log gets it once, not every launch. A row without
-  it reads as never reported; no migration.
+  it reads as never reported; no migration. Two more refusals join it:
+  `no-target` and `superseded` (below).
+- **`target` is optional** (#38 slice 3, PR #1546): the segment's active take
+  when the save began, which the save replaces (`null` for a first take). The
+  save hook marks it on the row right after writing it, in a second
+  `pendingTakes`-only transaction conditional on `clipId`. The launch replay
+  saves a row, on every attempt including Retry, only while the active take is
+  still `target`. A newer save in between means `superseded`: the row is kept
+  and marked, never saved over the newer take. A row without `target` (written
+  before it existed, or killed before the mark landed) is refused and kept as
+  `no-target`. No migration.
 - **Not stored:** `state`, `kind`, `attempts`. They describe the current
   session's save attempt, not the audio.
 - **keyPath `segmentId`:** the app holds one save slot

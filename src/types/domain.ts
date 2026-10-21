@@ -304,6 +304,11 @@ export interface StoredPendingTake {
   readonly editOnly: boolean;
   readonly createdAt: number;
   /**
+   * The active take when the save began, which it replaces (`null`: none).
+   * The replay saves only over it (#38). Absent: refused, kept (`no-target`).
+   */
+  readonly target?: TakeId | null;
+  /**
    * The refusal the launch replay has already written to the failure log for
    * this row (#38), so a row that is kept, not offered, is reported once and
    * not on every launch. Absent on a row never refused. Optional, so rows
@@ -316,4 +321,5 @@ export interface StoredPendingTake {
  * Why the launch replay keeps a pending row without saving it (#38): the
  * refusals that leave the audio in the row rather than drop it.
  */
-export type PendingRefusal = "sample-rate" | "base-missing" | "base-changed";
+export type PendingRefusal =
+  "sample-rate" | "base-missing" | "base-changed" | "no-target" | "superseded";

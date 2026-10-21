@@ -28,7 +28,7 @@
  * `chapterProgress` is the single edge.
  */
 
-import type { IDBPDatabase } from "idb";
+import type { IDBPDatabase, StoreNames } from "idb";
 
 import { buildClipMeta } from "./clips";
 import { getDb, type TcMobileDb } from "./db";
@@ -42,17 +42,6 @@ import type {
 
 const uuid = (): string => crypto.randomUUID();
 
-/** The stores every take write's transaction names. */
-const TAKE_STORES = [
-  "segments",
-  "takes",
-  "clipMeta",
-  "clipData",
-  "chapters",
-  "books",
-] as const;
-type TakeStore = (typeof TAKE_STORES)[number];
-
 /**
  * Open the transaction a take write needs: the take row and segment pointer, the
  * clip both `saveTake` writes and a superseded take's clip is deleted from, and
@@ -63,12 +52,12 @@ type TakeStore = (typeof TAKE_STORES)[number];
  */
 function openTakeTx(
   db: IDBPDatabase<TcMobileDb>,
-  // `saveReplayedTake` only: its precondition reads the pending row in the
-  // same transaction. Every other take write leaves the store out, so it is
-  // never queued behind a pending-row write (`pending-takes.ts`).
+  // `saveReplayedTake` only, which reads its pending row in the same
+  // transaction. Left out, no take write queues behind a pending-row write.
   withPending = false
 ) {
-  const stores: (TakeStore | "pendingTakes")[] = [...TAKE_STORES];
+  const stores: StoreNames<TcMobileDb>[] = ["segments", "takes", "clipMeta"];
+  stores.push("clipData", "chapters", "books");
   if (withPending) stores.push("pendingTakes");
   return db.transaction(
     stores,
@@ -278,36 +267,37 @@ export async function saveTake(
   );
 }
 
-/** What `saveReplayedTake` did: saved, or found its recipe overtaken. */
+/** `"stale"` saved nothing; `kept`: the audio is on disk as a refused row. */
 export type ReplayedSave =
-  { readonly kind: "saved"; readonly take: Take } | { readonly kind: "stale" };
+  | { readonly kind: "saved"; readonly take: Take }
+  | { readonly kind: "stale"; readonly kept: boolean };
 
 /**
- * `saveTake` for a take the launch replay read back from `pendingTakes` (#38
- * slice 3), conditional on nothing having moved since that read.
+ * `saveTake` for a take the launch replay read back (#38), on every attempt,
+ * Retry included. In THIS transaction, before any write, it saves only when
+ * the segment's active take is still `target` (the row's, persisted as the
+ * save began: anything else is a newer save, and replacing it would delete
+ * that take's clip; Frank, PR #1546), and the pending row is this take's
+ * (required on the first attempt; a Retry also accepts none, since a quota
+ * failure gives it up).
  *
- * The replay reads its recipe in one transaction and saves in a later one, and
- * another open copy of the app can save a newer take in between. An
- * unconditional replace would then delete that newer take and its clip
- * (Frank, PR #1546 round 1). So, in THIS transaction, before anything is
- * written, the save goes ahead only when both still hold:
- *
- *   - the segment's pending row is still there, with this `clipId`;
- *   - the segment's active take is still `activeTakeId`, the one the recipe
- *     was read against (`loadPendingRecipe`).
- *
- * Otherwise nothing is saved and `"stale"` comes back. The row is deleted in
- * the same transaction when it is still this take's: its recipe would now
- * splice onto audio that is no longer the segment's. A row that now belongs
- * to another take is left alone. A segment that is gone falls through to the
- * save, which throws the missing-segment failure `saveTake` throws.
+ * Otherwise nothing is saved and the audio is KEPT: the row is marked
+ * `"superseded"`, or written again whole when it is gone, unless another
+ * take's row holds the segment (`kept: false`; the caller keeps the take). A
+ * missing segment falls through to `saveTake`'s missing-segment failure.
  */
 export async function saveReplayedTake(
   segmentId: SegmentId,
   clipId: ClipId,
   samples: Int16Array,
   sampleRate: number,
-  opts: { finished?: boolean; now?: number; activeTakeId: TakeId | null }
+  opts: {
+    finished: boolean;
+    ordinal: number | null;
+    target: TakeId | null;
+    rowRequired: boolean;
+    now?: number;
+  }
 ): Promise<ReplayedSave> {
   const now = opts.now ?? Date.now();
   const base = buildClipMeta(clipId, samples, sampleRate, now);
@@ -316,14 +306,32 @@ export async function saveReplayedTake(
   const db = await getDb();
   const tx = openTakeTx(db, true);
   return inTakeTx(tx, async (): Promise<ReplayedSave> => {
-    const row = await tx.objectStore("pendingTakes").get(segmentId);
+    const rows = tx.objectStore("pendingTakes");
+    const row = await rows.get(segmentId);
     const segment = await tx.objectStore("segments").get(segmentId);
-    const moved = segment && segment.activeTakeId !== opts.activeTakeId;
-    if (row?.clipId !== clipId || moved) {
-      if (row?.clipId === clipId) {
-        await tx.objectStore("pendingTakes").delete(segmentId);
-      }
-      return { kind: "stale" };
+    const own = row?.clipId === clipId;
+    const moved = segment && segment.activeTakeId !== opts.target;
+    if (moved || (row ? !own : opts.rowRequired)) {
+      if (row && !own) return { kind: "stale", kept: false };
+      await rows.put(
+        row
+          ? { ...row, refusalReported: "superseded" }
+          : {
+              segmentId,
+              ordinal: opts.ordinal,
+              clipId,
+              base: { kind: "inline", samples: bytes.buffer },
+              recorded: new ArrayBuffer(0),
+              sampleRate,
+              offset: 0,
+              finished: opts.finished,
+              editOnly: true,
+              createdAt: now,
+              target: opts.target,
+              refusalReported: "superseded",
+            }
+      );
+      return { kind: "stale", kept: true };
     }
     const take = await writeClipAndTake(tx, segmentId, clipId, base, bytes, {
       finished: opts.finished,
@@ -343,13 +351,9 @@ async function writeClipAndTake(
   opts: { finished?: boolean; now: number }
 ): Promise<Take> {
   // The lossy-pass count carries over from the clip this take REPLACES (B8,
-  // Q5). The only way a segment has a prior take at save time is that the
-  // recorder opened it and edited or inserted into its audio — and if that
-  // audio was an MP3 (a finished segment being fixed), the buffer being saved
-  // was decoded from it and has been through that many lossy passes already.
-  // An erase clears the take first, so a genuinely fresh recording starts at
-  // 0. Read inside the transaction so the count and the take it describes
-  // come from the same state.
+  // Q5): a buffer decoded from an MP3 has been through that many lossy passes
+  // already, and an erase clears the take first, so a fresh recording starts
+  // at 0. Read here so the count and the take come from the same state.
   const generation = await priorClipGeneration(tx, segmentId);
   const meta = { ...base, generation };
   await tx.objectStore("clipMeta").put(meta);
@@ -358,15 +362,10 @@ async function writeClipAndTake(
 }
 
 /**
- * Run `body` on a take transaction and wait for it to commit, or abort it.
- *
- * A THROWN error mid-transaction (e.g. `writeTakeInTx` finding no such
- * segment) does not roll the clip write back on its own: IndexedDB
- * auto-commits an inactive transaction unless it is aborted. Abort so the
- * clip rolls back WITH the failed take — the single-transaction atomicity
- * #38 depends on, and without which the clip would be the very orphan this
- * rewrite exists to prevent. (A failed *request* — quota on the clip write —
- * already aborts the transaction on its own; this covers the thrown case.)
+ * Run `body` on a take transaction and wait for the commit. A THROWN error
+ * does not roll back on its own (IndexedDB auto-commits an inactive
+ * transaction), so it aborts: the clip goes WITH the failed take, the
+ * atomicity #38 depends on. A failed request already aborts by itself.
  */
 async function inTakeTx<T>(tx: TakeTx, body: () => Promise<T>): Promise<T> {
   try {

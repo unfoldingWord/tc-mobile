@@ -12,6 +12,7 @@ import {
   encodePendingBase,
   listPendingTakes,
   loadPendingRecipe,
+  markPendingTarget,
   writePendingTake,
 } from "@/lib/storage/pending-takes";
 import { saveTake } from "@/lib/storage/takes";
@@ -322,6 +323,9 @@ describe("listPendingTakes", () => {
 describe("loadPendingRecipe — reading a row back", () => {
   const writeAndRead = async (t: NewTake, source: ClipMeta | null = null) => {
     await writePendingTake(t, { now: 1, source });
+    // The hook marks the take the save replaces; the recipe tests below are
+    // about the base, so any target will do.
+    await markPendingTarget(t.segmentId, t.clipId, null);
     const row = await onlyRow();
     return row;
   };

@@ -102,26 +102,15 @@ type PendingListResult =
  *     Never spliced: splicing an MP3 as PCM corrupts the audio. The launch
  *     replay keeps the row and reports it once (`markPendingRefusal`).
  *   - `sample-rate`: written under another rate than the caller saves at.
+ *   - `no-target`: written before rows carried `target`, so the replay
+ *     cannot tell what the take was meant to replace. Kept, never saved.
+ *   - `superseded`: an earlier replay found another copy had saved over
+ *     `target`. Kept, never saved again.
  *   - `failed`: the read itself failed.
  */
 type PendingRecipeResult =
-  | {
-      readonly kind: "recipe";
-      readonly take: NewTake;
-      /**
-       * The segment's active take when the recipe was read. The replay's save
-       * goes ahead only if it is still the active take (`saveReplayedTake`).
-       */
-      readonly against: TakeId | null;
-    }
-  | {
-      readonly kind:
-        | "saved"
-        | "segment-gone"
-        | "base-missing"
-        | "base-changed"
-        | "sample-rate";
-    }
+  | { readonly kind: "recipe"; readonly take: NewTake }
+  | { readonly kind: "saved" | "segment-gone" | PendingRefusal }
   | { readonly kind: "failed"; readonly cause: unknown };
 
 /**
@@ -289,21 +278,49 @@ export async function deletePendingTake(
  * for an older take never lands on a newer one's row. `"kept"` when there is
  * no such row, or it already carries this refusal.
  */
-export async function markPendingRefusal(
+export function markPendingRefusal(
   segmentId: SegmentId,
   clipId: ClipId,
   refusal: PendingRefusal
+): Promise<PendingWriteResult> {
+  return markRow(segmentId, clipId, (held) =>
+    held.refusalReported === refusal
+      ? null
+      : { ...held, refusalReported: refusal }
+  );
+}
+
+/**
+ * Record on a row the take its save replaces (`StoredPendingTake.target`),
+ * on the same terms as `markPendingRefusal`. Never rejects.
+ */
+export function markPendingTarget(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  target: TakeId | null
+): Promise<PendingWriteResult> {
+  return markRow(segmentId, clipId, (held) =>
+    held.target === target ? null : { ...held, target }
+  );
+}
+
+/** The two marks' one transaction; `mark` returns `null` for "already so". */
+async function markRow(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  mark: (held: StoredPendingTake) => StoredPendingTake | null
 ): Promise<PendingWriteResult> {
   try {
     const db = await getDb();
     const tx = db.transaction("pendingTakes", "readwrite", DURABILITY);
     try {
       const held = await tx.store.get(segmentId);
-      if (!held || held.clipId !== clipId || held.refusalReported === refusal) {
+      const next = held && held.clipId === clipId ? mark(held) : null;
+      if (!next) {
         await tx.done;
         return { ok: true, outcome: "kept" };
       }
-      await tx.store.put({ ...held, refusalReported: refusal });
+      await tx.store.put(next);
       await tx.done;
       return { ok: true, outcome: "written" };
     } catch (cause) {
@@ -397,9 +414,10 @@ async function readRecipe(
     existing = new Int16Array(data);
   }
 
+  if (row.target === undefined) return { kind: "no-target" };
+  if (row.refusalReported === "superseded") return { kind: "superseded" };
   return {
     kind: "recipe",
-    against: segment.activeTakeId,
     take: {
       segmentId: row.segmentId,
       ordinal: row.ordinal,
@@ -409,6 +427,7 @@ async function readRecipe(
       offset: row.offset,
       finished: row.finished,
       editOnly: row.editOnly,
+      replayTarget: row.target,
     },
   };
 }
