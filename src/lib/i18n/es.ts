@@ -139,6 +139,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   micOffTitle: "El micrófono está apagado",
   micRetry: "Intentar de nuevo",
   micBack: "Volver",
+  micStepsLabel: "Pasos para activar el micrófono",
+  micStepOpenSettings: "Abre la configuración de tu teléfono",
+  micStepAndroidApp: "Toca Aplicaciones, luego tC Mobile y luego Permisos",
+  micStepIosApp: "Toca Privacidad y seguridad y luego Micrófono",
+  micStepIosAppOn: "Activa tC Mobile",
+  micStepMicOn: "Activa el micrófono",
+  micStepComeBack: "Vuelve aquí y toca Intentar de nuevo",
   finishedWriteFailed: "No se pudo guardar la marca de hecho.",
   recorderSaving: "Guardando…",
   takeCapWarning: (n: number): string =>
