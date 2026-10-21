@@ -871,8 +871,9 @@
   }
   /* Selection frame (B5): a translucent band over the picked span with a grab
      handle at each edge, laid over the canvas. The overlay is pointer-
-     transparent so only the handles take a drag; the band and handles use the
-     voice accent — this is an edit of the audio that exists. */
+     transparent so only the handles take a drag; the band, stems and handles
+     use their own selection blue, apart from the amber waveform under them
+     and from the guide ring (#1471). */
   .selection-overlay {
     position: absolute;
     inset: 0;
@@ -883,8 +884,8 @@
     top: 0;
     bottom: 0;
     box-sizing: border-box;
-    background: color-mix(in srgb, var(--s-voice) 20%, transparent);
-    border-inline: 2px solid var(--s-voice);
+    background: color-mix(in srgb, var(--s-select) 20%, transparent);
+    border-inline: 2px solid var(--s-select);
   }
   /* Each edge is a thin stem on the sample plus a finger-sized hit box. While
      the stem is on screen the component clamps the box's `left` to half its
@@ -911,7 +912,7 @@
     width: 3px;
     transform: translateX(-50%);
     pointer-events: none;
-    background: var(--s-voice);
+    background: var(--s-select);
   }
   /* The paste row sits above the canvas — a normal flex item, not an overlay —
      so the circular drop icon never covers the waveform band it used to hide
