@@ -171,6 +171,8 @@ describe("sanitize / parseSections / isAnswer", () => {
     "existing `Map<string, number>` helper",
     "results at <https://example.com/results>",
     "<details><summary>run</summary>5511 passed</details>",
+    "``Map<string, number>`` helper",
+    "N/A — <b>nothing</b> to test",
   ])("accepts the answer %j", (v) => expect(isAnswer(v)).toBe(true));
 
   it.each([
@@ -189,6 +191,16 @@ describe("sanitize / parseSections / isAnswer", () => {
     "<what changed | N/A — reason>",
     "see <link>",
     "-",
+    // Bench round 2 (George 1): a placeholder wrapped in an allowed tag is still one.
+    "<code>TBD</code>",
+    "<b>N/A</b>",
+    "<em>later</em>",
+    "<p>pending</p>",
+    "<br>",
+    "<code>",
+    "<details></details>",
+    "N/A — <b>TBD</b>",
+    "<b>N/A — </b>",
   ])("rejects the non-answer %j", (v) => expect(isAnswer(v)).toBe(false));
 });
 
@@ -626,6 +638,15 @@ describe("exemption — which PR kinds the gate lets through", () => {
     );
   });
 
+  // Bench round 2 (Frank): `gh pr view` reports the bot as `app/dependabot`.
+  it("exempts the login `gh pr view` reports for Dependabot, and not a lookalike", () => {
+    expect(exemption({ ...human, author: "app/dependabot" })).toMatch(
+      /dependabot/i
+    );
+    expect(exemption({ ...human, author: "app/dependabot-fan" })).toBeNull();
+    expect(exemption({ ...human, author: "dependabot" })).toBeNull();
+  });
+
   it.each([
     ["staging", "chore(release): promote v1.1.0 to staging"],
     ["staging", "Promote v1.0.2 to staging"],
@@ -676,6 +697,38 @@ describe("exemption — which PR kinds the gate lets through", () => {
   it("does not exempt a lookalike bot name or a release-looking head", () => {
     expect(exemption({ ...human, author: "dependabot-fan" })).toBeNull();
     expect(exemption({ ...human, author: "dependabot[bot]x" })).toBeNull();
+  });
+});
+
+describe("checkBody — placeholders in tags and labels in their own section", () => {
+  it("reports Test-first and a Collateral line that are only <code>TBD</code>", () => {
+    expect(
+      checkBody(
+        body({
+          testFirst: "<code>TBD</code>",
+          collateral: { "help-articles": "<b>N/A</b>" },
+        })
+      ).sort()
+    ).toEqual([
+      expect.stringMatching(/Collateral: help-articles/),
+      expect.stringMatching(/Test-first/),
+    ]);
+  });
+
+  // Bench round 2 (George 2): a label counts only inside the section that owns it.
+  it("does not take a Summary 'Test-first:' line for the Testing answer", () => {
+    const b = body({
+      testFirst: "",
+      sections: { Summary: "Adds it.\nTest-first: see below\nCloses #1" },
+    });
+    expect(checkBody(b)).toEqual([expect.stringMatching(/Test-first/)]);
+  });
+
+  it("does not let an earlier empty release-notes line shadow the real one", () => {
+    const b = body({
+      sections: { Summary: "Adds it.\n- release-notes:\nCloses #1" },
+    });
+    expect(checkBody(b)).toEqual([]);
   });
 });
 

@@ -9,7 +9,7 @@
  * The cap is `PROD_LINE_CAP` below and nowhere else; docs cite this file.
  * Over it, the body needs `size-exception: <reason>`. A `release/*` head is
  * exempt from the cap. Dependabot, a promotion (base `staging` or `main`) and
- * a `chore(release):` title into `develop` are exempt from everything, by PR
+ * a `chore(release): vX.Y.Z` title into `develop` are exempt from everything, by PR
  * metadata and never by the body. A hygiene gate, not a security control.
  *
  * Sources (exactly one): `--event <path>` (CI; size from `origin/<base>...<head
@@ -91,14 +91,25 @@ export function sanitize(raw) {
 const HTML_TAG =
   /<\/?(?:a|b|br|code|details|em|i|img|kbd|p|pre|strong|sub|summary|sup)\b[^>]*>/gi;
 
+/** A code span: a backtick run of any length, closed by a run of the same length. */
+const CODE_SPAN = /(`+)(?:(?!\1)[\s\S])*\1/g;
+const AUTOLINK = /<(?:https?:\/\/|mailto:)[^\s<>]+>/gi;
+
+/**
+ * What a reader sees: a code span or autolink is content (brackets inside it
+ * are not a placeholder) and the allowlisted tags are dropped, so a
+ * placeholder word wrapped in a tag is judged as the bare word.
+ */
+function visibleText(v) {
+  return v
+    .replace(CODE_SPAN, " x ")
+    .replace(AUTOLINK, " x ")
+    .replace(HTML_TAG, "");
+}
+
 /** True when `v` holds an unfilled `<…>`; inline code, autolinks and HTML tags are not. */
 function hasPlaceholder(v) {
-  return /<[^>]*>/.test(
-    v
-      .replace(/`[^`\n]*`/g, "")
-      .replace(/<(?:https?:\/\/|mailto:)[^\s<>]+>/gi, "")
-      .replace(HTML_TAG, "")
-  );
+  return /<[^>]*>/.test(visibleText(v));
 }
 
 /** Level-2 sections of a sanitized body: lowercase heading -> trimmed text. */
@@ -121,10 +132,11 @@ export function parseSections(text) {
 
 /** True when `value` is a real answer, not blank, a placeholder or a bare N/A. */
 export function isAnswer(value) {
-  const v = (value ?? "").trim();
-  if (!/[A-Za-z0-9]/.test(v) || hasPlaceholder(v)) return false;
+  const raw = (value ?? "").trim();
+  const v = visibleText(raw).trim();
+  if (!/[A-Za-z0-9]/.test(v) || hasPlaceholder(raw)) return false;
   const na = /^n\/?a\b[\s.:—–-]*/i.exec(v);
-  const text = na ? v.slice(na[0].length) : v;
+  const text = (na ? v.slice(na[0].length) : v).trim();
   return text !== "" && !PLACEHOLDER_WORD.test(text);
 }
 
@@ -198,14 +210,17 @@ export function checkBody(raw) {
   const sections = parseSections(text);
   const missing = [];
   const need = (bad, msg) => bad && missing.push(msg);
-  const answered = (label) => isAnswer(fieldValue(text, label) ?? "");
+  // A label is read inside the section that owns it, never from another one.
+  const own = (section) => sections.get(section) ?? "";
+  const answered = (label, section) =>
+    isAnswer(fieldValue(own(section), label) ?? "");
 
   for (const title of REQUIRED_SECTIONS) {
     const s = sections.get(title.toLowerCase());
     need(s === undefined, `${title}: the section is missing`);
     need(
       s !== undefined && NON_EMPTY.includes(title) && !isAnswer(s),
-      `${title}: the section is empty`
+      `${title}: the section is empty, or only a placeholder`
     );
   }
   need(closerProblem(text), closerProblem(text));
@@ -214,7 +229,7 @@ export function checkBody(raw) {
     "Tier: needs one token, T1, T2 or T3, alone on the line"
   );
   need(
-    !answered("Test-first:"),
+    !answered("Test-first:", "testing"),
     "Test-first: needs the red proof, or N/A — <reason> (a bare N/A is not an answer)"
   );
 
@@ -231,23 +246,23 @@ export function checkBody(raw) {
     need(!filled, `Done when: item ${n} is empty or an unfilled placeholder`);
     need(
       filled && (check === null || !isAnswer(check[1])),
-      `Done when: item ${n} has no Check:`
+      `Done when: item ${n} has no Check:, or its Check is only a placeholder`
     );
   });
 
   for (const surface of COLLATERAL_SURFACES) {
     need(
-      !answered(`${surface}:`),
+      !answered(`${surface}:`, "collateral"),
       `Collateral: ${surface} needs what changed, or N/A — <reason>`
     );
   }
   need(
-    !TASTE.test(fieldValue(text, "Taste impact:") ?? ""),
+    !TASTE.test(fieldValue(own("taste"), "Taste impact:") ?? ""),
     "Taste: `Taste impact:` needs none, follows pattern (citation) or changes taste (link)"
   );
   for (const label of ["Reuse", "Production lines", "File size"]) {
     need(
-      !answered(`${label}:`),
+      !answered(`${label}:`, "definition of done"),
       `Definition of done: ${label}: needs an answer`
     );
   }
@@ -304,7 +319,10 @@ function prodLinesInRange(range) {
 
 /** The reason a PR is exempt from the gate, or null. PR metadata only. */
 export function exemption({ author, baseRef, title }) {
-  if (author === "dependabot[bot]") return "Dependabot PR";
+  // `gh pr view` reports the bot as `app/dependabot`, the event payload as `dependabot[bot]`.
+  if (author === "dependabot[bot]" || author === "app/dependabot") {
+    return "Dependabot PR";
+  }
   if (baseRef === "staging" || baseRef === "main") {
     return `promotion PR (base ${baseRef})`;
   }
