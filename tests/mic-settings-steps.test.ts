@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PermissionPanel } from "@/components/permission-panel";
 import {
   micSettingsPlatformFrom,
+  readMicSettingsPlatform,
   type MicSettingsPlatform,
 } from "@/hooks/mic-settings-platform";
 import {
@@ -57,17 +58,6 @@ const EXPECTED: Record<MicSettingsPlatform, string[]> = {
     strings.micStepIosAppOn,
     strings.micStepComeBack,
   ],
-  "android-chrome": [
-    strings.micStepAndroidChrome,
-    strings.micStepMicOn,
-    strings.micStepComeBack,
-  ],
-  "ios-safari": [
-    strings.micStepOpenSettings,
-    strings.micStepIosSafari,
-    strings.micStepIosSafariMic,
-    strings.micStepComeBack,
-  ],
 };
 
 describe("PermissionPanel settings steps (#1569)", () => {
@@ -108,12 +98,7 @@ describe("PermissionPanel settings steps (#1569)", () => {
   });
 
   it("iOS wording names no version-specific control", () => {
-    const ios = [
-      strings.micStepIosApp,
-      strings.micStepIosAppOn,
-      strings.micStepIosSafari,
-      strings.micStepIosSafariMic,
-    ].join(" ");
+    const ios = [strings.micStepIosApp, strings.micStepIosAppOn].join(" ");
     expect(ios).not.toMatch(/aA|Page Menu|Website Settings|address bar/);
     expect(strings.micStepIosApp).toBe(
       "Tap Privacy & Security, then Microphone"
@@ -132,7 +117,7 @@ describe("PermissionPanel settings steps (#1569)", () => {
         message: sentence,
         onRetry: () => {},
         onBack: () => {},
-        settingsPlatform: "ios-safari",
+        settingsPlatform: "ios-app",
       })
     );
     const head = one(container, ".o4-err-head");
@@ -167,76 +152,51 @@ describe("PermissionPanel settings steps (#1569)", () => {
 });
 
 describe("micSettingsPlatformFrom (#1569)", () => {
+  it("names the native shells by Capacitor's id", () => {
+    expect(micSettingsPlatformFrom("android")).toBe("android-app");
+    expect(micSettingsPlatformFrom("ios")).toBe("ios-app");
+  });
+
+  it("gives every browser no steps (browser steps are #1589)", () => {
+    expect(micSettingsPlatformFrom("web")).toBeNull();
+  });
+});
+
+describe("readMicSettingsPlatform (#1569)", () => {
   const CHROME_ANDROID =
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36";
-  const SAMSUNG = CHROME_ANDROID + " SamsungBrowser/25.0";
   const SAFARI_IOS =
     "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
-  const CHROME_IOS = SAFARI_IOS + " CriOS/130.0.0.0";
+  const WEBVIEW =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
   const DESKTOP =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15";
 
-  it("names the native shells by Capacitor's id", () => {
-    expect(micSettingsPlatformFrom("android", "", "", 0, false)).toBe(
-      "android-app"
-    );
-    expect(micSettingsPlatformFrom("ios", "", "", 0, false)).toBe("ios-app");
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("reads Chrome on Android and Safari on iOS from the user agent", () => {
-    expect(
-      micSettingsPlatformFrom("web", CHROME_ANDROID, "Linux armv8l", 5, false)
-    ).toBe("android-chrome");
-    expect(micSettingsPlatformFrom("web", SAFARI_IOS, "iPhone", 5, false)).toBe(
-      "ios-safari"
-    );
-    expect(micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 5, false)).toBe(
-      "ios-safari"
-    );
-  });
-
-  it("gives no steps for other browsers or a desktop", () => {
-    expect(
-      micSettingsPlatformFrom("web", SAMSUNG, "Linux", 5, false)
-    ).toBeNull();
-    expect(
-      micSettingsPlatformFrom("web", CHROME_IOS, "iPhone", 5, false)
-    ).toBeNull();
-    expect(
-      micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 0, false)
-    ).toBeNull();
-    expect(micSettingsPlatformFrom("web", "", "", 0, false)).toBeNull();
-  });
-
-  it("gives an installed PWA no steps, on Android and iOS alike", () => {
-    expect(
-      micSettingsPlatformFrom("web", CHROME_ANDROID, "Linux armv8l", 5, true)
-    ).toBeNull();
-    expect(
-      micSettingsPlatformFrom("web", SAFARI_IOS, "iPhone", 5, true)
-    ).toBeNull();
-    expect(
-      micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 5, true)
-    ).toBeNull();
-  });
-
-  it("keeps the native shells' steps whatever the display mode says", () => {
-    expect(micSettingsPlatformFrom("android", "", "", 0, true)).toBe(
-      "android-app"
-    );
-    expect(micSettingsPlatformFrom("ios", "", "", 0, true)).toBe("ios-app");
-  });
-
-  it("gives a bare iOS WebView no steps, and keeps desktop-mode iPad", () => {
-    const WEBVIEW =
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
-    expect(
-      micSettingsPlatformFrom("web", WEBVIEW, "iPhone", 5, false)
-    ).toBeNull();
-    expect(micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 5, false)).toBe(
-      "ios-safari"
-    );
-  });
+  const cases: Array<[string, string, boolean]> = [
+    ["Chrome on Android", CHROME_ANDROID, false],
+    ["Safari on iOS", SAFARI_IOS, false],
+    ["a bare iOS WebView", WEBVIEW, false],
+    ["a desktop browser", DESKTOP, false],
+    ["an installed web app", CHROME_ANDROID, true],
+  ];
+  for (const [name, userAgent, standalone] of cases) {
+    it(`gives ${name} no steps`, () => {
+      vi.stubGlobal("navigator", {
+        userAgent,
+        platform: "MacIntel",
+        maxTouchPoints: 5,
+        standalone,
+      });
+      vi.stubGlobal("window", {
+        matchMedia: () => ({ matches: standalone }),
+      });
+      expect(readMicSettingsPlatform()).toBeNull();
+    });
+  }
 });
 
 describe("mic retry latch (#1569)", () => {

@@ -4,28 +4,30 @@ import { expect, test, type Page } from "@playwright/test";
  * The mic panel's second-refusal state at a small phone (#1569), on the
  * shipped `dist/` build. jsdom computes no boxes, so this is the layout half
  * of `tests/mic-settings-steps.test.ts`: with the longest walk-through on
- * screen (Safari on iOS, four steps) and the real refusal sentence, Retry and
- * Back must sit inside a 360x640 viewport without scrolling, and the last
- * step must be reachable by scrolling the panel's own body.
+ * screen (the iOS app, four steps) and the real refusal sentence, Retry and
+ * Back must sit inside a 360x640 viewport without scrolling, and every step
+ * must be on screen without scrolling.
  *
  * The refusal is real code, not a stub of the panel: `getUserMedia` rejects
  * with `NotAllowedError`, so the recorder's own classifier words the message
  * (microphone permission granted to the page, so it reads the OS-blocked
- * sentence, the longest). The user agent is set to an iPhone Safari string so
+ * sentence, the longest). Capacitor's custom-platform hook names the iOS shell so
  * `readMicSettingsPlatform` picks the iOS walk-through. This is a layout
  * check in headless Chromium; it is not a device run.
  */
-const IPHONE_SAFARI =
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
-
 test.use({
   permissions: ["microphone"],
-  userAgent: IPHONE_SAFARI,
   viewport: { width: 360, height: 640 },
 });
 
 async function openRecorder(page: Page) {
   await page.addInitScript(() => {
+    // The native-platform signal the app reads: Capacitor's own custom
+    // platform hook, so `Capacitor.getPlatform()` answers "ios" and the iOS
+    // app walk-through (four steps, the longest) is chosen by the real code.
+    (
+      window as unknown as { CapacitorCustomPlatform: { name: string } }
+    ).CapacitorCustomPlatform = { name: "ios" };
     navigator.mediaDevices.getUserMedia = () =>
       Promise.reject(new DOMException("denied", "NotAllowedError"));
   });
@@ -45,7 +47,7 @@ async function openRecorder(page: Page) {
     .click();
 }
 
-test("the second-refusal steps leave Retry and Back on screen and scrollable", async ({
+test("the second-refusal steps show every step with Retry and Back on screen", async ({
   page,
 }) => {
   await openRecorder(page);

@@ -415,10 +415,6 @@ export const stringsEn = {
   micStepAndroidApp: "Tap Apps, then tC Mobile, then Permissions",
   micStepIosApp: "Tap Privacy & Security, then Microphone",
   micStepIosAppOn: "Turn tC Mobile on",
-  micStepAndroidChrome:
-    "Tap the icon at the left of the web address, then Permissions",
-  micStepIosSafari: "Tap Safari (it's under Apps on newer phones)",
-  micStepIosSafariMic: "Tap Microphone, then Allow",
   micStepMicOn: "Turn Microphone on",
   micStepComeBack: "Come back here and tap Try again",
   finishedWriteFailed: "Could not save the finished mark.",
