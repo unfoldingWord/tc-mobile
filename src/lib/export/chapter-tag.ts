@@ -10,27 +10,28 @@
  * - COMM is the template's attribution as it read when the book was made, and
  *   only for a book made from a template (ADR 0006 implication 2). A blank
  *   book has nothing to attribute.
- * - TCOP is not written yet. It is the chosen licence's label, and that label
- *   comes from #1566's helper (`lib/export/licence-tag.ts`), which is not on
- *   develop as this lands; one label table, not two, so this waits for it.
+ * - TCOP is the chosen licence's label, from #1566's helper
+ *   (`lib/export/licence-tag.ts`): one label table, not two. A Creative Commons
+ *   licence writes its label; anything else writes no TCOP (#1579).
  *
  * Nothing else about the book, the phone or the person goes into the tag.
  */
 
 import { type Id3Fields, withId3v2 } from "@/lib/audio/id3";
+import { licenceLabel } from "@/lib/export/licence-tag";
 import { getBook, getChapter } from "@/lib/storage/books";
 import type { Book, Chapter, ChapterId } from "@/types/domain";
 
 /** The tag fields for one chapter of `book`. */
 export function chapterId3Fields(
-  book: Pick<Book, "name" | "provenance">,
+  book: Pick<Book, "name" | "provenance"> & Partial<Pick<Book, "licence">>,
   chapter: Pick<Chapter, "name" | "number">
 ): Id3Fields {
   return {
     title: chapter.name,
     album: book.name,
     track: chapter.number,
-    copyright: null,
+    copyright: licenceLabel(book.licence ?? null),
     comment:
       book.provenance.kind === "template" ? book.provenance.attribution : null,
   };

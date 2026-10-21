@@ -2,14 +2,15 @@ import type { LicenceId } from "@/types/template";
 
 /**
  * The display label of a licence a book carries (#1566, D5, S19): the words a
- * shared file's name and, later, its ID3 copyright frame (#252) show.
+ * shared file's name and its ID3 copyright frame (#252) show.
  *
  * Only the three Creative Commons ids have a label. `null` (not chosen yet)
- * and `all-rights-reserved` (or any id added later) have none, so no tag is
- * written for them whatever "Other" turns out to mean.
+ * and `all-rights-reserved` have none, so no tag is written for them
+ * whatever "Other" turns out to mean.
  *
- * @pivotpending #252 — the ID3 writer reads this label; until it lands only
- * `licenceTag` below calls it.
+ * The switch is exhaustive: a new `LicenceId` is a compile error here until
+ * someone decides its label or its absence (#1579). `chapter-tag.ts` reads
+ * this label for the ID3 copyright frame (#252).
  */
 export function licenceLabel(id: LicenceId | null): string | null {
   switch (id) {
@@ -19,8 +20,15 @@ export function licenceLabel(id: LicenceId | null): string | null {
       return "CC BY 4.0";
     case "CC0-1.0":
       return "CC0 1.0";
-    default:
+    case "all-rights-reserved":
+    case null:
       return null;
+    default: {
+      // Compile-time exhaustiveness only; at runtime a stray id has no label.
+      const unhandled: never = id;
+      void unhandled;
+      return null;
+    }
   }
 }
 

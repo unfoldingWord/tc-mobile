@@ -27,6 +27,11 @@ describe("licenceLabel / licenceTag", () => {
     expect(licenceTag(null)).toBe("");
     expect(licenceTag("all-rights-reserved")).toBe("");
   });
+  it("has no label for an id outside the union at runtime (#1583)", () => {
+    const stray = "not-a-licence" as LicenceId;
+    expect(licenceLabel(stray)).toBeNull();
+    expect(licenceTag(stray)).toBe("");
+  });
 });
 
 describe("share filenames carry the tag before the extension", () => {
