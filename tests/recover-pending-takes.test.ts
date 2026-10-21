@@ -12,6 +12,12 @@ vi.mock("@/lib/storage/takes", async (importOriginal) => {
     saveReplayedTake: vi.fn(actual.saveReplayedTake),
   };
 });
+// Pass-through, so a case can see the row exactly as the first put left it.
+vi.mock("@/lib/storage/pending-takes", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/storage/pending-takes")>();
+  return { ...actual, writePendingTake: vi.fn(actual.writePendingTake) };
+});
 
 import { recoverPendingTakes } from "@/hooks/recover-pending-takes";
 import {
@@ -516,6 +522,37 @@ describe("recoverPendingTakes — a row the save hook wrote", () => {
 
     expect(puts.length).toBeGreaterThan(0);
     for (const value of puts) expect(value).toMatchObject({ target: null });
+
+    await launch().run();
+
+    expect(await activeClip(segmentId)).toBe(take.clipId);
+    expect(refused(reports)).toEqual([]);
+  });
+});
+
+describe("recoverPendingTakes — killed right after the first put (George r5)", () => {
+  it("finishes a take whose row is only the first put", async () => {
+    const segmentId = await freshSegment();
+    const take = startSave(null, newTake(segmentId));
+    const real = await vi.importActual<
+      typeof import("@/lib/storage/pending-takes")
+    >("@/lib/storage/pending-takes");
+    // The row as the first put leaves it: what a kill right after it finds.
+    let firstPut: StoredPendingTake | undefined;
+    vi.mocked(writePendingTake).mockImplementationOnce(async (...args) => {
+      const result = await real.writePendingTake(...args);
+      firstPut = (await rows())[0];
+      return result;
+    });
+    vi.mocked(saveTake).mockRejectedValueOnce(new Error("killed"));
+    await performSaveTake(take, { update: () => {}, requestSweep: () => {} });
+    // Whatever the hook writes after the first put has landed by now.
+    await vi.waitFor(async () =>
+      expect((await rows())[0]?.target).not.toBeUndefined()
+    );
+    const db = await getDb();
+    await db.clear("pendingTakes");
+    await db.put("pendingTakes", firstPut!);
 
     await launch().run();
 
