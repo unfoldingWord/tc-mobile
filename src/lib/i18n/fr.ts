@@ -135,9 +135,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   },
   record: "Enregistrer",
   stop: "Arrêter l'enregistrement",
-  zoomAtWhole: "Le segment entier est affiché. Zoomez pour en voir un quart.",
-  zoomAtQuarter:
-    "Un quart du segment est affiché. Dézoomez pour voir le segment entier.",
+  zoomAtWhole: "Zoom normal. Zoomez pour agrandir.",
+  zoomAtQuarter: "Zoom agrandi. Dézoomez pour revenir au zoom normal.",
   micOffTitle: "Le microphone est éteint",
   micRetry: "Réessayer",
   micBack: "Retour",
