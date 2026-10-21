@@ -4,6 +4,7 @@ import path from "node:path";
 import ts from "typescript";
 
 import type { Strings } from "@/lib/strings";
+import { ENGLISH_ONLY } from "@/lib/i18n/english-only";
 import { stringsEn } from "@/lib/strings";
 
 /**
@@ -16,34 +17,46 @@ type Pending = readonly string[] | "all";
 
 const ENGLISH_KEYS = Object.keys(stringsEn);
 
-/** Missing, extra, mistyped and stale-pending keys of one locale. */
+/**
+ * Missing, extra, mistyped and stale-pending keys of one locale. A key in
+ * `englishOnly` (S11, `lib/i18n/english-only.ts`) is never missing or pending,
+ * and a locale that carries one is wrong.
+ */
 export function keyProblems(
   tag: string,
   overrides: Partial<Strings>,
   pending: Pending,
-  enforceComplete: boolean
+  enforceComplete: boolean,
+  englishOnly: ReadonlySet<string> = ENGLISH_ONLY
 ): string[] {
   const problems: string[] = [];
   const own = Object.keys(overrides);
   for (const key of own) {
-    if (!ENGLISH_KEYS.includes(key)) problems.push(`${tag}: extra key ${key}`);
+    if (englishOnly.has(key))
+      problems.push(`${tag}: ${key} is English-only and is translated`);
+    else if (!ENGLISH_KEYS.includes(key))
+      problems.push(`${tag}: extra key ${key}`);
     else if (
       typeof (overrides as Record<string, unknown>)[key] !==
       typeof (stringsEn as Record<string, unknown>)[key]
     )
       problems.push(`${tag}: ${key} changes between text and function`);
   }
-  const missing = ENGLISH_KEYS.filter((key) => !own.includes(key));
+  const missing = ENGLISH_KEYS.filter(
+    (key) => !own.includes(key) && !englishOnly.has(key)
+  );
   if (pending === "all") {
     for (const key of own)
-      if (ENGLISH_KEYS.includes(key))
+      if (ENGLISH_KEYS.includes(key) && !englishOnly.has(key))
         problems.push(`${tag}: pending key ${key} is present`);
   } else {
     for (const key of missing)
       if (!pending.includes(key))
         problems.push(`${tag}: key ${key} is neither present nor pending`);
     for (const key of pending) {
-      if (!ENGLISH_KEYS.includes(key))
+      if (englishOnly.has(key))
+        problems.push(`${tag}: pending key ${key} is English-only`);
+      else if (!ENGLISH_KEYS.includes(key))
         problems.push(`${tag}: pending key ${key} is not an English key`);
       else if (own.includes(key))
         problems.push(`${tag}: pending key ${key} is present`);
