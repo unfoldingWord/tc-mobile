@@ -1452,7 +1452,10 @@ export const stringsEn = {
   // ── Phone check (#1009) ──────────────────────────────────────────────────
   // A hidden tester screen, reached by five taps on the build stamp or by
   // `?check=phone`. Its words are for a tester filling in #974, not for a
-  // translator, but they are screen copy all the same and so live here. The
+  // translator, but they are screen copy all the same and so live here. They
+  // are English on purpose (S11-tester-screens, #1483): every `phoneCheck*`
+  // key is listed in `lib/i18n/english-only.ts`, which the coverage test pins
+  // to this group, so a new key here must be added there too. The
   // REPORT it produces is engineering data and is worded in
   // `lib/phone-check/report.ts` instead — see that file's docblock.
   phoneCheckTitle: "Phone check",

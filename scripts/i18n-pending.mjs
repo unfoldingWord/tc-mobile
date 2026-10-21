@@ -26,7 +26,11 @@ try {
     "/src/lib/i18n/locales.ts"
   );
   const { stringsEn } = await server.ssrLoadModule("/src/lib/strings.ts");
-  const keys = Object.keys(stringsEn);
+  const { ENGLISH_ONLY } = await server.ssrLoadModule(
+    "/src/lib/i18n/english-only.ts"
+  );
+  // S11: English-only keys are never pending (lib/i18n/english-only.ts).
+  const keys = Object.keys(stringsEn).filter((key) => !ENGLISH_ONLY.has(key));
   const previous = readFileSync(target, "utf8");
   const enforce = /export const ENFORCE_COMPLETE = (true|false);/.exec(
     previous
