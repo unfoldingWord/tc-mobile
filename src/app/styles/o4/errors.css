@@ -8,6 +8,41 @@
   :root .o4-err {
     gap: 22px; /* #939 token */
   }
+  /* The permission panel (#1569): the circle, message and steps scroll inside
+     the room the sheet leaves, while Retry and Back sit in a footer that never
+     scrolls, so the two recovery controls stay on a short phone screen however
+     many steps show. `min-height: 0` lets the flex child shrink below its
+     content so the body, not the sheet, takes the overflow. */
+  :root .o4-err-split {
+    min-height: 0;
+    width: 100%;
+  }
+  :root .o4-err-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px; /* #939 token */
+    min-height: 0;
+    width: 100%;
+    overflow-y: auto;
+  }
+  /* Centred while it fits, top-aligned once it overflows: auto margins, not
+     justify-content, so the first child is never cut off above the scroll. */
+  :root .o4-err-body > :first-child {
+    margin-top: auto;
+  }
+  :root .o4-err-body > :last-child {
+    margin-bottom: auto;
+  }
+  :root .o4-err-footer {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px; /* #939 token */
+    padding-top: 22px; /* #939 token */
+  }
   :root .o4-err-circle {
     position: relative;
     display: flex;
@@ -32,6 +67,25 @@
     border-radius: 3px;
     background: var(--s-live);
     transform: rotate(-41deg);
+  }
+  /* The compact header while the settings steps show (#1569): the circle is a
+     small icon beside the title so all four steps fit above Retry and Back on
+     a 360x640 phone. The strike scales with it. */
+  :root .o4-err-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+  :root .o4-err-circle--compact {
+    width: 52px;
+    height: 52px;
+  }
+  :root .o4-err-circle--compact::after {
+    width: 30px;
+    height: 3px;
+    border-radius: 2px;
   }
   :root .o4-err-circle--warn {
     width: 170px;
@@ -74,5 +128,51 @@
   :root .o4-err-wide--armed {
     background: var(--s-live);
     color: var(--s-live-ink);
+  }
+  /* The phone-settings steps after a second mic refusal (#1569): a numbered
+     list whose rows lead with an icon, so a person who does not read can
+     follow the pictures. The number is a counter, not text in the markup. */
+  :root .o4-err-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: o4-step;
+    max-width: 320px;
+    text-align: start;
+  }
+  :root .o4-err-step {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    counter-increment: o4-step;
+    font-size: 17px; /* #939 token */
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--s-ink);
+  }
+  :root .o4-err-step::before {
+    content: counter(o4-step);
+    /* The empty alt keeps the number out of the accessibility tree; the first
+       line is the fallback for an engine that drops the second. */
+    content: counter(o4-step) / "";
+    flex-shrink: 0;
+    width: 24px;
+    font-weight: 800;
+    color: var(--s-ink-muted);
+    text-align: center;
+  }
+  :root .o4-err-step-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--s-well);
+    color: var(--s-ink);
   }
 }
