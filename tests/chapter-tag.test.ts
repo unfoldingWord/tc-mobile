@@ -202,7 +202,8 @@ describe("a shared chapter carries exactly one tag (#252)", () => {
       const after = await getClip(id);
       expect(after).toEqual(before[i]);
       if (after?.encoding !== "mp3") throw new Error("expected an MP3 clip");
-      expect([...after.mp3.subarray(0, 3)]).not.toEqual([0x49, 0x44, 0x33]);
+      // It opens on a frame sync, not on a tag.
+      expect(after.mp3[0]).toBe(0xff);
     }
   });
 
