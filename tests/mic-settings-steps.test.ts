@@ -54,7 +54,7 @@ const EXPECTED: Record<MicSettingsPlatform, string[]> = {
   "ios-app": [
     strings.micStepOpenSettings,
     strings.micStepIosApp,
-    strings.micStepMicOn,
+    strings.micStepIosAppOn,
     strings.micStepComeBack,
   ],
   "android-chrome": [
@@ -63,8 +63,9 @@ const EXPECTED: Record<MicSettingsPlatform, string[]> = {
     strings.micStepComeBack,
   ],
   "ios-safari": [
+    strings.micStepOpenSettings,
     strings.micStepIosSafari,
-    strings.micStepMicOn,
+    strings.micStepIosSafariMic,
     strings.micStepComeBack,
   ],
 };
@@ -104,6 +105,19 @@ describe("PermissionPanel settings steps (#1569)", () => {
       expect(items.length).toBeGreaterThan(0);
       for (const li of items) expect(li.textContent).toMatch(/^FR /);
     }
+  });
+
+  it("iOS wording names no version-specific control", () => {
+    const ios = [
+      strings.micStepIosApp,
+      strings.micStepIosAppOn,
+      strings.micStepIosSafari,
+      strings.micStepIosSafariMic,
+    ].join(" ");
+    expect(ios).not.toMatch(/aA|Page Menu|Website Settings|address bar/);
+    expect(strings.micStepIosApp).toBe(
+      "Tap Privacy & Security, then Microphone"
+    );
   });
 
   it("a first refusal (no platform) shows no steps", () => {

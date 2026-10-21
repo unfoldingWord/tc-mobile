@@ -35,7 +35,7 @@ function micSettingsSteps(platform: MicSettingsPlatform): Step[] {
       return [
         openSettings(),
         { icon: "tap-hand", text: strings.micStepIosApp },
-        micOn(),
+        { icon: "mic", text: strings.micStepIosAppOn },
         comeBack(),
       ];
     case "android-chrome":
@@ -46,8 +46,9 @@ function micSettingsSteps(platform: MicSettingsPlatform): Step[] {
       ];
     case "ios-safari":
       return [
+        openSettings(),
         { icon: "tap-hand", text: strings.micStepIosSafari },
-        micOn(),
+        { icon: "mic", text: strings.micStepIosSafariMic },
         comeBack(),
       ];
   }
