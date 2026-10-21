@@ -206,9 +206,9 @@ describe("the argument check, in both states", () => {
     expect(
       check({ shareItemsGoOut: (out: number, all: number) => `${out}/${all}` })
     ).toEqual([]);
-    expect(check({ shareItemsGoOut: (out: number) => `${out} sortent` })).toEqual(
-      ["fr: shareItemsGoOut drops 4243"]
-    );
+    expect(
+      check({ shareItemsGoOut: (out: number) => `${out} sortent` })
+    ).toEqual(["fr: shareItemsGoOut drops 4243"]);
     expect(
       check({ shareItemsGoOut: (_out: number, all: number) => `sur ${all}` })
     ).toEqual(["fr: shareItemsGoOut drops 4242"]);
