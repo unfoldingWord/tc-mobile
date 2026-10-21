@@ -234,7 +234,8 @@ function narrowestDotColumn(chevronWidth: number): number {
   const card = declarations(books, `${O4} .books-card`);
   const cardBorder = px(card.get("border")!.split(" ")[0]);
   const row = declarations(books, `${O4} .books-chapter`);
-  const [, rowRight, , rowLeft] = row.get("padding")!.split(" ");
+  // Logical since #1552: `padding-inline: <start> <end>`, both summed here.
+  const [rowLeft, rowRight] = row.get("padding-inline")!.split(" ");
   const badge = px(
     declarations(books, `${O4} .books-chapter-num`).get("width")
   );

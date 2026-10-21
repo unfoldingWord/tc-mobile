@@ -917,6 +917,12 @@ interface IconProps {
   className?: string;
 }
 
+/** The glyphs whose drawn direction means "back" or "onward", not time. */
+const MIRRORED_AT_RTL: ReadonlySet<IconName> = new Set<IconName>([
+  "back",
+  "chevron-right",
+]);
+
 export function Icon({ name, size = 22, className }: IconProps) {
   return (
     <svg
@@ -926,6 +932,7 @@ export function Icon({ name, size = 22, className }: IconProps) {
       aria-hidden="true"
       focusable="false"
       className={className}
+      data-rtl-mirror={MIRRORED_AT_RTL.has(name) ? "" : undefined}
     >
       {PATHS[name]}
     </svg>

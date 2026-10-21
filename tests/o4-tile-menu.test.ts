@@ -122,7 +122,7 @@ describe("o4/menus.css (#941)", () => {
     expect(rules.length).toBeGreaterThanOrEqual(8);
     for (const rule of rules)
       for (const selector of rule.selectors)
-        expect(selector).toMatch(/^:root /);
+        expect(selector).toMatch(/^:root(\[dir="rtl"\])? /);
   });
 
   it("paints colour only through layer-2 roles", () => {
