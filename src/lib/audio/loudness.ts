@@ -122,7 +122,7 @@ class Biquad {
     let z1 = this.z1;
     let z2 = this.z2;
     for (let i = 0; i < n; i++) {
-      const v = x[i] ?? 0;
+      const v = x[i]!;
       const y = b0 * v + z1;
       z1 = b1 * v - a1 * y + z2;
       z2 = b2 * v - a2 * y;
@@ -186,7 +186,8 @@ function interpolatorTaps(arena: Arena): Float64Array {
   const taps = arena.f64(length);
   for (let k = 0; k < length; k++) {
     const t = (k - centre) / OVERSAMPLE;
-    const sinc = t === 0 ? 1 : Math.sin(Math.PI * t) / (Math.PI * t);
+    // The tap count is even, so t is never 0 and the sinc needs no special case.
+    const sinc = Math.sin(Math.PI * t) / (Math.PI * t);
     const taper =
       0.42 -
       0.5 * Math.cos((2 * Math.PI * k) / (length - 1)) +
@@ -199,7 +200,7 @@ function interpolatorTaps(arena: Arena): Float64Array {
   for (let p = 0; p < OVERSAMPLE; p++) {
     const phase = taps.subarray(p * TAPS_PER_PHASE, (p + 1) * TAPS_PER_PHASE);
     const sum = phase.reduce((a, b) => a + b, 0);
-    for (let j = 0; j < TAPS_PER_PHASE; j++) phase[j] = (phase[j] ?? 0) / sum;
+    for (let j = 0; j < TAPS_PER_PHASE; j++) phase[j] = phase[j]! / sum;
   }
   return taps;
 }
@@ -228,14 +229,14 @@ class TruePeakDetector {
       let idx = this.at;
       const base = p * TAPS_PER_PHASE;
       for (let j = 0; j < TAPS_PER_PHASE; j++) {
-        y += (this.taps[base + j] ?? 0) * (h[idx] ?? 0);
+        y += this.taps[base + j]! * h[idx]!;
         idx = idx === 0 ? TAPS_PER_PHASE - 1 : idx - 1;
       }
       const a = Math.abs(y);
       if (a > peak) peak = a;
     }
     const back =
-      h[(this.at - DETECTOR_DELAY + TAPS_PER_PHASE) % TAPS_PER_PHASE] ?? 0;
+      h[(this.at - DETECTOR_DELAY + TAPS_PER_PHASE) % TAPS_PER_PHASE]!;
     return Math.max(peak, Math.abs(back));
   }
 }
@@ -269,7 +270,7 @@ class GatedLoudness {
   /** Adds the K-weighted samples `w[0..n)`. */
   add(w: Float32Array, n: number): void {
     for (let i = 0; i < n; i++) {
-      const v = w[i] ?? 0;
+      const v = w[i]!;
       this.sum += v * v;
       if (++this.count === this.subLength) this.closeSubBlock();
     }
@@ -284,7 +285,7 @@ class GatedLoudness {
     // Oldest to newest, so the block's sum never depends on where it started.
     let energy = 0;
     for (let s = 0; s < SUB_BLOCKS_PER_BLOCK; s++)
-      energy += this.subs[(this.subAt + s) % SUB_BLOCKS_PER_BLOCK] ?? 0;
+      energy += this.subs[(this.subAt + s) % SUB_BLOCKS_PER_BLOCK]!;
     const meanSquare = energy / (SUB_BLOCKS_PER_BLOCK * this.subLength);
     const blockLufs = LOUDNESS_OFFSET_DB + 10 * Math.log10(meanSquare);
     if (!(blockLufs > ABSOLUTE_GATE_LUFS)) return;
@@ -292,8 +293,8 @@ class GatedLoudness {
       this.binBlocks.length - 1,
       Math.floor((blockLufs - ABSOLUTE_GATE_LUFS) / BIN_LU)
     );
-    this.binEnergy[bin] = (this.binEnergy[bin] ?? 0) + meanSquare;
-    this.binBlocks[bin] = (this.binBlocks[bin] ?? 0) + 1;
+    this.binEnergy[bin]! += meanSquare;
+    this.binBlocks[bin]! += 1;
     this.gatedEnergy += meanSquare;
     this.gatedBlocks += 1;
   }
@@ -305,16 +306,20 @@ class GatedLoudness {
       LOUDNESS_OFFSET_DB +
       10 * Math.log10(this.gatedEnergy / this.gatedBlocks) +
       RELATIVE_GATE_LU;
+    const last = this.binBlocks.length - 1;
     let energy = 0;
     let blocks = 0;
-    for (let b = 0; b < this.binBlocks.length; b++) {
-      // A bin passes when its centre is above the gate.
+    for (let b = 0; b <= last; b++) {
+      // A bin passes when its centre is above the gate. The top bin also
+      // holds every block louder than the histogram's range, so it always
+      // passes: it holds the loudest block, which is never under the gate.
       const centre = ABSOLUTE_GATE_LUFS + (b + 0.5) * BIN_LU;
-      if (!(centre > relativeGate)) continue;
-      energy += this.binEnergy[b] ?? 0;
-      blocks += this.binBlocks[b] ?? 0;
+      if (b < last && !(centre > relativeGate)) continue;
+      energy += this.binEnergy[b]!;
+      blocks += this.binBlocks[b]!;
     }
-    if (blocks === 0) return null;
+    // Never empty: the bin holding the loudest block sits at or above the
+    // absolute-gated mean, so more than 10 LU over the relative gate.
     return LOUDNESS_OFFSET_DB + 10 * Math.log10(energy / blocks);
   }
 }
@@ -375,7 +380,7 @@ export class LoudnessMeter {
     lap?.("kWeight");
     let peak = this.truePeak;
     for (let i = 0; i < n; i++) {
-      const p = this.peak.step(x[i] ?? 0);
+      const p = this.peak.step(x[i]!);
       if (p > peak) peak = p;
     }
     this.truePeak = peak;
@@ -454,29 +459,29 @@ class Limiter {
   process(x: Float32Array, n: number): void {
     const L = this.lookahead;
     for (let i = 0; i < n; i++) {
-      const v = x[i] ?? 0;
+      const v = x[i]!;
       const level = this.detector.step(v);
       const need = level > this.ceiling ? this.ceiling / level : 1;
       // Sliding minimum over the last L requirements: evict the one that
       // fell out of range first, so the ring never holds more than L.
       const k = this.index++;
-      if (this.dqSize > 0 && (this.dqIndex[this.dqHead] ?? 0) <= k - L) {
+      if (this.dqSize > 0 && this.dqIndex[this.dqHead]! <= k - L) {
         this.dqHead = (this.dqHead + 1) % L;
         this.dqSize -= 1;
       }
       while (this.dqSize > 0) {
         const tail = (this.dqHead + this.dqSize - 1) % L;
-        if ((this.dqValue[tail] ?? 1) < need) break;
+        if (this.dqValue[tail]! < need) break;
         this.dqSize -= 1;
       }
       const slot = (this.dqHead + this.dqSize) % L;
       this.dqValue[slot] = need;
       this.dqIndex[slot] = k;
       this.dqSize += 1;
-      const held = this.dqValue[this.dqHead] ?? 1;
+      const held = this.dqValue[this.dqHead]!;
       // Box average of the held minimum: reaches the requirement by the time
       // the sample that set it leaves the delay line.
-      this.boxSum += held - (this.box[this.boxAt] ?? 1);
+      this.boxSum += held - this.box[this.boxAt]!;
       this.box[this.boxAt] = held;
       this.boxAt = (this.boxAt + 1) % L;
       const target = Math.min(1, this.boxSum / L);
@@ -489,7 +494,7 @@ class Limiter {
       // Delay line: write the new sample, read the one `latency` back.
       const size = this.latency + 1;
       this.delay[this.delayAt] = v;
-      const out = this.delay[(this.delayAt + 1) % size] ?? 0;
+      const out = this.delay[(this.delayAt + 1) % size]!;
       this.delayAt = (this.delayAt + 1) % size;
       x[i] = out * this.gain;
     }
@@ -535,7 +540,7 @@ export class LoudnessNormalizer {
 
   /** The deepest gain reduction the limiter has applied so far, in dB (≥ 0). */
   get limiterMaxReductionDb(): number {
-    return -toDb(this.limiter.maxReduction);
+    return toDb(1 / this.limiter.maxReduction);
   }
 
   /**
@@ -547,7 +552,7 @@ export class LoudnessNormalizer {
     this.highPass.process(x, n);
     lap?.("highPass");
     const g = this.gain;
-    for (let i = 0; i < n; i++) x[i] = (x[i] ?? 0) * g;
+    for (let i = 0; i < n; i++) x[i] = x[i]! * g;
     lap?.("gain");
     this.limiter.process(x, n);
     const kept = this.trim(x, n);

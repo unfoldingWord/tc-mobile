@@ -168,6 +168,32 @@ describe("gated integrated loudness against hand-computed BS.1770 references", (
     expect(Math.abs((m.truePeakDbtp ?? 0) - -6.02)).toBeLessThan(0.1);
   });
 
+  it("reads nothing at all for an empty take", () => {
+    expect(measure(new Float32Array(0))).toEqual({
+      integratedLufs: null,
+      truePeakDbtp: null,
+    });
+  });
+
+  it("reads no loudness for a take whose every block is under the absolute gate", () => {
+    // -80 dBFS: every block reads about -83 LUFS, under -70. Not silence, so
+    // the true peak is still read (the high-pass start-up adds a little).
+    const m = measure(sections([[5, 0.0001]]));
+    expect(m.integratedLufs).toBeNull();
+    expect(m.truePeakDbtp).not.toBeNull();
+    expect(m.truePeakDbtp ?? 0).toBeLessThan(-78);
+  });
+
+  it("reads a take louder than the histogram's range (+10 LUFS) at its own level", () => {
+    // A float buffer may run over ±1, for example after a gain. Peak 100 is
+    // +40 dBFS, so BS.1770 gives -3.01 + 40 = +36.99 LUFS, and its relative
+    // gate (+26.99) sits above every bin but the open-ended top one.
+    const m = measure(sections([[5, 100]]));
+    expect(Math.abs((m.integratedLufs ?? 0) - 36.99)).toBeLessThan(
+      TOLERANCE_LU
+    );
+  });
+
   it("reads a peak in the very last sample of the take", () => {
     const input = new Float32Array(1000);
     input[999] = 0.5;
@@ -207,6 +233,12 @@ describe("the normalizer", () => {
       for (const v of out) peak = Math.max(peak, Math.abs(v));
       expect(peak).toBeLessThanOrEqual(10 ** (ceilingDbtp / 20) * (1 + 1e-6));
     }
+  });
+
+  it("leaves the limiter idle on a take under the ceiling", () => {
+    // A -20 dBFS tone with no gain is 18.5 dB under -1.5 dBTP.
+    const { normalizer } = normalize(sections([[3, 0.1]]), 0);
+    expect(normalizer.limiterMaxReductionDb).toBe(0);
   });
 
   it("gives byte-identical output for the whole buffer at once and for 1 s, 0.5 s and 37 ms chunks", () => {
