@@ -15,6 +15,10 @@ import {
   INT16_MAX,
   int16ToFloatInto,
 } from "@/lib/audio/format";
+import {
+  createSilenceWindow,
+  isDigitalSilence,
+} from "@/lib/audio/capture-silence";
 import { measureLevel } from "@/lib/audio/level";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
@@ -980,8 +984,18 @@ export function stopTracks(stream: MediaStream, context: string): void {
  *
  * The analyser reads the time-domain frame into one reused buffer, so a
  * per-frame `read()` allocates nothing.
+ *
+ * `onCaptureSilent` (#1294, R13) is called at most once, from inside a
+ * `read()` or `readFrame()`, when every frame for `CAPTURE_SILENCE_MS` has
+ * been exact zeros on a running context whose clock moved
+ * (`lib/audio/capture-silence.ts`). The tap writes no row for it; the caller
+ * decides what the silence means. It is judged only while something pulls a
+ * frame, so a page with no meter or scope drawing judges nothing.
  */
-export function createLevelTap(stream: MediaStream): LevelTap {
+export function createLevelTap(
+  stream: MediaStream,
+  options?: { readonly onCaptureSilent?: () => void }
+): LevelTap {
   const ctx = getAudioContext();
   const tapStream = stream.clone();
 
@@ -1076,24 +1090,47 @@ export function createLevelTap(stream: MediaStream): LevelTap {
     clockValue = Number.NaN;
   };
 
+  // R13: the frame just read, judged for exact silence. Both pulls call it
+  // after filling `frame`; the window runs on wall time, so two pulls per
+  // display frame do not shorten it.
+  const silence = createSilenceWindow();
+  const onCaptureSilent = options?.onCaptureSilent;
+  const noteSilence = () => {
+    if (!onCaptureSilent) return;
+    if (ctx.state !== "running") {
+      silence.reset();
+      return;
+    }
+    if (silence.note(isDigitalSilence(frame), Date.now(), ctx.currentTime)) {
+      onCaptureSilent();
+    }
+  };
+
   // Tear down only this tap's own nodes; the shared context stays open for
   // playback and the next recording — unless this tap saw its clock stopped
   // (#1251), in which case the context is dropped once the hold is released,
   // subject to every refusal in `discardSharedContext`. Idempotent.
+  // The release sits in a `finally` so a throw from the teardown above cannot
+  // leave `sharedContextHolds` raised and every later drop refused (#1233
+  // item 2). No such throw is known: `disconnect` swallows its own.
   const disconnectGraph = () => {
     if (disconnected) return;
     disconnected = true;
-    disconnect(source);
-    disconnect(analyser);
-    disconnect(sink);
-    releaseHold();
-    if (clockStalled) dropStalledContext(ctx);
+    try {
+      disconnect(source);
+      disconnect(analyser);
+      disconnect(sink);
+    } finally {
+      releaseHold();
+      if (clockStalled) dropStalledContext(ctx);
+    }
   };
 
   return {
     read: () => {
       if (disconnected) return 0;
       graph.getFloatTimeDomainData(frame);
+      noteSilence();
       return rmsLevel(frame);
     },
     readFrame: () => {
@@ -1106,11 +1143,13 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       // silence too.
       if (disconnected || contextNeedsResume(ctx.state)) {
         restartClockWindow();
+        silence.reset();
         return null;
       }
       if (ctx.state === "running") noteClock();
       else restartClockWindow();
       graph.getFloatTimeDomainData(frame);
+      noteSilence();
       return frame;
     },
     // The meter's per-frame trust signal (#76). A disconnected tap has no live

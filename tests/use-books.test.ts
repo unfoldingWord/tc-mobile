@@ -10,6 +10,7 @@ import {
 } from "@/hooks/use-books";
 import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
+import { BOOK_V12_FIELDS, ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * `reportUnlessStale` is the plain-async decision `renameBook`/`addChapter`'s
@@ -177,6 +178,7 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
   number: 1,
   name: null,
   segmentIds: [],
+  ...ROW_V12_FIELDS,
   ...overrides,
 });
 
@@ -190,6 +192,7 @@ const book = (overrides: Partial<Book> = {}): Book => ({
   updatedAt: 0,
   coverColourKey: null,
   shelfPosition: 0,
+  ...BOOK_V12_FIELDS,
   ...overrides,
 });
 

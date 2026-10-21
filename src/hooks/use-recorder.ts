@@ -11,6 +11,7 @@ import {
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
+import { CAPTURE_SILENCE_MS } from "@/lib/audio/capture-silence";
 import { decodeRetry } from "@/lib/audio/retry-decode";
 import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
 import {
@@ -585,25 +586,31 @@ export function useRecorder(): UseRecorder {
       const releaseMicClaim = claimSharedContext();
 
       try {
-        // #1111: declare a record-capable audio session BEFORE the microphone
-        // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
-        // `audio-io.ts`) — asserted on every Play so recordings stay audible
-        // through the iPhone silent switch — is documented for playback only;
-        // switching here, ahead of `getUserMedia`, is the "if needed" case
-        // #1111 asks this fix to cover so a session left on `"playback"` by an
-        // earlier Play cannot fight the mic. Feature-checked and a no-op on
-        // every non-WebKit engine, and inside the native iOS shell (#1251),
-        // where the launch-time `.playAndRecord` category is not switched.
-        setRecordAudioSession();
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            // Speech in a noisy room, recorded on a phone held in the hand.
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-        releaseMicClaim();
+        // One release site (#1421): the claim is held from here to the end of
+        // the `getUserMedia` await and let go on every exit from it, a throw
+        // included, so `pendingClaims` cannot stay up and wedge the stall drops.
+        try {
+          // #1111: declare a record-capable audio session BEFORE the microphone
+          // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
+          // `audio-io.ts`) — asserted on every Play so recordings stay audible
+          // through the iPhone silent switch — is documented for playback only;
+          // switching here, ahead of `getUserMedia`, is the "if needed" case
+          // #1111 asks this fix to cover so a session left on `"playback"` by an
+          // earlier Play cannot fight the mic. Feature-checked and a no-op on
+          // every non-WebKit engine, and inside the native iOS shell (#1251),
+          // where the launch-time `.playAndRecord` category is not switched.
+          setRecordAudioSession();
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              // Speech in a noisy room, recorded on a phone held in the hand.
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } finally {
+          releaseMicClaim();
+        }
 
         if (generation !== generationRef.current) {
           abandonStream(stream);
@@ -810,8 +817,28 @@ export function useRecorder(): UseRecorder {
         // Open the VU tap on the live stream. Non-fatal: a device with a quirky
         // Web Audio implementation should still record even if the meter cannot
         // be wired, so a failure here is logged and the recorder runs meterless.
+        //
+        // The tap also reports a capture that went silent with no event at
+        // all (#1294, R13: "A visible “recording stopped” state that saves
+        // what was captured"): exact zeros on a moving clock, which is the
+        // flat line an alarm left on the screen. That take is sealed the way
+        // the length cap seals it — `seal()` freezes, the sheet's commit
+        // saves it, Record is back at rest — and one row says so. Generation-
+        // guarded like `onInterrupted`; `seal()`'s freeze clears
+        // `recordingRef`, so a second report writes nothing. A meterless take
+        // has no tap and so no such seal.
+        const onCaptureSilent = () => {
+          if (generation !== generationRef.current) return;
+          if (!recordingRef.current || !seal()) return;
+          reportFailure(
+            new Error(
+              `The level tap read exact silence for ${CAPTURE_SILENCE_MS} ms on a running clock with no track or recorder event; the take was sealed and saved (#1294)`
+            ),
+            "recorder-capture-stalled"
+          );
+        };
         try {
-          tapRef.current = createLevelTap(stream);
+          tapRef.current = createLevelTap(stream, { onCaptureSilent });
           setMeterFailed(false);
         } catch (tapCause) {
           console.error("Could not open the level meter", tapCause);
@@ -839,7 +866,6 @@ export function useRecorder(): UseRecorder {
         }
         return true;
       } catch (cause) {
-        releaseMicClaim();
         if (stream) abandonStream(stream);
         // A `cancel()` or a newer `start()` owns the state and the message now.
         // Reporting this failure over theirs is the stale-message problem
@@ -872,6 +898,7 @@ export function useRecorder(): UseRecorder {
       clearTick,
       closeTap,
       releaseStream,
+      seal,
       setState,
       startTick,
       supported,

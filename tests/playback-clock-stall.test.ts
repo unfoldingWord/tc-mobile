@@ -1020,7 +1020,7 @@ describe("claimSharedContext — a caller's own await (#1265 items 1 and 2)", ()
     expect(ctx.closeCalls).toBe(1);
   });
 
-  it("the return check stands aside while the claim is held", async () => {
+  it("the return check stands aside while the claim is held, and does not mark the context for a drop at the release", async () => {
     const io = await loadAudioIo();
     const ctx = await interruptedThenFrozen(io);
     const release = io.claimSharedContext();
@@ -1032,6 +1032,9 @@ describe("claimSharedContext — a caller's own await (#1265 items 1 and 2)", ()
     expect(ctx.closeCalls).toBe(0);
     expect(rowsFor("audio-clock-stalled-on-return")).toHaveLength(0);
     release();
+    // Abort-and-forget is the contract today: a "skipped" verdict returns
+    // without marking `idleDropPending`, so the release has nothing to apply.
+    expect(ctx.closeCalls).toBe(0);
   });
 });
 

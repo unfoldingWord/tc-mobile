@@ -112,6 +112,23 @@
  * upgrade: what was on top stays on top. Additive like v9: no store dropped,
  * no other field touched, and the chapters, segments, takes and clips behind a
  * book are never read.
+ *
+ * ── v12 (#1462): provenance, licence, timestamps, template keys — append-only ──
+ *
+ * The frozen design is docs/design/v12-schema.md. `Book` gained `provenance`,
+ * `licence` and `modifiedAt`; `Chapter` and `Segment` gained `createdAt`,
+ * `modifiedAt` and `templateKey`; `Segment.reference` became a numeric span
+ * (every stored value is `null`, so no row is converted). Two new stores,
+ * `tombstones` (a deletion log, auto-increment key) and `pendingTakes` (keyed
+ * by `segmentId`), created beside v6's and before any await. The backfill
+ * writes `{ kind: "blank" }` and `null`s only, keyed on each field being
+ * ABSENT (`in`, so a deliberate `null` is kept), at most one write per row and
+ * none for a row that already has every field. It reads no clock: an upgrade
+ * time in `createdAt` or `modifiedAt` would be a false fact. `Chapter.number`
+ * and `Book.languageCode` are kept as stored. Takes and clips are not read.
+ *
+ * Roll forward only: a phone that has opened v12 cannot be opened by an older
+ * build (`DatabaseDowngradeError`, nothing written).
  */
 
 import {
@@ -129,14 +146,38 @@ import type {
   ClipId,
   Segment,
   SegmentId,
+  StoredPendingTake,
   Take,
   TakeId,
+  Tombstone,
 } from "@/types/domain";
 import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 11;
+const DB_VERSION = 12;
+
+/**
+ * What the v12 step adds to a row that lacks it, per store. Plain data and no
+ * clock: every value is a blank or a `null`.
+ */
+const V12_BACKFILL = {
+  books: { provenance: { kind: "blank" }, licence: null, modifiedAt: null },
+  chapters: { createdAt: null, modifiedAt: null, templateKey: null },
+  segments: { createdAt: null, modifiedAt: null, templateKey: null },
+} as const;
+
+/**
+ * The v12 fields `row` does not carry, or `null` when it carries them all.
+ * Absence is `in`, never a value test: a stored `null` is a real value.
+ */
+function absentFields(
+  row: object,
+  fields: Readonly<Record<string, unknown>>
+): Record<string, unknown> | null {
+  const absent = Object.entries(fields).filter(([key]) => !(key in row));
+  return absent.length === 0 ? null : Object.fromEntries(absent);
+}
 
 /**
  * A `books` row as v9 and earlier stored it: the placeholder rendered into
@@ -216,6 +257,10 @@ export interface TcMobileDb extends DBSchema {
    * key field baked into it and insertion order is key order.
    */
   failures: { key: number; value: StoredFailure };
+  /** v12: the deletion log, out-of-line auto-increment like `failures`. */
+  tombstones: { key: number; value: Tombstone };
+  /** v12: one unsaved take per segment, keyPath `segmentId`. */
+  pendingTakes: { key: SegmentId; value: StoredPendingTake };
 }
 
 /**
@@ -576,6 +621,13 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           db.createObjectStore("failures", { autoIncrement: true });
         }
 
+        // v12 (#1462): the deletion log and the pending-take slot. Up here
+        // with v6's create for the same reason: before any await.
+        if (oldVersion < 12) {
+          db.createObjectStore("tombstones", { autoIncrement: true });
+          db.createObjectStore("pendingTakes", { keyPath: "segmentId" });
+        }
+
         // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
         // rows and the audio behind them are kept. On a fresh install, or straight
         // after the v3 recreate above, the store is empty and this loops zero
@@ -749,6 +801,23 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             .sort((a, b) => b.createdAt - a.createdAt);
           for (const row of unplaced) {
             await store.put({ ...row, shelfPosition: next++ });
+          }
+        }
+
+        // v12 (#1462): add each missing v12 field, in one write per row, to
+        // every book, chapter and segment; a row that has them all is not
+        // written. Cursor walks, one row at a time, as v5/v8/v9: segments are
+        // the largest metadata store on a phone.
+        if (oldVersion < 12) {
+          for (const name of ["books", "chapters", "segments"] as const) {
+            let cursor = await tx.objectStore(name).openCursor();
+            while (cursor) {
+              const absent = absentFields(cursor.value, V12_BACKFILL[name]);
+              if (absent) {
+                await cursor.update({ ...cursor.value, ...absent } as never);
+              }
+              cursor = await cursor.continue();
+            }
           }
         }
       },

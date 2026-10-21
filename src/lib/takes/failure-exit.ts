@@ -11,7 +11,7 @@
  * upgrade, `getDb()` is latched: it rejects before it ever opens, identically,
  * for the rest of the page's life. Every failure path inside the sheet was
  * written before there was such a thing as a permanent store failure, so each
- * one answers a retryable question with retryable copy — "Could not clear the
+ * one answers a retryable question with retryable copy — "Could not reset the
  * audio. Try again." over a call that can never succeed — and the panel that
  * would say what is actually needed cannot mount behind them.
  *

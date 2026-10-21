@@ -133,20 +133,23 @@ code.**
 one.** Confidence HIGH — schemas and a real-world example read directly.
 
 `type.flavorType.name = "scripture"`, `flavor.name = "audioTranslation"`.
-Required: `performance` (singleVoice|multipleVoice × reading|drama) and
-`formats`.
+In the spec's v1.0.0, that flavour requires `performance` (singleVoice|multipleVoice
+× reading|drama) and `formats`, and allows nothing else. The 2.0.0 working draft
+rejects both at flavour level. Which version tC Mobile writes, and why, is
+[ADR 0014](../decisions/0014-scripture-bundle-profile.md).
 
-> ⚠️ **`compression` is an enum of only `mp3` and `wav`.** No AAC/M4A, no Opus.
-> **MP3 is exactly the right format for burrito compatibility — and Shema's
-> M4A would not be declarable.** The canonical WAV and the lamejs encoder put
-> tC Mobile on the standard's happy path _when an export path is built_. There
-> is none today (#18): `encodeMp3` has no caller outside its own test.
+> ⚠️ **In v1.0.0, `formats[].compression` is an enum of only `mp3` and `wav`.**
+> No AAC/M4A, no Opus. The canonical WAV and the lamejs encoder put tC Mobile
+> on the standard's happy path. Share Chapter and Share Book (B7) and
+> transcode-on-Finished (B8) already call the encoder.
 
 ### Addressing audio to book/chapter/verse
 
 **(a) Ingredient `scope`**, keyed by USFM book code, permitting `"1"` (chapter),
 `"1-3"` (chapter range), `"1:5"` / `"1:5-21"` (verse range), `"1:5-2:3"`
-(cross-chapter), or `[]` (whole book). A real burrito emitted by SIL's APM:
+(cross-chapter), or `[]` (whole book). The keys are a closed list of USFM book
+codes, so `OBS` is not a valid key, and `currentScope` must have at least one
+key. A real burrito emitted by SIL's APM:
 
 ```json
 "08RUT/002/ENGSEB2-RUT-2_1-13_Ruth 2_1-13_v5.mp3": {
@@ -158,22 +161,18 @@ Required: `performance` (singleVoice|multipleVoice × reading|drama) and
 ```
 
 Note it splits Ruth 2 into `2:1-13` and `2:14-22` — **section-level, not
-chapter-level.** That is precisely tC Mobile's section granularity, already
-legal and already emitted by shipping software.
-
-**(b) Timing files** — `"role": "timing"`, conforming to the Scripture Burrito
-Alignment Format, `type: "audio-reference"`, mapping VTT timecodes to USFM
-references. **This maps 1:1 onto tC Mobile's marker model.**
+chapter-level.** A sub-chapter span per segment is already legal and already
+emitted by shipping software.
 
 ### Two caveats
 
 - **The real world already diverges from the schema.** APM's own
-  `metadata.json` omits `performance` and `formats`, both marked `required`.
+  `metadata.json` omits `performance` and `formats`, which v1.0.0 requires.
   Don't assume "if APM does it, it validates." Validate against the published
   schemas with ajv in CI.
-- **There is no audio flavor for OBS.** Stories exist only as
-  `gloss/textStories`. OBS audio would need a custom `x-` flavor. Confidence
-  HIGH. **Plan accordingly — burrito export for OBS is not a solved problem.**
+- **There is no audio flavor for OBS.** v1.0.0 has only the text flavour
+  `gloss/textStories`, and the 2.0.0 draft removes it. OBS audio needs a custom
+  `x-` flavour under `parascriptural` (ADR 0014).
 
 ## 5. LangQuest — brief
 

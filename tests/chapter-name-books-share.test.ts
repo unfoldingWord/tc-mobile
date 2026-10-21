@@ -128,6 +128,6 @@ it("names each MP3 in the book's zip from the chapter's own name", async () => {
   const [id, zip, nameChapter] = mocks.prepare.mock.calls[0]!;
   expect(id).toBe(bookId);
   expect(zip).toBe(strings.shareBookFilename("Mark"));
-  expect(nameChapter(1, "The sower")).toBe("Mark - The sower.mp3");
-  expect(nameChapter(2, null)).toBe(`Mark - ${strings.chapterName(2)}.mp3`);
+  expect(nameChapter(1, "The sower")).toBe("Mark - 01 The sower.mp3");
+  expect(nameChapter(2, null)).toBe(`Mark - 02 ${strings.chapterName(2)}.mp3`);
 });

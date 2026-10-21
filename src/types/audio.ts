@@ -131,6 +131,16 @@ export interface AudioCodec {
    * own `write` and `finish`.
    */
   readonly openMp3Stream?: () => Promise<Mp3Stream>;
+  /**
+   * Run the phone check's DSP benchmark for `seconds` of synthetic speech in
+   * the same worker the encoder runs in (#1433 step 1). Optional, so existing
+   * codecs and fakes are untouched. Takes the encoder lane and the same
+   * abort and silence deadline an encode has, and rejects the way an encode
+   * does (`AbortError`, `EncoderStalledError`), but a benchmark's own failure
+   * is a `DspBenchFailedError`, which never counts towards the encoder's
+   * health: a phone that cannot run the benchmark has not lost its encoder.
+   */
+  readonly benchDsp?: (seconds: number) => Promise<DspBenchResult>;
 }
 
 /**
@@ -169,4 +179,36 @@ export interface Peaks {
 export interface SampleRange {
   readonly start: number;
   readonly end: number;
+}
+
+/**
+ * Milliseconds per stage, summed over chunks. `highPass` covers both passes
+ * and the Int16 to float conversion; `kWeight` includes the mean-square sum;
+ * `limiter` includes its detector and its flush.
+ */
+type DspStageMs = Readonly<
+  Record<"highPass" | "kWeight" | "truePeak" | "gain" | "limiter", number>
+>;
+
+export interface DspBenchResult {
+  readonly audioSeconds: number;
+  /** Chunks per pass. */
+  readonly chunks: number;
+  readonly measureMs: number;
+  readonly applyMs: number;
+  readonly stageMs: DspStageMs;
+  readonly slowestChunkMs: number;
+  /**
+   * Bytes of every buffer the kernel allocates, counted as it allocates them.
+   * Analytic: the kernel's own buffers, not a measured process peak.
+   */
+  readonly workingSetBytes: number;
+  /** A hash of the apply pass's output, so an engine cannot skip the work. */
+  readonly checksum: number;
+  /** Ungated K-weighted loudness, or null for silence. */
+  readonly loudnessLufs: number | null;
+  /** True peak of the high-passed input, or null for silence. */
+  readonly truePeakDbtp: number | null;
+  readonly gainDb: number;
+  readonly limiterMaxReductionDb: number;
 }

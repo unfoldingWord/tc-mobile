@@ -186,10 +186,13 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
 
   // Start capturing, and wait until the transport says a take is live.
   await page.getByRole("button", { name: "Record", exact: true }).click();
-  const stop = page.getByRole("button", {
-    name: "Stop recording",
-    exact: true,
-  });
+  // The TRANSPORT's Stop, scoped to the recorder sheet: since #369 the ⋮
+  // menu carries a Stop tile of the same name mid-take, so a page-wide
+  // locator resolves to two buttons once the menu is open.
+  const stop = page
+    .getByRole("dialog", { name: "Recorder", exact: true })
+    .locator(".control--record")
+    .and(page.getByRole("button", { name: "Stop recording", exact: true }));
   await expect(stop).toBeVisible();
 
   // Let the timer leave 0:00, so "advanced" below compares two real readings
@@ -208,6 +211,11 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   const menu = page.getByRole("dialog", { name: "More", exact: true });
   await expect(menu).toBeVisible();
+  // Mid-take the menu's first tile is Stop (#369). Not tapped here: this
+  // test ends the take from the transport below.
+  await expect(menu.locator(".o4-tile").first()).toHaveAccessibleName(
+    "Stop recording"
+  );
 
   // Sampled HERE, with the menu already up and the next action being the tap
   // itself — not before the menu opened (George round 3, #623). Opening the
@@ -280,7 +288,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // satisfied during that window.
   //
   // So the commit is read off the two things only a LANDED take produces:
-  // `aria-busy` gone from the transport, and "Clear and record again"
+  // `aria-busy` gone from the transport, and "Reset and record again"
   // actionable. The bin is always drawn and is hinted-inert while there is
   // nothing to erase, so its hint clearing means `eraseRowReason` found a
   // stored clip in the RELOADED view — which is the persistence this case
@@ -293,7 +301,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // its accessible name — so the assertion below is about the inert state
   // itself and not about which wording the hint happens to carry.
   const rerecord = page.getByRole("button", {
-    name: /^Clear and record again/,
+    name: /^Reset and record again/,
   });
   await expect(rerecord).not.toHaveAttribute("aria-disabled", "true");
   // Still light after the commit — the theme outlived the take it spanned.

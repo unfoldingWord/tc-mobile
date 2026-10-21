@@ -157,6 +157,72 @@ test.describe("handle targets after a zoom fit", () => {
   }
 });
 
+// #1471: the stems and the knobs paint `--s-select`, through the shipped
+// cascade, in both themes. Computed style, not source text: a utility class or
+// a later layer overriding the rule would not be seen by a CSS pin.
+test.describe("the trim selection paints --s-select (#1471)", () => {
+  const EXPECTED = {
+    dark: "rgb(76, 201, 240)",
+    light: "rgb(3, 105, 161)",
+  } as const;
+  for (const theme of ["dark", "light"] as const) {
+    test(`stems and knobs resolve --s-select in the ${theme} theme`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await clickEditRecording(page);
+      await expect(
+        page.getByLabel("Selection start", { exact: true })
+      ).toBeVisible();
+      // Layer 2 keys the theme off this attribute on <html>; setting it is
+      // what the Menu toggle does, without driving the menu here.
+      await page.evaluate((t) => {
+        document.documentElement.dataset.theme = t;
+      }, theme);
+
+      const resolved = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--s-select)";
+        document.body.appendChild(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return value;
+      });
+      expect(resolved).toBe(EXPECTED[theme]);
+
+      for (const edge of ["start", "end"]) {
+        await expect(
+          page.locator(`.selection-stem[data-edge="${edge}"]`)
+        ).toHaveCSS("background-color", resolved);
+      }
+      // The knob is the handle's `::after`; the handle carries the label.
+      for (const label of ["Selection start", "Selection end"]) {
+        const knobColour = await page
+          .getByLabel(label, { exact: true })
+          .evaluate(
+            (handle) => getComputedStyle(handle, "::after").backgroundColor
+          );
+        expect(knobColour).toBe(resolved);
+      }
+    });
+  }
+});
+
 test.describe("edit mode toggle", () => {
   for (const width of [320, 390]) {
     test(`one tap commits a take and opens the frame at a stable slot (${width}px)`, async ({

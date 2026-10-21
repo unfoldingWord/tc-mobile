@@ -8,7 +8,7 @@ import { useTheme } from "@/hooks/use-theme";
  *
  * ── Why it is a component and not three copies of a `Control` ──
  *
- * It is mounted in three menus now — the Books global `≡`, the chapter `≡` and
+ * It is mounted in three menus now — the Books global `≡`, the chapter `⋮` and
  * the recorder's own menu (its header `⋮`, #1225, its one opener in both
  * modes since #1243) — and the three facts it has to get right are
  * the same at each one:

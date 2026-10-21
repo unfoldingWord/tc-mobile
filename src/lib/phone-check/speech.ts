@@ -17,6 +17,12 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 /** The encode probe's length, from #1009: five minutes. */
 export const ENCODE_PROBE_SECONDS = 5 * 60;
 
+/**
+ * The DSP benchmark's length, from the #1433 spike plan: one minute of the
+ * same speech, built inside the MP3 worker (`hooks/mp3.worker.ts`).
+ */
+export const DSP_PROBE_SECONDS = 60;
+
 const TABLE_SIZE = 4096;
 const SINE = Float32Array.from({ length: TABLE_SIZE }, (_, i) =>
   Math.sin((2 * Math.PI * i) / TABLE_SIZE)

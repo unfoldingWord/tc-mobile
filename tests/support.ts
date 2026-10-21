@@ -153,6 +153,39 @@ export async function storeOrphanClip(
 }
 
 /**
+ * Make every transaction this connection opens from now on throw `error` the
+ * moment its caller asks it for `storeName`, until `vi.restoreAllMocks()`.
+ *
+ * The seam is the native `IDBDatabase.transaction` (pass `unwrap(await
+ * getDb())`), reached past idb's proxy, because the storage writes do not
+ * return their transaction and the stores they ask for are the only thing
+ * observable from outside. A throw, not a failed request: it is the case
+ * IndexedDB does NOT abort on its own, so it is what proves a write's own
+ * abort guard. Shared by the delete suites and the v12 write-path suite.
+ */
+export function throwWhenStoreRequested(
+  raw: IDBDatabase,
+  storeName: string,
+  error: Error
+) {
+  const open = raw.transaction.bind(raw);
+  return vi
+    .spyOn(raw, "transaction")
+    .mockImplementation((...args: Parameters<IDBDatabase["transaction"]>) => {
+      const tx = open(...args);
+      const objectStore = tx.objectStore.bind(tx);
+      Object.defineProperty(tx, "objectStore", {
+        configurable: true,
+        value: (name: string) => {
+          if (name === storeName) throw error;
+          return objectStore(name);
+        },
+      });
+      return tx;
+    });
+}
+
+/**
  * A ramp of `n` samples, 1..n scaled into the Int16 range, offset by `base`.
  * Never constant, so a fit that keeps the wrong end of a buffer is caught —
  * the fixture shape round 2 of PR #136 asked for.

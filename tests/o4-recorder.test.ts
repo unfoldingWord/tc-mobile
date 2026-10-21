@@ -12,6 +12,7 @@ import { PlayheadOverlay } from "@/components/playhead-overlay";
 import { render } from "./render";
 import {
   cssRule,
+  declarationValue,
   region,
   stripComments,
   stripCssComments,
@@ -138,7 +139,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(line).toMatch(/background:\s*var\(--s-playhead\)/);
   });
 
-  it("12 editing: trim handles are 30 × 56, radius 15, on --s-voice", () => {
+  it("12 editing: trim handles are 30 × 56, radius 15, on --s-select (#1471)", () => {
     expect(cssRule(CSS, `${O4} .selection-handle`)).toMatch(
       /--c-selection-hit:\s*30px/
     );
@@ -146,7 +147,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(knob).toMatch(/width:\s*30px/);
     expect(knob).toMatch(/height:\s*56px/);
     expect(knob).toMatch(/border-radius:\s*15px/);
-    expect(knob).toMatch(/background:\s*var\(--s-voice\)/);
+    expect(declarationValue(knob, "background")).toBe("var(--s-select)");
   });
 
   it("12 editing: the knob sits at the bar's bottom, not its vertical middle (#1102)", () => {

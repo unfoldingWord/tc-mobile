@@ -71,8 +71,11 @@ phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 2
    about any app file; it is not specific to tC Mobile. Look for the button
    that lets the download continue or keeps the file — it is usually not the
    first or most prominent one. **Before you choose it, read the file the
-   warning names. Choose it only if that file is `app-release.apk` from the
-   releases page in step 1.** If the warning names a different file, or the
+   warning names. Choose it only if that file is `app-release.apk`, or the
+   same name with a number in brackets before `.apk` (such as
+   `app-release (1).apk`, which a browser gives a second download), and it
+   came from the releases page in step 1.** The same names from a chat, an
+   email or another tab are a stop. If the warning names a different file, or the
    file came from anywhere else, stop. Do not keep it — tell the facilitator
    instead. If the browser removes the
    file outright instead of just warning ("blocked"), the setting that

@@ -11,8 +11,8 @@ import { formatPhoneCheckReport } from "@/lib/phone-check/report";
 
 /**
  * The phone check (#1009, from #1002 §6): a hidden tester screen that measures
- * encode speed, storage speed and the memory ceiling, and hands back a
- * plain-text report to paste into #974.
+ * encode speed, the DSP benchmark's cost (#1433), storage speed and the
+ * memory ceiling, and hands back a plain-text report to paste into #974.
  *
  * Reached by five taps on the build stamp (`components/build-stamp.tsx`, the
  * only way in on an APK, where there is no address bar) or by `?check=phone`
@@ -42,10 +42,14 @@ function activityLine(activity: PhoneCheckActivity): string | null {
   switch (activity.kind) {
     case "waiting":
       return strings.phoneCheckRunWaiting;
+    case "stopping":
+      return strings.phoneCheckRunStopping;
     case "device":
       return strings.phoneCheckRunDevice;
     case "encode":
       return strings.phoneCheckRunEncode;
+    case "dsp":
+      return strings.phoneCheckRunDsp;
     case "storage":
       return strings.phoneCheckRunStorage;
     case "memory":
@@ -92,15 +96,18 @@ export function PhoneCheckView({
     sha,
     device: state.device,
     encode: state.encode,
+    dsp: state.dsp,
     storage: state.storage,
     allocation: state.allocation,
   });
   const status = activityLine(state.activity);
-  // "Done" means all three ordered steps landed, not merely that the first
-  // one did (#1014 item 7). A reload mid-run restores whichever of the three
+  // "Done" means every ordered step landed, not merely that the first one
+  // did (#1014 item 7). A reload mid-run restores whichever steps
   // `readSavedChecks` found and nothing marks the rest `null` again, so
   // checking `state.device` alone read a partial restore as complete.
-  const allStepsLanded = Boolean(state.device && state.encode && state.storage);
+  const allStepsLanded = Boolean(
+    state.device && state.encode && state.dsp && state.storage
+  );
 
   // The report changing under a "Copied." label is stale the moment it
   // happens (#1014 item 8): a tester who copies mid-run, then watches a later

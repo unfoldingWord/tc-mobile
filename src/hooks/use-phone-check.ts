@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -14,9 +15,11 @@ import {
 import {
   browserAllocationDeps,
   isAbortCause,
+  PHONE_CHECK_CONTEXT,
   readAllocationBreadcrumb,
   readDeviceInfo,
   readSavedChecks,
+  runDspProbe,
   runStorageProbe,
   runWorkerEncodeProbe,
   sessionBreadcrumbStore,
@@ -25,6 +28,7 @@ import {
   writeSavedChecks,
   type BreadcrumbStore,
 } from "./phone-check-probes";
+import { reportFailure } from "./report-failure";
 import {
   reloadedResult,
   runAllocationSteps,
@@ -33,6 +37,7 @@ import {
 import type {
   AllocationResult,
   DeviceInfo,
+  DspResult,
   EncodeResult,
   ProbeOutcome,
   StorageResult,
@@ -43,11 +48,17 @@ import type { SavedChecks } from "@/lib/phone-check/saved-results";
  * What the checks are doing right now. `null` is idle. `waiting` is a run
  * that holds the claim but is still waiting for a transcode turn already in
  * flight to finish: busy, so Close and both Starts stay disabled through it.
+ * `stopping` is a run this screen did not start — one an earlier, closed
+ * screen started and aborted — still holding the slot until its probe in
+ * flight reaches an abort boundary. A Start then would return without doing
+ * anything, so the screen reads busy instead of idle (#1379).
  */
 export type PhoneCheckActivity =
   | { readonly kind: "waiting" }
+  | { readonly kind: "stopping" }
   | { readonly kind: "device" }
   | { readonly kind: "encode" }
+  | { readonly kind: "dsp" }
   | { readonly kind: "storage" }
   | { readonly kind: "memory"; readonly mb: number }
   | null;
@@ -55,12 +66,26 @@ export type PhoneCheckActivity =
 export interface PhoneCheckState {
   readonly device: ProbeOutcome<DeviceInfo> | null;
   readonly encode: ProbeOutcome<EncodeResult> | null;
+  readonly dsp: ProbeOutcome<DspResult> | null;
   readonly storage: ProbeOutcome<StorageResult> | null;
   readonly allocation: AllocationResult | null;
   readonly activity: PhoneCheckActivity;
 }
 
 let runInFlight = false;
+const slotListeners = new Set<() => void>();
+
+function setRunInFlight(next: boolean): void {
+  runInFlight = next;
+  for (const listener of slotListeners) listener();
+}
+
+function subscribeToRunSlot(listener: () => void): () => void {
+  slotListeners.add(listener);
+  return () => {
+    slotListeners.delete(listener);
+  };
+}
 
 /**
  * Claim the one phone-check run slot, or `null` while a run holds it.
@@ -74,12 +99,12 @@ let runInFlight = false;
  */
 export function claimPhoneCheckRun(): (() => void) | null {
   if (runInFlight) return null;
-  runInFlight = true;
+  setRunInFlight(true);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    runInFlight = false;
+    setRunInFlight(false);
   };
 }
 
@@ -93,7 +118,7 @@ export function isPhoneCheckRunning(): boolean {
 }
 
 /**
- * The state a newly opened phone check starts from: steps 1-3's saved results
+ * The state a newly opened phone check starts from: Start's saved results
  * and, if the memory ceiling's page died mid-step, what its breadcrumb says.
  * Reads only; clearing the breadcrumb is the hook's post-commit effect.
  */
@@ -105,21 +130,25 @@ export function initialPhoneCheckState(
   return {
     device: saved?.device ?? null,
     encode: saved?.encode ?? null,
+    dsp: saved?.dsp ?? null,
     storage: saved?.storage ?? null,
     allocation: crumb ? reloadedResult(crumb) : null,
     activity: null,
   };
 }
 
-/** The three probes `runChecks` runs, in order; a test hands in its own. */
+/** The four probes `runChecks` runs, in order; a test hands in its own. */
 export interface CheckProbes {
   readonly device: () => Promise<ProbeOutcome<DeviceInfo>>;
   readonly encode: () => Promise<ProbeOutcome<EncodeResult>>;
+  readonly dsp: () => Promise<ProbeOutcome<DspResult>>;
   readonly storage: () => Promise<ProbeOutcome<StorageResult>>;
 }
 
 /** The pause reason the phone check holds the transcode sweep under. */
 const PHONE_CHECK_SWEEP_PAUSE = "phone-check";
+
+const STOPPING: PhoneCheckActivity = { kind: "stopping" };
 
 /**
  * Run `work` with the background transcode sweep held off it (Frank R1 P2 on
@@ -155,9 +184,11 @@ async function withTranscodeHeld<T>(
 }
 
 /**
- * Steps 1-3: device info, then the encode, then storage, with the transcode
- * sweep held off all three. `land` receives each result as it arrives and
- * `busyWith` the step about to run.
+ * Start's steps: device info, then the encode, then the DSP benchmark (#1433),
+ * then storage, with the transcode sweep held off all of them. The benchmark
+ * follows the encode on the same worker and runs before the storage probe has
+ * filled memory, for the reason the encode does. `land` receives each result
+ * as it arrives and `busyWith` the step about to run.
  */
 export function runPhoneChecks(
   probes: CheckProbes,
@@ -169,7 +200,7 @@ export function runPhoneChecks(
     busyWith,
     async () => {
       // A new run replaces the last one whole, never a mix of the two.
-      land({ device: null, encode: null, storage: null });
+      land({ device: null, encode: null, dsp: null, storage: null });
       busyWith({ kind: "device" });
       const device = await probes.device();
       signal?.throwIfAborted();
@@ -178,6 +209,10 @@ export function runPhoneChecks(
       const encode = await probes.encode();
       signal?.throwIfAborted();
       land({ encode });
+      busyWith({ kind: "dsp" });
+      const dsp = await probes.dsp();
+      signal?.throwIfAborted();
+      land({ dsp });
       busyWith({ kind: "storage" });
       const storage = await probes.storage();
       signal?.throwIfAborted();
@@ -223,17 +258,18 @@ export async function untilDoneOrAborted(
 /**
  * The phone check's state and its two Start actions (#1009).
  *
- * Nothing runs on mount but reads: steps 1-3's saved results and the memory
+ * Nothing runs on mount but reads: Start's saved results and the memory
  * ceiling's `sessionStorage` breadcrumb. Both are there because the ceiling is
  * meant to run last and can end with the page reloading; without the saved
  * results, the report copied after that reload would say "not run" for the
- * three steps the tester already ran. The breadcrumb is cleared once read, so
+ * steps the tester already ran. The breadcrumb is cleared once read, so
  * the same crash is reported once; the saved results stay until the next
  * Start replaces them.
  *
- * `runChecks` is device info, then the encode, then storage, in that order —
- * the encode before storage so the encoder is measured before the storage
- * probe has filled memory with 50 MB of test chunks. `runMemory` is separate,
+ * `runChecks` is device info, then the encode, then the DSP benchmark, then
+ * storage, in that order — the encode and the benchmark before storage so the
+ * worker is measured before the storage probe has filled memory with 50 MB of
+ * test chunks. `runMemory` is separate,
  * opt-in and meant to be last; the screen says so.
  */
 export function usePhoneCheck(): {
@@ -244,6 +280,14 @@ export function usePhoneCheck(): {
   const [crumbStore] = useState(sessionBreadcrumbStore);
   const [state, setState] = useState<PhoneCheckState>(() =>
     initialPhoneCheckState(crumbStore)
+  );
+  // Read live, so a screen opened while a closed screen's run winds down goes
+  // busy at once and idle the moment that run releases the slot. This screen's
+  // own runs set `activity` themselves, synchronously in the tap.
+  const slotHeld = useSyncExternalStore(
+    subscribeToRunSlot,
+    isPhoneCheckRunning,
+    isPhoneCheckRunning
   );
   // The runs this screen started that have not finished (#1014 item 6), each
   // with what puts its earlier report back, or `null` when it has none.
@@ -267,7 +311,13 @@ export function usePhoneCheck(): {
     return () => {
       for (const [run, restore] of runs) {
         run.abort();
-        restore?.();
+        // Guarded per run: a throwing restore must not leave a later run in
+        // the map un-aborted. The failure goes to the funnel, not up into React.
+        try {
+          restore?.();
+        } catch (cause) {
+          reportFailure(cause, PHONE_CHECK_CONTEXT);
+        }
       }
     };
   }, []);
@@ -286,11 +336,20 @@ export function usePhoneCheck(): {
     const previous: SavedChecks = {
       device: reportRef.current.device,
       encode: reportRef.current.encode,
+      dsp: reportRef.current.dsp,
       storage: reportRef.current.storage,
     };
     let finished = false;
-    let saved: SavedChecks = { device: null, encode: null, storage: null };
-    // Idempotent: the unmount and the run's `finally` both call it.
+    let saved: SavedChecks = {
+      device: null,
+      encode: null,
+      dsp: null,
+      storage: null,
+    };
+    // Safe to call twice, on purpose: the unmount and the run's `finally` both
+    // call it. The second call is also the backstop for a `land` that arrives
+    // after the abort and rewrites storage, so do not turn this into a
+    // once-only latch.
     const restore = () => {
       if (!finished) writeSavedChecks(crumbStore, previous);
     };
@@ -313,6 +372,7 @@ export function usePhoneCheck(): {
                 settleProbe(() => readDeviceInfo(navigator, signal), signal),
               encode: () =>
                 settleProbe(() => runWorkerEncodeProbe(signal), signal),
+              dsp: () => settleProbe(() => runDspProbe(signal), signal),
               storage: () =>
                 settleProbe(() => runStorageProbe({ signal }), signal),
             },
@@ -373,5 +433,9 @@ export function usePhoneCheck(): {
     })();
   }, [crumbStore]);
 
-  return { state, runChecks, runMemory };
+  const shown =
+    state.activity === null && slotHeld
+      ? { ...state, activity: STOPPING }
+      : state;
+  return { state: shown, runChecks, runMemory };
 }

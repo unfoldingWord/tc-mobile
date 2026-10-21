@@ -42,6 +42,8 @@
  * fast it is.
  */
 
+import type { DspBenchResult } from "@/types/audio";
+
 /** BS.1770's loudness offset, in dB. */
 const LOUDNESS_OFFSET_DB = -0.691;
 /** The rumble high-pass corner from the #1433 plan ("about 80 Hz"). */
@@ -79,38 +81,6 @@ export interface DspBenchOptions {
   readonly targetLufs?: number;
   readonly ceilingDbtp?: number;
   readonly maxGainDb?: number;
-}
-
-/**
- * Milliseconds per stage, summed over chunks. `highPass` covers both passes
- * and the Int16 to float conversion; `kWeight` includes the mean-square sum;
- * `limiter` includes its detector and its flush.
- */
-type DspStageMs = Readonly<
-  Record<"highPass" | "kWeight" | "truePeak" | "gain" | "limiter", number>
->;
-
-export interface DspBenchResult {
-  readonly audioSeconds: number;
-  /** Chunks per pass. */
-  readonly chunks: number;
-  readonly measureMs: number;
-  readonly applyMs: number;
-  readonly stageMs: DspStageMs;
-  readonly slowestChunkMs: number;
-  /**
-   * Bytes of every buffer the kernel allocates, counted as it allocates them.
-   * Analytic: the kernel's own buffers, not a measured process peak.
-   */
-  readonly workingSetBytes: number;
-  /** A hash of the apply pass's output, so an engine cannot skip the work. */
-  readonly checksum: number;
-  /** Ungated K-weighted loudness, or null for silence. */
-  readonly loudnessLufs: number | null;
-  /** True peak of the high-passed input, or null for silence. */
-  readonly truePeakDbtp: number | null;
-  readonly gainDb: number;
-  readonly limiterMaxReductionDb: number;
 }
 
 /** Counts the bytes of every typed array the kernel allocates. */
@@ -366,8 +336,7 @@ const toDb = (ratio: number) => 20 * Math.log10(ratio);
 /**
  * Runs the benchmark chain over `input` and reports what it cost.
  *
- * @pivotpending #1433 T2 — the MP3 worker's `dsp-bench` request calls this;
- * until it lands, only `tests/dsp-bench.test.ts` does.
+ * The MP3 worker's `dsp-bench` request calls this (`hooks/mp3.worker.ts`).
  */
 export function runDspBench(options: DspBenchOptions): DspBenchResult {
   const { input, sampleRate, now, onChunk, sink } = options;

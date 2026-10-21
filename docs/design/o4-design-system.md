@@ -308,8 +308,14 @@ Round 1 was answered by the requirements owner
   everywhere; among a segment's actions the bin and the red fill are
   Delete's alone. With no recording the segment menu has three tiles, Done,
   Edit and Delete, with Delete at the far end. Four tiles use the compact tile above, accepted with these picks
-  (as the coordinator recorded it on [#1119][1119-hold]).
+  (as the coordinator recorded it on [#1119][1119-hold]). The label has
+  since moved on and the icon, order and scope have not: the tile reads
+  "Reset" (#1220), and the requirements owner chose one verb for removing a
+  recording, "Use "Reset recording"" ([#1233][1233-r18]), so the confirm
+  button reads "Reset recording" and the record bar's control "Reset and
+  record again".
 
+[1233-r18]: https://github.com/unfoldingWord/tc-mobile/issues/1233#issuecomment-6276216744
 [937-d1]: https://github.com/unfoldingWord/tc-mobile/issues/937#issuecomment-5836825393
 [937-r1]: https://github.com/unfoldingWord/tc-mobile/issues/937#issuecomment-5837137316
 [937-r2]: https://github.com/unfoldingWord/tc-mobile/issues/937#issuecomment-5837851193

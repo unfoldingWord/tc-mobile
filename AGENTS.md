@@ -442,7 +442,11 @@ mic stream is released `"recorder-release-track"` #479, and a take sealed and
 saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
 the one durable record that a take was cut, so it goes out with the report
 and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
-#1076: "Log it, don't light ≡ (Recommended)")), the level tap's clone
+#1076: "Log it, don't light ≡ (Recommended)"), and a take sealed and saved
+because the level tap read exact silence on a moving clock with no track
+or recorder event `"recorder-capture-stalled"` #1294 — the alarm case,
+requirements owner on R13: "A visible “recording stopped” state that saves
+what was captured"; this one does light ≡), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
@@ -892,12 +896,12 @@ build at that schema or later is served or installed again. On staging
 `use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
 shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
 "Restart to use the new version."); Restart leads back to the same screen
-(inference). All of this was read from the code, not seen on a device. v1.1.0 is the current instance: it moves the schema from 9 to 11
-(v10 and v11 in #1346 and #1367). **Roll forward with a fix rather than back
-when the build to undo raised the schema, and never uninstall to clear the
-screen: uninstalling deletes the recordings.** The Node run that showed this
-(staging's `db.ts` against a v11 database) is the only run; no device has
-seen it. `docs/release/promotion-v1.0.0.md` §5 has the procedure.
+(inference). All of this was read from the code, not seen on a device.
+v1.1.0 moved the schema from 9 to 11 (v10 and v11 in #1346 and #1367), and
+v1.2.0 moves it from 11 to 12 (#1462). **Roll forward with a fix rather than
+back when the build to undo raised the schema, and never uninstall to clear the
+screen: uninstalling deletes the recordings.**
+`docs/release/promotion-v1.0.0.md` §5 has the procedure.
 
 ## Device testing — the HTTPS caveat
 

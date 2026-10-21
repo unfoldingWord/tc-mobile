@@ -48,7 +48,8 @@ const share = vi.hoisted(() => ({
       nameChapter: (
         book: BookLabel,
         chapterNumber: number,
-        chapterName: string | null
+        chapterName: string | null,
+        highestNumber: number
       ) => string
     ) => Promise<null>
   >(() => Promise.resolve(null)),
@@ -277,16 +278,24 @@ describe("the button runs the library share", () => {
     expect(nameBook({ name: "Mark/Luke", number: 1 })).toBe(
       strings.shareAllFolder("Mark/Luke")
     );
-    expect(nameChapter(mark, 3, null)).toBe(strings.shareFilename("Mark", 3));
+    expect(nameChapter(mark, 3, null, 3)).toBe(
+      strings.shareFilename("Mark", 3)
+    );
+    // The book's highest chapter number sets the width (#1233).
+    expect(nameChapter(mark, 3, null, 150)).toBe(
+      strings.shareFilename("Mark", 3, null, 150)
+    );
     // The chapter's own name reaches the MP3, as in Share Book (#1218).
-    expect(nameChapter(mark, 3, "The sower")).toBe("Mark - The sower.mp3");
+    expect(nameChapter(mark, 3, "The sower", 3)).toBe(
+      "Mark - 03 The sower.mp3"
+    );
     // An unnamed book is labelled by the placeholder its slot renders, the
     // same words its shelf row shows (#169) — never an empty folder name.
     const unnamed = { name: null, number: 4 };
     expect(nameBook(unnamed)).toBe(
       strings.shareAllFolder(strings.bookHeading(null, 4))
     );
-    expect(nameChapter(unnamed, 2, null)).toBe(
+    expect(nameChapter(unnamed, 2, null, 2)).toBe(
       strings.shareFilename(strings.bookHeading(null, 4), 2)
     );
     expect(share.send).not.toHaveBeenCalled();
