@@ -15,6 +15,16 @@ verbatim: "Accept, Open 1 'no answer by 10-21' (Recommended)". One point of the
 licence mapping stays visibly open (see "Open"); this acceptance does not settle
 it.
 
+**What the acceptance authorizes.** Only the settled rows: `confidential: false`
+(S8), the three Creative Commons licence rows (S19), and point 6's
+`{"shortStatements": [{"statement": "No licence chosen."}]}` for a book whose
+licence is "Other" or not chosen yet (the DRI's pick). It does not authorize
+anything still Open or marked an assumption. Named: whether "Other" is the same
+as `all-rights-reserved` (U1a, for the requirements owner), so no lane writes
+"All rights reserved." for "Other" on this ADR's authority; and the
+`performance` value (`singleVoice`, `reading`), which stays an assumption. The
+other rows marked proposal or assumption in point 5 are in the same position.
+
 ## Naming
 
 We say **Scripture Bundle** (formerly Scripture Burrito) in the app, the docs

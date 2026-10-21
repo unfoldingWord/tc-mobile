@@ -1100,10 +1100,12 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
    none of it is built. A4's share shape is unchanged: Share Chapter is one
    concatenated MP3 to the OS share sheet, Share Book is a zip of chapter MP3s.
    The background is still `docs/research/prior-art.md` §4.
-6. **Shema Studio source access: superseded.** The requirements owner asked
-   us to read its source, and there is no public repo. R9 (2026-10-19) made
-   Shema Studio import and export v3-required ("Scripture Bundle only in v2"),
-   so nothing in v2 needs that access and nobody needs to ask for it now.
+6. **Shema Studio source access: superseded for v2.** The requirements owner
+   asked us to read its source, and there is no public repo. R9 (2026-10-19),
+   `bundle-only`, "Scripture Bundle only in v2", carries the note: "Shema Studio
+   import/export will be v3-required." So import and export with Shema Studio
+   are a v3 item; what R9 says does not cover any other reason to read its
+   source.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
    Reference audio is out of Phase 1 (D5). B0 (#26) **removed** the timing seam
    and the narration path and superseded ADR 0007 — both are gone from `src/`.

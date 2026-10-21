@@ -741,6 +741,10 @@ names what it leaves undecided where the record shows something.
    Note: "Everything that can be included in the metadata regarding the
    copyright and licensing should be included. But nothing should be included
    that potentially compromises the identity of the user."
+   - Still open: which ID3 frames count as identity. The note names the
+     constraint and no list. PR #1577 implements an allowlist (TIT2, TALB,
+     TRCK, TCOP, COMM) with no person frames; that is the PR's reading, not a
+     decision.
 8. **S8-confidential** — "8 · Is the backup copy confidential? (#1474)".
    Decided `no`: "Not confidential". Settles: ADR 0014's Open 2a.
 9. **S9-review-loop** — "9 · Review loop with the assistant (#1431)". Decided
@@ -770,7 +774,9 @@ names what it leaves undecided where the record shows something.
     `tap-hold`: "Tap or hold a name to see it in full".
 15. **S15-consent-wording** — "15 · Mark the consent principle Accepted? (ADR
     0012)". Decided `accept`: "Yes, mark it Accepted". Settles: ADR 0012 is
-    Accepted (see the ADR's status line).
+    Accepted, for the wording of the principle only. The author's reading of
+    its consequences is not covered (see the paragraphs under the ADR's status
+    line).
 16. **S16-mic-refused** — "16 · Mic permission refused twice (#1089)". Decided
     `steps`: "Steps for turning the microphone on in phone settings".
 17. **S17-unclear-menu** — "17 · Which menu options did the interviews show
@@ -806,7 +812,7 @@ names what it leaves undecided where the record shows something.
 Round 4 is five questions that came out of the 2026-10-20 call. Only T4 is
 decided.
 
-### T4 is decided
+### T4 is decided by the DRI
 
 **T4-normalize-when** — "When does normalization run?" Decided `on-finished`:
 "When a segment is marked Finished". The DRI recorded it, with this note (the
@@ -815,10 +821,28 @@ attribution prefix is replaced by a role): "[the DRI], Zulip 2026-10-20:
 it converts from wav (non-lossy format) to mp3 (lossy) so you want to run it
 before that step.""
 
-The requirements owner has not been recorded as confirming this. The call
-record has the requirements owner saying normalization could be a checked box
-on export. Whether a switch to turn it off exists, whether it is on by default,
-and what happens to segments finished before it ships are not recorded.
+The DRI decided it as pipeline placement, which is a technical question and so
+the DRI's call. The DRI's standing rule, 2026-10-21, verbatim: "note that
+technical questions are for me". It waits on no confirmation from the
+requirements owner. The call record has the requirements owner describing a
+checked box on export; T4 is the DRI's answer to that.
+
+Two Round 5 questions follow from it and are answered:
+
+- **U6a** (does normalization run when a segment is marked Finished): "Decided
+  by T4 (the DRI, 2026-10-20): normalize when a segment is marked Finished,
+  before the lossy MP3 step."
+- **U6c** (segments finished before it ships, and unfinished segments in a
+  shared chapter): the DRI, picker 2026-10-21: "Leave them as they are
+  (Recommended)".
+
+WAV retention is not a new question. [ADR 0009](../decisions/0009-transcode-on-finished.md)
+already says that Finished drops the PCM: "transcode to MP3 and drop the PCM
+when the translator marks it **Finished**", and "The PCM is gone exactly when
+the MP3 is durable; there is no intermediate state." That is existing
+behaviour, in one transaction. T4 puts normalization before that step, so the
+stored copy is the evened-out one. Whether a switch to turn it off exists, and
+whether it is on by default, are not recorded.
 
 ### T1, T2, T3 and T5 are not decided
 
