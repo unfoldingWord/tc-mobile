@@ -1,0 +1,1037 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  buildChapterPlaylist,
+  createChapterQueue,
+  type ChapterQueueDeps,
+  type PlaylistCandidate,
+  type QueueHandle,
+} from "@/lib/audio/chapter-queue";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { SEGMENT_GAP_SECONDS } from "@/lib/export/chapter";
+import type { ChapterId, SegmentId } from "@/types/domain";
+
+/**
+ * The queue driver is pure: every clock, load and sound is injected, so each
+ * race below is call order in Node. What this cannot cover: that
+ * `playSamples` really chains clips on a phone, the audible gap, and the iOS
+ * behaviour of starting clip 2..N outside a tap (the hook slice and the device
+ * pass, #1468 / #1470).
+ */
+
+const RATE = CANONICAL_SAMPLE_RATE;
+const sec = (s: number) => Math.round(s * RATE);
+
+/** Let queued microtasks run, including promise chains several deep. */
+async function flush(times = 20): Promise<void> {
+  for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (v: T) => void;
+  reject: (e: unknown) => void;
+}
+function deferred<T>(): Deferred<T> {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+interface FakePlay {
+  segmentId: string;
+  samples: Int16Array;
+  offsetSeconds: number;
+  stops: number;
+  elapsed: number;
+  end: () => void;
+}
+
+/** A load result is a distinct Int16Array per segment so order is observable. */
+function harness(opts?: {
+  failLoad?: Set<string>;
+  failPlay?: Set<string>;
+  manualLoad?: boolean;
+  manualWait?: boolean;
+}) {
+  const events: string[] = [];
+  const plays: FakePlay[] = [];
+  const failures: Array<{ segmentId: string; cause: unknown }> = [];
+  const loads = new Map<string, Deferred<Int16Array>>();
+  const waits: Array<{ ms: number; release: () => void }> = [];
+  let current = true;
+  let releases = 0;
+  const bySamples = new Map<Int16Array, string>();
+
+  const deps: ChapterQueueDeps = {
+    load(segmentId) {
+      events.push(`load:${segmentId}`);
+      if (opts?.failLoad?.has(segmentId)) {
+        return Promise.reject(new Error(`load ${segmentId}`));
+      }
+      const samples = new Int16Array(1);
+      bySamples.set(samples, segmentId);
+      if (opts?.manualLoad) {
+        const d = deferred<Int16Array>();
+        loads.set(segmentId, d);
+        return d.promise.then((s) => {
+          bySamples.set(s, segmentId);
+          return s;
+        });
+      }
+      return Promise.resolve(samples);
+    },
+    play(samples, offsetSeconds, onEnded): QueueHandle {
+      const segmentId = bySamples.get(samples) ?? "?";
+      events.push(`play:${segmentId}@${offsetSeconds}`);
+      if (opts?.failPlay?.has(segmentId)) throw new Error(`play ${segmentId}`);
+      const rec: FakePlay = {
+        segmentId,
+        samples,
+        offsetSeconds,
+        stops: 0,
+        elapsed: offsetSeconds,
+        end: () => onEnded(),
+      };
+      plays.push(rec);
+      return {
+        stop() {
+          rec.stops++;
+        },
+        elapsed: () => rec.elapsed,
+      };
+    },
+    wait(ms) {
+      events.push(`wait:${ms}`);
+      if (opts?.manualWait) {
+        const d = deferred<void>();
+        waits.push({ ms, release: () => d.resolve() });
+        return d.promise;
+      }
+      return Promise.resolve();
+    },
+    isCurrent: () => current,
+    release: () => {
+      releases++;
+      events.push("release");
+    },
+    onFailure: (segmentId, cause) => failures.push({ segmentId, cause }),
+  };
+  return {
+    deps,
+    events,
+    plays,
+    failures,
+    loads,
+    waits,
+    supersede: () => {
+      current = false;
+    },
+    get releases() {
+      return releases;
+    },
+  };
+}
+
+/** Index a list the test knows is long enough. */
+function nth<T>(list: readonly T[], i: number): T {
+  const v = list[i];
+  if (v === undefined) throw new Error(`no item ${i}`);
+  return v;
+}
+
+const entries = (...spec: Array<[string, number]>) =>
+  spec.map(([segmentId, seconds]) => ({
+    segmentId: segmentId as SegmentId,
+    frames: sec(seconds),
+  }));
+
+/** Drive a queue to the end of every clip with no waits in the way. */
+async function endCurrent(h: ReturnType<typeof harness>) {
+  await flush();
+  h.plays[h.plays.length - 1]?.end();
+  await flush();
+}
+
+describe("buildChapterPlaylist", () => {
+  const ch = (n: string) => n as ChapterId;
+  const cand = (
+    id: string,
+    startChapterId: string,
+    audio: PlaylistCandidate["audio"]
+  ): PlaylistCandidate => ({
+    segmentId: id as SegmentId,
+    startChapterId: ch(startChapterId),
+    audio,
+  });
+
+  it("keeps the given order and drops never-recorded segments silently", () => {
+    const list = buildChapterPlaylist(ch("c1"), [
+      cand("a", "c1", { kind: "playable", frames: 10 }),
+      cand("b", "c1", { kind: "unrecorded" }),
+      cand("c", "c1", { kind: "playable", frames: 30 }),
+    ]);
+    expect(list.entries).toEqual([
+      { segmentId: "a", frames: 10 },
+      { segmentId: "c", frames: 30 },
+    ]);
+    expect(list.broken).toEqual([]);
+  });
+
+  it("reports each broken pointer once and does not play it", () => {
+    const list = buildChapterPlaylist(ch("c1"), [
+      cand("a", "c1", { kind: "broken" }),
+      cand("a", "c1", { kind: "broken" }),
+      cand("b", "c1", { kind: "playable", frames: 5 }),
+    ]);
+    expect(list.entries.map((e) => e.segmentId)).toEqual(["b"]);
+    expect(list.broken).toEqual(["a"]);
+  });
+
+  it("R6: a segment that crosses a chapter plays in the chapter it starts in, once", () => {
+    // `x` is listed by both chapters; it starts in c1.
+    const x = cand("x", "c1", { kind: "playable", frames: 7 });
+    const c1 = buildChapterPlaylist(ch("c1"), [
+      cand("a", "c1", { kind: "playable", frames: 1 }),
+      x,
+      x,
+    ]);
+    const c2 = buildChapterPlaylist(ch("c2"), [
+      x,
+      cand("d", "c2", { kind: "playable", frames: 2 }),
+    ]);
+    expect(c1.entries.map((e) => e.segmentId)).toEqual(["a", "x"]);
+    expect(c2.entries.map((e) => e.segmentId)).toEqual(["d"]);
+  });
+
+  it("an empty list has nothing to play", () => {
+    expect(buildChapterPlaylist(ch("c1"), []).entries).toEqual([]);
+  });
+});
+
+describe("createChapterQueue", () => {
+  it("uses the same gap as the shared chapter MP3", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    const run = q.play();
+    await endCurrent(h);
+    expect(h.events).toContain(`wait:${SEGMENT_GAP_SECONDS * 1000}`);
+    await endCurrent(h);
+    await run;
+  });
+
+  it("plays every clip once, in order, loading the next while one sounds", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 1], ["b", 1], ["c", 1]), h.deps);
+    const run = q.play();
+    await flush();
+    // b was requested before a ended: the prefetch.
+    expect(h.events.indexOf("load:b")).toBeGreaterThan(-1);
+    expect(h.events.indexOf("load:b")).toBeLessThan(
+      h.events.indexOf("play:a@0") + 3
+    );
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
+    await endCurrent(h);
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a", "b"]);
+    await endCurrent(h);
+    await endCurrent(h);
+    expect(await run).toBe("finished");
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a", "b", "c"]);
+    // gap between clips, none after the last
+    expect(h.events.filter((e) => e.startsWith("wait:"))).toHaveLength(2);
+  });
+
+  it("waits for the gap before the next clip starts", async () => {
+    const h = harness({ manualWait: true });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    void q.play();
+    await endCurrent(h);
+    expect(h.waits).toHaveLength(1);
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
+    nth(h.waits, 0).release();
+    await flush();
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a", "b"]);
+  });
+
+  it("does not start a clip before it has loaded", async () => {
+    const h = harness({ manualLoad: true });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    void q.play();
+    await flush();
+    expect(h.plays).toHaveLength(0);
+    h.loads.get("a")?.resolve(new Int16Array(3));
+    await flush();
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
+    nth(h.plays, 0).end();
+    await flush();
+    // b's load is still pending: nothing may play.
+    expect(h.plays).toHaveLength(1);
+    h.loads.get("b")?.resolve(new Int16Array(4));
+    await flush();
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a", "b"]);
+    expect(nth(h.plays, 1).samples).toHaveLength(4);
+  });
+
+  it("an empty queue plays nothing and says so", async () => {
+    const h = harness();
+    const q = createChapterQueue([], h.deps);
+    expect(await q.play()).toBe("empty");
+    expect(h.plays).toHaveLength(0);
+    expect(h.releases).toBe(1);
+    expect(q.progress()).toBeNull();
+  });
+
+  it("pause keeps the index and offset, stops the sound and releases the floor", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4], ["b", 4]), h.deps);
+    const run = q.play();
+    await flush();
+    nth(h.plays, 0).elapsed = 1.5;
+    const pos = q.pause();
+    expect(pos).toEqual({ index: 0, offsetSeconds: 1.5 });
+    expect(nth(h.plays, 0).stops).toBe(1);
+    expect(h.releases).toBe(1);
+    expect(await run).toBe("paused");
+    expect(q.state()).toBe("paused");
+    // the ended callback of a stopped source must not advance the queue
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("resume continues the same clip from the remembered offset", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4], ["b", 4]), h.deps);
+    void q.play();
+    await flush();
+    nth(h.plays, 0).elapsed = 2.25;
+    q.pause();
+    const run = q.resume();
+    await flush();
+    expect(h.plays).toHaveLength(2);
+    expect(nth(h.plays, 1).segmentId).toBe("a");
+    expect(nth(h.plays, 1).offsetSeconds).toBe(2.25);
+    await endCurrent(h);
+    await endCurrent(h);
+    expect(await run).toBe("finished");
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a", "a", "b"]);
+  });
+
+  it("a pause inside the gap resumes at the start of the next clip", async () => {
+    const h = harness({ manualWait: true });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    void q.play();
+    await endCurrent(h);
+    expect(h.waits).toHaveLength(1);
+    expect(q.pause()).toEqual({ index: 1, offsetSeconds: 0 });
+    // the gap timer firing afterwards must start nothing
+    nth(h.waits, 0).release();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+    void q.resume();
+    await flush();
+    expect(h.plays.map((p) => `${p.segmentId}@${p.offsetSeconds}`)).toEqual([
+      "a@0",
+      "b@0",
+    ]);
+  });
+
+  it("a pause before the clip has started sounding keeps its start point", async () => {
+    const h = harness({ manualLoad: true });
+    const q = createChapterQueue(entries(["a", 4]), h.deps);
+    void q.play();
+    await flush();
+    expect(q.pause()).toEqual({ index: 0, offsetSeconds: 0 });
+    h.loads.get("a")?.resolve(new Int16Array(1));
+    await flush();
+    expect(h.plays).toHaveLength(0);
+  });
+
+  it("supersede while a clip is loading starts nothing", async () => {
+    const h = harness({ manualLoad: true });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    const run = q.play();
+    await flush();
+    h.supersede();
+    h.loads.get("a")?.resolve(new Int16Array(1));
+    await flush();
+    expect(h.plays).toHaveLength(0);
+    expect(await run).toBe("superseded");
+    // the floor now belongs to someone else: do not release it
+    expect(h.releases).toBe(0);
+  });
+
+  it("supersede while the clip is being handed to the player stops that clip", async () => {
+    // `playSamples` is async: the handle arrives after a context resume and a
+    // buffer fill. A claim taken in that window must not leave it sounding.
+    const h = harness();
+    const arrive = deferred<QueueHandle>();
+    const stops: number[] = [];
+    const handle: QueueHandle = { stop: () => stops.push(1), elapsed: () => 0 };
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      play: () => arrive.promise,
+    });
+    const run = q.play();
+    await flush();
+    h.supersede();
+    arrive.resolve(handle);
+    await flush();
+    expect(stops).toHaveLength(1);
+    expect(await run).toBe("superseded");
+    expect(h.events.filter((e) => e.startsWith("load:"))).toEqual([
+      "load:a",
+      "load:b",
+    ]);
+    expect(h.releases).toBe(0);
+  });
+
+  it("supersede during the gap starts nothing", async () => {
+    const h = harness({ manualWait: true });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    const run = q.play();
+    await endCurrent(h);
+    h.supersede();
+    nth(h.waits, 0).release();
+    await flush();
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
+    expect(await run).toBe("superseded");
+    expect(h.releases).toBe(0);
+  });
+
+  it("supersede() while a clip sounds stops it without waiting for onEnded", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4], ["b", 4]), h.deps);
+    const run = q.play();
+    await flush();
+    h.supersede();
+    q.supersede();
+    expect(nth(h.plays, 0).stops).toBe(1);
+    expect(await run).toBe("superseded");
+    expect(q.state()).toBe("idle");
+    // the floor now belongs to someone else: do not release it
+    expect(h.releases).toBe(0);
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("a throwing onFailure settles the run and releases the floor once", async () => {
+    const h = harness({ failLoad: new Set(["a"]) });
+    const boom = new Error("sink");
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      onFailure: () => {
+        throw boom;
+      },
+    });
+    await expect(q.play()).rejects.toBe(boom);
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+    expect(h.plays).toHaveLength(0);
+  });
+
+  it("a rejecting wait settles the run and releases the floor once", async () => {
+    const h = harness();
+    const boom = new Error("timer");
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      wait: () => Promise.reject(boom),
+    });
+    const run = q.play();
+    const settled = expect(run).rejects.toBe(boom);
+    await endCurrent(h);
+    await settled;
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
+  });
+
+  it("a throwing release in pause() rejects the run instead of stranding it", async () => {
+    const h = harness();
+    const boom = new Error("release");
+    let releases = 0;
+    const q = createChapterQueue(entries(["a", 4], ["b", 1]), {
+      ...h.deps,
+      release: () => {
+        releases++;
+        throw boom;
+      },
+    });
+    const settled = q.play().then(
+      () => "resolved",
+      (e: unknown) => e
+    );
+    await flush();
+    nth(h.plays, 0).elapsed = 1;
+    expect(q.pause()).toEqual({ index: 0, offsetSeconds: 1 });
+    expect(await Promise.race([settled, flush().then(() => "pending")])).toBe(
+      boom
+    );
+    expect(releases).toBe(1);
+    expect(q.state()).toBe("paused");
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("a throwing release in stop() rejects the run instead of stranding it", async () => {
+    const h = harness();
+    const boom = new Error("release");
+    let releases = 0;
+    const q = createChapterQueue(entries(["a", 4], ["b", 1]), {
+      ...h.deps,
+      release: () => {
+        releases++;
+        throw boom;
+      },
+    });
+    const settled = q.play().then(
+      () => "resolved",
+      (e: unknown) => e
+    );
+    await flush();
+    q.stop();
+    expect(await Promise.race([settled, flush().then(() => "pending")])).toBe(
+      boom
+    );
+    expect(releases).toBe(1);
+    expect(nth(h.plays, 0).stops).toBe(1);
+    expect(q.state()).toBe("idle");
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("a throwing hand-off guard still stops the clip that just arrived", async () => {
+    const h = harness();
+    const arrive = deferred<QueueHandle>();
+    const stops: number[] = [];
+    const handle: QueueHandle = { stop: () => stops.push(1), elapsed: () => 0 };
+    const boom = new Error("token");
+    let guardThrows = false;
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      play: () => arrive.promise,
+      isCurrent: () => {
+        if (guardThrows) throw boom;
+        return true;
+      },
+    });
+    const run = q.play();
+    const settled = expect(run).rejects.toBe(boom);
+    await flush();
+    guardThrows = true;
+    arrive.resolve(handle);
+    await settled;
+    expect(stops).toHaveLength(1);
+    expect(q.state()).toBe("idle");
+  });
+
+  it("a throwing stop in the fault path still settles the run", async () => {
+    const h = harness();
+    const boom = new Error("token");
+    const stopCause = new Error("stop");
+    let guardThrows = false;
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      play: (samples, offset, onEnded) => {
+        const real = h.deps.play(samples, offset, onEnded) as QueueHandle;
+        return {
+          ...real,
+          stop: () => {
+            real.stop();
+            throw stopCause;
+          },
+        };
+      },
+      isCurrent: () => {
+        if (guardThrows) throw boom;
+        return true;
+      },
+    });
+    const settled = q.play().then(
+      () => "resolved",
+      (e: unknown) => e
+    );
+    await flush();
+    guardThrows = true;
+    nth(h.plays, 0).end();
+    const fault = await Promise.race([settled, flush().then(() => "pending")]);
+    expect(fault).toBeInstanceOf(AggregateError);
+    expect((fault as AggregateError).errors).toEqual([boom, stopCause]);
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+  });
+
+  describe("onFailure may call back into the queue", () => {
+    /** A queue whose onFailure runs `then` on the queue it reports for. */
+    function reentrant(
+      spec: Array<[string, number]>,
+      then: (q: ReturnType<typeof createChapterQueue>) => void
+    ) {
+      const h = harness({ failLoad: new Set(["a"]) });
+      const box: { q?: ReturnType<typeof createChapterQueue> } = {};
+      const q = createChapterQueue(entries(...spec), {
+        ...h.deps,
+        onFailure: (segmentId, cause) => {
+          h.deps.onFailure(segmentId, cause);
+          if (box.q) then(box.q);
+        },
+      });
+      box.q = q;
+      return { h, q };
+    }
+
+    it("stop() from onFailure on a one-clip queue releases once", async () => {
+      const { h, q } = reentrant([["a", 1]], (q) => q.stop());
+      expect(await q.play()).toBe("stopped");
+      await flush();
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("idle");
+    });
+
+    it("stop() from onFailure on a two-clip queue starts nothing after", async () => {
+      const { h, q } = reentrant(
+        [
+          ["a", 1],
+          ["b", 1],
+        ],
+        (q) => q.stop()
+      );
+      expect(await q.play()).toBe("stopped");
+      await flush();
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("idle");
+      expect(h.plays).toHaveLength(0);
+      q.stop();
+      expect(h.releases).toBe(1);
+    });
+
+    it("pause() from onFailure stays paused with its place", async () => {
+      const positions: unknown[] = [];
+      const { h, q } = reentrant(
+        [
+          ["a", 1],
+          ["b", 1],
+        ],
+        (q) => positions.push(q.pause())
+      );
+      expect(await q.play()).toBe("paused");
+      await flush();
+      expect(positions).toEqual([{ index: 0, offsetSeconds: 0 }]);
+      expect(q.state()).toBe("paused");
+      expect(h.releases).toBe(1);
+      expect(h.plays).toHaveLength(0);
+    });
+  });
+
+  describe("teardown when a handle or the floor throws", () => {
+    /** The harness's deps, with every handle's stop/elapsed made to throw. */
+    function throwing(
+      h: ReturnType<typeof harness>,
+      what: { stop?: Error; elapsed?: Error }
+    ): ChapterQueueDeps {
+      return {
+        ...h.deps,
+        play: (samples, offset, onEnded) => {
+          const real = h.deps.play(samples, offset, onEnded) as QueueHandle;
+          return {
+            stop: () => {
+              real.stop();
+              if (what.stop) throw what.stop;
+            },
+            elapsed: () => {
+              if (what.elapsed) throw what.elapsed;
+              return real.elapsed();
+            },
+          };
+        },
+      };
+    }
+
+    /** The run's settled value or rejection, or "pending" if neither. */
+    const outcomeOf = (run: Promise<unknown>) => {
+      const settled = run.then(
+        (v) => ({ resolved: v }),
+        (e: unknown) => ({ rejected: e })
+      );
+      return () =>
+        Promise.race([settled, flush().then(() => "pending" as const)]);
+    };
+
+    it("isCurrent false and a throwing stop: rejects, never releases the new holder's floor", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 1], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      h.supersede();
+      nth(h.plays, 0).end();
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(0);
+      expect(q.state()).toBe("idle");
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("supersede() with a throwing stop: rejects, never releases", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      h.supersede();
+      q.supersede();
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(0);
+      expect(q.state()).toBe("idle");
+      nth(h.plays, 0).end();
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("pause() with a throwing stop: rejects, releases once, keeps the place", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      nth(h.plays, 0).elapsed = 1;
+      expect(q.pause()).toEqual({ index: 0, offsetSeconds: 1 });
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("paused");
+      nth(h.plays, 0).end();
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("stop() with a throwing stop: rejects, releases once, ends idle", async () => {
+      const h = harness();
+      const boom = new Error("stop");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { stop: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      q.stop();
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("idle");
+      nth(h.plays, 0).end();
+      await flush();
+      expect(h.plays).toHaveLength(1);
+    });
+
+    it("pause() with a throwing elapsed still stops the clip and settles", async () => {
+      const h = harness();
+      const boom = new Error("elapsed");
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { elapsed: boom })
+      );
+      const outcome = outcomeOf(q.play());
+      await flush();
+      expect(q.pause()).toEqual({ index: 0, offsetSeconds: 0 });
+      expect(nth(h.plays, 0).stops).toBe(1);
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("paused");
+    });
+
+    it("progress() with a throwing elapsed falls back to the clip start", async () => {
+      const h = harness();
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { elapsed: new Error("elapsed") })
+      );
+      void q.play();
+      await flush();
+      expect(q.state()).toBe("playing");
+      expect(q.progress()).toBe(0);
+    });
+
+    it("a non-finite elapsed keeps the clip's start offset, not NaN", async () => {
+      const h = harness();
+      const q = createChapterQueue(entries(["a", 4]), h.deps);
+      void q.play();
+      await flush();
+      nth(h.plays, 0).elapsed = Number.NaN;
+      expect(q.progress()).toBe(0);
+      expect(q.pause()).toEqual({ index: 0, offsetSeconds: 0 });
+    });
+
+    it("a superseded hand-off whose stop throws rejects, never 'superseded'", async () => {
+      const h = harness();
+      const arrive = deferred<QueueHandle>();
+      const boom = new Error("stop");
+      let stops = 0;
+      const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+        ...h.deps,
+        play: () => arrive.promise,
+      });
+      const outcome = outcomeOf(q.play());
+      await flush();
+      h.supersede();
+      arrive.resolve({
+        stop: () => {
+          stops++;
+          throw boom;
+        },
+        elapsed: () => 0,
+      });
+      expect(await outcome()).toEqual({ rejected: boom });
+      expect(stops).toBe(1);
+      expect(h.releases).toBe(0);
+    });
+
+    it("a hand-off that arrives after pause() reports its throwing stop", async () => {
+      const h = harness();
+      const arrive = deferred<QueueHandle>();
+      const boom = new Error("stop");
+      let stops = 0;
+      const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+        ...h.deps,
+        play: () => arrive.promise,
+      });
+      const outcome = outcomeOf(q.play());
+      await flush();
+      q.pause();
+      expect(await outcome()).toEqual({ resolved: "paused" });
+      arrive.resolve({
+        stop: () => {
+          stops++;
+          throw boom;
+        },
+        elapsed: () => 0,
+      });
+      await flush();
+      expect(stops).toBe(1);
+      expect(h.failures).toEqual([{ segmentId: "a", cause: boom }]);
+    });
+
+    it("an empty play() with a throwing release rejects instead of throwing", async () => {
+      const h = harness();
+      const boom = new Error("release");
+      const q = createChapterQueue([], {
+        ...h.deps,
+        release: () => {
+          throw boom;
+        },
+      });
+      let run: Promise<unknown> | undefined;
+      expect(() => {
+        run = q.play();
+      }).not.toThrow();
+      await expect(run).rejects.toBe(boom);
+    });
+  });
+
+  it("play() during a run returns that run, not a false 'stopped'", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 1]), h.deps);
+    const run = q.play();
+    await flush();
+    const again = q.play();
+    const resumed = q.resume();
+    expect(q.state()).toBe("playing");
+    expect(h.releases).toBe(0);
+    await endCurrent(h);
+    expect(await run).toBe("finished");
+    expect(await again).toBe("finished");
+    expect(await resumed).toBe("finished");
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("play() while paused resolves 'paused' and keeps the place", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4]), h.deps);
+    void q.play();
+    await flush();
+    nth(h.plays, 0).elapsed = 1;
+    q.pause();
+    expect(await q.play()).toBe("paused");
+    expect(q.state()).toBe("paused");
+    expect(h.releases).toBe(1);
+  });
+
+  it("elapsed is a position in the clip: a pause after a mid-clip resume keeps it", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4]), h.deps);
+    void q.play();
+    await flush();
+    nth(h.plays, 0).elapsed = 2.25;
+    q.pause();
+    void q.resume();
+    await flush();
+    expect(nth(h.plays, 1).offsetSeconds).toBe(2.25);
+    nth(h.plays, 1).elapsed = 3;
+    expect(q.pause()).toEqual({ index: 0, offsetSeconds: 3 });
+  });
+
+  it("a clip that sounded before a pause means the run did not fail", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4], ["b", 1]), {
+      ...h.deps,
+      load: (id) =>
+        h.plays.length > 0
+          ? Promise.reject(new Error(`load ${id}`))
+          : h.deps.load(id),
+    });
+    void q.play();
+    await flush();
+    q.pause();
+    expect(await q.resume()).toBe("finished");
+  });
+
+  it("stop while paused does not release the floor again", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4]), h.deps);
+    void q.play();
+    await flush();
+    q.pause();
+    q.stop();
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+  });
+
+  it("stop ends the queue: the sound stops and no clip starts after", async () => {
+    const h = harness({ manualWait: true });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    const run = q.play();
+    await flush();
+    q.stop();
+    expect(nth(h.plays, 0).stops).toBe(1);
+    expect(await run).toBe("stopped");
+    expect(h.releases).toBe(1);
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+    expect(q.progress()).toBeNull();
+    expect(q.state()).toBe("idle");
+  });
+
+  it("releases the floor when the last clip ends, and progress resets", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 1]), h.deps);
+    const run = q.play();
+    await endCurrent(h);
+    expect(await run).toBe("finished");
+    expect(h.releases).toBe(1);
+    expect(q.progress()).toBeNull();
+    expect(q.state()).toBe("idle");
+  });
+
+  it("skips a clip that fails to load, logging it once, and carries on", async () => {
+    const h = harness({ failLoad: new Set(["b"]) });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1], ["c", 1]), h.deps);
+    const run = q.play();
+    await endCurrent(h);
+    await endCurrent(h);
+    expect(await run).toBe("finished");
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a", "c"]);
+    expect(h.failures.map((f) => f.segmentId)).toEqual(["b"]);
+    // a skipped clip adds no second gap of silence
+    expect(h.events.filter((e) => e.startsWith("wait:"))).toHaveLength(1);
+  });
+
+  it("skips a clip whose play throws, logging it once", async () => {
+    const h = harness({ failPlay: new Set(["a"]) });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    const run = q.play();
+    await endCurrent(h);
+    expect(await run).toBe("finished");
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["b"]);
+    expect(h.failures.map((f) => f.segmentId)).toEqual(["a"]);
+  });
+
+  it("every clip failing ends failed with no sound", async () => {
+    const h = harness({ failLoad: new Set(["a", "b"]) });
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), h.deps);
+    expect(await q.play()).toBe("failed");
+    expect(h.plays).toHaveLength(0);
+    expect(h.failures).toHaveLength(2);
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+  });
+
+  describe("progress", () => {
+    it("is null before play", () => {
+      const q = createChapterQueue(entries(["a", 1]), harness().deps);
+      expect(q.progress()).toBeNull();
+    });
+
+    it("is exact from frame counts and gaps, whatever the encoding", async () => {
+      // frames are the original PCM length for PCM and MP3 clips alike
+      const h = harness();
+      const q = createChapterQueue(entries(["a", 4], ["b", 6]), h.deps);
+      void q.play();
+      await flush();
+      const total = 4 + SEGMENT_GAP_SECONDS + 6;
+      nth(h.plays, 0).elapsed = 2;
+      expect(q.progress()).toBeCloseTo(2 / total, 10);
+      nth(h.plays, 0).elapsed = 99; // a handle clamps; so must we
+      expect(q.progress()).toBeCloseTo(4 / total, 10);
+      await endCurrent(h);
+      nth(h.plays, 1).elapsed = 3;
+      expect(q.progress()).toBeCloseTo(
+        (4 + SEGMENT_GAP_SECONDS + 3) / total,
+        10
+      );
+    });
+
+    it("never moves backward while playing, across the gap", async () => {
+      const h = harness({ manualWait: true });
+      const q = createChapterQueue(entries(["a", 2], ["b", 2]), h.deps);
+      void q.play();
+      await flush();
+      const seen: number[] = [];
+      for (const e of [0, 0.5, 1, 1.9, 2]) {
+        nth(h.plays, 0).elapsed = e;
+        seen.push(q.progress() as number);
+      }
+      nth(h.plays, 0).end();
+      await flush();
+      seen.push(q.progress() as number);
+      nth(h.waits, 0).release();
+      await flush();
+      for (const e of [0, 1, 2]) {
+        nth(h.plays, 1).elapsed = e;
+        seen.push(q.progress() as number);
+      }
+      for (let i = 1; i < seen.length; i++) {
+        expect(nth(seen, i)).toBeGreaterThanOrEqual(nth(seen, i - 1));
+      }
+      expect(nth(seen, seen.length - 1)).toBeCloseTo(1, 10);
+    });
+
+    it("holds its value while paused", async () => {
+      const h = harness();
+      const q = createChapterQueue(entries(["a", 4]), h.deps);
+      void q.play();
+      await flush();
+      nth(h.plays, 0).elapsed = 1;
+      q.pause();
+      nth(h.plays, 0).elapsed = 3; // a dead handle must not move it
+      expect(q.progress()).toBeCloseTo(0.25, 10);
+    });
+  });
+});

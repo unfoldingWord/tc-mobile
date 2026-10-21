@@ -34,7 +34,8 @@ interface ObsFrame {
   readonly text: string;
 }
 
-export interface ObsStory {
+/** Not exported, like `ObsFrame`: since #1466 nothing imports the name. */
+interface ObsStory {
   /** 1-based story number, 1–50. */
   readonly story: number;
   readonly title: string;

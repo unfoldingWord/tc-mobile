@@ -61,7 +61,8 @@
     align-items: center;
     gap: 12px; /* #939 token */
     height: 78px; /* #939 token */
-    padding: 0 10px 0 14px; /* #939 token */
+    padding-block: 0;
+    padding-inline: 14px 10px; /* #939 token */
     border-radius: 14px; /* #939 token */
     background: var(--s-floor);
   }

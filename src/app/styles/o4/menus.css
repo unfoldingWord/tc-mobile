@@ -200,8 +200,9 @@
     max-width: max-content;
     height: 40px;
     min-width: 0;
-    margin-left: -6px;
-    padding: 0 20px 0 24px;
+    margin-inline-start: -6px;
+    padding-block: 0;
+    padding-inline: 24px 20px;
     background: var(--s-well);
     color: var(--s-ink);
     font-size: 16px; /* #939 token */
@@ -220,9 +221,10 @@
     clip-path: var(--o4-crumb-shape);
   }
   :root .o4-crumb:first-child {
-    margin-left: 0;
-    padding-left: 12px;
-    border-radius: 10px 0 0 10px; /* #939 token */
+    margin-inline-start: 0;
+    padding-inline-start: 12px;
+    border-start-start-radius: 10px; /* #939 token */
+    border-end-start-radius: 10px; /* #939 token */
     --o4-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
@@ -230,6 +232,21 @@
       calc(100% - 13px) 100%,
       0 100%
     );
+  }
+  /* Right-to-left (#1552): the chevron's tip points at the END edge, so the
+     polygon is the mirror image and the chips nest the other way. */
+  :root[dir="rtl"] .o4-crumb {
+    --o4-crumb-shape: polygon(
+      100% 0,
+      13px 0,
+      0 50%,
+      13px 100%,
+      100% 100%,
+      calc(100% - 13px) 50%
+    );
+  }
+  :root[dir="rtl"] .o4-crumb:first-child {
+    --o4-crumb-shape: polygon(100% 0, 13px 0, 0 50%, 13px 100%, 100% 100%);
   }
   :root .o4-crumb > span {
     overflow: hidden;
@@ -315,7 +332,8 @@
     align-items: center;
     gap: 12px;
     min-height: 78px;
-    padding: 8px 8px 8px 10px;
+    padding-block: 8px;
+    padding-inline: 10px 8px;
     border-radius: 14px; /* #939 token */
     background: var(--s-floor);
   }

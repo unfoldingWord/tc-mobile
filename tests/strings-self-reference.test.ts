@@ -113,14 +113,61 @@ function topLevelNames(source: string): {
 }
 
 /**
+ * Whether `node` IS the result of the entry function `fn`: returned as it
+ * stands, perhaps as one arm of `?:`, `??` or `||`, perhaps in parentheses.
+ * Anything else (a template span, a `+` operand, a call argument, a local
+ * variable) means the entry puts words of its own around it.
+ */
+function isWholeResult(node: ts.Node, fn: ts.Node): boolean {
+  let at = node;
+  for (;;) {
+    const parent = at.parent;
+    if (ts.isParenthesizedExpression(parent)) at = parent;
+    else if (ts.isConditionalExpression(parent) && parent.condition !== at)
+      at = parent;
+    else if (
+      ts.isBinaryExpression(parent) &&
+      (parent.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+        parent.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+    )
+      at = parent;
+    else if (ts.isReturnStatement(parent))
+      return ts.findAncestor(parent, ts.isFunctionLike) === fn;
+    else if (ts.isArrowFunction(parent) && parent.body === at)
+      return parent === fn;
+    else return false;
+  }
+}
+
+/** Whether `node` sits inside running text: a template span or a `+`. */
+function isInsideText(node: ts.Node, fn: ts.Node): boolean {
+  for (let at = node.parent; at !== fn; at = at.parent) {
+    if (ts.isTemplateSpan(at)) return true;
+    if (
+      ts.isBinaryExpression(at) &&
+      at.operatorToken.kind === ts.SyntaxKind.PlusToken
+    )
+      return true;
+  }
+  return false;
+}
+
+/**
  * Every entry of `export const stringsEn = { ... }` that references the binding
  * or a helper, mapped to what it references, sorted. A bare `strings` that is
  * not the object of a property access (an alias, a spread, an element access)
  * is recorded as `strings` itself, so it cannot hide the name it reads.
+ *
+ * `embeds` is the narrower set the whole-sentence rule reads (#1483): each
+ * `this.<entry>` an entry does NOT return whole, and `plural` where a count
+ * phrase sits inside running text. A call counts as whole only when every
+ * argument is a plain name, so `this.frame(plural(...))` is an embed: the
+ * entry fills another entry's frame with a phrase of its own.
  */
 function outwardReferences(source: string): {
   entries: number;
   refs: Record<string, string[]>;
+  embeds: Record<string, string[]>;
 } {
   const file = ts.createSourceFile(
     "strings.ts",
@@ -148,19 +195,46 @@ function outwardReferences(source: string): {
   if (!table) throw new Error("no `stringsEn` object literal in strings.ts");
 
   const refs: Record<string, string[]> = {};
+  const embeds: Record<string, string[]> = {};
   for (const prop of table.properties) {
     if (!prop.name || !ts.isIdentifier(prop.name)) {
       throw new Error(
         `strings.ts: an entry without a plain name at ${prop.getStart()}`
       );
     }
+    // The function whose result the entry is: the method itself, or the
+    // arrow or function a property holds. A fixed string has none, and then
+    // nothing inside it can be a whole result.
+    const fn =
+      ts.isPropertyAssignment(prop) &&
+      (ts.isArrowFunction(prop.initializer) ||
+        ts.isFunctionExpression(prop.initializer))
+        ? prop.initializer
+        : prop;
     const found = new Set<string>();
+    const embedded = new Set<string>();
     const visit = (node: ts.Node): void => {
       if (
         ts.isPropertyAccessExpression(node) &&
         node.expression.kind === ts.SyntaxKind.ThisKeyword
       ) {
         found.add(`this.${node.name.text}`);
+        const call =
+          ts.isCallExpression(node.parent) && node.parent.expression === node
+            ? node.parent
+            : undefined;
+        const plainArguments =
+          call === undefined || call.arguments.every(ts.isIdentifier);
+        if (!plainArguments || !isWholeResult(call ?? node, fn))
+          embedded.add(`this.${node.name.text}`);
+      }
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "plural" &&
+        isInsideText(node, fn)
+      ) {
+        embedded.add("plural");
       }
       if (ts.isIdentifier(node)) {
         const parent = node.parent;
@@ -190,8 +264,9 @@ function outwardReferences(source: string): {
     // reaches the binding the same way an arrow does.
     visit(prop);
     if (found.size > 0) refs[prop.name.text] = [...found].sort();
+    if (embedded.size > 0) embeds[prop.name.text] = [...embedded].sort();
   }
-  return { entries: table.properties.length, refs };
+  return { entries: table.properties.length, refs, embeds };
 }
 
 describe("table entries that reach outside their own arguments (#169)", () => {
@@ -207,11 +282,8 @@ describe("table entries that reach outside their own arguments (#169)", () => {
     expect(refs).toEqual({
       chapterBreadcrumb: ["this.trail"],
       chapterHeading: ["this.chapterName"],
-      chapterReorderMoved: ["this.chapterName"],
-      chapterReorderStayed: ["this.chapterName"],
       editSegment: ["this.segmentHeading"],
       editSegmentFinished: ["this.segmentHeading"],
-      menuOpenWithFailures: ["this.failuresMarker"],
       openSegment: ["this.segmentHeading"],
       recorderBreadcrumb: ["this.segmentHeading", "this.trail"],
       saveFailedDiscard: [
@@ -220,16 +292,60 @@ describe("table entries that reach outside their own arguments (#169)", () => {
       ],
       saveFailedDiscardHint: ["this.takeRecoverDiscardHint"],
       shareAllFolder: ["this.shareNameFallback"],
-      shareAllMissing: ["this.couldNotBeIncluded"],
       shareBookFilename: ["this.shareNameFallback"],
-      shareBookMissing: ["this.couldNotBeIncluded"],
-      shareBookMissingAndPartial: [
-        "this.couldNotBeIncluded",
-        "this.shareBookMissing",
-      ],
+      shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareBookPartial: ["this.shareMissing"],
       shareFilename: ["this.chapterName"],
-      shareMissing: ["this.couldNotBeIncluded"],
+    });
+  });
+});
+
+/**
+ * #1483 — no sentence is built from another entry's words.
+ *
+ * The rule in docs/i18n/glossary.md is that each entry is a whole sentence,
+ * with placeholders for the values that vary. A sentence spliced from a second
+ * entry's output ("Chapter 3" + " is now chapter 5.") keeps that entry's
+ * grammar inside a sentence it does not own. A language that inflects the
+ * name, or orders the parts differently, then cannot write the sentence it
+ * needs without overriding both entries. A count phrase spliced into running
+ * text ("{n} segments" + " could not be included.") is the same defect inside
+ * one entry.
+ *
+ * So this pins `embeds`: every `this.<entry>` that an entry does not return
+ * whole, and every `plural(...)` that sits inside a template or a `+`. What
+ * remains is the set below, and each member has a stated reason:
+ *
+ *   - NAMES. `segmentHeading` is the ordinal plus the facilitator's label
+ *     ("3 · verses 3–4"), and it holds no word. The open control's spoken name
+ *     must contain the text the row paints (WCAG 2.5.3), so it embeds the
+ *     entry that paints it. `trail` joins names. The two file names embed a
+ *     fallback NAME (R18 on #1233: "Use the number and name").
+ *   - ONE SENTENCE JOIN. `shareBookMissingAndPartial` puts two whole
+ *     sentences side by side through `sentences`, which owns the separator
+ *     (#1483 slice 2). The joins in `components/share-error-copy.ts` use the
+ *     same entry; `tests/strings-sentence-joins.test.ts` pins that code never
+ *     joins table sentences itself.
+ *
+ * WHAT IT CANNOT SEE: a phrase built in a local variable and then placed in a
+ * template. The `this.<entry>` rule catches that case, because a variable is
+ * not a whole result. The `plural` rule does not catch it, because a forms
+ * table can legitimately be built from plural results. This is a floor under
+ * the table, read from the parse tree, so a comment can neither trip it nor
+ * satisfy it.
+ */
+describe("no table sentence is built from another entry's words (#1483)", () => {
+  const { embeds } = outwardReferences(readFileSync(FILE, "utf8"));
+
+  it("embeds only names and the one sentence join", () => {
+    expect(embeds).toEqual({
+      editSegment: ["this.segmentHeading"],
+      editSegmentFinished: ["this.segmentHeading"],
+      openSegment: ["this.segmentHeading"],
+      recorderBreadcrumb: ["this.segmentHeading", "this.trail"],
+      shareBookFilename: ["this.shareNameFallback"],
+      shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
+      shareFilename: ["this.chapterName"],
     });
   });
 });
@@ -307,5 +423,60 @@ describe("the reader itself", () => {
 
   it("does not count a comment or a string that names them", () => {
     expect(probe('// strings.b\na: "strings.b and trail(x)",')).toEqual({});
+  });
+});
+
+describe("the embed reader itself (#1483)", () => {
+  const embeds = (body: string) =>
+    outwardReferences(`export const stringsEn = {\n${body}\n} as const;`)
+      .embeds;
+
+  it("does not count an entry returned whole: directly, as an arm of ?:, ?? or ||, from a method or an arrow", () => {
+    expect(
+      embeds(
+        [
+          "a(n: number): string { return this.b(n); },",
+          "c(x: string | null, n: number): string { return x ?? this.b(n); },",
+          "d: function (f: boolean): string { return f ? this.e : (this.g); },",
+          "h(x: string): string { return x || this.e; },",
+          "k: (n: number): string => plural(n, { other: `{n} of ${n}` }),",
+          "m: (n: number, name: string): string => plural(n, { other: '{name}' }).replace('{name}', () => name),",
+        ].join("\n")
+      )
+    ).toEqual({});
+  });
+
+  it("counts an entry spliced into a template, a +, a variable, a call argument, or filled with a phrase", () => {
+    expect(
+      embeds(
+        [
+          "a(n: number): string { return `${this.b(n)} moved.`; },",
+          "c(n: number): string { return this.b(n) + '.'; },",
+          "d(n: number): string { const x = this.b(n); return x; },",
+          "e(n: number): string { return wrap(this.b(n)); },",
+          "f(n: number): string { return this.frame(plural(n, { other: '{n} x' })); },",
+          "g(n: number): string { return this.b(n, 'Book'); },",
+        ].join("\n")
+      )
+    ).toEqual({
+      a: ["this.b"],
+      c: ["this.b"],
+      d: ["this.b"],
+      e: ["this.b"],
+      f: ["this.frame"],
+      g: ["this.b"],
+    });
+  });
+
+  it("counts a count phrase inside running text, and not a return from a nested helper as the entry's own", () => {
+    expect(
+      embeds(
+        [
+          "a: (n: number): string => `${plural(n, { other: '{n} x' })}, open`,",
+          "b: (n: number): string => 'Open ' + plural(n, { other: '{n} x' }),",
+          "c(n: number): string { const f = () => this.d(n); return f(); },",
+        ].join("\n")
+      )
+    ).toEqual({ a: ["plural"], b: ["plural"], c: ["this.d"] });
   });
 });

@@ -10,11 +10,13 @@ import {
   type PlaybackHandle,
 } from "./audio-io";
 import type { ProbeSource } from "./audio-probe";
+import type { ChapterPlayState } from "./chapter-player";
 import {
   PlaybackClockStalledError,
   PlaybackResumeError,
 } from "./playback-resume-error";
 import { reportFailure } from "./report-failure";
+import { useChapterPlay } from "./use-chapter-play";
 import {
   useRecorder,
   type RecorderState,
@@ -32,7 +34,7 @@ import {
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
 import { strings } from "@/lib/strings";
-import type { SegmentId } from "@/types/domain";
+import type { ChapterId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
 export interface UseAudioSession {
@@ -199,6 +201,24 @@ export interface UseAudioSession {
   /** The VU tap could not be wired for the current take; the meter shows
    *  unavailable rather than a resting-empty strip. Recording is unaffected. */
   meterFailed: boolean;
+  /**
+   * Chapter play (#1468): which chapter, and whether it is loading, playing,
+   * paused (with how far through), or failed (every clip failed). Pushed only
+   * on those changes; the moving position is `readChapterProgress`.
+   */
+  readonly chapterPlay: ChapterPlayState;
+  /**
+   * Play a whole chapter, or resume it where it was paused. Call it in the
+   * tap. Another chapter, playing or paused, is replaced; refused while the
+   * microphone holds the floor. Contract: `hooks/chapter-player.ts`.
+   */
+  playChapter: (chapterId: ChapterId) => void;
+  /** Stop the chapter's sound and keep its place; gives the floor back. */
+  pauseChapter: () => void;
+  /** End chapter play and forget the place. */
+  stopChapter: () => void;
+  /** 0..1 through the playing or paused chapter, or null. PULLED. */
+  readChapterProgress: () => number | null;
 }
 
 /**
@@ -243,6 +263,16 @@ export type SegmentsAudio = Pick<
   | "playingBuffer"
   | "playingId"
   | "stopBuffer"
+>;
+
+/** What a chapter row's play control may reach (#1468, for #1469). */
+export type ChapterAudio = Pick<
+  UseAudioSession,
+  | "chapterPlay"
+  | "pauseChapter"
+  | "playChapter"
+  | "readChapterProgress"
+  | "stopChapter"
 >;
 
 export type RecorderAudio = Pick<
@@ -387,9 +417,11 @@ export function useAudioSession(): UseAudioSession {
    *
    * The session stops the previous source directly, so that source will never
    * report an end of its own — whoever takes the floor is responsible for the
-   * state the previous holder left behind.
+   * state the previous holder left behind. `claimFloor` below also clears
+   * chapter play; chapter play itself claims through this one, because it
+   * decides on its own whether its paused chapter is resumed or replaced.
    */
-  const claimFloor = useCallback(
+  const takeFloor = useCallback(
     (kind: SourceKind): number | null => {
       const token = session.claim(kind);
       if (token === null) return null;
@@ -403,6 +435,23 @@ export function useAudioSession(): UseAudioSession {
       return token;
     },
     [session, setPlaying, setPlayingBuffer]
+  );
+
+  const claimChapterFloor = useCallback(() => takeFloor("take"), [takeFloor]);
+  const chapter = useChapterPlay(
+    session,
+    claimChapterFloor,
+    reportPlaybackFailure
+  );
+  const chapterPlayer = chapter.player;
+
+  const claimFloor = useCallback(
+    (kind: SourceKind): number | null => {
+      const token = takeFloor(kind);
+      if (token !== null) chapterPlayer.clear();
+      return token;
+    },
+    [chapterPlayer, takeFloor]
   );
 
   /**
@@ -744,13 +793,14 @@ export function useAudioSession(): UseAudioSession {
     // recoverable by recording again; that is not.
     micTokenRef.current = null;
     session.stopAll();
+    chapterPlayer.clear();
     cancelRecording();
     setPlaying(null);
     // `stopAll` silences a sounding buffer through the shared floor; this clears
     // the React flag it leaves behind, the same reset `setPlaying(null)` does.
     setPlayingBuffer(false);
     setPlaybackError(null);
-  }, [cancelRecording, session, setPlaying, setPlayingBuffer]);
+  }, [cancelRecording, chapterPlayer, session, setPlaying, setPlayingBuffer]);
 
   const primeAudioContext = useCallback(() => {
     // Un-interrupt the shared context inside the tap that opens the sheet, so
@@ -795,9 +845,10 @@ export function useAudioSession(): UseAudioSession {
     //
     // The page becoming hidden (an app switch, a lock) seals an open take the
     // same way (#836, requirements owner 2026-09-24: "Yes, switching apps ends
-    // the recording. User can always append to it later if desired."). It does
-    // nothing else: a hidden page with no take open keeps its playback and its
-    // screen, and becoming visible again restarts nothing. `seal()` is
+    // the recording. User can always append to it later if desired."). Apart
+    // from pausing chapter play (below), a hidden page keeps a single take's
+    // playback and its screen, and becoming visible again restarts nothing,
+    // a paused chapter included. `seal()` is
     // idempotent, so a `pagehide` after the hidden change finds the take
     // already sealed and returns `true` without cancelling it.
     //
@@ -806,7 +857,7 @@ export function useAudioSession(): UseAudioSession {
     // also asks `dropSharedContextWhenIdle` to drop that context, AFTER the
     // seal: it drops at once when nothing uses it, and otherwise waits for
     // the sealed take's level tap, a decode or a sounding Play to let go. It
-    // stops nothing itself; a hidden page still keeps its playback. The first
+    // stops nothing itself; a single take keeps playing. The first
     // tap after the return then builds a fresh context inside its gesture.
     // Becoming visible checks the clock of a context that is still there
     // (`checkSharedClockOnReturn`, which drops it if the clock is stopped).
@@ -818,6 +869,11 @@ export function useAudioSession(): UseAudioSession {
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         sealRecording();
+        // Chapter play pauses, keeping its place (#1468; an orchestrator call
+        // of 2026-10-19, revisited at the Sprint 6 design pass), BEFORE the
+        // drop, so the drop is not left waiting on a chapter. A single take
+        // still keeps playing, as above.
+        chapterPlayer.pause();
         dropSharedContextWhenIdle();
         return;
       }
@@ -831,7 +887,7 @@ export function useAudioSession(): UseAudioSession {
       window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [leave, sealRecording]);
+  }, [chapterPlayer, leave, sealRecording]);
 
   useEffect(() => () => leave(), [leave]);
 
@@ -862,5 +918,10 @@ export function useAudioSession(): UseAudioSession {
     readScope,
     peekScope,
     meterFailed,
+    chapterPlay: chapter.state,
+    playChapter: chapterPlayer.play,
+    pauseChapter: chapterPlayer.pause,
+    stopChapter: chapterPlayer.stop,
+    readChapterProgress: chapterPlayer.progress,
   };
 }

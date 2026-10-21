@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { LOCALES } from "@/lib/locale";
+import { ENGLISH_ONLY } from "@/lib/i18n/english-only";
 import { LOCALE_OVERRIDES, buildTable } from "@/lib/i18n/locales";
 import { ENFORCE_COMPLETE, PENDING } from "@/lib/i18n/pending";
 import { plural } from "@/lib/plural";
@@ -35,8 +36,11 @@ vi.mock("@/lib/plural", async (importOriginal) => {
 
 const TAGS = LOCALES.map((locale) => locale.tag).filter((tag) => tag !== "en");
 
-/** A fixture language: all of English, so it is complete. */
-const complete = (): Partial<Strings> => ({ ...stringsEn });
+/** A fixture language: all of English but the English-only keys, so complete. */
+const complete = (): Partial<Strings> =>
+  Object.fromEntries(
+    Object.entries(stringsEn).filter(([key]) => !ENGLISH_ONLY.has(key))
+  ) as Partial<Strings>;
 
 describe("the registry", () => {
   it("has a table and a pending entry for each of the nine other languages", () => {
@@ -131,9 +135,7 @@ describe("the plural check, in both states", () => {
   const withForms = (forms: Record<string, string> & { other: string }) =>
     ({
       ...complete(),
-      shareMissing(this: Strings, n: number): string {
-        return this.couldNotBeIncluded(plural(n, forms));
-      },
+      shareMissing: (n: number): string => plural(n, forms),
     }) as Partial<Strings>;
 
   it("passes French forms that carry one, many and other", () => {
@@ -216,19 +218,65 @@ describe("the argument check, in both states", () => {
 });
 
 describe("an alias resolves within its own locale table", () => {
-  it("follows an overridden chapterName, couldNotBeIncluded and trail", () => {
+  it("follows an overridden chapterName and trail", () => {
     const table = buildTable("fr", {
       chapterName: (n: number) => `CHAPITRE-${n}`,
-      couldNotBeIncluded: (subject: string) => `${subject} : manquant.`,
       trail: (...parts: readonly string[]) => parts.join(" / "),
     });
     expect(table.chapterHeading(null, 3)).toBe("CHAPITRE-3");
     expect(table.shareFilename("Livre", 4)).toContain("CHAPITRE-4");
-    expect(table.shareMissing(1)).toMatch(/ : manquant\.$/);
-    expect(table.shareAllMissing(1)).toMatch(/ : manquant\.$/);
     expect(table.chapterBreadcrumb("A", "B")).toBe("A / B");
     expect(table.recorderBreadcrumb("A", "B", 1, null)).toMatch(/^A \/ B \/ /);
     // English is untouched by building another table over it.
     expect(stringsEn.chapterBreadcrumb("A", "B")).toBe("A > B");
+  });
+});
+
+describe("the English-only keys (S11, #1483)", () => {
+  const phoneKeys = Object.keys(stringsEn).filter((key) =>
+    key.startsWith("phoneCheck")
+  );
+
+  it("are exactly the phoneCheck group of the table", () => {
+    expect(phoneKeys.length).toBeGreaterThanOrEqual(19);
+    expect([...ENGLISH_ONLY].sort()).toEqual([...phoneKeys].sort());
+  });
+
+  it("are neither missing nor pending when a locale is complete at release", () => {
+    // Without the exemption each of them is a key missing at release.
+    const without = keyProblems("fr", complete(), [], true, new Set());
+    expect(without).toHaveLength(phoneKeys.length + 1);
+    expect(without).toContain(
+      `fr: ${phoneKeys.length} keys missing at release`
+    );
+    expect(keyProblems("fr", complete(), [], true)).toEqual([]);
+  });
+
+  it("fail a language that translates one, or lists one as pending", () => {
+    expect(
+      keyProblems(
+        "fr",
+        { ...complete(), phoneCheckTitle: "Contrôle" },
+        [],
+        true
+      )
+    ).toEqual(["fr: phoneCheckTitle is English-only and is translated"]);
+    expect(
+      keyProblems("fr", { phoneCheckTitle: "Contrôle" }, "all", false)
+    ).toEqual(["fr: phoneCheckTitle is English-only and is translated"]);
+    expect(keyProblems("fr", complete(), ["phoneCheckTitle"], true)).toEqual([
+      "fr: pending key phoneCheckTitle is English-only",
+    ]);
+  });
+
+  it("are carried by no real language file and listed by no pending list", () => {
+    for (const tag of TAGS) {
+      const own = Object.keys(LOCALE_OVERRIDES[tag] ?? {});
+      const pending = PENDING[tag] ?? [];
+      for (const key of ENGLISH_ONLY) {
+        expect(own).not.toContain(key);
+        if (pending !== "all") expect(pending).not.toContain(key);
+      }
+    }
   });
 });

@@ -26,3 +26,8 @@ Gemfile.lock
 # Vendored third-party source (#36), kept byte-for-byte as fetched — see
 # third_party/lamejs-1.2.7/PROVENANCE.md. Formatting it would modify it.
 third_party
+
+# Vendored Scripture Bundle schemas (byte-for-byte) and spec example (two
+# fields neutralised, #1478), as fetched at the pinned commit; see tests/fixtures/scripture-bundle/README.md.
+tests/fixtures/scripture-bundle/schema-1.0.0
+tests/fixtures/scripture-bundle/examples/spec-audioTranslation.json

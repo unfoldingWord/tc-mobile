@@ -367,6 +367,8 @@ describe("no sentence is stranded outside the table (#169)", () => {
  * outside those two) are not enumerated — their domains are not finite
  * — and a label assembled from fragments at the call site is not a whole
  * literal. Single-word labels are out, for the reason `isSentence` gives.
+ * A short label the table never held is `tests/strings-visible-literals.test.ts`'s
+ * job (#1483): it reads JSX text and attribute values whole, by parse tree.
  */
 const enumeratedOutputs: readonly string[] = [false, true].flatMap(
   (editOnly) => [

@@ -264,6 +264,13 @@
   .control[aria-busy="true"] svg {
     animation: control-spin 900ms linear infinite;
   }
+  /* A direction-bearing glyph (Back, the row chevron) points the other way
+     under right-to-left (#1552). `Icon` marks the few that carry direction;
+     the play triangle, undo and redo are deliberately not marked (they follow
+     the time axis, which runs left to right in every locale). */
+  :root[dir="rtl"] svg[data-rtl-mirror] {
+    transform: scaleX(-1);
+  }
   @keyframes control-spin {
     to {
       transform: rotate(360deg);
@@ -390,7 +397,7 @@
   }
   .control-hint {
     position: absolute;
-    right: -2px;
+    inset-inline-end: -2px;
     bottom: -2px;
     display: grid;
     place-items: center;
@@ -575,7 +582,7 @@
     width: min(320px, 84vw);
     height: 100%;
     background: var(--s-surface);
-    border-left: 1px solid var(--s-edge);
+    border-inline-start: 1px solid var(--s-edge);
     /* A full-height fixed overlay (`.menu-scrim` is `position: fixed; inset: 0`)
        escapes the body's `env(safe-area-inset-*)` padding, so this drawer paints
        under the status-bar clock and over the home indicator. Restore all four
@@ -1009,7 +1016,7 @@
   .recorder-status {
     position: absolute;
     top: var(--p-space-3);
-    left: var(--p-space-3);
+    inset-inline-start: var(--p-space-3);
     color: var(--s-ink);
   }
   /* #1005 ("Warn at 15, seal at 20"): from 15:00 of a live take, the whole
@@ -1078,7 +1085,7 @@
   .recorder-editing {
     position: absolute;
     top: var(--p-space-3);
-    right: var(--p-space-3);
+    inset-inline-end: var(--p-space-3);
     font-size: var(--p-text-sm);
     font-weight: var(--p-weight-strong);
     letter-spacing: 0.01em;
@@ -1164,7 +1171,7 @@
     background: transparent;
     cursor: pointer;
     color: var(--s-ink-muted);
-    text-align: left;
+    text-align: start;
   }
   .row-open:focus-visible {
     outline: var(--c-focus-ring);

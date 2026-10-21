@@ -162,9 +162,13 @@ describe("the default chapter name is written once", () => {
     // The assertion above passes on a COPY too — that is exactly why the copy
     // survived. This is the one that does not: restore the duplicate and the
     // count goes to two.
+    // It counts templates that ARE the name, "Chapter ${n}" and nothing else.
+    // The reorder lines are whole sentences that say "Chapter 3 is now
+    // chapter 5." in their own words (#1483). They contain the word, and they
+    // are not a second copy of the name.
     const table = source("src/lib/strings.ts");
     expect(table.length, "no strings table to read").toBeGreaterThan(1000);
-    expect(table.match(/`Chapter \$\{/g) ?? []).toHaveLength(1);
+    expect(table.match(/`Chapter \$\{[^}`]*\}`/g) ?? []).toHaveLength(1);
   });
 });
 

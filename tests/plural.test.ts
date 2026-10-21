@@ -103,8 +103,10 @@ describe("plural", () => {
 });
 
 /**
- * The shipped locale is stated once, in `lib/locale.ts` (#697), and `plural`
- * takes its default from there rather than carrying an `"en"` of its own.
+ * The running locale is stated once, in `lib/locale.ts` (#697, ADR 0015 (b)),
+ * and `plural` takes its default from `activeLocale()` there rather than
+ * carrying an `"en"` or a build constant of its own. That the default FOLLOWS
+ * an installed locale is pinned by behaviour in `tests/phone-locale.test.ts`.
  *
  * Read as source with comments stripped, not by calling `plural`: a call can
  * only show that the default BEHAVES like English today, which an independent
@@ -122,8 +124,9 @@ describe("plural's default locale", () => {
   );
   const code = stripCodeComments(source, "plural.ts");
 
-  it("reads the shipped locale instead of naming a language itself", () => {
-    expect(code).toMatch(/SHIPPED_LOCALE\.tag/);
+  it("reads the running locale instead of naming a language itself", () => {
+    expect(code).toMatch(/=\s*activeLocale\(\)\.tag/);
+    expect(code).not.toMatch(/SHIPPED_LOCALE/);
     expect(code).toContain('from "./locale"');
   });
 

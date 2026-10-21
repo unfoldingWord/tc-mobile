@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { Icon, type IconName } from "@/components/icon";
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsScreen } from "@/components/segments-screen";
@@ -182,6 +183,7 @@ describe("which glyph opens which menu (#589)", () => {
   it("keeps ≡ on the Books header's global menu, and gives each book row ⋮", async () => {
     await mount(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: vi.fn(),
         popLayer: vi.fn(),

@@ -131,7 +131,7 @@ export function AboutPanel({
                   onView(text);
                 }}
                 aria-label={strings.aboutReadText(text.label)}
-                className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
+                className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-start text-[13px] underline"
               >
                 {text.label}
               </button>
