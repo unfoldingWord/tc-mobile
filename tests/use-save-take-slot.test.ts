@@ -119,6 +119,6 @@ describe("useSaveTake — the replay reads the live slot", () => {
     expect(saveReplayedTake).not.toHaveBeenCalled();
     // The failed take is still the one held: the recovery screen's take.
     expect(probe.api!.pendingTake?.state).toBe("failed");
-    expect(probe.api!.pendingTake?.clipId).not.toBe("replayed");
+    expect(probe.api!.pendingTake?.recorded).toEqual(new Int16Array([1, 2, 3]));
   });
 });
