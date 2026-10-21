@@ -28,7 +28,11 @@ examples, together in one PR. Do not edit a vendored file in place.
   `examples/custom-x-tcMobileAudio.json` are the two worked examples from
   ADR 0014, one per flavour path.
 - `examples/spec-audioTranslation.json` is the spec's own
-  `docs/examples/artifacts/audioTranslation.json` at the pinned commit.
+  `docs/examples/artifacts/audioTranslation.json` at the pinned commit, **modified
+  from upstream** (it is not byte-for-byte): `meta.generator.userName` is
+  `example-user` (upstream names a person), and `targetAreas[0]` is `code`
+  `XX`, name `Example area` (upstream names a country). The repository keeps no
+  personal names or places. Nothing else differs, and the gate still accepts it.
 
 Prettier ignores the vendored schemas and the spec example (`.prettierignore`).
 

@@ -6,7 +6,7 @@
     "generator": {
       "softwareName": "DBLImport",
       "softwareVersion": "0.0.0",
-      "userName": "Eric Pyle"
+      "userName": "example-user"
     },
     "defaultLocale": "en",
     "dateCreated": "2018-03-15T19:38:40.762935+00:00",
@@ -101,9 +101,9 @@
   ],
   "targetAreas": [
     {
-      "code": "US",
+      "code": "XX",
       "name": {
-        "en": "United States"
+        "en": "Example area"
       }
     }
   ],
