@@ -123,6 +123,26 @@ describe("chapterId3Fields (#252)", () => {
     });
   });
 
+  it.each([
+    ["CC-BY-SA-4.0", "CC BY-SA 4.0"],
+    ["CC-BY-4.0", "CC BY 4.0"],
+    ["CC0-1.0", "CC0 1.0"],
+  ] as const)("writes TCOP %s as %s (#1579)", (licence, label) => {
+    expect(
+      chapterId3Fields({ ...blank, licence }, { name: null, number: 1 })
+        .copyright
+    ).toBe(label);
+  });
+
+  it("writes no TCOP for all-rights-reserved or no licence (#1579)", () => {
+    for (const licence of [null, "all-rights-reserved"] as const) {
+      expect(
+        chapterId3Fields({ ...blank, licence }, { name: null, number: 1 })
+          .copyright
+      ).toBeNull();
+    }
+  });
+
   it("writes no placeholder for an unnamed chapter or book (#169)", () => {
     const fields = chapterId3Fields(
       { ...blank, name: null },
@@ -183,7 +203,7 @@ describe("a shared chapter carries exactly one tag (#252)", () => {
     const entries = unzipSync(joined(sink.chunks));
     expect(Object.keys(entries)).toEqual(["1.mp3", "2.mp3"]);
     for (const entry of Object.values(entries)) {
-      expect(frameIds(entry)).toEqual(["TALB", "TRCK", "COMM"]);
+      expect(frameIds(entry)).toEqual(["TALB", "TRCK", "TCOP", "COMM"]);
       expect(parseJoinableMp3(audioAfterId3v2(entry))).not.toBeNull();
     }
   });
