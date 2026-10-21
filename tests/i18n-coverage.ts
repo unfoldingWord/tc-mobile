@@ -4,6 +4,7 @@ import path from "node:path";
 import ts from "typescript";
 
 import type { RestartSubject, Strings } from "@/lib/strings";
+import type { LicenceId } from "@/types/template";
 import { ENGLISH_ONLY } from "@/lib/i18n/english-only";
 import { stringsEn } from "@/lib/strings";
 
@@ -79,28 +80,42 @@ const RESTART_SUBJECT: Record<RestartSubject, true> = {
   changes: true,
   cutAudio: true,
 };
+const LICENCE_ID: Record<LicenceId, true> = {
+  "CC-BY-SA-4.0": true,
+  "CC-BY-4.0": true,
+  "CC0-1.0": true,
+  "all-rights-reserved": true,
+};
 export const UNION_DOMAINS: Readonly<Record<string, readonly string[]>> = {
   RestartSubject: Object.keys(RESTART_SUBJECT),
+  LicenceId: Object.keys(LICENCE_ID),
 };
 
-/** The members of the string-literal union alias `name` in `strings.ts`. */
+/** Where each union alias is declared, relative to this directory. */
+const UNION_FILES = ["../src/lib/strings.ts", "../src/types/template.ts"];
+
+/** The members of the string-literal union alias `name`, in the file declaring it. */
 export function unionMembers(name: string): string[] {
-  const file = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
-  const source = ts.createSourceFile(
-    "strings.ts",
-    readFileSync(file, "utf8"),
-    ts.ScriptTarget.Latest,
-    true
-  );
   const members: string[] = [];
-  source.forEachChild((node) => {
-    if (!ts.isTypeAliasDeclaration(node) || node.name.text !== name) return;
-    const parts = ts.isUnionTypeNode(node.type) ? node.type.types : [node.type];
-    for (const part of parts)
-      if (ts.isLiteralTypeNode(part) && ts.isStringLiteral(part.literal))
-        members.push(part.literal.text);
-      else throw new Error(`${name}: not a string-literal union`);
-  });
+  for (const rel of UNION_FILES) {
+    const file = path.resolve(import.meta.dirname, rel);
+    const source = ts.createSourceFile(
+      path.basename(file),
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true
+    );
+    source.forEachChild((node) => {
+      if (!ts.isTypeAliasDeclaration(node) || node.name.text !== name) return;
+      const parts = ts.isUnionTypeNode(node.type)
+        ? node.type.types
+        : [node.type];
+      for (const part of parts)
+        if (ts.isLiteralTypeNode(part) && ts.isStringLiteral(part.literal))
+          members.push(part.literal.text);
+        else throw new Error(`${name}: not a string-literal union`);
+    });
+  }
   if (members.length === 0) throw new Error(`no union alias ${name}`);
   return members;
 }

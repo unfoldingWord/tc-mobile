@@ -364,6 +364,7 @@ describe("i18n draft quality gates (#1485)", () => {
       expect(() => argVectors(name, 1), name).not.toThrow();
     for (const [name, members] of Object.entries(UNION_DOMAINS))
       expect([...members].sort(), name).toEqual(unionMembers(name).sort());
+    expect(argVectors("shareBookFilename", 1)).toContainEqual(["SENT0", null]);
     const vectors = argVectors("restartArmed", 1);
     for (const subject of unionMembers("RestartSubject"))
       expect(vectors.map((v) => v[0])).toContain(subject);
