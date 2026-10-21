@@ -131,9 +131,7 @@ describe("the plural check, in both states", () => {
   const withForms = (forms: Record<string, string> & { other: string }) =>
     ({
       ...complete(),
-      shareMissing(this: Strings, n: number): string {
-        return this.couldNotBeIncluded(plural(n, forms));
-      },
+      shareMissing: (n: number): string => plural(n, forms),
     }) as Partial<Strings>;
 
   it("passes French forms that carry one, many and other", () => {
@@ -216,16 +214,13 @@ describe("the argument check, in both states", () => {
 });
 
 describe("an alias resolves within its own locale table", () => {
-  it("follows an overridden chapterName, couldNotBeIncluded and trail", () => {
+  it("follows an overridden chapterName and trail", () => {
     const table = buildTable("fr", {
       chapterName: (n: number) => `CHAPITRE-${n}`,
-      couldNotBeIncluded: (subject: string) => `${subject} : manquant.`,
       trail: (...parts: readonly string[]) => parts.join(" / "),
     });
     expect(table.chapterHeading(null, 3)).toBe("CHAPITRE-3");
     expect(table.shareFilename("Livre", 4)).toContain("CHAPITRE-4");
-    expect(table.shareMissing(1)).toMatch(/ : manquant\.$/);
-    expect(table.shareAllMissing(1)).toMatch(/ : manquant\.$/);
     expect(table.chapterBreadcrumb("A", "B")).toBe("A / B");
     expect(table.recorderBreadcrumb("A", "B", 1, null)).toMatch(/^A \/ B \/ /);
     // English is untouched by building another table over it.
