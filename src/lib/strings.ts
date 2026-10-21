@@ -39,52 +39,10 @@ import { filenameSafe } from "@/lib/utils";
 export type RestartSubject = "recording" | "changes" | "cutAudio";
 
 /**
- * The verb every "did not make it into what's being shared" sentence uses.
- * `shareMissing`, `shareBookMissing`, and `shareBookMissingAndPartial`'s own
- * two extra clauses all end here, so a future tightening of the wording
- * lands in one place. Before this, the combined Notice's clauses were typed
- * out separately from `shareMissing` — the alias `shareBookPartial` added
- * (George #423 round 2) protected the partial-only Notice, but not the one
- * Notice the book menu actually shows when both gaps exist, which a verb
- * edit to `shareMissing` alone would silently miss (George #423 round 3
- * P3-2).
- */
-function couldNotBeIncluded(subject: string): string {
-  return `${subject} could not be included.`;
-}
-
-/**
- * The trail at the top of a screen: where you are, outermost first.
- *
- * The separator is stated here and nowhere else. It used to be stated twice —
- * once as an HTML entity inside the Segments header's JSX and once as a
- * character in the recorder's own entry — which is two chances to answer one
- * question, and the markup copy was a visible string living outside this table
- * at all (#169).
- *
- * Joining parts is the ONE composition this table does, and what makes it
- * allowed under #169 is that the parts are not translated fragments of a
- * sentence: each is a whole name (a book, a chapter heading) or a number. A
- * sentence assembled from clauses is what #169 rules out, and it stays ruled
- * out — `shareBookMissingAndPartial` writes each of its arms as a whole
- * sentence for exactly that reason.
- *
- * NOTHING HERE HANDLES RIGHT-TO-LEFT, and an earlier draft of this docblock
- * implied otherwise (George, #698). `>` is not a mirrored glyph, no locale in
- * this repo reads right-to-left yet, and no test asserts a direction — so a
- * separator hard-coded here is a fact about the shipped English UI, not a
- * property that survives translation. Whoever lands `strings[locale]` owns
- * that question; this function is not evidence it is answered.
- */
-function trail(...parts: readonly string[]): string {
-  return parts.join(" > ");
-}
-
-/**
  * An entry that reuses another entry calls it through `this`:
  * `chapterHeading` falls back to `this.chapterName`, `shareBookPartial`
- * returns `this.shareMissing`, and a few more reach `couldNotBeIncluded` or
- * `trail`, whose words are English (#1481 moves those two into the table).
+ * returns `this.shareMissing`, and a few more reach `this.couldNotBeIncluded` or
+ * `this.trail`, whose words are English (#1481 moves those two into the table).
  * `tests/strings-self-reference.test.ts` pins which entries these are, so a
  * new one fails there and is sent back here. Byte-for-byte copies drifted, and
  * an alias cannot.
@@ -117,6 +75,20 @@ function trail(...parts: readonly string[]): string {
  * different words.
  */
 export const stringsEn = {
+  // The verb every "did not make it into what's being shared" sentence uses
+  // (#1481: an entry, so a locale states its own). `shareMissing`,
+  // `shareBookMissing`, `shareAllMissing` and `shareBookMissingAndPartial` all
+  // end here, so a tightening of the wording lands in one place.
+  couldNotBeIncluded(subject: string): string {
+    return `${subject} could not be included.`;
+  },
+  // The trail at the top of a screen: where you are, outermost first. The
+  // separator is stated here and nowhere else (#169, #1481). Parts are whole
+  // names, never clauses of a sentence. Nothing here handles a reading
+  // direction: a right-to-left locale states its own separator in its table.
+  trail(...parts: readonly string[]): string {
+    return parts.join(" > ");
+  },
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
   menuOpen: "Open menu",
@@ -193,8 +165,9 @@ export const stringsEn = {
    * resolved heading rather than a name-or-number pair, so the one place that
    * decides what an unnamed chapter is called stays `chapterHeading`.
    */
-  chapterBreadcrumb: (book: string, chapter: string): string =>
-    trail(book, chapter),
+  chapterBreadcrumb(book: string, chapter: string): string {
+    return this.trail(book, chapter);
+  },
   /**
    * The spoken names of the new look's header crumbs that navigate (#1269):
    * the book crumb on the chapter screen, the chapter crumb on the recorder.
@@ -387,7 +360,11 @@ export const stringsEn = {
     segment: number,
     segmentLabel: string | null
   ): string {
-    return trail(book, chapter, this.segmentHeading(segment, segmentLabel));
+    return this.trail(
+      book,
+      chapter,
+      this.segmentHeading(segment, segmentLabel)
+    );
   },
   record: "Record",
   // The second tap on the record control ENDS the take and commits it in place
@@ -840,10 +817,11 @@ export const stringsEn = {
   // Neutral on the cause: `missing` counts every segment whose audio did not
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
-  shareMissing: (n: number): string =>
-    couldNotBeIncluded(
+  shareMissing(n: number): string {
+    return this.couldNotBeIncluded(
       plural(n, { one: "{n} segment", other: "{n} segments" })
-    ),
+    );
+  },
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter's own name (#264) is free text too and is sanitised the same
@@ -891,10 +869,11 @@ export const stringsEn = {
     "Could not share this book. Sharing a book works in the tC Mobile app.",
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
-  shareBookMissing: (n: number): string =>
-    couldNotBeIncluded(
+  shareBookMissing(n: number): string {
+    return this.couldNotBeIncluded(
       plural(n, { one: "{n} chapter", other: "{n} chapters" })
-    ),
+    );
+  },
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -987,7 +966,7 @@ export const stringsEn = {
     segments: number,
     partialChapters: number
   ): string {
-    return `${this.shareBookMissing(chapters)} ${couldNotBeIncluded(
+    return `${this.shareBookMissing(chapters)} ${this.couldNotBeIncluded(
       `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${plural(
         Math.max(partialChapters, 1),
         {
@@ -1270,8 +1249,11 @@ export const stringsEn = {
   // lines above already name: finished segments take much less room.
   shareAllStorage:
     "This phone does not have room to prepare your work. Mark finished segments, then try again.",
-  shareAllMissing: (n: number): string =>
-    couldNotBeIncluded(plural(n, { one: "{n} book", other: "{n} books" })),
+  shareAllMissing(n: number): string {
+    return this.couldNotBeIncluded(
+      plural(n, { one: "{n} book", other: "{n} books" })
+    );
+  },
   shareAllIncomplete: (n: number): string =>
     plural(n, {
       one: "{n} chapter could not be included in full.",
