@@ -24,8 +24,10 @@ export function licenceLabel(id: LicenceId | null): string | null {
     case null:
       return null;
     default: {
+      // Compile-time exhaustiveness only; at runtime a stray id has no label.
       const unhandled: never = id;
-      return unhandled;
+      void unhandled;
+      return null;
     }
   }
 }
