@@ -25,11 +25,14 @@ import { describe, expect, it } from "vitest";
  *   - the value of an object-literal property whose key reads as visible
  *     (`label`, `title`, `*Label`, …), the shape a menu item list takes.
  *
- * Only the strings an expression can RESULT in are read: a literal, a
- * template's fixed text, an array literal's elements, both arms of `?:`, both
- * operands of `+`, and the operands of `??`, `||` and `&&` that can be its
- * value. A literal that is compared (`x === "line"`) or
- * passed as an argument (`restartLabel("cutAudio", true)`) is not a result,
+ * Only the strings an expression can RESULT in are read, by one recursive
+ * walk (`resultStrings`): a literal, a template's fixed text AND its
+ * interpolations, both arms of `?:`, array elements, both operands of `+`,
+ * the operands of `??`, `||` and `&&` that can be its value, parentheses,
+ * `as` / `satisfies` / `!` wrappers, and the arguments of a call. It stops
+ * only at a table read (`strings.*`, `plural(...)`) and at the keyword
+ * arguments of the helpers on `TOKEN_CALLEES` (`restartLabel("cutAudio")`).
+ * A literal that is compared (`x === "line"`) is not a result,
  * so it is not read. Comments are not nodes, so no prose can satisfy or trip
  * this. A string with no letter in it (`·`, `/`, `,`) passes: a symbol is not
  * a word to translate. Anything else must come from `strings`, which, being
@@ -187,25 +190,74 @@ const ALLOWED: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
+/** Identifiers whose reads are table copy: the string table and `plural`. */
+const TABLE_ROOTS: ReadonlySet<string> = new Set(["strings", "plural"]);
+
+/**
+ * Local helpers whose string arguments are keywords that pick a table entry
+ * (`restartLabel("cutAudio", true)`), never words. A call to anything else is
+ * walked, so `fmt("Share")` fails. Keyed by callee name; the tree test fails
+ * an entry no file calls.
+ */
+const TOKEN_CALLEES: ReadonlyMap<string, string> = new Map([
+  ["restartLabel", "its first argument names a recovery case"],
+  ["restartConsequence", "its first argument names a recovery case"],
+  ["recoveryTitle", "its first argument names a failure kind"],
+  ["shareProgressText", "its second argument is the scope, chapter or book"],
+  ["shareGapText", "its second argument is the scope, chapter or book"],
+  ["rowHint", "its argument names a hint kind"],
+  ["handle", "selection-overlay's local; its first argument is an edge"],
+]);
+
 type Finding = { line: number; where: string; value: string };
 
 /** HTML entities in JSX text (`&nbsp;`) are symbols, not words. */
 const hasWord = (value: string): boolean =>
   /\p{L}/u.test(value.replace(/&(?:#\d+|#x[\da-f]+|[a-z]+);/gi, ""));
 
-/** The fixed strings an expression can evaluate to — see the docblock. */
+/**
+ * A read that comes from the table: `strings.x`, `strings.x(…)`, `plural(…)`.
+ * The walk stops here, because whatever it returns is table copy.
+ */
+function isTableRead(node: ts.Expression): boolean {
+  let head: ts.Expression = node;
+  while (
+    ts.isPropertyAccessExpression(head) ||
+    ts.isElementAccessExpression(head) ||
+    ts.isCallExpression(head)
+  ) {
+    head = head.expression;
+  }
+  return ts.isIdentifier(head) && TABLE_ROOTS.has(head.text);
+}
+
+/**
+ * The fixed strings an expression can evaluate to — see the docblock. One
+ * recursive walk: every sub-expression a rendered value can come from is
+ * visited, and it stops only at a table read. There are no per-shape arms
+ * beyond the node kinds that carry a sub-expression.
+ */
 function resultStrings(node: ts.Expression): string[] {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
     return [node.text];
   }
+  if (isTableRead(node)) return [];
   if (ts.isTemplateExpression(node)) {
     return [
       node.head.text,
-      ...node.templateSpans.map((span) => span.literal.text),
+      ...node.templateSpans.flatMap((span) => [
+        ...resultStrings(span.expression),
+        span.literal.text,
+      ]),
     ];
   }
-  if (ts.isParenthesizedExpression(node)) return resultStrings(node.expression);
-  if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) {
+  if (
+    ts.isParenthesizedExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isSatisfiesExpression(node) ||
+    ts.isNonNullExpression(node) ||
+    ts.isTypeAssertionExpression(node)
+  ) {
     return resultStrings(node.expression);
   }
   if (ts.isConditionalExpression(node)) {
@@ -217,15 +269,26 @@ function resultStrings(node: ts.Expression): string[] {
       resultStrings(ts.isSpreadElement(el) ? el.expression : el)
     );
   }
+  if (ts.isCallExpression(node)) {
+    // A call that is not a table read: whatever it is given may come back,
+    // unless the callee is a named keyword-taking helper.
+    const callee = ts.isPropertyAccessExpression(node.expression)
+      ? node.expression.name.text
+      : ts.isIdentifier(node.expression)
+        ? node.expression.text
+        : "";
+    if (TOKEN_CALLEES.has(callee)) return [];
+    return node.arguments.flatMap((arg) =>
+      resultStrings(ts.isSpreadElement(arg) ? arg.expression : arg)
+    );
+  }
   if (ts.isBinaryExpression(node)) {
     const op = node.operatorToken.kind;
-    if (op === ts.SyntaxKind.PlusToken) {
-      return [...resultStrings(node.left), ...resultStrings(node.right)];
-    }
     if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
       return resultStrings(node.right);
     }
     if (
+      op === ts.SyntaxKind.PlusToken ||
       op === ts.SyntaxKind.BarBarToken ||
       op === ts.SyntaxKind.QuestionQuestionToken
     ) {
@@ -382,6 +445,25 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
     ).toEqual([]);
   });
 
+  it("flags a literal nested at any depth, and passes a table interpolation", () => {
+    // The sibling shapes the review series kept finding one at a time.
+    expect(
+      probe(`<button>{\`\${busy ? "Archiving" : "Queued"}\`}</button>`)
+    ).toEqual(["child: Archiving", "child: Queued"]);
+    expect(
+      probe(`<p>{[\`\${(c ? "Deep" : strings.x) as string}\`]}</p>`)
+    ).toEqual(["child: Deep"]);
+    expect(probe(`<p>{fmt("Share", n)}</p>`)).toEqual(["child: Share"]);
+    expect(probe(`<p>{(x ?? "Share")!}</p>`)).toEqual(["child: Share"]);
+    // Table-derived reads stop the walk, at any depth.
+    expect(
+      probe(
+        `<p>{\`\${strings.x}\`}{[\`\${busy ? strings.a : strings.b}\`]}` +
+          `{strings.count(n, "word")}{plural(n, { one: "x" })}</p>`
+      )
+    ).toEqual([]);
+  });
+
   it("cannot put a visible name on the non-UI list", () => {
     const leaks = [
       ...NON_UI_PROPS.keys(),
@@ -424,6 +506,10 @@ describe("no visible literal in app/, components/ or hooks/ (#1483 slice 3)", ()
       }
     }
     expect(found).toEqual([]);
+    const text = files.map((file) => readFileSync(file, "utf8")).join("\n");
+    expect(
+      [...TOKEN_CALLEES.keys()].filter((name) => !text.includes(`${name}(`))
+    ).toEqual([]);
     // A stale entry would excuse the next literal typed in its place.
     expect([...ALLOWED.keys()].filter((key) => !used.has(key))).toEqual([]);
   });
