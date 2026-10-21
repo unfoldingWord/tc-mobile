@@ -387,7 +387,7 @@ describe("the Editing marker's corner (#1243)", () => {
     );
     expect(declarationValue(body, "position")).toBe("absolute");
     expect(declarationValue(body, "top")).toBe("var(--p-space-3)");
-    expect(declarationValue(body, "right")).toBe("var(--p-space-3)");
+    expect(declarationValue(body, "inset-inline-end")).toBe("var(--p-space-3)");
     expect(declarationValue(body, "pointer-events")).toBe("none");
     // The accent as INK, the role #164 R-9 split off for small text.
     expect(declarationValue(body, "color")).toBe("var(--s-voice-text)");
@@ -397,7 +397,7 @@ describe("the Editing marker's corner (#1243)", () => {
     const o4 = read("src/app/styles/o4/recorder.css");
     const marker = cssRule(o4, ":root .recorder-editing");
     const stamp = cssRule(o4, ":root .recorder-stamp");
-    for (const property of ["top", "right", "z-index"]) {
+    for (const property of ["top", "inset-inline-end", "z-index"]) {
       expect(declarationValue(marker, property), property).toBe(
         declarationValue(stamp, property)
       );

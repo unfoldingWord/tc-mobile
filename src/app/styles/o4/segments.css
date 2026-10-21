@@ -83,7 +83,8 @@
   :root .row {
     min-height: 90px;
     border-radius: 16px; /* #939 token */
-    padding: 0 6px 0 10px;
+    padding-block: 0;
+    padding-inline: 10px 6px;
     gap: 8px;
   }
   :root .row:not(.row--finished) {
