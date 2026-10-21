@@ -219,10 +219,68 @@
     font-weight: var(--p-weight-heavy);
     color: var(--s-ink);
   }
+  /* The room the play control takes, in the row's own flow (#1469): the slot
+     the chevron held, now 44 wide. The control is not in it; it is laid over
+     it (.books-play below), so the row button stays one hit area with the
+     control a sibling. The dots' column is derived from this width
+     (DOT_COLUMN in books-screen.tsx), so it is the one place to change it. */
   :root .books-chapter-go {
-    display: grid;
+    display: block;
     flex: none;
-    color: var(--s-ink-muted);
+    width: 44px;
+    height: 44px;
+  }
+
+  /* --- the play control and its ring (#1469, Q8 pause-progress) ----------
+     Laid over the row's end slot: the row's padding-inline-end is 16, so the
+     control's inset is the same 16 and it covers exactly .books-chapter-go.
+     Centred on the item, so a row grown by wrapped dots keeps it level.
+     The fill is --play-progress (0..1), written by the control's frame loop
+     while it plays and held by the markup otherwise. Colour is layer-2 roles
+     only: --s-voice fills, --s-mark-empty is the track, --s-warn marks a
+     failed play. Never the guide ring's role, which is the next step. */
+  :root .books-chapters > li {
+    position: relative;
+  }
+  :root .books-play {
+    position: absolute;
+    inset-inline-end: 16px;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    width: 44px;
+    height: 44px;
+  }
+  :root .books-play-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: conic-gradient(
+      var(--s-voice) calc(var(--play-progress, 0) * 1turn),
+      var(--s-mark-empty) 0
+    );
+    /* Keeps a 3px band: transparent inside, opaque from the band's inner edge. */
+    -webkit-mask: radial-gradient(
+      farthest-side,
+      transparent calc(100% - 3px),
+      var(--s-ink) calc(100% - 3px)
+    );
+    mask: radial-gradient(
+      farthest-side,
+      transparent calc(100% - 3px),
+      var(--s-ink) calc(100% - 3px)
+    );
+  }
+  :root .books-play[data-status="failed"] .books-play-ring {
+    background: var(--s-warn);
+  }
+  :root .books-play-btn {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--p-radius-full);
+    background: transparent;
+    color: var(--s-ink);
   }
 
   /* --- press-and-hold reorder (#953, §3 lifted row, §4 reorder) ----------

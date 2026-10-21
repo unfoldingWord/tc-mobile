@@ -1503,6 +1503,20 @@ export const stringsEn = {
   // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
   coverSwatchLabel: (name: string, selected: boolean): string =>
     selected ? `${name}, selected` : name,
+
+  // The chapter row's play control (#1469). The name carries the state
+  // because the control is not a toggle (no `aria-pressed`) and announces
+  // nothing: a screen reader hears the next thing a tap does. Each is a whole
+  // sentence with its slots, so a language that orders them differently
+  // rewrites the entry rather than a call site. `percent` is a whole number.
+  playChapter: (heading: string): string => `Play ${heading}`,
+  pauseChapter: (heading: string): string => `Pause ${heading}`,
+  resumeChapter: (heading: string, percent: number): string =>
+    `Resume ${heading}, paused at ${percent} percent`,
+  // The disabled control's whole name: it stays focusable, so the reason is
+  // what it says.
+  chapterNothingToPlay: (heading: string): string =>
+    `${heading} has nothing recorded to play`,
 } as const;
 
 /**

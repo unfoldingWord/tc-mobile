@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { withEncoder } from "@/hooks/mp3-codec";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -175,6 +176,7 @@ async function mountBooks(): Promise<HTMLElement> {
   await act(async () =>
     r.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {

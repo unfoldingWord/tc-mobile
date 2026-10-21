@@ -37,8 +37,8 @@ test.use({
 
 /** The design's row height, 12 + 44 + 12 (`o4/books.css`). */
 const ROW_HEIGHT = 68;
-/** Three rows of 22 dots, what the 154px column holds at the 5/2 step. */
-const THREE_ROWS = 66;
+/** Three rows of 20 dots, what the 138px column holds at the 5/2 step. */
+const THREE_ROWS = 60;
 
 async function addSegments(page: Page, from: number, to: number) {
   for (let i = from; i < to; i++) {
@@ -97,7 +97,8 @@ async function measureRow(page: Page) {
 }
 
 for (const width of [320, 360]) {
-  // Past the three rows of 22 dots the 154px column holds at the 5/2 step.
+  // Past the three rows of 20 dots the 138px column holds at the 5/2 step.
+  // At 360px the column is 178 and holds three rows of 25, so 80 is past it.
   const SEGMENTS = 80;
   test(`an O4 chapter row with ${SEGMENTS} segments keeps its title line and every dot inside the row at ${width}px (#1229)`, async ({
     page,
@@ -119,13 +120,10 @@ for (const width of [320, 360]) {
     expect(measured.dotsInColumn).toBe(SEGMENTS);
     expect(measured.dotsInRow).toBe(SEGMENTS);
     expect(measured.dotsBelowTitle).toBe(true);
-    // And at 320px the row grew to hold them: a floor, not a cap. The wider
-    // 360px column still holds 80 dots in the 68px floor.
-    if (width === 320) {
-      expect(measured.rowHeight).toBeGreaterThan(ROW_HEIGHT + 0.5);
-    } else {
-      expect(Math.abs(measured.rowHeight - ROW_HEIGHT)).toBeLessThan(0.5);
-    }
+    // And the row grew to hold them at both widths: a floor, not a cap. The
+    // play control took the chevron's 28px and widened the slot to 44
+    // (#1469), so even the 360px column no longer holds 80 dots in 68px.
+    expect(measured.rowHeight).toBeGreaterThan(ROW_HEIGHT + 0.5);
   });
 
   const pastTheFloor =
