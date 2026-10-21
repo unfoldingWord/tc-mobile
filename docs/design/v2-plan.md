@@ -756,6 +756,9 @@ names what it leaves undecided where the record shows something.
     level-3 app text". Note: "V2 requires the top ten languages of level four.
     Everything else is V2 desired or V3 required depending on time
     constraints."
+    - Still open: which languages beyond the top ten level-4 languages are
+      V2-desired and which are V3-required "depending on time constraints".
+      The note sets no rule for the choice.
 11. **S11-tester-screens** — "11 · Are tester-only screens translated?".
     Decided `english`: "English only". Note: "We will revisit if this is
     needed."
@@ -841,7 +844,18 @@ already says that Finished drops the PCM: "transcode to MP3 and drop the PCM
 when the translator marks it **Finished**", and "The PCM is gone exactly when
 the MP3 is durable; there is no intermediate state." That is existing
 behaviour, in one transaction. T4 puts normalization before that step, so the
-stored copy is the evened-out one. Whether a switch to turn it off exists, and
+stored copy is the evened-out one.
+
+Where it sits relative to the finish transaction, read from
+`src/hooks/finish-transcode.ts` as it stands (normalization is not in that file
+yet): a sweep turn loads the clip's PCM (`loadSegmentClip`), computes the peaks,
+encodes (`codec.encodeMp3(samples)`) and only then calls
+`commitTranscode(segmentId, clipId, mp3, peaks)`, the one transaction that
+replaces the PCM. T4's placement means normalization runs on the in-memory PCM
+before the encode, so the PCM is dropped only in that commit. A crash before the
+commit keeps the un-normalized PCM, and ADR 0009 says the next sweep redoes it
+("the PCM is still there"). That is the consequence of the placement, not yet
+built code. Whether a switch to turn it off exists, and
 whether it is on by default, are not recorded.
 
 ### T1, T2, T3 and T5 are not decided
