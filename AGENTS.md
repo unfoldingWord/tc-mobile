@@ -1089,12 +1089,14 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
    that shell's own notice (#477). Not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
-5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.
-   A4 settled the share shape instead: Share Chapter is one concatenated MP3 to
-   the OS share sheet, Share Book is a zip of chapter MP3s. B7 (#33) builds
-   both. Burrito comes back only if a later phase asks for it, so the "talk to
-   Benjamin first" next action is retired; the background is still
-   `docs/research/prior-art.md` §4.
+5. **Project export in Scripture Bundle format is in v2, export only** —
+   decided by the requirements owner on 2026-10-19 (D3-export in
+   [`docs/design/v2-plan.md`](docs/design/v2-plan.md);
+   [ADR 0011](docs/decisions/0011-v2-storage-and-export.md)). Scripture Bundle
+   is the format formerly called Scripture Burrito. Import comes later, and
+   none of it is built. A4's share shape is unchanged: Share Chapter is one
+   concatenated MP3 to the OS share sheet, Share Book is a zip of chapter MP3s.
+   The background is still `docs/research/prior-art.md` §4.
 6. **No Shema Studio source access.** Tim asked us to read it; there is no
    public repo. Someone needs to ask Han.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
