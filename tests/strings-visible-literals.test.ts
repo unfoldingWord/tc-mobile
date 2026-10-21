@@ -31,7 +31,7 @@ import { describe, expect, it } from "vitest";
  * the operands of `??`, `||` and `&&` that can be its value, parentheses,
  * `as` / `satisfies` / `!` wrappers, and the arguments of a call, including
  * the return expression of an inline arrow or function passed as one
- * (`rows.map(() => "Share")`). It stops
+ * (`rows.map(() => "Share")`), also behind a wrapper or a `?:` arm. It stops
  * only at a table read (`strings.*`, `plural(...)`) and at the keyword
  * arguments of the helpers on `TOKEN_CALLEES` (`restartLabel("cutAudio")`).
  * A literal that is compared (`x === "line"`) is not a result,
@@ -256,6 +256,20 @@ function returnedExpressions(
   return out;
 }
 
+/** A call argument: a callback, even behind a wrapper or `?:`, gives its returns. */
+function argumentStrings(arg: ts.Expression): string[] {
+  if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg))
+    return returnedExpressions(arg).flatMap(resultStrings);
+  if (ts.isConditionalExpression(arg))
+    return [arg.whenTrue, arg.whenFalse].flatMap((a) => argumentStrings(a));
+  return ts.isParenthesizedExpression(arg) ||
+    ts.isAsExpression(arg) ||
+    ts.isSatisfiesExpression(arg) ||
+    ts.isNonNullExpression(arg)
+    ? argumentStrings(arg.expression)
+    : resultStrings(arg);
+}
+
 /**
  * The fixed strings an expression can evaluate to — see the docblock. One
  * recursive walk: every sub-expression a rendered value can come from is
@@ -304,9 +318,7 @@ function resultStrings(node: ts.Expression): string[] {
         : "";
     if (TOKEN_CALLEES.has(callee)) return [];
     return node.arguments.flatMap((arg) =>
-      ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)
-        ? returnedExpressions(arg).flatMap(resultStrings)
-        : resultStrings(ts.isSpreadElement(arg) ? arg.expression : arg)
+      argumentStrings(ts.isSpreadElement(arg) ? arg.expression : arg)
     );
   }
   if (ts.isBinaryExpression(node)) {
@@ -446,6 +458,7 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
     expect(probe(`<Control icon=" Close " />`)).toEqual(["icon: Close"]);
     expect(probe(`<Control tone={"Close "} />`)).toEqual(["tone: Close"]);
     expect(probe(`<Control icon="book-open" />`)).toEqual([]);
+    expect(probe(`<Control icon="book open" />`)).toEqual(["icon: book open"]);
   });
 
   it("follows the return of an inline callback passed to a call", () => {
@@ -471,6 +484,9 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
       )
     ).toEqual([]);
     expect(probe(`<b onClick={() => go("Share")} />`)).toEqual([]);
+    expect(
+      probe(`<p>{f((() => "Share") as F)}{f(ok ? () => "Save" : null)}</p>`)
+    ).toEqual(["child: Share", "child: Save"]);
   });
 
   it("flags an array element, a `+` operand and inner HTML", () => {
