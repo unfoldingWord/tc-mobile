@@ -180,7 +180,10 @@ v12's block:
 ```ts
 // Structure, before any await:
 if (oldVersion < 13) {
-  db.createObjectStore("takeDispositions", { keyPath: "clipId" });
+  db.createObjectStore("takeDispositions", { keyPath: "clipId" }).createIndex(
+    "bySegment",
+    "segmentId"
+  );
   // A row's stored base is a use of its clip (§3). Rows with an inline base
   // have no such key path, so the index holds only stored bases.
   tx.objectStore("pendingTakes").createIndex(
@@ -204,7 +207,7 @@ if (oldVersion < 13) {
 
 Rules, the same ones v12 holds (v12-schema.md, "Rules the migration holds"):
 
-- **Append-only.** One store and one index are created; none is dropped. No
+- **Append-only.** One store and two indexes are created; none is dropped. No
   field is renamed. No existing value is rewritten.
 - **Idempotent, keyed on absence** (`in`, not a value test). A rerun after the
   #1421 abort writes nothing a first run already wrote.
@@ -248,6 +251,7 @@ exists:
 | R5  | Remove the #1421 abort                                  | `tests/db-upgrade-throw.test.ts`'s `describe.each`, extended with `{ from: 12, step: "v13" }`         |
 | R6  | Create `takeDispositions` after the first await         | `refuseStructureChangeAfterYield`, extended to assert the store on a fresh install and a v3 upgrade   |
 | R7  | Omit the `bySourceClip` index                           | "v13 indexes a stored base's clip and leaves inline rows out of the index"                            |
+| R8  | Omit the `takeDispositions` `bySegment` index           | "v13 indexes a disposition by its segment", used by the segment-delete clean-up test                  |
 
 Also: a v11 and a v9 shelf each climb to 13 in one open; a fresh install
 opens at 13 with an empty `takeDispositions` and `addSegment` writes
@@ -294,12 +298,12 @@ note builds on.
 One new store, created by v13 (§2):
 
 ```ts
-// takeDispositions: keyPath "clipId", no index
+// takeDispositions: keyPath "clipId", index "bySegment" on segmentId
 interface TakeDisposition {
   readonly clipId: ClipId;
   readonly segmentId: SegmentId;
   readonly kind: "given-up" | "discarded" | "saved";
-  readonly at: number; // write time, for the bound below
+  readonly at: number; // write time; diagnostic only, never a deletion clock
 }
 ```
 
@@ -325,13 +329,66 @@ So a late or repeated settle can never weaken what is recorded.
 take already has `saved`; the revision move is what refuses any later
 conditional commit against it (§4, `moved`).
 
-**Bounded.** One small record per take that ends (tens of bytes; inference).
-The launch replay (PR 3) deletes records older than 30 days whose `clipId`
-has no row, in the owning transaction. That is the only delete, and it can
-only move a verdict towards keeping: a take whose record has been aged out
-reads as `unexplained` (§4), which keeps the audio and never frees or
-overwrites. The 30 days is tactical, chosen here: far longer than any save
-attempt, and short enough that the store stays small.
+**No clock ages it out.** George r3 on this note: the ordinary commit treats
+a missing record as permission (it is unconditional, #1551), so deleting a
+`discarded` or `saved` record on a timer would delete the only proof a later
+ordinary Retry needs. So a record is deleted in exactly one place: in the
+same transaction that deletes its segment (`deleteSegment`, `deleteBook`,
+through the `bySegment` index). A deleted segment is final (§1), so no write
+can install audio there and nothing needs the record any more. The cost is
+growth: one small record (tens of bytes; inference, not measured) per take
+that ended on a segment that still exists. That is residual 5. The earlier
+draft's 30-day sweep is withdrawn.
+
+### Every write on behalf of a take reads the record
+
+George r3 on this note found the record in place and one writer not reading
+it: an ordinary Retry could save a take another copy had already discarded.
+So the rule is one rule, on every writer, not a check in three spots:
+
+**Every write made on behalf of a take, that can install that take's audio
+as the active take or put a row for it, reads the take's disposition inside
+its own transaction, and checks this copy's Discard request for that take,
+and writes nothing when either says `discarded`, or the record says
+`saved`.** A `given-up` record never hides a Discard request: the request is
+checked first, whatever the record says.
+
+The writers this covers, enumerated from the code paths in this note:
+
+| Writer                                                 | On `discarded` (record or request)               | On `saved`                                 | Where specified           |
+| ------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------ | ------------------------- |
+| The hold's put (`writePendingTake`)                    | writes nothing                                   | writes nothing                             | §3, "The hold"            |
+| The ordinary commit (`saveTake`)                       | writes nothing; the slot is freed, logged once   | writes nothing; reported as saved          | §4, "The ordinary commit" |
+| The conditional commit (`saveReplayedTake`)            | `discarded` verdict: writes nothing              | `done` verdict: writes nothing             | §4                        |
+| Park (put a row from the slot)                         | not reached: `discarded` and `done` precede keep | not reached                                | §4, "Keep, exactly"       |
+| Refusal mark, and the inline rewrite of a pre-rule row | writes nothing; deletes the row if present       | writes nothing; deletes the row if present | §4, "Keep, exactly"       |
+
+Not covered, on purpose: erase, segment and book delete, and transcode. None
+is made on behalf of a pending take: each acts on the segment's current
+audio at a person's or the sweep's request, and none installs a pending
+take's audio. The Discard and give-up settles end a take; they install
+nothing.
+
+**How an in-memory flag is read inside a transaction.** The flag is a plain
+boolean the hook sets in the same turn as the confirmed Discard tap; the
+store function receives a synchronous `isDiscardRequested(clipId)` callback.
+JavaScript runs to completion, so a call made between two requests of one
+transaction sees the flag exactly as it is at that instant, and no tap can
+run between that call and the next request the same code issues. A tap can
+run between two request events, so the hold reads it twice (steps 2 and 7
+below), the second time in the success callback of its own put, with
+`tx.commit()` called in that same callback so no further request window
+opens. A tap after that point lands after the row is committed, and its own
+Discard transaction then deletes the row (residual 1).
+
+The ordinary commit needs the flag only once, at its start: in this copy,
+Discard is refused while a save is in flight (`discardPendingTake` returns
+when `savingRef` is set, `use-save-take.ts:503`), so no same-copy Discard can
+start during it. A Discard from another copy is a transaction, serialized
+with this one (both name `takeDispositions`): whichever runs second sees the
+other's write. So across copies the durable record alone carries the
+guarantee; the flag covers only this copy's tap before its own settle has
+run.
 
 ### A pending row's base clip is a use of that clip
 
@@ -397,14 +454,14 @@ readwrite, durability "strict"
 Every step below opens it, and nothing else writes a `pendingTakes` row or a
 disposition except the hold (which writes only the row):
 
-| Step               | Function (rebuild name)           | Reads                                  | Writes                                                                                |
-| ------------------ | --------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------- |
-| Ordinary commit    | `saveTake`                        | segment, prior take, own row           | clip, take, segment (revision + 1), deletes own row, `saved`                          |
-| Conditional commit | `saveReplayedTake`                | segment, active take, row, disposition | on `free` as above; otherwise per §4                                                  |
-| Clear (erase)      | `clearSegmentTake`                | segment, prior take                    | segment (revision + 1 if a take went), take and unreferenced clip                     |
-| Discard            | `settlePendingTake(…, "discard")` | row, takes, disposition                | deletes own row, `discarded`; deletes the orphan clip only if no take names it        |
-| Give up (quota)    | `settlePendingTake(…, "give-up")` | row, disposition                       | deletes own row, `given-up`                                                           |
-| Refuse or park     | `settlePendingTake(…, { keep })`  | row                                    | puts own row with `refusal` set; or, with no row, puts one from the slot (§4, "keep") |
+| Step               | Function (rebuild name)           | Reads                                                      | Writes                                                                                |
+| ------------------ | --------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Ordinary commit    | `saveTake`                        | segment, prior take, own row, disposition, Discard request | clip, take, segment (revision + 1), deletes own row, `saved`                          |
+| Conditional commit | `saveReplayedTake`                | segment, active take, row, disposition                     | on `free` as above; otherwise per §4                                                  |
+| Clear (erase)      | `clearSegmentTake`                | segment, prior take                                        | segment (revision + 1 if a take went), take and unreferenced clip                     |
+| Discard            | `settlePendingTake(…, "discard")` | row, takes, disposition                                    | deletes own row, `discarded`; deletes the orphan clip only if no take names it        |
+| Give up (quota)    | `settlePendingTake(…, "give-up")` | row, disposition                                           | deletes own row, `given-up`                                                           |
+| Refuse or park     | `settlePendingTake(…, { keep })`  | row                                                        | puts own row with `refusal` set; or, with no row, puts one from the slot (§4, "keep") |
 
 `deleteSegment` and `deleteBook` keep their own store lists
 (`books.ts:1117`, `:371`), which already name `segments`. PR 2 adds
@@ -430,31 +487,35 @@ Inside that one transaction, with nothing awaited before it except `getDb()`:
 
 1. Read the segment. Missing: write nothing, return `segment-gone`. The
    commit will then fail as a missing segment, the existing `stale` path.
-2. Read the take's disposition. Any record: write nothing, return its kind.
-   The take was saved, discarded or given up already, by this copy or
-   another. (This replaces the in-memory `pendingGivenUp` set,
-   `use-save-take.ts:81`, as the reason a Retry after a give-up does not
-   hold again.)
-3. Ask the hook, synchronously, whether a Discard of this take has been
-   requested in this copy. Yes: write nothing, return `discarded`. The hook
-   sets that flag in the same turn as the confirmed Discard tap, before the
-   Discard's own transaction is even created.
+2. Ask the hook, synchronously, whether a Discard of this take has been
+   requested in this copy. Yes: write nothing, return `discarded`. This comes
+   before the record, so a `given-up` record never hides it.
+3. Read the take's disposition. `discarded` or `saved`: write nothing,
+   return that kind. `given-up`: write nothing, return `given-up` (the row
+   was dropped for room on purpose; this replaces the in-memory
+   `pendingGivenUp` set, `use-save-take.ts:81`, as the reason a Retry after a
+   give-up does not hold again). The caller never reads `given-up` as
+   permission for anything; only the commit decides whether to write.
 4. Read the active take. If its `clipId` is this take's, the commit already
    landed: write nothing, return `saved`.
 5. Read the row. Own row: return `kept` (a Retry carries the same recipe
    under the same `clipId`). A row for another clip: **do not overwrite it**,
    return `kept-foreign`. That row is another take's only copy, or a refused
    row kept on purpose.
-6. Otherwise put the row with `baseRevision = segment.audioRevision`, and
-   return `written`.
+6. Otherwise issue the put of the row with
+   `baseRevision = segment.audioRevision`.
+7. In the put's success callback, ask for a Discard request again. If one is
+   there, issue a delete of the row just put, in this transaction. Then call
+   `tx.commit()` in the same callback, and return `written` or `discarded`.
 
 All of it is inside the transaction. That closes George r6 on #1546 (a read
 awaited before the transaction opened let a Discard commit first) and George
 r5 on #1546 (a target written in a second transaction). Steps 2 and 3 close
-George r1's High on this note: a Discard confirmed while the hold is stalled
-means the hold, when it runs, writes nothing, so there is no row for a kill
-to leave behind. The order of the hold and the Discard's settle no longer
-matters: whichever runs second finds what the first one did.
+George r1's High on this note (a Discard confirmed while the hold is
+stalled); step 7 closes George r3's Medium (a Discard confirmed after step 2
+has passed but before the hold commits). A Discard from another copy is
+serialized with the hold by `takeDispositions`: if it runs first, step 3
+finds it; if it runs second, it deletes the row.
 
 `kept-foreign` costs this take its safety copy. It is reported under the
 existing `"pending-take-write"` context, whose runbook meaning, "could not
@@ -466,7 +527,7 @@ being overwritten. Whether a person should also see something is open (§9).
 
 The commit does not wait for the hold to finish, and nothing needs it to. If
 the commit runs first, it writes `saved`, and the hold then writes nothing
-(step 2). If the hold runs first, the commit deletes the row it put, in its
+(step 3). If the hold runs first, the commit deletes the row it put, in its
 own transaction. The scopes overlap on `segments`, so the two never
 interleave.
 
@@ -490,7 +551,7 @@ never-overwrite rule in step 5.
 - **The commit fails for quota.** The row may be what used the space. The
   hook settles a give-up (owning transaction: own row deleted, `given-up`
   written). The take stays in the slot, and a Retry does not hold again
-  (hold step 2).
+  (hold step 3).
 - **A replayed take's commit fails for quota.** PR 3 keeps the row (no
   give-up), so the replayed take keeps its condition and its copy on disk.
   PR 4 adds the give-up for replayed takes together with the screen it needs
@@ -599,9 +660,16 @@ PR 4 replaces the held `unknown` state of a `moved` take with its own words
 (§9). Until then, Retry is the honest action: it parks the take as soon as
 there is room.
 
-**The ordinary commit** does not ask for permission (today's contract,
-#1551). It deletes its own row, writes `saved` and moves the revision, in one
-transaction.
+**The ordinary commit** does not ask §4's verdict (today's contract, #1551:
+it does not check whether the segment moved). It does obey §3's writer rule,
+inside its own transaction, before it writes the clip: a Discard requested
+in this copy, or a `discarded` record, means it writes nothing, frees the
+slot and logs once under `"pending-take-refused"`; a `saved` record (another
+copy's replay already saved this take) means it writes nothing and the slot
+is freed as a success. Otherwise it writes the clip and take, moves the
+revision, deletes its own row and writes `saved`, in one transaction. A
+`given-up` record does not stop it: that is this copy's own quota give-up, or
+another copy's, and the take is still wanted.
 
 ## 5. State table
 
@@ -718,6 +786,15 @@ names where it must be seen red first, and the mutation that must kill it.
   changed". Red: PR 2's head (no replay); then the mutation "the verdict
   compares `activeTakeId` with the row's take instead of the revision"
   (#1546's check) must kill the first.
+- **RP-D.** The delete removes the segment, its row (from PR 2) and its
+  takes' disposition records, in one transaction; the row's `stored` base
+  clip is released by the base-clip check. Nothing is left to replay. With a
+  PR-1 build only, the row survives its segment and the replay reads it as
+  `gone` (DL-P). Tests (PR 2): "deleting a segment removes its pending row
+  and its disposition records in the same transaction"; "deleting a book
+  removes the pending rows and records of its segments". Red: PR 1's head;
+  then the mutation "the delete leaves the records" must kill the record
+  half.
 - **RP-P.** Classify (`legacy`, wrong `sampleRate`, `base-missing` and
   `base-changed` are marked, kept and reported once, and never installed),
   read the recipe, install into the slot only if the live slot is empty
@@ -795,9 +872,23 @@ names where it must be seen red first, and the mutation that must kill it.
 - **TP-R.** The verdict decides; `free` writes, moves the revision, deletes
   the own row and writes `saved`, in one transaction. A quota failure again:
   the take stays failed, and a fresh take's row is not rewritten after a
-  give-up (hold step 2). Tests: (PR 3) "a Retry of a replayed take keeps the
+  give-up (hold step 3). Tests: (PR 3) "a Retry of a replayed take keeps the
   replay's condition"; existing quota pins in
   `tests/use-save-take-pending.test.ts`. Red: PR 2's head.
+
+  **George r3's High on this note** (PR 1): copy A's ordinary edit of kept
+  take K fails for quota and A gives the row up (`given-up`); copy B, which
+  had loaded that row, confirms Discard (`given-up` becomes `discarded`);
+  then A taps Retry. A's `saveTake` reads `discarded` in its transaction and
+  writes nothing: K is still active, no take is added, the revision does not
+  move, and A's slot is freed with one log row. Test (PR 1): "an ordinary
+  Retry after another copy discarded a given-up take saves nothing and keeps
+  K". Red: develop (no record); then the mutation "`saveTake` does not read
+  the disposition" must kill it. A second case: B's replay saved the take
+  instead (`saved`): A's Retry writes nothing and reports saved, "an ordinary
+  Retry of a take another copy already saved writes nothing". Mutation: the
+  same.
+
 - **TP-X.** Discard sets this copy's in-memory discard flag in the tap's
   turn, then settles in the owning transaction (row deleted, `discarded`
   written). Tests:
@@ -809,10 +900,18 @@ names where it must be seen red first, and the mutation that must kill it.
     and before the Discard's settle leaves nothing to replay". The hold is
     stalled, Discard is confirmed, the stall is released, the hold
     transaction commits, and the Discard's settle is then aborted (the kill).
-    The hold wrote nothing (step 3), so no row exists; a launch writes
+    The hold wrote nothing (step 2), so no row exists; a launch writes
     nothing and K is still active. Red: the mutation "the hold does not ask
     for a requested Discard" must kill it (the hold puts the row, the launch
     finds `free` and replaces K).
+  - (PR 1) **George r3's Medium on this note**: the same test with Discard
+    confirmed **after the hold's segment read and before it commits**. The
+    test injects the tap from a hook on the hold's put request (step 6), so
+    the tap runs between step 2 and step 7. Step 7 finds the request,
+    deletes the row in the same transaction and commits; the settle is then
+    aborted (the kill). No row exists, a launch writes nothing, K is still
+    active. Red: the mutation "the hold does not re-check after its put"
+    must kill it.
   - (PR 3) **Frank r2's pair on this note**: copy A holds C (ordinary save)
     and copy B has loaded C for replay. (a) A's save fails for quota and A
     gives the row up (`given-up`), A is killed, B commits: the verdict is
@@ -864,7 +963,7 @@ A kept take `K` is active on `S`.
 2. The commit fails at once (injected), and the take is held as failed.
 3. Discard is confirmed. The hook sets the discard flag in that turn and
    creates the settle.
-4. The stall is released. The hold runs: step 3 finds the flag and writes
+4. The stall is released. The hold runs: step 2 finds the flag and writes
    nothing. The settle runs (row absent, `discarded` written).
 5. No row remains. A launch makes no write and `K` is still active.
 6. The kill variant aborts the settle in step 4. Step 5 still holds, because
@@ -899,6 +998,9 @@ row that replayed over `K`.
 | this note, George r1 Low: the revision's definition disagrees with the transcode row     | the definition tracks the active take; transcode is out of band (§1)                             |
 | this note, George r1 Low: "creation order" across copies                                 | "serialization", and nothing depends on which runs first (§3)                                    |
 | this note, George r1 questions: `kept-foreign`'s signal; a `generation` mismatch         | open for the requirements owner (§9); refused, kept, never installed (§3)                        |
+| this note, George r3 High: an ordinary Retry saves a take another copy discarded         | the writer rule: `saveTake` reads the record and the request (§3, §4); test in TP-R              |
+| this note, George r3 Medium: a Discard after the hold's read and before its commit       | hold step 7 re-checks in the put's success callback and commits there (§3); test in TP-X         |
+| this note, George r3 Low: ageing a record out deletes the only proof of a Discard        | no clock ageing; records go only with their segment (§3, residual 5)                             |
 | this note, Frank r3: a kept row's `stored` base clip is deleted by another copy's save   | a row's base clip is a use: clip clean-up and transcode check `bySourceClip` (§3); test in RP-P  |
 | this note, Frank r2: a cross-copy quota delete reads as `claimed` and frees C            | `unexplained` and `free`-on-`given-up` replace `claimed`; paired test (TP-X)                     |
 
@@ -909,18 +1011,23 @@ row that replayed over `K`.
   PR 3 merges, citing this note.
 - **#1548 (a discarded take must not come back): folded in, with a durable
   record instead of the mark it proposed.** The Discard writes `discarded`
-  and deletes the row in **one** transaction; the hold refuses to put a row
-  for a take whose Discard is recorded or requested; and the verdict never
-  saves a `discarded` take, in any copy. That closes the three paths the
-  first draft left open: a hold landing after a Discard (George r6 on #1546),
-  a kill between the hold's commit and the Discard's (George r1's High), and
-  a Discard in one copy of a take another copy gave up (residual 2). Each
-  has a test in TP-X. What remains is a kill **before the Discard's own
+  and deletes the row in **one** transaction, and every write on behalf of a
+  take reads that record and this copy's Discard request in its own
+  transaction (§3, "Every write on behalf of a take reads the record"). That
+  closes the paths found so far: a hold landing after a Discard (George r6 on
+  #1546), a kill after a hold that ran past a Discard request (George r1's
+  High and George r3's Medium), a replayed Retry of a take another copy
+  discarded (residual 2), and an ordinary Retry of a take another copy
+  discarded (George r3's High). The last is the test this recommendation
+  rests on: "an ordinary Retry after another copy discarded a given-up take
+  saves nothing and keeps K" (TP-R, PR 1). The others are in TP-X. What remains is a kill **before the Discard's own
   single transaction commits**, after the tap: the row is still there and
   unrecorded, so the next launch saves the take. No design can record a tap
   that was never committed; it is not a two-commit gap. Recommendation:
-  close #1548 when PR 1 merges, with TP-X's tests green and this window named
-  in the close comment. Owner until then: #1548 itself, against PR 1.
+  close #1548 when PR 1 merges, only with TP-R's ordinary-Retry test and
+  TP-X's PR 1 tests green, and this window named in the close comment. If
+  that test is not green in PR 1, #1548 stays open. Owner until then: #1548
+  itself, against PR 1.
 - **#1549 (a recording refused while the replay holds the slot): stays
   separate.** It is the recorder's and the slot's behaviour, not the row's
   lifecycle, and needs no schema. This design narrows its window: the replay
@@ -958,17 +1065,19 @@ estimates, scaled from #1546, whose storage and hook changes measured
 
 | PR  | Delivers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Tier       | Estimate | Cells                                                                                                           |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| 1   | v13 and every rule a v13 writer must obey (next heading): `Segment.audioRevision` and the `takeDispositions` store, the migration step, the creators, the moves in `writeTakeInTx` and `clearSegmentTake`; the hold (all six steps, `baseRevision`); the owning transaction for the commit, Discard and give-up, each writing its record; clip clean-up (`deleteClipIfUnreferenced`, `deleteClip`, the segment and book deletes) counts a row's `stored` base as a use, through the v13 `bySourceClip` index, and `commitTranscode` skips such a clip. Replaces the pins named in §3. The living sentences that name the schema change move from "11 to 12" to "11 to 13": `AGENTS.md` (the rollback paragraph), `docs/release/promotion-v1.0.0.md` §5, and the facilitator runbook if it names 12. | T1, T2     | ~510     | NR-S, NR-E, RC-S, RC-E, DL-S, DL-X, TP-X (PR 1 tests), TP-L; the hold half of RP-S; §2's tests                  |
-| 2   | `deleteSegment` and `deleteBook` drop the rows of the segments they delete, and release those rows' base clips by PR 1's check. Not a rule the verdict relies on (next heading).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | T1         | ~60      | RP-D                                                                                                            |
-| 3   | The launch replay: classification, `judgePending`, `saveReplayedTake`, park, the bounded record clean-up, the replay loop, the slot guard (`writeSlot`, `installed`), the quiet first attempt, conditional Retry. A replayed take keeps its row on quota. The AGENTS.md failure-log list gains `"pending-take-refused"` and `"pending-take-read"`, and the runbook §5 says what the quiet finish does.                                                                                                                                                                                                                                                                                                                                                                                              | T1, T2     | ~470     | NONE, DL-P, DL-R, RP-S, RP-E, RP-P, RP-R, RP-L, TP-S, TP-E (row kept), TP-D, TP-P, TP-R, TP-X (Frank r2's pair) |
+| 1   | v13 and every rule a v13 writer must obey (next heading): `Segment.audioRevision` and the `takeDispositions` store, the migration step, the creators, the moves in `writeTakeInTx` and `clearSegmentTake`; the hold (all six steps, `baseRevision`); the owning transaction for the commit, Discard and give-up, each writing its record; clip clean-up (`deleteClipIfUnreferenced`, `deleteClip`, the segment and book deletes) counts a row's `stored` base as a use, through the v13 `bySourceClip` index, and `commitTranscode` skips such a clip. Replaces the pins named in §3. The living sentences that name the schema change move from "11 to 12" to "11 to 13": `AGENTS.md` (the rollback paragraph), `docs/release/promotion-v1.0.0.md` §5, and the facilitator runbook if it names 12. | T1, T2     | ~550     | NR-S, NR-E, RC-S, RC-E, DL-S, DL-X, TP-X (PR 1 tests), TP-L; the hold half of RP-S; §2's tests                  |
+| 2   | `deleteSegment` and `deleteBook` drop the rows and the disposition records of the segments they delete, and release those rows' base clips by PR 1's check. Not a rule the verdict relies on (next heading).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | T1         | ~60      | RP-D                                                                                                            |
+| 3   | The launch replay: classification, `judgePending`, `saveReplayedTake`, park, the replay loop, the slot guard (`writeSlot`, `installed`), the quiet first attempt, conditional Retry. A replayed take keeps its row on quota. The AGENTS.md failure-log list gains `"pending-take-refused"` and `"pending-take-read"`, and the runbook §5 says what the quiet finish does.                                                                                                                                                                                                                                                                                                                                                                                                                           | T1, T2     | ~450     | NONE, DL-P, DL-R, RP-S, RP-E, RP-P, RP-R, RP-L, TP-S, TP-E (row kept), TP-D, TP-P, TP-R, TP-X (Frank r2's pair) |
 | 4   | A replayed take gives its row up on quota, and the words for a take that cannot be parked. Waits for §9's decision.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | T1, T2, T3 | ~100     | TP-E (Frank r7), TP-X (residual 2)                                                                              |
 
 The disposition record moved lines from PR 2 into PR 1 and added some to PR
 1 and PR 3: the estimates were ~300 / ~150 / ~400 / ~120 before it, and
 ~450 / ~60 / ~450 / ~100 before the base-clip rule (Frank r3), which adds the
 index, the check at five clean-up sites and the transcode skip to PR 1, and
-the dependency check in "Keep, exactly" to PR 3. PR 1 is now estimated just
-over the 500-line cap. **It is not split if it runs over**: every item in
+the dependency check in "Keep, exactly" to PR 3. The writer rule (George r3)
+adds the record read to `saveTake`, the hold's second check, and the record
+delete with a segment, about 40 lines to PR 1, and removes the 30-day sweep
+from PR 3. PR 1 is now estimated over the 500-line cap. **It is not split if it runs over**: every item in
 it is a rule the compatibility boundary needs in the build that first opens
 v13, so a split would reopen Frank r1's finding. If it measures over 500, it
 ships with a declared `size-exception` naming that reason.
@@ -985,7 +1094,7 @@ draft's verdict freed C's last copy.
 The premise is the one §2 uses against editing v12: a develop build can open
 a real database (a development machine or a preview origin; inference, not
 checked). So the rule is: **the build that first opens a v13 database obeys
-every rule §4's verdict relies on.** Those rules are:
+every rule §4's verdict and the writers rely on.** Those rules are:
 
 1. every write that changes the active take moves the revision (§1);
 2. the hold reads the revision, the disposition and this copy's Discard
@@ -1003,13 +1112,20 @@ every rule §4's verdict relies on.** Those rules are:
    (Frank r4 on #1546), and no copy can delete or convert the base a kept
    row still needs (Frank r3 on this note).
 
-All four ship in PR 1, with the version step. PRs 2, 3 and 4 change none of
+5. every write made on behalf of a take, that can install its audio or put
+   a row for it, reads the take's disposition and this copy's Discard
+   request inside its own transaction, and writes nothing on `discarded` or
+   `saved`; a `given-up` record never hides a Discard request (§3, "Every
+   write on behalf of a take reads the record"). Records are deleted only
+   with their segment.
+
+All five ship in PR 1, with the version step. PRs 2, 3 and 4 change none of
 them, so they need no further version step: any mix of PR-1-or-later builds
 on one v13 database keeps the verdict sound, and every earlier build is shut
 out by v13 itself (§2). A PR-1 copy without PR 2 leaves at worst a row for a
 deleted segment, which the replay reads as `gone`.
 
-**A later change to any of the four rules is a new version step**, for the
+**A later change to any of the five rules is a new version step**, for the
 same reason v13 is: it is the only thing that keeps a build without the
 change from writing the same database.
 
@@ -1033,7 +1149,12 @@ fails again until space is freed (inference; not measured).
    to the side as a kept refused row (park, §4) and never over the newer
    audio. The words for this screen are part of the decision.
 2. **How long a refused row keeps its audio** (#1562 item 2). Unchanged by
-   this note, and more pressing because of `kept-foreign` (§7).
+   this note, and more pressing because of `kept-foreign` (§7). George r3's
+   question, answered: yes, until this is decided, a refused row has no
+   control that clears it while its segment exists, and every later save on
+   that segment has no safety copy. That includes a preview phone holding a
+   slice-2 row, which v13 reads as `legacy` (§2). It is accepted as a known
+   hole until the requirements owner decides, not designed away here.
 3. **Whether `kept-foreign` shows anything** (George r1's first question).
    Today's design reports it to the failure log only. A kill after that
    loses the take the person just made, because it had no safety copy.
@@ -1063,9 +1184,10 @@ Each is inferred from the code and this design. None has been seen.
    behind a hold for a different segment in another copy. Holds are one short
    transaction each, but a long take's inline row is large (inference; not
    measured).
-5. **An aged-out record.** A copy that still holds a take more than 30 days
-   after its record was written reads `unexplained` and keeps; it can no
-   longer learn that another copy saved or discarded it.
+5. **The record store grows.** One small record per take that ended on a
+   segment that still exists; records go only with their segment (§3). Tens
+   of bytes each (inference, not measured), against megabytes of audio per
+   take.
 6. **A fresh take's Retry is still unconditional** (#1551).
 7. **A kept row with a `stored` base pins its clip as PCM.** The clip is not
    deleted or transcoded while the row lives, so a refused row (#1562 item 2)
