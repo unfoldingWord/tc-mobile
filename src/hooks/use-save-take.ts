@@ -256,8 +256,17 @@ export async function performResumeTake(
 ): Promise<boolean | "busy"> {
   const next = startSave(held, take);
   if (next === held) return "busy";
-  // `h ?? next`: a take that reached the slot since `held` was read keeps it.
-  effects.update((h) => h ?? next);
+  // A take that reached the slot since `held` was read keeps it, and then this
+  // replay must not save at all: every later transition would be judged
+  // against a slot that does not hold `next`. `update` applies synchronously
+  // (the hook's `writeSlot`), so `installed` is known before the save starts.
+  let installed = false;
+  effects.update((h) => {
+    if (h) return h;
+    installed = true;
+    return next;
+  });
+  if (!installed) return "busy";
   return performSaveTake(next, effects);
 }
 
@@ -380,12 +389,20 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     onSavedRef.current = onSaved;
   }, [onSaved]);
 
-  // The slot as of the last render, for the launch replay below: it runs from
-  // an effect, outside any render closure that could read `pending`.
-  const pendingRef = useRef(pending);
-  useEffect(() => {
-    pendingRef.current = pending;
-  }, [pending]);
+  // The live slot. Every slot write goes through `writeSlot`, which applies
+  // the transition to this ref and hands React the result in the same
+  // synchronous turn, so a reader between a write and its render (the launch
+  // replay, a tap in the same frame) never sees a stale slot, and a transition
+  // is never applied to two different snapshots.
+  const slotRef = useRef(pending);
+  const writeSlot = useCallback(
+    (transition: (held: PendingTake | null) => PendingTake | null) => {
+      const next = transition(slotRef.current);
+      slotRef.current = next;
+      setPending(next);
+    },
+    []
+  );
 
   const commit = useCallback(async (take: PendingTake): Promise<boolean> => {
     // Synchronous, before the first await: this is what a second tap in the
@@ -394,7 +411,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     savingRef.current = true;
     try {
       return await performSaveTake(take, {
-        update: setPending,
+        update: writeSlot,
         onSaved: () => onSavedRef.current?.(),
         requestSweep: () => void requestTranscodeSweep(),
       });
@@ -404,7 +421,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // out the retry the failure path exists to offer.
       savingRef.current = false;
     }
-  }, []);
+  }, [writeSlot]);
 
   /**
    * Persist a recording as an insert/append into the segment's existing audio.
@@ -436,7 +453,8 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // the recovery screen's wording depends on it — the save itself is identical.
       editOnly = false
     ): Promise<boolean> => {
-      const take = startSave(pending, {
+      const held = slotRef.current;
+      const take = startSave(held, {
         segmentId,
         ordinal,
         // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
@@ -452,19 +470,19 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // Identity means refused: a recording is already held, and displacing it
       // is the silent loss all of this exists to prevent. The screens disable
       // recording while a take is held, so reaching this is an invariant break.
-      if (take === pending) {
+      if (take === held) {
         console.error(
           "A finished take was refused: one is already held",
-          pending.clipId
+          held.clipId
         );
         return Promise.resolve(false);
       }
       // Before any await AND before the fallible merge, so the only reference to
       // the recording is never a local in a function that can throw.
-      setPending(take);
+      writeSlot(() => take);
       return commit(take);
     },
-    [commit, pending]
+    [commit, writeSlot]
   );
 
   /**
@@ -528,11 +546,8 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       if (savingRef.current) return "busy";
       savingRef.current = true;
       try {
-        return await performResumeTake(pendingRef.current, take, {
-          update: (transition) => {
-            pendingRef.current = transition(pendingRef.current);
-            setPending(transition);
-          },
+        return await performResumeTake(slotRef.current, take, {
+          update: writeSlot,
           onSaved: () => onSavedRef.current?.(),
           requestSweep: () => void requestTranscodeSweep(),
         });
@@ -540,18 +555,19 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
         savingRef.current = false;
       }
     });
-  }, []);
+  }, [writeSlot]);
 
   const retryPendingTake = useCallback(() => {
-    // The live guard, ahead of the pure one: `pending` here is last render's
-    // slot, and `SaveFailed` only hides Retry once the saving re-render lands.
+    // The live guard, ahead of the pure one: `SaveFailed` only hides Retry
+    // once the saving re-render lands.
     if (savingRef.current) return;
-    const next = retrySave(pending);
+    const held = slotRef.current;
+    const next = retrySave(held);
     // Identity means refused: nothing held, or a save already in flight.
-    if (!next || next === pending) return;
-    setPending(next);
+    if (!next || next === held) return;
+    writeSlot(() => next);
     void commit(next);
-  }, [commit, pending]);
+  }, [commit, writeSlot]);
 
   /** Deliberate, confirmed loss of the held recording. */
   const discardPendingTake = useCallback(() => {
@@ -562,8 +578,8 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     // landing after the discard so a recording the translator confirmed
     // deleting comes back. Both are the silent loss this slot exists to prevent.
     if (savingRef.current) return;
-    void performDiscardTake(pending, setPending);
-  }, [pending]);
+    void performDiscardTake(slotRef.current, writeSlot);
+  }, [writeSlot]);
 
   return {
     pendingTake: pending,

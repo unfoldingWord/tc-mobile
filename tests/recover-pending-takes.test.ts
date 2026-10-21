@@ -206,6 +206,29 @@ describe("recoverPendingTakes — finishing the save on launch", () => {
     expect(slot).toBe(held);
     expect(saveTake).not.toHaveBeenCalled();
   });
+
+  it("does not save when the live slot was filled after `held` was read", async () => {
+    const segmentId = await freshSegment();
+    const occupant = {
+      ...newTake(segmentId),
+      state: "failed",
+      kind: "quota",
+      attempts: 1,
+    } as const;
+    // The caller's snapshot says empty; the live slot already holds a take.
+    let live: PendingTake | null = occupant;
+
+    const result = await performResumeTake(null, newTake(segmentId), {
+      update: (t) => {
+        live = t(live);
+      },
+      requestSweep: () => {},
+    });
+
+    expect(result).toBe("busy");
+    expect(live).toBe(occupant);
+    expect(saveTake).not.toHaveBeenCalled();
+  });
 });
 
 describe("recoverPendingTakes — rows it cannot save", () => {
