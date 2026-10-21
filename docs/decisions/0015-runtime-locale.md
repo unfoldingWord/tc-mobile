@@ -4,9 +4,12 @@
 
 This ADR is **Proposed**: it records the design the runtime-apply and resolver
 issues will build, and nothing in it is running yet. It moves to **Accepted**
-when the DRI accepts it on the PR that carries it. Claims about the first-paint
-reflow (section a) are inference until the device check of the language-follow
-issue observes them.
+when the DRI accepts it on the PR that carries it (DRI pick, 2026-10-21:
+"Accepted on merge (Recommended)"). The right-to-left device checks do not gate
+that acceptance: the first-frames check in section (a) and the waveform check in
+section (f) are done-when items for the issues that build runtime apply. Claims
+about the first-paint reflow (section a) are inference until those checks
+observe them.
 
 ## Context
 
@@ -72,16 +75,19 @@ What replaces the argument:
    direction-dependent layout. `dir` is set before `createRoot` (section b),
    so the first React render is already correct. This is **inference**, not
    observation: the language-follow issue's device check must confirm the intro
-   covers the first frames on a right-to-left phone. If it does not, the
-   fallback is the inline `<head>` script below, which is cheap to add.
-3. To close the earliest gap without a device observation, an inline `<head>`
-   script, **generated at build time from the one locale table**, sets `lang`
-   and `dir` from `navigator.languages` before the stylesheet paints. It is
-   generated, not hand-written, from the same table **and the same resolver**
-   as section (b), including the (g) and (h) rules, and it writes only `lang`
-   and `dir` values the table holds. So the table in `lib/locale.ts` stays the
-   one place either fact is stated (the original #169 reason for the module),
-   and there is one resolution algorithm, not two.
+   covers the first frames on a right-to-left phone, and that check is a
+   done-when item of that issue.
+3. **Fallback only** (DRI pick, 2026-10-21: "Fallback only (Recommended)"). The
+   design is the runtime installer before `createRoot` in item 2, and nothing
+   else. An inline `<head>` script is added only if the language-follow issue's
+   right-to-left device check observes a direction reflow in the first frames.
+   If it is added, it is **generated at build time from the one locale table**,
+   sets `lang` and `dir` from `navigator.languages` before the stylesheet
+   paints, is generated rather than hand-written from the same table **and the
+   same resolver** as section (b), including the (g) and (h) rules, and writes
+   only `lang` and `dir` values the table holds. So the table in
+   `lib/locale.ts` stays the one place either fact is stated (the original #169
+   reason for the module), and there is one resolution algorithm, not two.
 
 ### (b) Where `lang` and `dir` are applied
 
@@ -104,8 +110,8 @@ What replaces the argument:
 
 The web manifest's name is read by the operating system at install. A native
 app could localize its launcher label through platform resources, but this ADR
-does not take that on: both stay English, as a scope decision. The runtime locale changes what is drawn inside the app, not the
-launcher label.
+does not take that on: both stay English, as a scope decision. The runtime locale changes what is drawn inside the app,
+not the launcher label.
 
 ### (d) Strings are statically imported and precached
 
@@ -131,7 +137,9 @@ re-renders its words under a recording in progress.
 Audio time runs left to right in the waveform and the time axis in every
 language, as a timeline does in other audio tools. The controls and text around
 them mirror with `dir`; the waveform, its selection handles and its time axis do
-not. This needs a test on a right-to-left locale when one ships.
+not. This needs a test on a right-to-left locale when one ships, and a device
+check on one, which is a done-when item of the issue that builds runtime apply
+and does not gate this ADR.
 
 ### (g) No fallback mid-screen; a pending list until release
 
@@ -197,8 +205,9 @@ is not decided here and stays open with the requirements owner.
 - Every language adds about 20 KB raw to the precache and one more table to the
   completeness check.
 - A right-to-left phone is a supported case, not a future one: the waveform
-  exception (f) and the first-frames inference (a) each need a device check
-  before this ADR is Accepted.
+  exception (f) and the first-frames inference (a) each need a device check.
+  Those checks are done-when items for the issues that build runtime apply; they
+  do not gate this ADR's acceptance.
 
 ## Out of scope
 
