@@ -113,6 +113,49 @@ test("a held, cut-off book name and chapter title show whole and leave the row a
   ).toBeVisible();
 });
 
+test("a held cut-off name ended without a plain release still leaves the row alone", async ({
+  page,
+}) => {
+  await seed(page);
+  const card = page.getByRole("button", { name: /^The Complete Collection/ });
+  const title = page.locator(".books-chapter-title").first();
+
+  // Escape while the name is up, then release on the row.
+  await pressAndHold(page, page.locator(".books-name"));
+  await expect(bubble(page)).toHaveText(BOOK);
+  await page.keyboard.press("Escape");
+  await expect(bubble(page)).toHaveCount(0);
+  await page.mouse.up();
+  await expect(card).toHaveAttribute("aria-expanded", "true");
+
+  // Escape on the chapter title, then release: the chapter does not open.
+  await pressAndHold(page, title);
+  await expect(bubble(page)).toHaveText(LONG_CHAPTER);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
+    0
+  );
+
+  // Moved past the slop before the hold, then released on the title.
+  const box = (await title.boundingBox())!;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + 24, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 64, y, { steps: 4 });
+  await page.mouse.up();
+  await expect(bubble(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
+    0
+  );
+
+  // An ordinary tap afterwards still opens the chapter.
+  await title.click();
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+});
+
 test("a title that fits still lifts for reorder and shows no bubble", async ({
   page,
 }) => {

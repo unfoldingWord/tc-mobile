@@ -4,8 +4,10 @@ import {
   REVEAL_HOLD_MS,
   REVEAL_MAX_MS,
   REVEAL_SLOP_PX,
+  REVEAL_GAP_PX,
   createHoldReveal,
   isCutOff,
+  placeReveal,
 } from "@/lib/view/hold-reveal";
 import { REORDER_HOLD_MS, REORDER_SLOP_PX } from "@/lib/view/reorder-gesture";
 
@@ -51,6 +53,29 @@ describe("isCutOff", () => {
     expect(isCutOff(300, 100)).toBe(true);
     expect(isCutOff(100, 100)).toBe(false);
     expect(isCutOff(0, 0)).toBe(false);
+  });
+});
+
+describe("placeReveal", () => {
+  const VH = 780;
+
+  it("puts a bubble that fits above the name above it", () => {
+    expect(placeReveal(400, 24, 60, VH)).toBe(400 - REVEAL_GAP_PX - 60);
+  });
+
+  it("never draws a tall wrapped bubble off the top: a name at 100 px with a 121 px bubble goes below", () => {
+    // Four lines at 18 px x 1.35 plus 24 px padding: the case a fixed
+    // threshold placed at -29 px (Frank round 1 on #1617).
+    const top = placeReveal(100, 24, 121.2, VH);
+    expect(top).toBe(100 + 24 + REVEAL_GAP_PX);
+    expect(top).toBeGreaterThanOrEqual(REVEAL_GAP_PX);
+  });
+
+  it("clamps inside the screen when neither side has room", () => {
+    const h = 400;
+    const top = placeReveal(300, 24, h, 600);
+    expect(top).toBeGreaterThanOrEqual(REVEAL_GAP_PX);
+    expect(top + h).toBeLessThanOrEqual(600 - REVEAL_GAP_PX);
   });
 });
 

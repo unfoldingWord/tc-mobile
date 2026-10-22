@@ -1,6 +1,8 @@
+import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import type { RevealedName } from "@/hooks/use-hold-reveal";
+import { placeReveal } from "@/lib/view/hold-reveal";
 
 /**
  * A cut-off name, shown whole while a finger holds it (#1284, S14).
@@ -13,23 +15,33 @@ import type { RevealedName } from "@/hooks/use-hold-reveal";
  *
  * Drawn in a portal on `<body>`, in the viewport's coordinates: the lists the
  * rows sit in clip their overflow, and a lifted row is transformed, either of
- * which would cut or misplace a bubble drawn inside them. It sits above the
- * name (the finger is on the name), or below it when the name is near the top
- * of the screen.
+ * which would cut or misplace a bubble drawn inside them. Its rendered height
+ * is measured before paint and `placeReveal` puts it above the name (the
+ * finger is on the name) when it fits there, below when it does not, and
+ * inside the screen either way.
  */
 export function NameReveal({ reveal }: { reveal: RevealedName | null }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !reveal) return;
+    const top = placeReveal(
+      reveal.top,
+      reveal.height,
+      el.getBoundingClientRect().height,
+      window.innerHeight
+    );
+    el.style.top = `${top}px`;
+    el.style.visibility = "visible";
+  }, [reveal]);
   if (!reveal) return null;
-  const above = reveal.top > 96;
   return createPortal(
     <div
+      ref={ref}
       className="name-reveal"
       aria-hidden="true"
       dir="auto"
-      style={
-        above
-          ? { top: reveal.top, transform: "translateY(calc(-100% - 8px))" }
-          : { top: reveal.top + reveal.height + 8 }
-      }
+      style={{ top: 0, visibility: "hidden" }}
     >
       {reveal.text}
     </div>,

@@ -9,6 +9,7 @@ import {
 import {
   createHoldReveal,
   isCutOff,
+  REVEAL_SLOP_PX,
   type HoldReveal,
 } from "@/lib/view/hold-reveal";
 
@@ -50,8 +51,9 @@ export interface HoldRevealHandle {
  * does not reach the row's `onPointerDown`, so no reorder lift starts, and
  * the click the release would land on the row's open button is swallowed
  * once. The name is shown while the finger stays, and put away on release, on
- * a second touch, on Escape, on a scroll or cancel, when the page is hidden,
- * and after a cap.
+ * a second touch, on Escape, on blur or pointercancel, when the page is
+ * hidden, and after a cap. An ending other than a plain tap keeps the
+ * finger's own later release click off the row too.
  *
  * The name is already the control's accessible name on every row that uses
  * this, so nothing here is announced.
@@ -77,6 +79,8 @@ export function useHoldReveal(): HoldRevealHandle {
       e.stopPropagation();
       const text = el.textContent ?? "";
       const pointerId = e.pointerId;
+      const x0 = e.clientX;
+      const y0 = e.clientY;
       const guardTarget = el.closest("button") ?? el;
       let didReveal = false;
 
@@ -95,42 +99,75 @@ export function useHoldReveal(): HoldRevealHandle {
         dismiss: () => setRevealed(null),
       });
 
+      // Past the slop the press is a drag, not a tap: its release must not
+      // land on the row either.
+      let movedPast = false;
       const onMove = (m: PointerEvent) => {
-        if (m.pointerId === pointerId) hold.move(m.clientX, m.clientY);
+        if (m.pointerId !== pointerId) return;
+        hold.move(m.clientX, m.clientY);
+        const moved = Math.hypot(m.clientX - x0, m.clientY - y0);
+        if (moved > REVEAL_SLOP_PX) movedPast = true;
       };
       const onUp = (u: PointerEvent) => {
         if (u.pointerId !== pointerId) return;
         hold.release();
         stop();
-        if (didReveal) guardClick();
+        if (didReveal || movedPast) guardClick();
       };
-      // A second finger, a cancel, Escape, the page going away: all end it.
+      // A second finger, Escape, blur, the page going away: all end the hold
+      // while the finger may still be down. The press was claimed and is not
+      // a tap, so the finger's own later release must not land on the row:
+      // wait for it and guard its click then (#1617 round 1).
+      const endHeld = () => {
+        hold.cancel();
+        stop();
+        awaitRelease();
+      };
       const onOtherDown = (d: PointerEvent) => {
-        if (d.pointerId !== pointerId) {
-          hold.cancel();
-          stop();
-        }
+        if (d.pointerId !== pointerId) endHeld();
       };
+      // A real pointercancel fires no click afterwards; nothing to guard.
       const onCancel = () => {
         hold.cancel();
         stop();
       };
+      const awaitRelease = () => {
+        const onRelease = (r: PointerEvent) => {
+          if (r.pointerId !== pointerId) return;
+          done();
+          if (r.type === "pointerup") guardClick();
+        };
+        // A fresh press with the same id means the old one ended unseen.
+        const onFresh = (d: PointerEvent) => {
+          if (d.pointerId === pointerId) done();
+        };
+        const done = () => {
+          window.removeEventListener("pointerup", onRelease, true);
+          window.removeEventListener("pointercancel", onRelease, true);
+          window.removeEventListener("pointerdown", onFresh, true);
+        };
+        window.addEventListener("pointerup", onRelease, true);
+        window.addEventListener("pointercancel", onRelease, true);
+        window.addEventListener("pointerdown", onFresh, true);
+      };
       const onKey = (k: KeyboardEvent) => {
-        if (k.key === "Escape") onCancel();
+        if (k.key === "Escape") endHeld();
       };
       const onHidden = () => {
-        if (document.visibilityState === "hidden") onCancel();
+        if (document.visibilityState === "hidden") endHeld();
       };
       // A long press raises the context menu on Android; refuse it for this
       // press, as the reorder gesture does.
       const onContext = (c: Event) => c.preventDefault();
 
       const guardClick = () => {
+        // Spent only by the click it exists for: a click elsewhere (a second
+        // finger's tap) leaves it up until the release's own click or the cap.
         const onClick = (c: MouseEvent) => {
-          if (c.target instanceof Node && guardTarget.contains(c.target)) {
-            c.preventDefault();
-            c.stopPropagation();
-          }
+          if (!(c.target instanceof Node && guardTarget.contains(c.target)))
+            return;
+          c.preventDefault();
+          c.stopPropagation();
           doneGuard();
         };
         const timer = window.setTimeout(() => doneGuard(), CLICK_GUARD_MS);
@@ -148,7 +185,7 @@ export function useHoldReveal(): HoldRevealHandle {
         window.removeEventListener("pointerdown", onOtherDown);
         window.removeEventListener("contextmenu", onContext);
         window.removeEventListener("keydown", onKey);
-        window.removeEventListener("blur", onCancel);
+        window.removeEventListener("blur", endHeld);
         document.removeEventListener("visibilitychange", onHidden);
         if (active.current === handle) active.current = null;
       };
@@ -166,9 +203,9 @@ export function useHoldReveal(): HoldRevealHandle {
       window.addEventListener("pointerdown", onOtherDown);
       window.addEventListener("contextmenu", onContext);
       window.addEventListener("keydown", onKey);
-      window.addEventListener("blur", onCancel);
+      window.addEventListener("blur", endHeld);
       document.addEventListener("visibilitychange", onHidden);
-      hold.press(e.clientX, e.clientY);
+      hold.press(x0, y0);
       return true;
     },
     []

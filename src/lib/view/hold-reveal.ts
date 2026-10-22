@@ -31,6 +31,30 @@ export function isCutOff(scrollWidth: number, clientWidth: number): boolean {
   return scrollWidth > clientWidth;
 }
 
+/** Space between the bubble and the name, and between it and the screen edge. */
+export const REVEAL_GAP_PX = 8;
+
+/**
+ * Where the bubble's top edge goes, in viewport px. Above the name when the
+ * whole bubble fits there (the finger is on the name); else below it when it
+ * fits there; else clamped inside the screen so the start of the name is
+ * never drawn off the top. Measured, not guessed: a wrapped name can be many
+ * lines tall.
+ */
+export function placeReveal(
+  nameTop: number,
+  nameHeight: number,
+  bubbleHeight: number,
+  viewportHeight: number
+): number {
+  const above = nameTop - REVEAL_GAP_PX - bubbleHeight;
+  if (above >= REVEAL_GAP_PX) return above;
+  const below = nameTop + nameHeight + REVEAL_GAP_PX;
+  if (below + bubbleHeight <= viewportHeight - REVEAL_GAP_PX) return below;
+  const lowest = viewportHeight - REVEAL_GAP_PX - bubbleHeight;
+  return Math.max(REVEAL_GAP_PX, Math.min(below, lowest));
+}
+
 export interface HoldRevealCallbacks {
   /** The hold completed: show the name. */
   reveal(): void;
