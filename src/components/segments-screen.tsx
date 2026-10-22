@@ -15,7 +15,7 @@ import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
-import { Tile, TileSpacer } from "./o4-tile-menu";
+import { Tile } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { NOTHING_FAILED_TONE } from "./notice-tone";
 import { SegmentRow } from "./segment-row";
@@ -26,7 +26,6 @@ import { ShareMenuSection } from "./share-menu-section";
 import { chapterShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { strings } from "@/lib/strings";
-import { ThemeControl } from "./theme-control";
 import { useChapterHeading } from "@/hooks/use-settings";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
@@ -1520,12 +1519,6 @@ export const SegmentsScreen = forwardRef<
                     caption={strings.tileRename}
                     onClick={() => setRenamingChapter(true)}
                   />
-                ),
-                after: (
-                  <>
-                    <TileSpacer />
-                    <ThemeControl tile />
-                  </>
                 ),
               }}
             />

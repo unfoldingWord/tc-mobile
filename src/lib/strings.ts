@@ -361,8 +361,6 @@ export const stringsEn = {
   // The app ≡ menu's About tile (#36, DRI ruling on PR #1019): its name is
   // `aboutOpen` ("About and licenses"), which already holds this word.
   tileAbout: "About",
-  tileLight: "Light",
-  tileDark: "Dark",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment

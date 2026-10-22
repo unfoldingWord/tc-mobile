@@ -34,7 +34,7 @@ export function SettingsPanel({
       back
     >
       <div className="settings-list">
-        <ThemeControl row />
+        <ThemeControl />
         <ChapterNumbersRow />
       </div>
     </Menu>

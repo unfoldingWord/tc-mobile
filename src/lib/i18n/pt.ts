@@ -123,8 +123,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "Excluir",
   tileShare: "Compartilhar",
   tileAbout: "Sobre",
-  tileLight: "Claro",
-  tileDark: "Escuro",
   closeRecorder: "Fechar gravador",
   recorderBreadcrumb(
     book: string,
