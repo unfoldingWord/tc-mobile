@@ -293,10 +293,7 @@ describe("table entries that reach outside their own arguments (#169)", () => {
       ],
       saveFailedDiscardHint: ["this.takeRecoverDiscardHint"],
       shareAllFolder: ["this.shareNameFallback"],
-      exportProjectFilename: [
-        "this.exportProjectFileWord",
-        "this.shareNameFallback",
-      ],
+      exportProjectFilename: ["this.shareNameFallback"],
       shareBookFilename: ["this.shareNameFallback"],
       shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareBookPartial: ["this.shareMissing"],
@@ -348,10 +345,7 @@ describe("no table sentence is built from another entry's words (#1483)", () => 
       editSegmentFinished: ["this.segmentHeading"],
       openSegment: ["this.segmentHeading"],
       recorderBreadcrumb: ["this.segmentHeading", "this.trail"],
-      exportProjectFilename: [
-        "this.exportProjectFileWord",
-        "this.shareNameFallback",
-      ],
+      exportProjectFilename: ["this.shareNameFallback"],
       shareBookFilename: ["this.shareNameFallback"],
       shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareFilename: ["this.chapterName"],

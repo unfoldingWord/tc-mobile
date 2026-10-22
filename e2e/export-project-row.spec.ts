@@ -112,13 +112,17 @@ test("Export project sits right after Share book and shares the project zip from
   // The row's place: Share book, then Export project, in the one tile row,
   // inside a 360 px sheet, in light and in dark (the screenshots are for the
   // review record).
-  const tiles = page.locator(".o4-tiles .o4-tile");
+  const tiles = page
+    .getByRole("dialog", { name: "Book", exact: true })
+    .locator(".o4-tiles .o4-tile");
   for (const scheme of ["dark", "light"] as const) {
     await page.goto("/");
     await expect(page.locator("#launch-intro")).toBeHidden({
       timeout: 10_000,
     });
-    if (scheme === "light") {
+    if (scheme === "dark") {
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    } else {
       // The theme is a stored choice, not the OS setting; it lasts across
       // the reloads below.
       await page.getByRole("button", { name: "Open menu" }).click();

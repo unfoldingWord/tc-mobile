@@ -302,7 +302,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Exporter le projet",
   tileExport: "Exporter",
   exportProjectPreparing: "Préparation du projet à exporter.",
-  exportProjectFileWord: "projet",
   languageAskTitle: "Langue de ce livre",
   languageAskLead:
     "Dans quelle langue sont les enregistrements ? Vous la choisissez une fois, et chaque exportation de ce livre l’utilise.",

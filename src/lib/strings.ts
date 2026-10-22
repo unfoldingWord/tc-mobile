@@ -895,17 +895,16 @@ export const stringsEn = {
   exportProject: "Export project",
   tileExport: "Export",
   exportProjectPreparing: "Preparing the project to export.",
-  // ADR 0014 point 8: `<book> - project.zip`, so it differs from Share
-  // Book's `<book>.zip`. Sanitised like shareBookFilename.
+  // ADR 0014 point 8: `<book> - project.zip`, a fixed English suffix on every
+  // phone language (#1627 asks whether it should follow the language), so it
+  // differs from Share Book's `<book>.zip`. Sanitised like shareBookFilename.
   exportProjectFilename(book: string): string {
-    const suffix = ` - ${this.exportProjectFileWord}.zip`;
+    const suffix = " - project.zip";
     const label =
       filenameSafe(book, new TextEncoder().encode(suffix).length) ||
       this.shareNameFallback;
     return `${label}${suffix}`;
   },
-  // The word in that file name. ASCII-safe per locale is the translator's job.
-  exportProjectFileWord: "project",
   // The language ask (#1492): the first Export project of a book with no
   // language asks it once, from the bundled list (ADR 0017).
   languageAskTitle: "Language of this book",
