@@ -545,6 +545,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "Não foi possível carregar. Tente novamente.",
   saveFailed: "Não foi possível salvar. Tente novamente.",
   noRoom: "Não há mais espaço neste celular.",
+  bookNameTaken: "Outro livro tem este nome. Digite um nome diferente.",
   stopToEdit: "Pare a gravação para editar.",
   stopToErase: "Pare a gravação para redefinir.",
 

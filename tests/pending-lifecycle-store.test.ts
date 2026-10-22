@@ -59,7 +59,7 @@ const freshSegment = async (): Promise<{
   bookId: BookId;
   segmentId: SegmentId;
 }> => {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   return { bookId: book.id, segmentId: (await addSegment(chapter.id)).id };
 };

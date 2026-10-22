@@ -1470,6 +1470,9 @@ export const stringsEn = {
   // so the one condition a translator can act on reads the same everywhere a
   // write can hit it, not only on the take-save recovery screen.
   noRoom: "No room left on this phone.",
+  // A book name another book already has (#1272, S13). Shown in the name
+  // sheet itself; asks for another name rather than naming a fault.
+  bookNameTaken: "Another book has this name. Type a different name.",
 
   // ── Record-bar Edit, blocked by a live take (#857 round 1, Frank P2) ─────
   // `barHint`'s own words for the `"uncommitted-take"` reason (`menu-row-

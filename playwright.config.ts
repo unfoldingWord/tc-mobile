@@ -89,7 +89,7 @@ export default defineConfig({
       // by the production minifier or by Tailwind's layer ordering would pass
       // there (#171).
       testMatch:
-        /(service-worker-precache|theme-toggle|recorder-selection|name-sheet-confirm|recorder-discard-clip|recorder-menu-half-screen|recorder-zoom-insertion|recorder-audition-playhead|recorder-edit-stops-audition|recorder-open-in-edit|segment-rename|segment-menu-tile-fit|object-menu-focus|share-book-spool|export-project-row|edit-history-cue|focus-scroll-measure|books-chapter-dots-fit|books-chapter-play|header-crumbs-fit|sheet-drag-close|books-rtl-name-align|rtl-mirror|book-sheet-one-focus-move|phone-check-dsp|mic-settings-steps-fit|mic-refusal-card-fit|settings-screen)\.spec\.ts$/,
+        /(service-worker-precache|theme-toggle|recorder-selection|name-sheet-confirm|recorder-discard-clip|recorder-menu-half-screen|recorder-zoom-insertion|recorder-audition-playhead|recorder-edit-stops-audition|recorder-open-in-edit|segment-rename|segment-menu-tile-fit|object-menu-focus|share-book-spool|export-project-row|edit-history-cue|focus-scroll-measure|books-chapter-dots-fit|books-chapter-play|header-crumbs-fit|sheet-drag-close|books-rtl-name-align|rtl-mirror|book-sheet-one-focus-move|phone-check-dsp|mic-settings-steps-fit|mic-refusal-card-fit|settings-screen|menu-full-name)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

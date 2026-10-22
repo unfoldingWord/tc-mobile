@@ -55,8 +55,8 @@ const uuid = (): string => crypto.randomUUID();
  * **First unused, not `count + 1`** (#360). The count-based namer this replaces
  * assumed books are only ever added. Once a book can be deleted, deleting
  * "Book 001" leaves one book and makes the next one "Book 002" as well — two
- * identical rows. Names have never been unique keys (rename already allows two
- * "Mark"s), but the delete confirm puts the book's name in its accessible name,
+ * identical rows. Names were not unique keys then (new writes are held to
+ * one since #1272, but a phone may still hold two "Mark"s, U4a), and the delete confirm puts the book's name in its accessible name,
  * so a duplicate leaves a destructive, irreversible dialog unable to say which
  * book it is about to destroy — on a screen built for people who may not read,
  * where discarding practice books is the normal training workflow.
@@ -87,6 +87,49 @@ export function nextBookNumber(
 }
 
 /**
+ * Thrown when a name is already another book's (#1272, S13: "require unique
+ * names for the books"). Matched by `name` in `hooks/save-failure.ts`, so the
+ * New Book and Rename sheets can ask for a different name in place.
+ */
+export class BookNameTakenError extends Error {
+  override readonly name = "BookNameTakenError";
+  constructor() {
+    super("Another book already has this name");
+  }
+}
+
+/**
+ * The key two book names are compared by: Unicode NFC, trimmed, runs of
+ * whitespace collapsed to one space, lower-cased. So "Mark", " mark " and
+ * "MARK" are one name, and a name typed with a combining accent equals the
+ * same name typed precomposed. Not locale-sensitive (`toLowerCase`, not
+ * `toLocaleLowerCase`), so the answer does not change with the phone's
+ * language. Pure; the one definition, used by the writes below.
+ */
+export function bookNameKey(name: string): string {
+  return name.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Refuse `name` if a book other than `exceptId` already holds it (#1272).
+ * Unnamed books (`name === null`) hold nothing. Existing duplicates are left
+ * alone (U4a): this only looks at the name being written, never at the rest of
+ * the shelf. Called inside the write's own transaction, with the shelf that
+ * transaction read.
+ */
+export function assertBookNameFree(
+  shelf: readonly Pick<Book, "id" | "name">[],
+  name: string,
+  exceptId?: BookId
+): void {
+  const key = bookNameKey(name);
+  for (const book of shelf) {
+    if (book.id === exceptId || book.name === null) continue;
+    if (bookNameKey(book.name) === key) throw new BookNameTakenError();
+  }
+}
+
+/**
  * Create a book, named by the translator (#314) or by the placeholder.
  *
  * The name is trimmed, exactly as {@link renameBook} trims it — one validation
@@ -110,9 +153,10 @@ export function nextBookNumber(
  * born named; and the read is a `getAll` over a metadata-only store (no clip
  * bytes live here) at the frequency a person taps Create.
  *
- * A supplied name is never made unique: a facilitator may deliberately have two
- * books called "Mark", and {@link renameBook} has always allowed it. That is
- * also why the New Book dialog sends `""` rather than the placeholder string it
+ * A supplied name that another book already has is refused with
+ * {@link BookNameTakenError} (#1272, S13; compared by {@link bookNameKey}); it
+ * is never silently altered to be unique. Books already on a phone that share a
+ * name are left alone (U4a). That is also why the New Book dialog sends `""` rather than the placeholder string it
  * displayed when the field is untouched — a supplied "Book 001" would bypass the
  * derivation below, and two documents open on the same shelf would both write it
  * (George R1 P2-3).
@@ -128,6 +172,9 @@ export async function createBook(
   const trimmed = name.trim();
   try {
     const shelf = await tx.store.getAll();
+    // Names are unique for NEW books (#1272, S13). Checked on the shelf this
+    // same transaction read, so two overlapping creates cannot both pass.
+    if (trimmed !== "") assertBookNameFree(shelf, trimmed);
     const book: Book = {
       id: uuid() as BookId,
       name: trimmed === "" ? null : trimmed,
@@ -245,6 +292,17 @@ export async function renameBook(
   if (nextName === book.name) {
     await tx.done; // idempotent no-op: no write, no recency bump.
     return book;
+  }
+  // A real rename to a name another book holds is refused (#1272, S13). Not
+  // reached for the no-op above, so renaming one of two existing duplicates to
+  // its own current name stays what it was (U4a). Same transaction as the put.
+  if (nextName !== null) {
+    try {
+      assertBookNameFree(await tx.store.getAll(), nextName, id);
+    } catch (cause) {
+      await abortQuietly(() => tx.abort(), tx.done);
+      throw cause;
+    }
   }
 
   const updated: Book = {
