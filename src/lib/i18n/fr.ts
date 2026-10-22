@@ -240,7 +240,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseConfirm: "Réinitialiser l'enregistrement",
   eraseCancel: "Annuler",
   recordAgainConfirm: "Enregistrer encore",
-  recordAgainKeep: "La garder",
+  recordAgainKeep: "Le garder",
   eraseFailed: "L'enregistrement n'a pas pu être réinitialisé. Réessayez.",
   eraseConfirmPreviewPlay: "Lire ce qui sera perdu",
   eraseConfirmPreviewPause: "Pause",
@@ -450,7 +450,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   storageLow:
     "Il reste peu d'espace sur ce téléphone. Marquez des segments comme terminés pour libérer de l'espace, ou partagez votre travail puis retirez-le.",
   storageCritical:
-    "Il ne reste presque plus d'espace sur ce téléphone, et les nouveaux enregistrements risquent de ne pas être sauvegardés. Marquez les segments terminés, ou partagez votre travail puis retirez-le.",
+    "Il ne reste presque plus d'espace sur ce téléphone, et les nouveaux enregistrements risquent de ne pas être sauvegardés. Marquez des segments comme terminés, ou partagez votre travail puis retirez-le.",
   storageShareSoon: "Partagez votre travail bientôt",
   shareAll: "Partager votre travail",
   shareAllUnconfirmed:
@@ -461,7 +461,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareAllFailedWeb:
     "Votre travail n'a pas pu être partagé. Utilisez l'application tC Mobile pour le partager.",
   shareAllStorage:
-    "Ce téléphone n'a pas assez d'espace pour préparer votre travail. Marquez les segments terminés, puis réessayez.",
+    "Ce téléphone n'a pas assez d'espace pour préparer votre travail. Marquez des segments comme terminés, puis réessayez.",
   shareAllMissing: (n: number): string =>
     plural(n, {
       one: "{n} livre n'a pas pu être inclus.",

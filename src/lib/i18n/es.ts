@@ -133,9 +133,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   },
   record: "Grabar",
   stop: "Detener grabación",
-  zoomAtWhole: "Se ve todo el segmento. Acerca la vista a un cuarto.",
-  zoomAtQuarter:
-    "Se ve un cuarto del segmento. Aleja la vista para ver todo el segmento.",
+  zoomAtWhole: "Vista alejada. Acerca la vista a un cuarto.",
+  zoomAtQuarter: "Vista acercada a un cuarto. Aleja la vista.",
   micOffTitle: "Micrófono apagado",
   micRetry: "Intentar de nuevo",
   micBack: "Volver",
