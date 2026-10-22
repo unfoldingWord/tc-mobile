@@ -227,8 +227,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   reorderStayed: (n: number): string =>
     `El segmento ${n} se quedó donde estaba.`,
   chapterReorderLifted: (n: number): string => `Moviendo el capítulo ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `El capítulo ${from} ahora es el capítulo ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `El capítulo ${n} pasó al lugar ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `El capítulo ${n} se quedó donde estaba.`,
   bookReorderLifted: (heading: string): string => `Moviendo ${heading}.`,
@@ -299,6 +299,27 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareBookUnconfirmed:
     "Compartir libro. No se confirmó el último intento: toca para intentar de nuevo.",
   shareBookPreparing: "Preparando el libro para compartir.",
+  exportProject: "Exportar proyecto",
+  tileExport: "Exportar",
+  exportProjectPreparing: "Preparando el proyecto para exportar.",
+  languageAskTitle: "Idioma de este libro",
+  languageAskLead:
+    "¿En qué idioma están las grabaciones? Lo eliges una vez y cada exportación de este libro lo usa.",
+  languageSearch: "Buscar idiomas",
+  languageSearchHint: "Nombre o código",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Cargando los idiomas.",
+  languageLoadFailed: "No se pudieron cargar los idiomas.",
+  languageNoMatch: "Ningún idioma coincide. Prueba otro nombre o código.",
+  languageNarrow: "Escribe más para ver otros idiomas.",
+  languageSaving: "Guardando el idioma.",
+  languageAskCancel: "Cancelar",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
   shareBookNothing: "Graba un segmento antes de compartir este libro.",
   shareBookFailed: "No se pudo compartir este libro. Intenta de nuevo.",
   shareBookFailedWeb:
@@ -488,6 +509,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "Componentes de código abierto",
   aboutTexts: "Textos de licencias",
   aboutContent: "Contenido incluido",
+  aboutLanguageCodes: "Códigos de idioma: ISO 639-3, de iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Leer ${name}`,
   aboutBack: "Volver a la lista",
   aboutTextLoading: "Cargando el texto de la licencia.",
@@ -527,6 +549,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "No se pudo cargar. Intenta de nuevo.",
   saveFailed: "No se pudo guardar. Intenta de nuevo.",
   noRoom: "No queda espacio en este teléfono.",
+  bookNameTaken: "Otro libro tiene este nombre. Escribe un nombre distinto.",
   stopToEdit: "Detén la grabación para editar.",
   stopToErase: "Detén la grabación para restablecer.",
 

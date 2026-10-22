@@ -236,8 +236,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   reorderStayed: (n: number): string => `खंड ${n} अपनी जगह पर ही रहा।`,
   chapterReorderLifted: (n: number): string =>
     `अध्याय ${n} को ले जाया जा रहा है।`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `अध्याय ${from} अब अध्याय ${to} है।`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `अध्याय ${n} स्थान ${to} पर चला गया।`,
   chapterReorderStayed: (n: number): string =>
     `अध्याय ${n} अपनी जगह पर ही रहा।`,
   bookReorderLifted: (heading: string): string => `ले जाना: ${heading}`,
@@ -306,6 +306,27 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareBookUnconfirmed:
     "पुस्तक साझा करें। पिछला प्रयास पुष्ट नहीं हुआ — फिर से कोशिश करने के लिए टैप करें।",
   shareBookPreparing: "साझा करने के लिए पुस्तक तैयार की जा रही है।",
+  exportProject: "प्रोजेक्ट निर्यात करें",
+  tileExport: "निर्यात",
+  exportProjectPreparing: "निर्यात के लिए प्रोजेक्ट तैयार किया जा रहा है।",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
+  languageAskTitle: "इस पुस्तक की भाषा",
+  languageAskLead:
+    "ये रिकॉर्डिंग किस भाषा में हैं? आप इसे एक बार चुनते हैं, और इस पुस्तक का हर निर्यात इसी का उपयोग करता है।",
+  languageSearch: "भाषाएँ खोजें",
+  languageSearchHint: "नाम या कोड",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "भाषाएँ लोड हो रही हैं।",
+  languageLoadFailed: "भाषाएँ लोड नहीं हो सकीं।",
+  languageNoMatch: "कोई भाषा मेल नहीं खाती। कोई दूसरा नाम या कोड आज़माएँ।",
+  languageNarrow: "दूसरी भाषाएँ देखने के लिए और टाइप करें।",
+  languageSaving: "भाषा सहेजी जा रही है।",
+  languageAskCancel: "रद्द करें",
   shareBookNothing: "इस पुस्तक को साझा करने से पहले एक खंड रिकॉर्ड करें।",
   shareBookFailed: "यह पुस्तक साझा नहीं हो सकी। फिर से कोशिश करें।",
   shareBookFailedWeb:
@@ -491,6 +512,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "ओपन-सोर्स घटक",
   aboutTexts: "लाइसेंस के पाठ",
   aboutContent: "शामिल सामग्री",
+  aboutLanguageCodes: "भाषा कोड: ISO 639-3, iso639-3.sil.org से।",
   aboutReadText: (name: string): string => `${name} पढ़ें`,
   aboutBack: "सूची पर वापस जाएँ",
   aboutTextLoading: "लाइसेंस का पाठ लोड हो रहा है।",
@@ -526,6 +548,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "लोड नहीं हो सका। फिर से कोशिश करें।",
   saveFailed: "सहेजा नहीं जा सका। फिर से कोशिश करें।",
   noRoom: "इस फ़ोन में अब जगह नहीं बची।",
+  bookNameTaken: "इस नाम की एक और किताब पहले से है। कोई अलग नाम लिखें।",
   stopToEdit: "संपादित करने के लिए रिकॉर्डिंग रोकें।",
   stopToErase: "रीसेट करने के लिए रिकॉर्डिंग रोकें।",
 

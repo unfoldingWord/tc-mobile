@@ -25,6 +25,7 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
 import { CoverPicker } from "./cover-picker";
+import { LanguageAsk } from "./language-ask";
 import { CoverTile, O4BookHead, O4CoverPick } from "./o4-book-menu";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
@@ -37,6 +38,7 @@ import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
 import { shelfNoticeText } from "./shelf-notice-text";
+import { activeLocale } from "@/lib/locale";
 import { strings } from "@/lib/strings";
 import { SettingsPanel } from "./settings-panel";
 import { useChapterHeading } from "@/hooks/use-settings";
@@ -45,6 +47,7 @@ import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookCoverColour } from "@/hooks/use-book-cover-colour";
+import { useLanguageAsk, useLanguageList } from "@/hooks/use-language-ask";
 import { useBookShare } from "@/hooks/use-book-share";
 import type { ChapterAudio } from "@/hooks/use-audio-session";
 import { useBooks } from "@/hooks/use-books";
@@ -359,6 +362,16 @@ export function BooksScreen({
   // picker in place of its tiles. A mode of the same sheet, as rename is, so
   // it opens no layer of its own, and it resets every time the sheet closes.
   const [pickingCover, setPickingCover] = useState(false);
+  // #1492: Export project's language ask; reset whenever the sheet closes.
+  const {
+    askingFor: askingLanguageFor,
+    saving: savingLanguage,
+    failed: languageFailed,
+    ask: askLanguage,
+    cancel: cancelLanguageAsk,
+    choose: chooseLanguage,
+  } = useLanguageAsk();
+  const languageList = useLanguageList(askingLanguageFor !== null);
   // A failed cover write, scoped to the picker: the screen's Notice sits
   // behind the sheet's scrim, as rename's does.
   const [coverFailed, setCoverFailed] = useState<FailureKey | null>(null);
@@ -548,10 +561,11 @@ export function BooksScreen({
     setRenamingBook(false);
     setPickingCover(false);
     setCoverFailed(null);
+    cancelLanguageAsk();
     setSavingName(false);
     bookShare.reset();
     return true;
-  }, [bookShare, setSavingName]);
+  }, [bookShare, setSavingName, cancelLanguageAsk]);
 
   /**
    * Cancel / Escape / scrim / a system Back unmount the delete confirm with
@@ -1200,12 +1214,13 @@ export function BooksScreen({
       setShareMenuBookId(bookId);
       setPickingCover(false);
       setCoverFailed(null);
+      cancelLanguageAsk();
       // A different book's still-pending rename must not show THIS book's fresh
       // Confirm as busy before it has even been tapped (Frank r1, #384).
       setSavingName(false);
       layers.open("books:book-menu");
     },
-    [menuFocusRestore, layers, setSavingName]
+    [menuFocusRestore, layers, setSavingName, cancelLanguageAsk]
   );
   // Menu's actual `onClose`, and the one close every caller uses — see
   // `closeBookMenuState` above for what it does and why the share-overlay guard
@@ -1434,6 +1449,64 @@ export function BooksScreen({
     onCloseShareMenu,
     stopChapter,
   ]);
+  // Export project (#1457): the same tap-1 handling as Share Book above — the
+  // focus capture, the chapter stop, the rename-session bump, the chained
+  // close — through the same flow, handed a Scripture Bundle instead of the
+  // MP3 zip. A book with no language asks it first (#1492, R12); the export
+  // reads the stored book, so the tag reaches `metadata.json`.
+  const runBookExport = useCallback(
+    (bookId: BookId) => {
+      void bookShare
+        .prepareProject(bookId, {
+          filename: strings.exportProjectFilename(shareMenuBookName),
+          bookName: shareMenuBookName,
+          appVersion: __APP_VERSION__,
+          defaultLocale: activeLocale().tag,
+          exportedAt: Date.now(),
+        })
+        .then((outcome) => {
+          if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
+        });
+    },
+    [bookShare, shareMenuBookName, onCloseShareMenu]
+  );
+  const onPrepareBookExport = useCallback(() => {
+    if (!shareMenuBook) return;
+    focusRestore.capture();
+    stopChapter();
+    bookMenuSession.current += 1;
+    setSavingName(false);
+    if (!shareMenuBook.languageCode) {
+      askLanguage(shareMenuBook.bookId);
+      return;
+    }
+    runBookExport(shareMenuBook.bookId);
+  }, [
+    focusRestore,
+    setSavingName,
+    shareMenuBook,
+    stopChapter,
+    askLanguage,
+    runBookExport,
+  ]);
+  // The pick is stored once, then the export goes on; a failed write stays in
+  // the ask, and a closed or cancelled ask resolves null and exports nothing.
+  const onPickLanguage = useCallback(
+    (tag: string) => {
+      void chooseLanguage(tag).then((book) => {
+        if (!book) return;
+        reload();
+        runBookExport(book.id);
+      });
+    },
+    [chooseLanguage, reload, runBookExport]
+  );
+  // Cancel goes back to the tiles with nothing written and focus on Export.
+  const exportTileRef = useRef<HTMLButtonElement | null>(null);
+  const onCancelLanguage = useCallback(() => {
+    cancelLanguageAsk();
+    requestAnimationFrame(() => exportTileRef.current?.focus());
+  }, [cancelLanguageAsk]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
   // error Notice lives in the menu and must stay visible).
@@ -1603,11 +1676,19 @@ export function BooksScreen({
       setRenamingBook(false);
       setPickingCover(false);
       setCoverFailed(null);
+      cancelLanguageAsk();
       setSavingName(false);
       resetBookShare();
       layers.close("books:book-menu");
     });
-  }, [shareMenuBook, shareMenuBookId, layers, setSavingName, resetBookShare]);
+  }, [
+    shareMenuBook,
+    shareMenuBookId,
+    layers,
+    setSavingName,
+    resetBookShare,
+    cancelLanguageAsk,
+  ]);
   // Arm the delete ask from the book sheet's Delete tile. The sheet stays
   // open and its share is NOT reset (#980): the ask is about the same book
   // the sheet's share flow belongs to, so Keep returns to the sheet exactly
@@ -1785,8 +1866,8 @@ export function BooksScreen({
   // supplies the one write, the words and the focus.
   //
   // One write, on the drop: `moveChapter` (#1053) patches the card
-  // optimistically, renumbers the badges (names such as "Mark 6" stay, the
-  // DRI's pick), leaves the book where it is on the shelf (#953 scope Q4),
+  // optimistically, keeps each chapter's own number (#1272; names such as
+  // "Mark 6" stay too), leaves the book where it is on the shelf (#953 scope Q4),
   // and on failure puts the stored order back and reports "chapter-reorder",
   // with nothing extra on screen (#172). Every cancel writes nothing.
   //
@@ -1809,8 +1890,8 @@ export function BooksScreen({
       if (active === document.body || (node && node.contains(active))) {
         rowReveal.armFocus(row.chapterId);
       }
-      // Chapters renumber after a move, so the row's new number is its new
-      // position among the card's rows (the ones `moveChapter` indexes).
+      // A chapter keeps its own number (#1272), so the line says the position
+      // it landed in, among the card's rows (the ones `moveChapter` indexes).
       const moved = strings.chapterReorderMoved(row.number, toIndex + 1);
       setReorderStatus(moved);
       // A write that did not land puts the row back (`moveChapter` resolves
@@ -2376,7 +2457,7 @@ export function BooksScreen({
           // comes back here.
           <>
             <O4BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
-              {!pickingCover && (
+              {!pickingCover && askingLanguageFor === null && (
                 <Control
                   icon="pencil"
                   label={strings.renameBook}
@@ -2386,7 +2467,16 @@ export function BooksScreen({
                 />
               )}
             </O4BookHead>
-            {pickingCover ? (
+            {askingLanguageFor !== null ? (
+              <LanguageAsk
+                state={languageList.state}
+                onRetry={languageList.retry}
+                onPick={onPickLanguage}
+                onCancel={onCancelLanguage}
+                saving={savingLanguage}
+                error={languageFailed ? strings[languageFailed] : null}
+              />
+            ) : pickingCover ? (
               <O4CoverPick
                 selected={shareMenuCoverKey}
                 onSelect={onChooseCover}
@@ -2400,15 +2490,40 @@ export function BooksScreen({
                 scope="book"
                 controlRef={shareControlRef}
                 idleLabel={strings.shareBook}
-                preparingLabel={strings.shareBookPreparing}
+                preparingLabel={
+                  bookShare.kind === "project"
+                    ? strings.exportProjectPreparing
+                    : strings.shareBookPreparing
+                }
                 unconfirmedLabel={strings.shareBookUnconfirmed}
                 hasGap={bookShareHasGap}
                 gapText={bookShareGapText}
                 onPrepare={onPrepareBookShare}
                 onSend={onSendBookShare}
+                // Share, Export, Cover colour and Delete are four tiles: at
+                // the pinned 76 px they run past a 360 px sheet, so the row
+                // takes the compact size the segment menu's four use.
+                compact
                 tiles={{
                   after: (
                     <>
+                      {/* Off while a file is armed: Share now sends what was
+                          prepared, so Export cannot sit beside it as if it
+                          would swap the file in. */}
+                      {bookShare.status !== "ready" && (
+                        <Tile
+                          ref={exportTileRef}
+                          tone="send"
+                          icon="file-zip"
+                          label={strings.exportProject}
+                          caption={strings.tileExport}
+                          busy={
+                            bookShare.status === "preparing" &&
+                            bookShare.kind === "project"
+                          }
+                          onClick={onPrepareBookExport}
+                        />
+                      )}
                       <CoverTile
                         ref={coverTileRef}
                         coverHex={shareMenuCoverHex}
@@ -2763,8 +2878,8 @@ function ChapterItem({
  * New Chapter prompt offered (#609) when it has none. A chapter always has a
  * name to show (#1219), so the line is always drawn and the badge always steps
  * back behind it, as the design reference's §3 and §7 describe for a titled
- * row. The default is derived here at read time rather than stored, so a
- * reorder (#953) renumbers it with the badge. A title that was only spoken is
+ * row. The default is derived here at read time rather than stored, from the
+ * chapter's own number, which a reorder (#1272) does not change. A title that was only spoken is
  * tier 2 (after the training) and is not drawn here.
  */
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {

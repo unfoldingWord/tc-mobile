@@ -17,7 +17,7 @@ import {
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
-import { failureKey, type FailureKey } from "./save-failure";
+import { failureKey, isBookNameTaken, type FailureKey } from "./save-failure";
 import { bumpStoragePressure } from "./use-storage-pressure";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
@@ -62,6 +62,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     coverColourKey: book.coverColourKey,
     createdAt: book.createdAt,
     licence: book.licence,
+    languageCode: book.languageCode,
   };
 }
 
@@ -279,8 +280,8 @@ export function patchRenamedBook(
  * id) — and goes through the same `moveToIndex`, so the patch and the write
  * cannot put the row in different places.
  *
- * Numbers are renumbered densely, as the store does (the DRI's "Renumber"
- * pick): the badge a row shows is its position + 1. Names are untouched.
+ * Numbers are kept, as the store keeps them (#1272, U2a): the badge a row
+ * shows is the chapter's own number, whatever its position. Names are untouched.
  *
  * The card keeps its index on the shelf, as every patch here does (#1185).
  *
@@ -304,11 +305,8 @@ export function patchMovedChapter(
   if (moved.every((row, i) => row === original.chapters[i])) {
     return books as BookCard[]; // dropped where it started
   }
-  const chapters = moved.map((row, i) =>
-    row.number === i + 1 ? row : { ...row, number: i + 1 }
-  );
   const next = books.slice();
-  next[index] = { ...original, chapters };
+  next[index] = { ...original, chapters: moved };
   return next;
 }
 
@@ -631,6 +629,7 @@ export function useBooks() {
             coverColourKey: book.coverColourKey,
             createdAt: book.createdAt,
             licence: book.licence,
+            languageCode: book.languageCode,
           },
           ...prev,
         ]);
@@ -640,7 +639,10 @@ export function useBooks() {
         // #172: this site had no funnel report before this PR — the reason
         // reached only the New Book dialog's own scoped Notice, and only as
         // the raw store string.
-        reportFailure(cause, "books-create");
+        // A taken name is the translator's to fix by typing another, not a
+        // fault: it speaks in the dialog and is not written to the problem
+        // report (#1272).
+        if (!isBookNameTaken(cause)) reportFailure(cause, "books-create");
         return {
           ok: false,
           key: failureKey(cause, "saveFailed"),
@@ -772,7 +774,11 @@ export function useBooks() {
           cause,
           bookId,
           (reported) => {
-            reportFailure(reported, "books-rename");
+            // Not a fault when the name is taken (#1272): it shows in the
+            // sheet and stays out of the problem report.
+            if (!isBookNameTaken(reported)) {
+              reportFailure(reported, "books-rename");
+            }
             loadGen.current += 1;
             report(reported);
           }
@@ -791,7 +797,7 @@ export function useBooks() {
    * Move a chapter to an absolute position in its book (#953) — the storage
    * half of press-and-hold reorder; the gesture that calls it is a later PR.
    *
-   * Optimistic: the row moves (and the badges renumber) in THIS turn via
+   * Optimistic: the row moves (its badge keeps the chapter's own number) in THIS turn via
    * `patchMovedChapter`, and the generation is bumped in the same step, so a
    * load already in flight — which read the pre-move order — is discarded
    * rather than snapping the row back over the patch (the `isLoadCurrent`

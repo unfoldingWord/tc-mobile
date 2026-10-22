@@ -1,0 +1,219 @@
+{
+  "_source": "constructed: apk-staging-built.view with the signing job renamed",
+  "jobs": [
+    {
+      "completedAt": "2026-10-20T16:25:15Z",
+      "conclusion": "success",
+      "databaseId": 118747272554,
+      "name": "Preflight (promotion or dispatch)",
+      "startedAt": "2026-10-20T16:25:13Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-20T16:25:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Build a promotion merge, or a dispatch from staging/main",
+          "number": 2,
+          "startedAt": "2026-10-20T16:25:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-10-20T16:25:14Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/39457261742/job/118747272554"
+    },
+    {
+      "completedAt": "2026-10-20T17:13:59Z",
+      "conclusion": "success",
+      "databaseId": 118747311590,
+      "name": "Build signed APK",
+      "startedAt": "2026-10-20T17:11:03Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-20T17:11:07Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-20T17:11:04Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:07Z",
+          "conclusion": "success",
+          "name": "Require all four secrets",
+          "number": 2,
+          "startedAt": "2026-10-20T17:11:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:09Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-20T17:11:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:16Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 4,
+          "startedAt": "2026-10-20T17:11:09Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:17Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
+          "number": 5,
+          "startedAt": "2026-10-20T17:11:16Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:17Z",
+          "conclusion": "success",
+          "name": "Assert the toolchain this project compiles against",
+          "number": 6,
+          "startedAt": "2026-10-20T17:11:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:22Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 7,
+          "startedAt": "2026-10-20T17:11:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:25Z",
+          "conclusion": "success",
+          "name": "Build the web bundle",
+          "number": 8,
+          "startedAt": "2026-10-20T17:11:22Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:25Z",
+          "conclusion": "success",
+          "name": "OBS thumbnails stay out of the precache (web build; ADR 0006 /",
+          "number": 9,
+          "startedAt": "2026-10-20T17:11:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:26Z",
+          "conclusion": "success",
+          "name": "Rebuild and check dist/ for the native shell (self-destroying service worker,",
+          "number": 10,
+          "startedAt": "2026-10-20T17:11:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:27Z",
+          "conclusion": "success",
+          "name": "Sync dist/ into the Android project",
+          "number": 11,
+          "startedAt": "2026-10-20T17:11:26Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:42Z",
+          "conclusion": "success",
+          "name": "Exercise the native diagnostic gate",
+          "number": 12,
+          "startedAt": "2026-10-20T17:11:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:42Z",
+          "conclusion": "success",
+          "name": "Guard the synced bundle",
+          "number": 13,
+          "startedAt": "2026-10-20T17:12:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:43Z",
+          "conclusion": "success",
+          "name": "Write the signing keystore",
+          "number": 14,
+          "startedAt": "2026-10-20T17:12:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:13:54Z",
+          "conclusion": "success",
+          "name": "Build the release APK",
+          "number": 15,
+          "startedAt": "2026-10-20T17:12:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:13:54Z",
+          "conclusion": "success",
+          "name": "Remove the decoded keystore",
+          "number": 16,
+          "startedAt": "2026-10-20T17:13:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:13:56Z",
+          "conclusion": "success",
+          "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "number": 17,
+          "startedAt": "2026-10-20T17:13:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:13:56Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
+          "number": 32,
+          "startedAt": "2026-10-20T17:13:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:13:56Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 33,
+          "startedAt": "2026-10-20T17:13:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:13:56Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 34,
+          "startedAt": "2026-10-20T17:13:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:13:56Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 35,
+          "startedAt": "2026-10-20T17:13:56Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/39457261742/job/118747311590"
+    }
+  ]
+}

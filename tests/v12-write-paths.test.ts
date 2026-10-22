@@ -190,9 +190,9 @@ const CASES: readonly Case[] = [
     stamped: [],
   },
   {
-    write: "moveChapter (the book's order and both renumbered chapters)",
+    write: "moveChapter (the book's order only; no chapter row is put)",
     act: (s) => moveChapter(s.ids.c2, 0),
-    stamped: ["A", "c1", "c2"],
+    stamped: ["A"],
   },
   {
     write: "moveChapter to where it is (no put)",

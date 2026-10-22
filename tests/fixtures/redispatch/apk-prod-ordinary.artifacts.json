@@ -1,0 +1,10 @@
+{
+  "_source": "constructed: an unexpired ordinary artifact for the main run at d0eb5456 (its real listing is expired)",
+  "total_count": 1,
+  "artifacts": [
+    {
+      "name": "android-apk-d0eb5456ff053bf036984c113d507c6dc98cc33a",
+      "expired": false
+    }
+  ]
+}

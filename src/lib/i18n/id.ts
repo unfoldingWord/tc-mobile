@@ -214,8 +214,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Segmen ${from} sekarang menjadi segmen ${to}.`,
   reorderStayed: (n: number): string => `Segmen ${n} tetap di tempatnya.`,
   chapterReorderLifted: (n: number): string => `Memindahkan pasal ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Pasal ${from} sekarang menjadi pasal ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Pasal ${n} dipindahkan ke urutan ${to}.`,
   chapterReorderStayed: (n: number): string => `Pasal ${n} tetap di tempatnya.`,
   bookReorderLifted: (heading: string): string => `Memindahkan ${heading}.`,
   bookReorderMoved: (heading: string, to: number): string =>
@@ -277,6 +277,27 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareBookUnconfirmed:
     "Bagikan buku. Percobaan terakhir belum terkonfirmasi: ketuk untuk mencoba lagi.",
   shareBookPreparing: "Menyiapkan buku untuk dibagikan.",
+  exportProject: "Ekspor proyek",
+  tileExport: "Ekspor",
+  exportProjectPreparing: "Menyiapkan proyek untuk diekspor.",
+  languageAskTitle: "Bahasa buku ini",
+  languageAskLead:
+    "Rekaman ini dalam bahasa apa? Kamu memilihnya sekali, dan setiap ekspor buku ini memakainya.",
+  languageSearch: "Cari bahasa",
+  languageSearchHint: "Nama atau kode",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Memuat daftar bahasa.",
+  languageLoadFailed: "Daftar bahasa tidak dapat dimuat.",
+  languageNoMatch: "Tidak ada bahasa yang cocok. Coba nama atau kode lain.",
+  languageNarrow: "Ketik lagi untuk melihat bahasa lain.",
+  languageSaving: "Menyimpan bahasa.",
+  languageAskCancel: "Batal",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
   shareBookNothing: "Rekam satu segmen sebelum membagikan buku ini.",
   shareBookFailed: "Buku ini tidak dapat dibagikan. Coba lagi.",
   shareBookFailedWeb:
@@ -447,6 +468,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "Komponen sumber terbuka",
   aboutTexts: "Teks lisensi",
   aboutContent: "Konten bawaan",
+  aboutLanguageCodes: "Kode bahasa: ISO 639-3, dari iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Baca ${name}`,
   aboutBack: "Kembali ke daftar",
   aboutTextLoading: "Memuat teks lisensi.",
@@ -476,6 +498,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "Tidak dapat dimuat. Coba lagi.",
   saveFailed: "Tidak dapat disimpan. Coba lagi.",
   noRoom: "Tidak ada ruang lagi di ponsel ini.",
+  bookNameTaken: "Buku lain memakai nama ini. Ketik nama yang berbeda.",
   stopToEdit: "Hentikan rekaman untuk mengedit.",
   stopToErase: "Hentikan rekaman untuk menyetel ulang.",
 

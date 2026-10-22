@@ -332,55 +332,34 @@ freeze note on every new PR to `develop`.
    which uploads a **draft** to the internal track. Record its release name.
    The DRI releases that draft in the Play Console if wanted.
 7. **Native builds from one commit.** The staging push starts
-   [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
-   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) on its
-   own (#1281): confirm that both runs started at `PROMO_SHA`
-   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch staging --json databaseId,headSha,event,status`),
-   with `event` `push` and no dispatch. A green run is not a build: a push
-   the preflight did not read as a promotion still makes a successful run,
-   with the signing job `skipped`. So read each run's signing job
-   (`Build release APK`, `Build and upload to TestFlight`) with
-   `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
-   `skipped` means the lane did not start, and only `success` is a build.
-   A run at `PROMO_SHA` that is `cancelled` was replaced while pending
-   (one signing job runs at a time across both branches; a later push or
-   dispatch took the single pending slot) and did not start. Read the tip
-   before deciding: if `origin/staging` has moved past `PROMO_SHA`, stop.
-   **Before any dispatch of a lane** (a `cancelled` run, or a lane that did
-   not start), make both reads. (1) **Already built?** List the lane's runs
-   at that commit, on any branch and from any event:
-   `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`.
-   Read each one's signing job as above; the run's `conclusion` is not the
-   signing job's (a run whose signing job was `skipped` still concludes
-   `success`). A `success` counts only if it is an ordinary build: for the
-   APK lane, the run's artifact must be `android-apk-<PROMO_SHA>`, not
-   `android-apk-diagnostic-<PROMO_SHA>`
-   (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
-   a diagnostic APK is not a training build. If an ordinary build concluded
-   `success`, `PROMO_SHA` is already built: stop, and record that run
-   instead. (2) **Lane free?** The group carries no branch, so a `main` run,
-   which the `--commit` read does not list, can hold the slot or replace a
-   pending dispatch. List the lane's recent runs on every branch
-   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
-   and wait until every one is `completed`. A run that was still open at the
-   first read may have built `PROMO_SHA` while you waited, so repeat read (1)
-   now; if an ordinary build has since concluded `success`, stop and record
-   that run. The wait can move the tip, and `--ref staging` builds the tip
-   at dispatch, so immediately before dispatching re-read the canonical tip
-   (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`);
-   if it is not exactly `PROMO_SHA`, stop. Only if (1) still finds none and
-   the tip is still `PROMO_SHA` does the DRI dispatch it, and
-   the agent re-reads the new run until its signing job has started (an
-   empty conclusion on an open run). A dispatch `cancelled` while pending
-   goes back to the two reads. While `release-signing` still has a
-   required reviewer (#1281's transition window), each signing job waits for
-   the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
-   equal `PROMO_SHA`, and so do the web and Play builds: every channel must
-   come from that one commit. If not, stop and re-promote. Do not mix refs.
-   If a lane did not start, the DRI dispatches it from `staging` by hand
-   after the two reads above
-   (`gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`) —
-   human-only — and the cause is a finding.
+   [`android-apk.yml`](../../.github/workflows/android-apk.yml),
+   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) and
+   [`android-play.yml`](../../.github/workflows/android-play.yml) on its own
+   (#1281). Whether each lane built `PROMO_SHA`, and whether a lane may be
+   dispatched again by hand, is decided by one read-only script and nowhere
+   else, [`scripts/check-redispatch.mjs`](../../scripts/check-redispatch.mjs)
+   (#1636): for each lane,
+   `npm run check:redispatch -- --lane <apk|play|testflight> --sha <PROMO_SHA>`
+   with the full oid. Its lines name each run at `PROMO_SHA` `built`,
+   `not built`, `started` or `unknown`; record the `built` run. The DRI
+   dispatches a lane (human-only) only after its last line reads
+   `OK to dispatch <lane>`, with that lane's own workflow file — `apk` is
+   `gh workflow run android-apk.yml --repo unfoldingWord/tc-mobile --ref staging`,
+   `play` is
+   `gh workflow run android-play.yml --repo unfoldingWord/tc-mobile --ref staging`,
+   `testflight` is
+   `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`;
+   then the agent reruns it with `--known=<the ids the OK line lists>` until
+   it prints `STARTED`. An OK line with no `(runs at the commit before: …)`
+   lists no ids: the rerun is then `--known=`, with nothing after the `=`.
+   That rerun is the `STARTED` / `WAIT` / `STOP` follow-up; never rerun the
+   form without `--known` after a dispatch, which can print
+   `OK to dispatch` again before GitHub lists the new run. Any `STOP:` line means no dispatch: tell the DRI its
+   reason. A lane that did not start on its own is a finding. While
+   `release-signing` still has a required reviewer (#1281's transition
+   window), each signing job waits for the DRI's approval; once it is
+   removed, no approval either. Every channel, web included, must come from
+   that one commit. If not, stop and re-promote. Do not mix refs.
 8. **Check the APK before publishing.**
    - The signer certificate SHA-256 equals the previous RC's. If not, stop and tell the DRI. Do not publish. Uninstall is not the remedy: uninstalling deletes recordings.
    - The embedded `assets/public/version.json` shows version `1.0.0-rc.N` and
@@ -434,19 +413,21 @@ threads hold the red-team summaries and publish records.
 
 ## 4. Native candidate and durable delivery
 
-The `staging → main` merge starts the
-[iOS](../../.github/workflows/ios-testflight.yml) and
-[Android](../../.github/workflows/android-apk.yml) lanes on `main` on its own
-(#1281); the `release-signing` environment admits them because they run on
-`main`. Confirm both runs started at the production merge commit (the one
-`v1.0.0` tags) with `event` `push`, and that each run's signing job
-concluded `success`, not `skipped` (the §3a step 7 check, with `PROD_SHA`
-for `PROMO_SHA` and `main` for `staging`; a success at `PROMO_SHA` is the
-RC, not this build). Record each run's resolved SHA and
+The `staging → main` merge starts three lanes on `main` on its own:
+[`android-apk.yml`](../../.github/workflows/android-apk.yml) and
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) (#1281;
+the `release-signing` environment admits them because they run on `main`),
+and [`android-play.yml`](../../.github/workflows/android-play.yml) (its
+`play-upload` environment, to the closed-testing track). Confirm all three
+runs started at the production merge commit (the one `v1.0.0` tags) with
+`event` `push`, and that each run
+is `built` (§3a step 7's script, with `--sha <PROD_SHA> --branch main`; a
+build at `PROMO_SHA` is the RC, not this build). Record each run's resolved SHA and
 require it to equal `v1.0.0` before accepting its artifact. If `main` moved,
 stop and select an explicitly approved ref strategy; do not label a different
 build as the tagged release. A manual rebuild, if one is ever needed, is the
-DRI's dispatch from the `main` branch.
+DRI's dispatch from the `main` branch: §3a step 7's command for that lane,
+with `--ref main` in place of `--ref staging`.
 
 The lanes build `staging` and `main` only, never an arbitrary tag: both
 preflights refuse a tag and any other branch, and the environment's branch
