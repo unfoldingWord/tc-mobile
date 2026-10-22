@@ -75,6 +75,7 @@ npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming
 npm run check:deploy:prod # confirm a staging -> main deploy; checks both production origins, each named explicitly
 npm run check:prepush  # review-bench findings on this branch's commits and added lines; runs in pre-push. Checklist: .claude/skills/tc-prepush
 npm run check:pr-body  # the PR-body gate on a draft: -- --body-file <path>; CI runs it as the PR Body check
+npm run check:redispatch -- --lane <apk|play|testflight> --sha <oid>  # did a native lane build it, and may it be dispatched again? Read-only, never dispatches; runbook §3a step 7
 npm run collateral     # pre-fill the seven Collateral surfaces from origin/develop...HEAD; a hint, not a verdict
 ```
 
