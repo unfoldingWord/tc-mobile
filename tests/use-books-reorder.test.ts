@@ -63,12 +63,12 @@ describe("patchMovedChapter", () => {
     card("second", [row("b", 1), row("c", 2), row("d", 3)]),
   ];
 
-  it("moves the row within its card and renumbers the badges densely", () => {
+  it("moves the row within its card and keeps each badge's own number (#1272)", () => {
     const next = patchMovedChapter(shelf, "d" as ChapterId, 0);
     expect(next[1]!.chapters.map((r) => [r.chapterId, r.number])).toEqual([
-      ["d", 1],
-      ["b", 2],
-      ["c", 3],
+      ["d", 3],
+      ["b", 1],
+      ["c", 2],
     ]);
   });
 
@@ -138,7 +138,7 @@ const rowsOf = (bookId: BookId) =>
     .chapters.map((r) => [r.chapterId, r.number]);
 
 describe("useBooks().moveChapter (#953)", () => {
-  it("moves and renumbers the rows, writes the store, and keeps the shelf order", async () => {
+  it("moves the rows, keeps their own numbers, writes the store, and keeps the shelf order", async () => {
     const { bookId, chapterIds } = await mountShelf();
     const [c1, c2, c3] = chapterIds as [ChapterId, ChapterId, ChapterId];
     const shelfBefore = hook().books.map((c) => c.bookId);
@@ -151,9 +151,9 @@ describe("useBooks().moveChapter (#953)", () => {
     expect(ok).toBe(true);
     await vi.waitFor(() =>
       expect(rowsOf(bookId)).toEqual([
-        [c3, 1],
-        [c1, 2],
-        [c2, 3],
+        [c3, 3],
+        [c1, 1],
+        [c2, 2],
       ])
     );
     expect((await getBook(bookId))!.chapterIds).toEqual([c3, c1, c2]);
@@ -179,9 +179,9 @@ describe("useBooks().moveChapter (#953)", () => {
     // The store applied c3 -> 0 to ITS order [c2, c3, c1]: [c3, c2, c1].
     await vi.waitFor(() =>
       expect(rowsOf(bookId)).toEqual([
-        [c3, 1],
+        [c3, 3],
         [c2, 2],
-        [c1, 3],
+        [c1, 1],
       ])
     );
   });
@@ -283,9 +283,9 @@ describe("useBooks().moveChapter (#953)", () => {
       );
     });
     expect(rowsOf(bookId)).toEqual([
-      [c3, 1],
-      [c1, 2],
-      [c2, 3],
+      [c3, 3],
+      [c1, 1],
+      [c2, 2],
     ]);
 
     await act(async () => {

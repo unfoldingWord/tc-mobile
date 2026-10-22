@@ -706,13 +706,13 @@ export const stringsEn = {
     `Segment ${from} is now segment ${to}.`,
   reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
   // The same three lines for a chapter on the Books screen (#953 PR2b). Said
-  // by the chapter's number, which is what renumbers: a typed name such as
-  // "Mark 6" stays as it is (the DRI's pick), so it would not say where the
-  // chapter landed. Whole sentences (#1483): each says "chapter" in its own
+  // by the chapter's number, which a move keeps (#1272, U2a), and then by the
+  // position it landed in; a typed name such as "Mark 6" stays as it is (the
+  // DRI's pick), so it would not say which chapter moved. Whole sentences (#1483): each says "chapter" in its own
   // words rather than wrapping `chapterName`'s.
   chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Chapter ${from} is now chapter ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Chapter ${n} moved to place ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `Chapter ${n} stayed where it was.`,
   // The same three lines for a book on the Books screen (#338). Said by the

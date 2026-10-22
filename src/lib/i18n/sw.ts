@@ -237,8 +237,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Kipande ${from} sasa ni kipande ${to}.`,
   reorderStayed: (n: number): string => `Kipande ${n} kilibaki mahali pake.`,
   chapterReorderLifted: (n: number): string => `Inahamisha sura ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Sura ${from} sasa ni sura ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Sura ${n} imehamishiwa nafasi ya ${to}.`,
   chapterReorderStayed: (n: number): string => `Sura ${n} ilibaki mahali pake.`,
   bookReorderLifted: (heading: string): string => `Inahamisha ${heading}.`,
   bookReorderMoved: (heading: string, to: number): string =>
