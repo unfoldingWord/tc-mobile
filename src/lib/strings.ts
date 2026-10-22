@@ -403,8 +403,8 @@ export const stringsEn = {
   // the window is [0.5L, 1.5L] (the append view `viewportWindow`'s own test
   // pins). Zoom and pan are independent, so no label on this button can honestly
   // promise an extent (Frank + George, round 1 — both lenses, independently).
-  zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
-  zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
+  zoomAtWhole: "Zoomed out. Zoom in to a quarter.",
+  zoomAtQuarter: "Zoomed in to a quarter. Zoom out.",
   // The mic-denied title (D15, #948), from the O4 original.
   micOffTitle: "Microphone is off",
   micRetry: "Try again",

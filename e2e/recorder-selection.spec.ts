@@ -106,13 +106,13 @@ test.describe("handle targets after a zoom fit", () => {
       await expect(startHandle).toBeVisible();
       await page
         .getByRole("button", {
-          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          name: "Zoomed out. Zoom in to a quarter.",
           exact: true,
         })
         .click();
       await expect(
         page.getByRole("button", {
-          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          name: "Zoomed out. Zoom in to a quarter.",
           exact: true,
         })
       ).toHaveCount(0);
@@ -414,7 +414,7 @@ test.describe("edit mode toggle", () => {
       if (width === 390) {
         await page
           .getByRole("button", {
-            name: "Zoomed to the whole segment. Zoom in to a quarter.",
+            name: "Zoomed out. Zoom in to a quarter.",
             exact: true,
           })
           .click();
@@ -706,7 +706,7 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
       await clickEditRecording(page);
       await page
         .getByRole("button", {
-          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          name: "Zoomed out. Zoom in to a quarter.",
           exact: true,
         })
         .click();
