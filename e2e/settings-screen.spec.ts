@@ -68,6 +68,17 @@ test("the gear opens Settings, Back to books closes it, and focus returns to the
   await expect(settings(page)).toHaveCount(0);
 });
 
+test("the browser's Back closes Settings and stays on Books", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await gear(page).click();
+  await expect(settings(page)).toBeVisible();
+  await page.goBack();
+  await expect(settings(page)).toHaveCount(0);
+  await expect(gear(page)).toBeVisible();
+});
+
 test("the theme moved: the ≡ menu no longer holds it, Settings does, and it repaints", async ({
   page,
 }) => {

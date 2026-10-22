@@ -56,7 +56,7 @@ describe("the gear icon (#1575)", () => {
     expect(gear.querySelectorAll("path, circle").length).toBeGreaterThan(0);
     // The theme row sits beside the gear's screen; two near-identical glyphs
     // would be the confusion the drawing is made to avoid.
-    expect(gear.innerHTML).not.toBe(sun.innerHTML);
+    expect(gear.innerHTML === sun.innerHTML).toBe(false);
   });
 });
 
