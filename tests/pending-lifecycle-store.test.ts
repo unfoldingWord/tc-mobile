@@ -76,6 +76,7 @@ const take = (
   offset: 0,
   finished: false,
   editOnly: false,
+  baseRevision: 0,
   ...overrides,
 });
 
@@ -131,9 +132,9 @@ afterEach(() => {
 });
 
 describe("the hold (§3, seven steps)", () => {
-  it("writes the row with the segment's revision as its base", async () => {
+  it("writes the row with the revision its take was read at", async () => {
     const { segmentId } = await keptSegment();
-    const t = take(segmentId);
+    const t = take(segmentId, { baseRevision: 1 });
     expect(await writePendingTake(t)).toEqual({ ok: true, outcome: "written" });
     const [row] = await rowsNow();
     expect(row?.clipId).toBe(t.clipId);
@@ -248,6 +249,55 @@ describe("the hold (§3, seven steps)", () => {
       source: meta,
     });
     expect((await rowsNow())[0]?.base.kind).toBe("inline");
+  });
+});
+
+describe("the hold stamps the revision the base was read at (George r1 on #1618)", () => {
+  /**
+   * Cell HM in the note's §5: the editor read K's audio at revision r, then
+   * another copy erased or replaced K before this copy's hold ran. The row
+   * must name r, the revision its base belongs to, so the replay (PR 3) sees
+   * the move; stamping the hold's own live read would claim the newer base.
+   */
+  it.each([
+    ["an erase", (segmentId: SegmentId) => clearSegmentTake(segmentId)],
+    [
+      "a save",
+      (segmentId: SegmentId) =>
+        saveTake(segmentId, newClipId(), ramp(40), RATE).then(() => {}),
+    ],
+  ])(
+    "%s that commits between the base read and the hold leaves the row on the base's revision",
+    async (_name, move) => {
+      const { segmentId, pcm } = await keptSegment();
+      const observed = (await getSegment(segmentId))!.audioRevision;
+      await move(segmentId);
+      const live = (await getSegment(segmentId))!.audioRevision;
+      expect(live).toBe(observed + 1);
+
+      expect(
+        await writePendingTake({
+          ...take(segmentId, { existing: pcm }),
+          baseRevision: observed,
+        })
+      ).toEqual({ ok: true, outcome: "written" });
+      // What the replay will compare: the row at `observed`, the segment at
+      // `observed + 1`, so the verdict is `moved`.
+      expect((await rowsNow())[0]?.baseRevision).toBe(observed);
+      expect((await getSegment(segmentId))?.audioRevision).toBe(observed + 1);
+    }
+  );
+
+  it("holds a take whose revision is unknown with none, as a legacy row", async () => {
+    // Fail-safe: the replay refuses a row with no revision (`legacy`, RP-P)
+    // and keeps it, so the audio survives and is never spliced on a guess.
+    const { segmentId } = await keptSegment();
+    expect(
+      await writePendingTake(take(segmentId, { baseRevision: null }))
+    ).toEqual({ ok: true, outcome: "written" });
+    const [row] = await rowsNow();
+    expect(row).toBeDefined();
+    expect(row).not.toHaveProperty("baseRevision");
   });
 });
 

@@ -56,6 +56,7 @@ const take = (
   offset: 0,
   finished: false,
   editOnly: false,
+  baseRevision: 0,
   ...overrides,
 });
 

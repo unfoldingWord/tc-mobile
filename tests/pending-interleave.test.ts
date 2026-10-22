@@ -421,6 +421,8 @@ async function seed(scenario: Scenario): Promise<World> {
     finished: scenario.finished ?? false,
   });
   const kept = (await db.get("clipMeta", keptId))!;
+  // The revision every take's base was read at: the kept take's.
+  const observed = (await db.get("segments", segment.id))!.audioRevision;
 
   const takes: Record<string, NewTake> = {};
   for (const [letter, { stored }] of Object.entries(scenario.takes)) {
@@ -433,6 +435,7 @@ async function seed(scenario: Scenario): Promise<World> {
       offset: stored ? FRAMES : 0,
       finished: false,
       editOnly: false,
+      baseRevision: observed,
     };
   }
   const live = (letters: string[]): Live => ({

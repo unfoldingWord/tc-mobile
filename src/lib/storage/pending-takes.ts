@@ -173,6 +173,14 @@ type HoldTx = ReturnType<typeof openHoldTx>;
  * the put with `baseRevision`, and the Discard request again in the put's own
  * success turn, with `commit()` there so no further window opens.
  *
+ * `baseRevision` is the take's own, the segment's `audioRevision` read with
+ * the audio `existing` came from, never this transaction's read of the
+ * segment: an erase or save that landed between the base read and the hold
+ * must stay visible to a replay, which then judges the row `moved` (cell HM,
+ * George r1 on #1618). A take that does not know its revision (`null`) is
+ * held with none, so a replay refuses it the way it refuses a row from
+ * before v13 (`legacy`), and the audio is kept rather than spliced.
+ *
  * `source` is the stored clip behind `existing`, passed only when the buffer
  * is that clip unchanged. It becomes a `stored` base only if the clip checks
  * out inside this transaction; otherwise the base is `inline`.
@@ -240,13 +248,19 @@ async function holdInTx(
     finished: take.finished,
     editOnly: take.editOnly,
     createdAt: opts.now ?? Date.now(),
-    baseRevision: segment.audioRevision,
+    ...(take.baseRevision === null ? {} : { baseRevision: take.baseRevision }),
   };
   await rows.put(row);
   // The put's success turn: no tap can run between this check and the
   // commit below.
   const discarded = requested();
-  if (discarded) void rows.delete(take.segmentId);
+  if (discarded) {
+    // Not awaited: an await would end this turn before `commit()`. A failed
+    // delete aborts the transaction, and `tx.done` carries that to the caller
+    // as `ok: false`; this handler only stops the same failure surfacing a
+    // second time as an unhandled rejection.
+    rows.delete(take.segmentId).catch(() => {});
+  }
   tx.commit();
   return discarded ? "discarded" : "written";
 }
@@ -365,6 +379,7 @@ async function readRecipe(
       offset: row.offset,
       finished: row.finished,
       editOnly: row.editOnly,
+      baseRevision: row.baseRevision ?? null,
     },
   };
 }

@@ -88,6 +88,13 @@ export interface PendingTake {
    * survives, so "delete this recording for good" is only true of a recording.
    */
   readonly editOnly: boolean;
+  /**
+   * The segment's `audioRevision` read with the audio `existing` came from,
+   * or `null` when the caller does not know it. The hold stamps this, never
+   * its own live read, so a replay sees an erase or save that landed between
+   * the base read and the hold (George r1 on #1618).
+   */
+  readonly baseRevision: number | null;
   readonly state: "saving" | "failed";
   readonly kind: SaveFailureKind | null;
   /** Failures so far. Zero means the first attempt is still in flight. */
@@ -107,6 +114,8 @@ export interface NewTake {
   readonly finished: boolean;
   /** Whether this is an edit-only save rather than a recording (see `PendingTake`). */
   readonly editOnly: boolean;
+  /** The revision `existing` was read at, or `null` (see `PendingTake`). */
+  readonly baseRevision: number | null;
 }
 
 /**
@@ -131,6 +140,7 @@ export function startSave(
     offset: take.offset,
     finished: take.finished,
     editOnly: take.editOnly,
+    baseRevision: take.baseRevision,
     state: "saving",
     kind: null,
     attempts: 0,

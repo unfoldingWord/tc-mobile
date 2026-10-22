@@ -19,6 +19,7 @@ import {
   type PendingTake,
 } from "@/lib/takes/pending-take";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { withObservedRevision } from "./observed-revision";
 import { reportFailure } from "./report-failure";
 import { saveFailureKind } from "./save-failure";
 import type { ClipId, SegmentId } from "@/types/domain";
@@ -399,19 +400,24 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // the recovery screen's wording depends on it — the save itself is identical.
       editOnly = false
     ): Promise<boolean> => {
-      const take = startSave(pending, {
-        segmentId,
-        ordinal,
-        // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
-        // retry with the same id overwrites the bytes a failed attempt may
-        // already have written instead of spending the space twice.
-        clipId: newClipId(),
-        existing,
-        recorded,
-        offset: insertionOffset,
-        finished,
-        editOnly,
-      });
+      // The revision `existing` was read at, not one read now: the hold stamps
+      // it, so a replay sees a move since (cell HM).
+      const take = startSave(
+        pending,
+        withObservedRevision({
+          segmentId,
+          ordinal,
+          // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
+          // retry with the same id overwrites the bytes a failed attempt may
+          // already have written instead of spending the space twice.
+          clipId: newClipId(),
+          existing,
+          recorded,
+          offset: insertionOffset,
+          finished,
+          editOnly,
+        })
+      );
       // Identity means refused: a recording is already held, and displacing it
       // is the silent loss all of this exists to prevent. The screens disable
       // recording while a take is held, so reaching this is an invariant break.

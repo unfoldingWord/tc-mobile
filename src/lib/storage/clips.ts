@@ -112,9 +112,15 @@ export type ClipUseTx = IDBPTransaction<
  * row is a complete recipe only while its base clip exists, so a base is a use
  * exactly as a take is (docs/design/pending-take-lifecycle.md, §3).
  */
-async function clipInUse(tx: ClipUseTx, clipId: ClipId): Promise<boolean> {
-  const takes = await tx.objectStore("takes").getAll();
-  if (takes.some((t) => t.clipId === clipId)) return true;
+async function clipInUse(
+  tx: ClipUseTx,
+  clipId: ClipId,
+  takeClips?: ReadonlySet<ClipId>
+): Promise<boolean> {
+  const named =
+    takeClips ??
+    new Set((await tx.objectStore("takes").getAll()).map((t) => t.clipId));
+  if (named.has(clipId)) return true;
   const bases = tx.objectStore("pendingTakes").index("bySourceClip");
   return (await bases.count(clipId)) > 0;
 }
@@ -132,12 +138,18 @@ async function clipInUse(tx: ClipUseTx, clipId: ClipId): Promise<boolean> {
  * `newClipId()`), but nothing in the schema forbids it either, and an
  * unconditional delete would then punch a hole in another segment:
  * unrecoverable audio loss (#68, Frank R4).
+ *
+ * `takeClips` is the set of clips the surviving take rows name, for a caller
+ * that releases many clips in one transaction and has deleted every take row
+ * it is going to (the book delete): one read of `takes` instead of one per
+ * clip. The pending-row count is still made per clip.
  */
 export async function deleteClipIfUnreferenced(
   tx: ClipUseTx,
-  clipId: ClipId
+  clipId: ClipId,
+  takeClips?: ReadonlySet<ClipId>
 ): Promise<void> {
-  if (await clipInUse(tx, clipId)) return;
+  if (await clipInUse(tx, clipId, takeClips)) return;
   await tx.objectStore("clipMeta").delete(clipId);
   await tx.objectStore("clipData").delete(clipId);
 }

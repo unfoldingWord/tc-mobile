@@ -2,14 +2,20 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { withObservedRevision } from "@/hooks/observed-revision";
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
+import { writePendingTake } from "@/lib/storage/pending-takes";
 import {
   addChapter,
   addSegment,
   createBook,
   renameSegment,
 } from "@/lib/storage/books";
-import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
+import {
+  clearSegmentTake,
+  saveTake,
+  setSegmentFinished,
+} from "@/lib/storage/takes";
 import { newClipId } from "@/lib/storage/clips";
 import { commitTranscode } from "@/lib/storage/transcode";
 import { closeDb, getDb } from "@/lib/storage/db";
@@ -151,5 +157,65 @@ describe("loadRecorderSegmentView", () => {
     // environment noise (no Web Audio in Node), so this asserts only that it
     // throws rather than resolving with a clip.
     await expect(loadRecorderSegmentView(segmentId)).rejects.toThrow();
+  });
+});
+
+describe("the revision a recording's base was read at (cell HM, George r1 on #1618)", () => {
+  const recording = (segmentId: SegmentId, existing: Int16Array) =>
+    withObservedRevision({
+      segmentId,
+      ordinal: 1,
+      clipId: newClipId(),
+      existing,
+      recorded: samples(10, 7),
+      offset: existing.length,
+      finished: false,
+      editOnly: false,
+    });
+
+  it.each([
+    ["erases", (id: SegmentId) => clearSegmentTake(id)],
+    [
+      "saves",
+      (id: SegmentId) =>
+        saveTake(id, newClipId(), samples(30, 5), CANONICAL_SAMPLE_RATE).then(
+          () => {}
+        ),
+    ],
+  ])(
+    "a take recorded over the loaded view keeps the view's revision when another copy %s first",
+    async (_name, move) => {
+      const segmentId = await freshSegment();
+      await saveTake(
+        segmentId,
+        newClipId(),
+        samples(20),
+        CANONICAL_SAMPLE_RATE
+      );
+      const view = await loadRecorderSegmentView(segmentId);
+      await move(segmentId);
+
+      const take = recording(segmentId, view.samples!);
+      expect(take.baseRevision).toBe(1);
+      expect(await writePendingTake(take)).toEqual({
+        ok: true,
+        outcome: "written",
+      });
+      const row = await (await getDb()).get("pendingTakes", segmentId);
+      expect(row?.baseRevision).toBe(1);
+      const segment = await (await getDb()).get("segments", segmentId);
+      expect(segment?.audioRevision).toBe(2);
+    }
+  );
+
+  it("a load after the move notes the new revision", async () => {
+    const segmentId = await freshSegment();
+    await saveTake(segmentId, newClipId(), samples(20), CANONICAL_SAMPLE_RATE);
+    await loadRecorderSegmentView(segmentId);
+    await clearSegmentTake(segmentId);
+    const view = await loadRecorderSegmentView(segmentId);
+    expect(recording(segmentId, view.samples ?? samples(0)).baseRevision).toBe(
+      2
+    );
   });
 });

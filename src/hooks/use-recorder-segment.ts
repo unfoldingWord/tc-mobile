@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
+import { noteObservedRevision } from "./observed-revision";
 import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
@@ -119,6 +120,11 @@ export async function loadRecorderSegmentView(
             clip.mp3,
             clip.meta.frameCount
           );
+  // The revision these samples belong to, read in their transaction, noted
+  // only once the view is whole: a save stamps it on its pending row (cell HM).
+  if (audio.kind !== "no-segment") {
+    noteObservedRevision(segmentId, audio.segment.audioRevision);
+  }
   return {
     bookName: book ? strings.bookHeading(book.name, book.number) : "",
     bookCoverHex: book

@@ -518,8 +518,11 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
   // that survive this delete. A clip nothing uses is unreachable audio and
   // goes with the book; a clip another segment's take, or a pending row's
   // stored base, still names stays (v13, #38).
+  // The surviving take rows are read once, after the last take delete, and
+  // nothing below deletes a take, so the set stays exact for every clip.
+  const takeClips = new Set((await takes.getAll()).map((take) => take.clipId));
   for (const clipId of new Set(doomedTakes.map((take) => take.clipId))) {
-    await deleteClipIfUnreferenced(tx, clipId);
+    await deleteClipIfUnreferenced(tx, clipId, takeClips);
   }
 }
 
