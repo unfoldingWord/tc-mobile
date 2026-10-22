@@ -1128,6 +1128,8 @@ export function BooksScreen({
   const shareMenuBookName = shareMenuBook
     ? strings.bookHeading(shareMenuBook.name, shareMenuBook.number)
     : "";
+  // The licence tag Share Book's file names carry (#1579, #1566).
+  const shareMenuLicence = shareMenuBook?.licence ?? null;
   // The teardown the vanish effect below runs, behind a latest-ref ON PURPOSE.
   // It has to reset the share, and `useBookShare()` returns a fresh object
   // literal every render (`use-book-share.ts`) — putting that in an effect's
@@ -1378,9 +1380,15 @@ export function BooksScreen({
     void bookShare
       .prepare(
         shareMenuBook.bookId,
-        strings.shareBookFilename(shareMenuBookName),
+        strings.shareBookFilename(shareMenuBookName, shareMenuLicence),
         (n, name, highest) =>
-          strings.shareFilename(shareMenuBookName, n, name, highest)
+          strings.shareFilename(
+            shareMenuBookName,
+            n,
+            name,
+            highest,
+            shareMenuLicence
+          )
       )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
@@ -1391,6 +1399,7 @@ export function BooksScreen({
     setSavingName,
     shareMenuBook,
     shareMenuBookName,
+    shareMenuLicence,
     onCloseShareMenu,
     stopChapter,
   ]);

@@ -12,6 +12,7 @@
 
 import type { Peaks } from "./audio";
 import type { BookId, ChapterId, ClipId, SegmentId } from "./domain";
+import type { LicenceId } from "./template";
 
 // ── Books screen (B2) ──────────────────────────────────────────────────────
 
@@ -66,6 +67,12 @@ export interface BookCard {
    * guide then takes the top card, which is where a create puts a book.
    */
   readonly createdAt?: number;
+  /**
+   * `Book.licence` (#1566), so the shelf's Share Book names its zip and its
+   * chapter files the way Share Chapter does (#1579). Optional so a test
+   * fixture can omit it; a card without it shares untagged, like a `null`.
+   */
+  readonly licence?: LicenceId | null;
 }
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────
