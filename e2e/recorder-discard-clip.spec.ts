@@ -173,7 +173,7 @@ test("while Play sounds, the paste marker and the bin leave and Zoom greys (#361
     exact: true,
   });
   const zoom = toolbar.getByRole("button", {
-    name: "Zoomed to the whole segment. Zoom in to a quarter.",
+    name: "Zoomed out. Zoom in to a quarter.",
     exact: true,
   });
   const play = toolbar.getByRole("button", {
