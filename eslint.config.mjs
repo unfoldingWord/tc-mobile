@@ -380,6 +380,9 @@ export default tseslint.config(
       // Vendored third-party source, kept byte-for-byte as fetched (#36,
       // third_party/lamejs-1.2.7/PROVENANCE.md). Not this repo's code to lint.
       "third_party",
+      // Throwaway spike apps on draft branches that never merge (#1520's
+      // Expo proof). Each carries its own package.json and toolchain.
+      "spikes",
     ],
   },
 
