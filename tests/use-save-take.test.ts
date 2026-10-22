@@ -58,7 +58,7 @@ const samples = (length: number, value = 1000): Int16Array =>
 
 /** A book → chapter → one never-recorded segment. */
 const freshSegment = async (): Promise<SegmentId> => {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   return segment.id;

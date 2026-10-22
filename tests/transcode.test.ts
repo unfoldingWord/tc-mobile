@@ -50,7 +50,7 @@ const samples = (n: number, value = 1000): Int16Array =>
 
 /** A recorded segment: the ids to address it and the PCM it holds. */
 async function recordedSegment(frames = 2000, value = 1000) {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   const clipId = newClipId();
@@ -80,7 +80,7 @@ describe("listPcmFinishedSegments", () => {
     // Recorded but not finished: PCM is the right encoding for it — not owed.
     const draft = await recordedSegment();
     // Never recorded: nothing to transcode.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const empty = await addSegment(chapter.id);
     void draft;

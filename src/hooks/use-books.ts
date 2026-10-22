@@ -17,7 +17,7 @@ import {
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
-import { failureKey, type FailureKey } from "./save-failure";
+import { failureKey, isBookNameTaken, type FailureKey } from "./save-failure";
 import { bumpStoragePressure } from "./use-storage-pressure";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
@@ -637,7 +637,10 @@ export function useBooks() {
         // #172: this site had no funnel report before this PR — the reason
         // reached only the New Book dialog's own scoped Notice, and only as
         // the raw store string.
-        reportFailure(cause, "books-create");
+        // A taken name is the translator's to fix by typing another, not a
+        // fault: it speaks in the dialog and is not written to the problem
+        // report (#1272).
+        if (!isBookNameTaken(cause)) reportFailure(cause, "books-create");
         return {
           ok: false,
           key: failureKey(cause, "saveFailed"),
@@ -769,7 +772,11 @@ export function useBooks() {
           cause,
           bookId,
           (reported) => {
-            reportFailure(reported, "books-rename");
+            // Not a fault when the name is taken (#1272): it shows in the
+            // sheet and stays out of the problem report.
+            if (!isBookNameTaken(reported)) {
+              reportFailure(reported, "books-rename");
+            }
             loadGen.current += 1;
             report(reported);
           }
