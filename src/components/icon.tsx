@@ -61,7 +61,9 @@ export type IconName =
   | "book"
   | "book-open"
   | "person"
-  | "open";
+  | "open"
+  // The Books header's Settings control (#1575).
+  | "gear";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -906,6 +908,27 @@ const PATHS: Record<IconName, React.ReactNode> = {
         stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"
+      />
+    </>
+  ),
+  // A cog — Settings (#1575): a thick ring with eight square teeth. Drawn
+  // with blunt teeth and no inner hub, so it is not read as the sun
+  // (`sun` is a thin ring with fine rays) which sits on the theme row beside it.
+  gear: (
+    <>
+      <circle
+        cx="11"
+        cy="11"
+        r="5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+      />
+      <path
+        d="M16.9 11h3.4M5.1 11H1.7M11 16.9v3.4M11 5.1V1.7M15.24 15.24l2.41 2.41M6.76 15.24l-2.41 2.41M15.24 6.76l2.41-2.41M6.76 6.76 4.35 4.35"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3.4"
       />
     </>
   ),

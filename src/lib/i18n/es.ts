@@ -26,6 +26,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuOpen: "Abrir menú",
   menuTitle: "Menú",
   menuClose: "Cerrar menú",
+  settingsOpen: "Ajustes",
+  settingsTitle: "Ajustes",
+  settingsChapterNumbers: "Mostrar siempre el número de capítulo",
   booksEmpty: "Empieza tu primer libro",
   booksEmptyTeach: "Un libro contiene los capítulos que grabas.",
   loadingBooks: "Cargando tus libros.",
@@ -116,8 +119,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "Eliminar",
   tileShare: "Compartir",
   tileAbout: "Acerca de",
-  tileLight: "Claro",
-  tileDark: "Oscuro",
   closeRecorder: "Cerrar grabadora",
   recorderBreadcrumb(
     book: string,
@@ -226,8 +227,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   reorderStayed: (n: number): string =>
     `El segmento ${n} se quedó donde estaba.`,
   chapterReorderLifted: (n: number): string => `Moviendo el capítulo ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `El capítulo ${from} ahora es el capítulo ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `El capítulo ${n} pasó al lugar ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `El capítulo ${n} se quedó donde estaba.`,
   bookReorderLifted: (heading: string): string => `Moviendo ${heading}.`,
@@ -548,6 +549,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "No se pudo cargar. Intenta de nuevo.",
   saveFailed: "No se pudo guardar. Intenta de nuevo.",
   noRoom: "No queda espacio en este teléfono.",
+  bookNameTaken: "Otro libro tiene este nombre. Escribe un nombre distinto.",
   stopToEdit: "Detén la grabación para editar.",
   stopToErase: "Detén la grabación para restablecer.",
 

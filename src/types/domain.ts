@@ -157,14 +157,15 @@ export interface Chapter {
   readonly id: ChapterId;
   readonly bookId: BookId;
   /**
-   * 1-based, unique within its book (max existing + 1 on create). A reorder
-   * (`moveChapter`, #953) renumbers every chapter of the book to its position
-   * + 1, so the badge and the export file name follow the order.
+   * The chapter's own number: the one the template gave, or max existing + 1
+   * on create. A reorder (`moveChapter`) does not change it (#1272, U2a: "The
+   * chapter's own number (22 if someone typed 22)"), so the badge, the heading
+   * and the export file name stay with the chapter, and the order is
+   * `Book.chapterIds`.
    *
    * From v12 this is the chapter's real number (R7: "Every chapter carries the
-   * number someone types or the template gives"), and the order is
-   * `Book.chapterIds`. The upgrade keeps every stored value; the writers and
-   * readers that still treat it as the position are #1272's to change.
+   * number someone types or the template gives"). The upgrade keeps every
+   * stored value. Nothing in the app lets a person type one yet.
    */
   readonly number: number;
   /**
@@ -229,6 +230,14 @@ export interface Segment {
    * and still needs a title.
    */
   readonly templateKey: string | null;
+  /**
+   * Which take is active, as a count (v13, #38): every write that changes
+   * `activeTakeId` or replaces the active take adds one, in the same
+   * transaction. Two reads with the same value saw the same active take. It
+   * does not move on a transcode, the Finished toggle or a rename
+   * (docs/design/pending-take-lifecycle.md, §1).
+   */
+  readonly audioRevision: number;
 }
 
 /**
@@ -303,4 +312,25 @@ export interface StoredPendingTake {
   readonly finished: boolean;
   readonly editOnly: boolean;
   readonly createdAt: number;
+  /**
+   * The segment's `audioRevision` that the take's base was read at, carried
+   * on the take from the recorder's load (v13; the note's §1 and step 6 of
+   * "The hold"), never the hold's own read. Absent on a row written before
+   * v13, which the step does not guess, and on a take that did not know it.
+   */
+  readonly baseRevision?: number;
+}
+
+/**
+ * Why a take stopped being pending (v13, #38), keyed by its `clipId`, written
+ * in the same transaction as the act that ends its row. `given-up` may become
+ * `saved` or `discarded`; those two are final. Deleted only with its segment.
+ * See docs/design/pending-take-lifecycle.md, §3.
+ */
+export interface TakeDisposition {
+  readonly clipId: ClipId;
+  readonly segmentId: SegmentId;
+  readonly kind: "given-up" | "discarded" | "saved";
+  /** Write time; diagnostic only, never a deletion clock. */
+  readonly at: number;
 }

@@ -47,7 +47,12 @@ import type {
   Segment,
   SegmentId,
 } from "@/types/domain";
-import { abortQuietly, byShelfPosition, nextBookNumber } from "./books";
+import {
+  abortQuietly,
+  assertBookNameFree,
+  byShelfPosition,
+  nextBookNumber,
+} from "./books";
 import { getDb } from "./db";
 
 /** The caller's ids for one create, in the plan's shape and order. */
@@ -126,12 +131,15 @@ function segmentRow(
     createdAt: planned.createdAt,
     modifiedAt: planned.modifiedAt,
     templateKey: planned.templateKey,
+    audioRevision: 0,
   };
 }
 
 /**
  * Create the planned book, top of the shelf, in the first free placeholder
- * slot (as `createBook`). Returns the book row written, or the stored one when
+ * slot (as `createBook`). `name` is the translator's, trimmed: a name another
+ * book already has throws `BookNameTakenError` before anything is written, and
+ * blank leaves the book unnamed. Returns the book row written, or the stored one when
  * this is a replay of the same create.
  *
  * @pivotpending #246: the template picker plans a package and writes it with
@@ -139,7 +147,8 @@ function segmentRow(
  */
 export async function createBookFromPlan(
   plan: BookPlan,
-  ids: TemplateBookIds
+  ids: TemplateBookIds,
+  name: string = ""
 ): Promise<Book> {
   assertIdsFit(plan, ids);
   const db = await getDb();
@@ -168,9 +177,14 @@ export async function createBookFromPlan(
     }
 
     const shelf = await books.getAll();
+    // A name the caller supplies is held to the same rule as `createBook`
+    // (#1272, U4b: a second book from the same template is refused until it
+    // has a different name). Blank stays unnamed, as before.
+    const trimmed = name.trim();
+    if (trimmed !== "") assertBookNameFree(shelf, trimmed);
     const book: Book = {
       id: ids.book,
-      name: null,
+      name: trimmed === "" ? null : trimmed,
       number: nextBookNumber(shelf),
       languageCode: null,
       chapterIds: ids.chapters.map((c) => c.id),

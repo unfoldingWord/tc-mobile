@@ -53,6 +53,7 @@ function held(
     offset: 0,
     finished,
     editOnly,
+    baseRevision: 0,
   });
   return { take, recorded };
 }
@@ -87,6 +88,7 @@ describe("startSave", () => {
       offset: 0,
       finished: false,
       editOnly: false,
+      baseRevision: 0,
     });
     expect(second).toBe(take);
   });
@@ -334,6 +336,7 @@ describe("a take that is saved on the second attempt", () => {
       offset: 0,
       finished: false,
       editOnly: false,
+      baseRevision: 0,
     });
     const failed = failSave(started, CLIP, "quota");
     const retried = retrySave(failed);

@@ -58,7 +58,7 @@ const samples = (length: number, value = 1000): Int16Array =>
 
 /** A book → chapter → one never-recorded segment. */
 const freshSegment = async (): Promise<SegmentId> => {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   return segment.id;
@@ -98,6 +98,7 @@ const heldTake = (over: {
     offset: over.offset ?? 0,
     finished: over.finished ?? false,
     editOnly: over.editOnly ?? false,
+    baseRevision: 0,
   });
 
 beforeEach(async () => {

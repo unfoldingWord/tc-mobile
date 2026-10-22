@@ -2,48 +2,25 @@
  * The pending-take store (v12, #1462): a take whose save has not landed,
  * written down so a kill and relaunch does not lose it (#38).
  *
- * The held take itself is `PendingTake` (`lib/takes/pending-take.ts`), and
- * until this module it lived only in React state. This is the store half: the
- * write, the read and the delete of one row per segment, and the stored |
- * inline base encoding (the DRI's 2026-10-19 pick, "base = stored | inline";
- * shape and reasons in docs/design/v12-schema.md, "The pending-takes store").
+ * The held take itself is `PendingTake` (`lib/takes/pending-take.ts`). This is
+ * the store half: the hold that writes one row per segment, the reads, and the
+ * stored | inline base encoding (the DRI's 2026-10-19 pick, "base = stored |
+ * inline"; shape and reasons in docs/design/v12-schema.md).
  *
- * The save hook writes and deletes rows (`hooks/use-save-take.ts`, slice 2 of
- * #38); the launch replay that reads them back is slice 3.
+ * From v13 the row's life follows docs/design/pending-take-lifecycle.md (§3).
+ * The hold is one transaction that reads everything it decides from and puts
+ * the row, or writes nothing. A row ends only in the owning transaction
+ * (`saveTake` or `settlePendingTake` in `takes.ts`), which deletes it and
+ * records why in `takeDispositions`, together, or with its segment.
  *
  * **Best-effort, by design.** It protects the kill-and-relaunch case, not the
- * quota case. Nothing orders this write against `saveTake`, so near a full
- * disk either can land first, and the row (about one more copy of the take)
- * can be what makes the save fail. So the save outranks it: on a quota failure
- * the hook gives the row up and does not write it again on Retry. And it must
- * never delay or gate `saveTake`. So:
- *
- *   - No function here rejects or throws. A failure is returned as a value,
- *     because `lib/` cannot reach the failure log (`hooks/report-failure.ts`);
- *     the hook that calls this reports it.
- *   - Every write and delete asks IndexedDB for `pendingTakes` ONLY. Readwrite
- *     transactions are queued only behind transactions whose store lists
- *     overlap, and `saveTake`'s (`openTakeTx` in `takes.ts`) does not name this
- *     store, so the two run side by side.
- *   - The caller does not await the write before saving: the hook starts the
- *     write before the commit, and the delete once the save lands or the
- *     translator confirms a discard, and awaits neither.
- *
- * **Ordering, and what is not guaranteed.** The write is called before its
- * commit and the delete only after it, so in practice the delete opens its
- * transaction after the write's, and IndexedDB runs overlapping readwrite
- * transactions in the order they were opened. That is practice, not a lock:
- * each call opens its transaction only after its own `await getDb()`, so call
- * order does not by itself fix open order, and a write could in principle land
- * after its delete and leave a row for a take that was saved. The backstop is
- * the read: a row whose `clipId` is the segment's active take reads back as
- * `"saved"` from `loadPendingRecipe`, never as a recording to offer, and the
- * same holds for a relaxed delete lost to a crash after a save landed. It does
- * NOT hold for a discard: a discarded take never became the active take, so a
- * row whose delete did not land reads back as a recipe to offer. Telling it
- * apart from a take still pending is slice 3's to solve. The
- * delete is also conditional on `clipId`, so a late delete for one take never
- * removes a newer take's row.
+ * quota case: on a quota failure the hook gives the row up (a `given-up`
+ * record) and the next hold for that take writes nothing. No function here
+ * rejects or throws; a failure is returned as a value, because `lib/` cannot
+ * reach the failure log (`hooks/report-failure.ts`). The hook does not await
+ * the hold before the commit: the two are serialized by IndexedDB on their
+ * shared stores, and either order is correct (the note, "Ordering against the
+ * clip write").
  */
 
 import type { IDBPDatabase } from "idb";
@@ -55,7 +32,6 @@ import type { ClipMeta } from "@/types/audio";
 import type {
   ClipId,
   PendingTakeBase,
-  SegmentId,
   StoredPendingTake,
 } from "@/types/domain";
 
@@ -73,12 +49,24 @@ type StoredClipSource = Pick<
   "id" | "encoding" | "generation" | "frameCount"
 >;
 
-type PendingWriteResult =
-  | { readonly ok: true; readonly outcome: "written" | "kept" }
-  | { readonly ok: false; readonly cause: unknown };
+/**
+ * What a hold did. `written`: the row is on disk. Nothing was written for the
+ * rest: `kept` (this take's row is already there), `kept-foreign` (another
+ * take's row holds the segment, so this take has no safety copy),
+ * `segment-gone`, `discarded` (requested in this copy, or recorded), `saved`
+ * (the commit already landed) or `given-up` (dropped for quota on purpose).
+ */
+export type HoldOutcome =
+  | "written"
+  | "kept"
+  | "kept-foreign"
+  | "segment-gone"
+  | "discarded"
+  | "saved"
+  | "given-up";
 
-type PendingDeleteResult =
-  | { readonly ok: true; readonly outcome: "deleted" | "kept" | "absent" }
+type PendingWriteResult =
+  | { readonly ok: true; readonly outcome: HoldOutcome }
   | { readonly ok: false; readonly cause: unknown };
 
 type PendingListResult =
@@ -156,20 +144,46 @@ export function encodePendingBase(
   return { kind: "inline", samples: ownBuffer(existing) };
 }
 
+/** The hold's scope (the note, §3 "The hold"). */
+function openHoldTx(db: IDBPDatabase<TcMobileDb>) {
+  return db.transaction(
+    [
+      "segments",
+      "takes",
+      "clipMeta",
+      "clipData",
+      "pendingTakes",
+      "takeDispositions",
+    ],
+    "readwrite",
+    DURABILITY
+  );
+}
+
+type HoldTx = ReturnType<typeof openHoldTx>;
+
 /**
- * Write a pending take down. Never rejects, never throws.
+ * Hold a take: write its row before the commit, so a kill does not lose it.
+ * Never rejects, never throws.
  *
- * Get-or-create in ONE transaction, keyed by segment:
+ * One transaction, nothing awaited before it but `getDb()`, in the note's
+ * seven steps (docs/design/pending-take-lifecycle.md, §3 "The hold"): the
+ * segment, this copy's Discard request, the take's disposition, the active
+ * take, the segment's row (never overwritten when it is another take's), then
+ * the put with `baseRevision`, and the Discard request again in the put's own
+ * success turn, with `commit()` there so no further window opens.
  *
- *   - the same `clipId` already held: a no-op (`"kept"`). A retry carries the
- *     same recipe under the same id, so there is nothing new to write;
- *   - a held row with a newer `createdAt`: kept. An older write that arrives
- *     late must not overwrite a known newer take with a stale one;
- *   - otherwise the row is put (`"written"`), replacing an older take for the
- *     same segment: the app holds one save slot.
+ * `baseRevision` is the take's own, the segment's `audioRevision` read with
+ * the audio `existing` came from, never this transaction's read of the
+ * segment: an erase or save that landed between the base read and the hold
+ * must stay visible to a replay, which then judges the row `moved` (cell HM,
+ * George r1 on #1618). A take that does not know its revision (`null`) is
+ * held with none, so a replay refuses it the way it refuses a row from
+ * before v13 (`legacy`), and the audio is kept rather than spliced.
  *
  * `source` is the stored clip behind `existing`, passed only when the buffer
- * is that clip unchanged (see `encodePendingBase`).
+ * is that clip unchanged. It becomes a `stored` base only if the clip checks
+ * out inside this transaction; otherwise the base is `inline`.
  */
 export async function writePendingTake(
   take: NewTake,
@@ -177,49 +191,18 @@ export async function writePendingTake(
     readonly source?: StoredClipSource | null;
     readonly sampleRate?: number;
     readonly now?: number;
+    readonly isDiscardRequested?: (clipId: ClipId) => boolean;
   } = {}
 ): Promise<PendingWriteResult> {
-  let row: StoredPendingTake;
-  try {
-    // Built before the first await, so the row is the recipe as it was when
-    // the save was asked for.
-    row = {
-      segmentId: take.segmentId,
-      ordinal: take.ordinal,
-      clipId: take.clipId,
-      base: encodePendingBase(
-        take.existing,
-        take.editOnly,
-        opts.source ?? null
-      ),
-      recorded: ownBuffer(take.recorded),
-      sampleRate: opts.sampleRate ?? CANONICAL_SAMPLE_RATE,
-      offset: take.offset,
-      finished: take.finished,
-      editOnly: take.editOnly,
-      createdAt: opts.now ?? Date.now(),
-    };
-  } catch (cause) {
-    // A copy that cannot be allocated on a low-memory phone. The save itself
-    // is unaffected; the caller reports this.
-    return { ok: false, cause };
-  }
-
+  const requested = (): boolean =>
+    opts.isDiscardRequested?.(take.clipId) === true;
   try {
     const db = await getDb();
-    const tx = db.transaction("pendingTakes", "readwrite", DURABILITY);
+    const tx = openHoldTx(db);
     try {
-      const held = await tx.store.get(row.segmentId);
-      if (
-        held &&
-        (held.clipId === row.clipId || held.createdAt > row.createdAt)
-      ) {
-        await tx.done;
-        return { ok: true, outcome: "kept" };
-      }
-      await tx.store.put(row);
+      const outcome = await holdInTx(tx, take, opts, requested);
       await tx.done;
-      return { ok: true, outcome: "written" };
+      return { ok: true, outcome };
     } catch (cause) {
       settle(() => tx.abort());
       await tx.done.catch(() => {});
@@ -230,41 +213,78 @@ export async function writePendingTake(
   }
 }
 
-/**
- * Remove the row for one take, and only that take. Never rejects.
- *
- * `"kept"` when the segment's row belongs to another `clipId`: a delete for an
- * older take must not remove a newer one's only durable copy. `"absent"` when
- * there is no row, so a repeated delete is a harmless no-op.
- */
-export async function deletePendingTake(
-  segmentId: SegmentId,
-  clipId: ClipId
-): Promise<PendingDeleteResult> {
-  try {
-    const db = await getDb();
-    const tx = db.transaction("pendingTakes", "readwrite", DURABILITY);
-    try {
-      const held = await tx.store.get(segmentId);
-      if (!held) {
-        await tx.done;
-        return { ok: true, outcome: "absent" };
-      }
-      if (held.clipId !== clipId) {
-        await tx.done;
-        return { ok: true, outcome: "kept" };
-      }
-      await tx.store.delete(segmentId);
-      await tx.done;
-      return { ok: true, outcome: "deleted" };
-    } catch (cause) {
-      settle(() => tx.abort());
-      await tx.done.catch(() => {});
-      throw cause;
-    }
-  } catch (cause) {
-    return { ok: false, cause };
+async function holdInTx(
+  tx: HoldTx,
+  take: NewTake,
+  opts: {
+    readonly source?: StoredClipSource | null;
+    readonly sampleRate?: number;
+    readonly now?: number;
+  },
+  requested: () => boolean
+): Promise<HoldOutcome> {
+  const segment = await tx.objectStore("segments").get(take.segmentId);
+  if (!segment) return "segment-gone";
+  if (requested()) return "discarded";
+  const record = await tx.objectStore("takeDispositions").get(take.clipId);
+  if (record) return record.kind;
+  if (segment.activeTakeId) {
+    const active = await tx.objectStore("takes").get(segment.activeTakeId);
+    if (active?.clipId === take.clipId) return "saved";
   }
+  const rows = tx.objectStore("pendingTakes");
+  const held = await rows.get(take.segmentId);
+  if (held) return held.clipId === take.clipId ? "kept" : "kept-foreign";
+
+  const source = await checkedSource(tx, opts.source ?? null);
+  const row: StoredPendingTake = {
+    segmentId: take.segmentId,
+    ordinal: take.ordinal,
+    clipId: take.clipId,
+    base: encodePendingBase(take.existing, take.editOnly, source),
+    recorded: ownBuffer(take.recorded),
+    sampleRate: opts.sampleRate ?? CANONICAL_SAMPLE_RATE,
+    offset: take.offset,
+    finished: take.finished,
+    editOnly: take.editOnly,
+    createdAt: opts.now ?? Date.now(),
+    ...(take.baseRevision === null ? {} : { baseRevision: take.baseRevision }),
+  };
+  await rows.put(row);
+  // The put's success turn: no tap can run between this check and the
+  // commit below.
+  const discarded = requested();
+  if (discarded) {
+    // Not awaited: an await would end this turn before `commit()`. A failed
+    // delete aborts the transaction, and `tx.done` carries that to the caller
+    // as `ok: false`; this handler only stops the same failure surfacing a
+    // second time as an unhandled rejection.
+    rows.delete(take.segmentId).catch(() => {});
+  }
+  tx.commit();
+  return discarded ? "discarded" : "written";
+}
+
+/**
+ * The caller's source, if its clip is on disk exactly as the caller read it:
+ * PCM, at the same `generation` and `frameCount`, with that many frames of
+ * bytes. Otherwise `null`, and the base is written inline. Read in the hold's
+ * own transaction, so a replace or transcode either lands before (and fails
+ * this) or after (and finds the row protecting the clip).
+ */
+async function checkedSource(
+  tx: HoldTx,
+  source: StoredClipSource | null
+): Promise<StoredClipSource | null> {
+  if (!source) return null;
+  const meta = await tx.objectStore("clipMeta").get(source.id);
+  const data = await tx.objectStore("clipData").get(source.id);
+  const intact =
+    meta?.encoding === "pcm" &&
+    meta.generation === source.generation &&
+    meta.frameCount === source.frameCount &&
+    data?.byteLength === source.frameCount * 2;
+  return intact ? source : null;
 }
 
 /** Every pending row, for the launch replay. Never rejects. */
@@ -359,6 +379,7 @@ async function readRecipe(
       offset: row.offset,
       finished: row.finished,
       editOnly: row.editOnly,
+      baseRevision: row.baseRevision ?? null,
     },
   };
 }

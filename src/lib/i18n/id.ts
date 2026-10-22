@@ -30,6 +30,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuOpen: "Buka menu",
   menuTitle: "Menu",
   menuClose: "Tutup menu",
+  settingsOpen: "Pengaturan",
+  settingsTitle: "Pengaturan",
+  settingsChapterNumbers: "Selalu tampilkan nomor pasal",
   booksEmpty: "Mulai buku pertamamu",
   booksEmptyTeach: "Satu buku berisi pasal-pasal yang kamu rekam.",
   loadingBooks: "Memuat bukumu.",
@@ -111,8 +114,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "Hapus",
   tileShare: "Bagikan",
   tileAbout: "Tentang",
-  tileLight: "Terang",
-  tileDark: "Gelap",
   closeRecorder: "Tutup perekam",
   recorderBreadcrumb(
     book: string,
@@ -213,8 +214,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Segmen ${from} sekarang menjadi segmen ${to}.`,
   reorderStayed: (n: number): string => `Segmen ${n} tetap di tempatnya.`,
   chapterReorderLifted: (n: number): string => `Memindahkan pasal ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Pasal ${from} sekarang menjadi pasal ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Pasal ${n} dipindahkan ke urutan ${to}.`,
   chapterReorderStayed: (n: number): string => `Pasal ${n} tetap di tempatnya.`,
   bookReorderLifted: (heading: string): string => `Memindahkan ${heading}.`,
   bookReorderMoved: (heading: string, to: number): string =>
@@ -497,6 +498,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "Tidak dapat dimuat. Coba lagi.",
   saveFailed: "Tidak dapat disimpan. Coba lagi.",
   noRoom: "Tidak ada ruang lagi di ponsel ini.",
+  bookNameTaken: "Buku lain memakai nama ini. Ketik nama yang berbeda.",
   stopToEdit: "Hentikan rekaman untuk mengedit.",
   stopToErase: "Hentikan rekaman untuk menyetel ulang.",
 

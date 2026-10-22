@@ -1,0 +1,243 @@
+{
+  "_source": "real: `gh run view 36581999554 --json jobs (android-play.yml, failed before upload)`, read 2026-10-22",
+  "jobs": [
+    {
+      "completedAt": "2026-09-29T14:21:05Z",
+      "conclusion": "success",
+      "databaseId": 109452290054,
+      "name": "Preflight (branch → track)",
+      "startedAt": "2026-09-29T14:21:01Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-29T14:21:02Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-29T14:21:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:02Z",
+          "conclusion": "success",
+          "name": "Map branch to Play track",
+          "number": 2,
+          "startedAt": "2026-09-29T14:21:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:02Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-09-29T14:21:02Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/36581999554/job/109452290054"
+    },
+    {
+      "completedAt": "2026-09-29T14:21:44Z",
+      "conclusion": "failure",
+      "databaseId": 109452338482,
+      "name": "Build .aab and upload to Play (internal)",
+      "startedAt": "2026-09-29T14:21:09Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-29T14:21:13Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-29T14:21:12Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:13Z",
+          "conclusion": "success",
+          "name": "Require the signing secrets",
+          "number": 2,
+          "startedAt": "2026-09-29T14:21:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:13Z",
+          "conclusion": "success",
+          "name": "Require the Play service-account secret",
+          "number": 3,
+          "startedAt": "2026-09-29T14:21:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:15Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 4,
+          "startedAt": "2026-09-29T14:21:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:19Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "number": 5,
+          "startedAt": "2026-09-29T14:21:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:19Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
+          "number": 6,
+          "startedAt": "2026-09-29T14:21:19Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:19Z",
+          "conclusion": "success",
+          "name": "Assert the toolchain this project compiles against",
+          "number": 7,
+          "startedAt": "2026-09-29T14:21:19Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:29Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 8,
+          "startedAt": "2026-09-29T14:21:19Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "failure",
+          "name": "Install fastlane",
+          "number": 9,
+          "startedAt": "2026-09-29T14:21:29Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Build the web bundle",
+          "number": 10,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "OBS thumbnails stay out of the precache (web build; ADR 0006 /",
+          "number": 11,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Rebuild and check dist/ for the native shell (self-destroying service worker,",
+          "number": 12,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Sync dist/ into the Android project",
+          "number": 13,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Guard the synced bundle",
+          "number": 14,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Write the *** keystore",
+          "number": 15,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Write the Play service-account key",
+          "number": 16,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Build the release bundle",
+          "number": 17,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Upload to Google Play",
+          "number": 18,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "success",
+          "name": "Remove decoded credentials",
+          "number": 19,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Run actions/***-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+          "number": 20,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
+          "number": 38,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "skipped",
+          "name": "Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "number": 39,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 40,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-29T14:21:40Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 41,
+          "startedAt": "2026-09-29T14:21:40Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/36581999554/job/109452338482"
+    }
+  ]
+}

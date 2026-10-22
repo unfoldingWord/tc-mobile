@@ -397,9 +397,9 @@
   :root .books-sheet-name {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wraps, never elides: the book menu is where a long name is read whole
+       (#1284, U3). */
+    overflow-wrap: anywhere;
     font-size: var(--p-text-20);
     font-weight: var(--p-weight-bold);
     color: var(--s-ink);

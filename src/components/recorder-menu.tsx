@@ -1,9 +1,8 @@
 import { Menu } from "./menu";
 import { O4SheetHead } from "./o4-crumbs";
-import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { Tile, TileGrid } from "./o4-tile-menu";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
-import { ThemeControl } from "./theme-control";
 
 /**
  * The recorder sheet's ⋮ menu (#160, L-1).
@@ -179,8 +178,6 @@ export function RecorderMenu({
           recording={recording}
           onStopTake={onStopTake}
         />
-        <TileSpacer />
-        <ThemeControl tile />
       </TileGrid>
     </Menu>
   );

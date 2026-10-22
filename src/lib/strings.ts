@@ -106,6 +106,15 @@ export const stringsEn = {
   // Every OTHER menu passes its own `title` and still shows it.
   menuTitle: "Menu",
   menuClose: "Close menu",
+  // Settings (#1575): the gear in the Books header, and the screen it opens.
+  // The gear's name is the screen's title, so the heading a screen reader
+  // announces is the word the control carried. The screen's Back reads
+  // `backToBooks`. Theme rows reuse `useLightTheme` and `useDarkTheme`.
+  settingsOpen: "Settings",
+  settingsTitle: "Settings",
+  // S12: the requirements owner's option. Off, a chapter shows its name when
+  // it has one and its number when it does not. On, always the number.
+  settingsChapterNumbers: "Always show chapter numbers",
   booksEmpty: "Start your first book",
   // #406 item 3 (George round 2 residual, then George round 1 on #423 P2):
   // an earlier fix hedged this line with "unless space runs low" instead of
@@ -352,8 +361,6 @@ export const stringsEn = {
   // The app ≡ menu's About tile (#36, DRI ruling on PR #1019): its name is
   // `aboutOpen` ("About and licenses"), which already holds this word.
   tileAbout: "About",
-  tileLight: "Light",
-  tileDark: "Dark",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment
@@ -699,13 +706,13 @@ export const stringsEn = {
     `Segment ${from} is now segment ${to}.`,
   reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
   // The same three lines for a chapter on the Books screen (#953 PR2b). Said
-  // by the chapter's number, which is what renumbers: a typed name such as
-  // "Mark 6" stays as it is (the DRI's pick), so it would not say where the
-  // chapter landed. Whole sentences (#1483): each says "chapter" in its own
+  // by the chapter's number, which a move keeps (#1272, U2a), and then by the
+  // position it landed in; a typed name such as "Mark 6" stays as it is (the
+  // DRI's pick), so it would not say which chapter moved. Whole sentences (#1483): each says "chapter" in its own
   // words rather than wrapping `chapterName`'s.
   chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Chapter ${from} is now chapter ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Chapter ${n} moved to place ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `Chapter ${n} stayed where it was.`,
   // The same three lines for a book on the Books screen (#338). Said by the
@@ -1476,6 +1483,9 @@ export const stringsEn = {
   // so the one condition a translator can act on reads the same everywhere a
   // write can hit it, not only on the take-save recovery screen.
   noRoom: "No room left on this phone.",
+  // A book name another book already has (#1272, S13). Shown in the name
+  // sheet itself; asks for another name rather than naming a fault.
+  bookNameTaken: "Another book has this name. Type a different name.",
 
   // ── Record-bar Edit, blocked by a live take (#857 round 1, Frank P2) ─────
   // `barHint`'s own words for the `"uncommitted-take"` reason (`menu-row-

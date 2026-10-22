@@ -85,6 +85,14 @@ const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
     exportProjectFilename:
       "Builds `<book name> - project.zip`: ADR 0014 point 8 fixes the suffix in English on every phone language until #1627 is answered, so it equals English by design.",
   },
+  hi: {
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+    exportProjectFilename:
+      "Builds `<book name> - project.zip`: ADR 0014 point 8 fixes the suffix in English on every phone language until #1627 is answered, so it equals English by design.",
+  },
   id: {
     menuTitle:
       "The Indonesian word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
@@ -118,7 +126,13 @@ const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
 };
 
 /** Latin words a non-Latin draft may carry beyond the brand words. */
-const ALLOW_LATIN: ReadonlySet<string> = new Set();
+const ALLOW_LATIN: ReadonlySet<string> = new Set([
+  // The licence the app itself is offered under; the glossary keeps licence
+  // names as they are (section 4).
+  "MIT",
+  // A proper name: where the source of this build is opened.
+  "GitHub",
+]);
 
 /** The script each locale's letters must come from. */
 const SCRIPT_BY_TAG: Readonly<Record<string, string>> = {
@@ -133,10 +147,17 @@ const SCRIPT_BY_TAG: Readonly<Record<string, string>> = {
   "zh-Hans": "Han",
 };
 
-/** Exempt by rule, not by listing: placeholders, probe sentinels, brand words. */
+/**
+ * Exempt by rule, not by listing: placeholders, probe sentinels, brand words,
+ * and the Export project file name's fixed English suffix (ADR 0014 point 8,
+ * open on #1627).
+ */
 const PLACEHOLDER = /\{[A-Za-z0-9_]+\}/g;
 const SENTINEL = /SENT[ab]?\d+/g;
-const BRAND = /tC Mobile|MP3|ZIP|PWA/g;
+// The ISO 639-3 name and its registrar's address are kept as written: the
+// code terms ask for attribution "to iso639-3.sil.org" (ADR 0017).
+const BRAND =
+  /tC Mobile|MP3|ZIP|PWA|\.mp3|- project\.zip|\.zip|CC BY-SA 4\.0|CC BY 4\.0|CC0 1\.0|ISO 639-3|iso639-3\.sil\.org/g;
 
 function exempt(text: string): string {
   return text

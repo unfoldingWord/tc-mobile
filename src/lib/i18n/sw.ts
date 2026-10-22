@@ -38,6 +38,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuOpen: "Fungua menyu",
   menuTitle: "Menyu",
   menuClose: "Funga menyu",
+  settingsOpen: "Mipangilio",
+  settingsTitle: "Mipangilio",
+  settingsChapterNumbers: "Onyesha daima nambari ya sura",
   booksEmpty: "Anza kitabu chako cha kwanza",
   booksEmptyTeach: "Kitabu kina sura unazorekodi.",
   loadingBooks: "Inapakia vitabu vyako.",
@@ -129,8 +132,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "Futa",
   tileShare: "Shiriki",
   tileAbout: "Kuhusu",
-  tileLight: "Nyepesi",
-  tileDark: "Nyeusi",
   closeRecorder: "Funga kirekodi",
   recorderBreadcrumb(
     book: string,
@@ -236,8 +237,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Kipande ${from} sasa ni kipande ${to}.`,
   reorderStayed: (n: number): string => `Kipande ${n} kilibaki mahali pake.`,
   chapterReorderLifted: (n: number): string => `Inahamisha sura ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Sura ${from} sasa ni sura ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Sura ${n} imehamishiwa nafasi ya ${to}.`,
   chapterReorderStayed: (n: number): string => `Sura ${n} ilibaki mahali pake.`,
   bookReorderLifted: (heading: string): string => `Inahamisha ${heading}.`,
   bookReorderMoved: (heading: string, to: number): string =>
@@ -546,6 +547,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "Haikuweza kupakiwa. Jaribu tena.",
   saveFailed: "Haikuweza kuhifadhiwa. Jaribu tena.",
   noRoom: "Hakuna nafasi tena kwenye simu hii.",
+  bookNameTaken: "Kitabu kingine kina jina hili. Andika jina tofauti.",
   stopToEdit: "Acha kurekodi ili uhariri.",
   stopToErase: "Acha kurekodi ili uweke upya.",
 
