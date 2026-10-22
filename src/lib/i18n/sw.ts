@@ -38,6 +38,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuOpen: "Fungua menyu",
   menuTitle: "Menyu",
   menuClose: "Funga menyu",
+  settingsOpen: "Mipangilio",
+  settingsTitle: "Mipangilio",
+  settingsChapterNumbers: "Onyesha daima nambari ya sura",
   booksEmpty: "Anza kitabu chako cha kwanza",
   booksEmptyTeach: "Kitabu kina sura unazorekodi.",
   loadingBooks: "Inapakia vitabu vyako.",
@@ -129,8 +132,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "Futa",
   tileShare: "Shiriki",
   tileAbout: "Kuhusu",
-  tileLight: "Nyepesi",
-  tileDark: "Nyeusi",
   closeRecorder: "Funga kirekodi",
   recorderBreadcrumb(
     book: string,

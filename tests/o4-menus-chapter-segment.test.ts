@@ -559,24 +559,20 @@ describe("the chapter menu (G2) on the tile grid", () => {
     await mount();
     await openChapter();
     const tiles = gridOrder().filter((name) => name !== "|");
-    expect(tiles).toHaveLength(3);
+    expect(tiles).toHaveLength(2);
     expect(dialogNames()).toEqual([strings.menuClose, ...tiles]);
     expect(focusedName()).toBe(strings.renameChapter);
   });
 
-  it("draws Rename and Share, then the theme tile past a gap", async () => {
+  it("draws Rename and Share, and no theme tile or gap (#1575)", async () => {
     await mount();
     await openChapter();
     const order = gridOrder();
-    expect(order.slice(0, 3)).toEqual([
-      strings.renameChapter,
-      strings.shareChapter,
-      "|",
-    ]);
-    expect(order).toHaveLength(4);
+    expect(order).toEqual([strings.renameChapter, strings.shareChapter]);
     expect(tone(tile(strings.renameChapter))).toBe("name");
     expect(tone(tile(strings.shareChapter))).toBe("send");
-    expect(tone(tile(order[3]!))).toBe("plain");
+    for (const name of [strings.useLightTheme, strings.useDarkTheme])
+      expect(dialogNames()).not.toContain(name);
     expectCaptionInName();
   });
 
