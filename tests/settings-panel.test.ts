@@ -16,7 +16,7 @@ import type { BookCard } from "@/types/view";
  * opens, holds the theme row and the chapter-number row, closes through its
  * Back and through system Back, and the theme left the ≡ menu for it.
  * The cascade and the persistence across a reload are
- * `e2e/settings.spec.ts`'s; this is one client render with the storage mocked
+ * `e2e/settings-screen.spec.ts`'s; this is one client render with the storage mocked
  * out of the picture by jsdom's own `localStorage`.
  */
 

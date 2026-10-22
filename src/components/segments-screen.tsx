@@ -173,8 +173,12 @@ export const SegmentsScreen = forwardRef<
     deleteSegment,
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
-  // "Chapter {number}" (#264).
+  // "Chapter {number}" (#264). With "Always show chapter numbers" on (S12) it
+  // is the number even for a named chapter, so it is for DISPLAY only.
   const chapterHeading = useChapterHeading(chapterName, chapterNumber);
+  // What Rename opens on: the stored name, never the display preference, so
+  // confirming untouched with the setting on cannot write "Chapter N" over it.
+  const renameSeed = strings.chapterHeading(chapterName, chapterNumber);
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -1449,7 +1453,7 @@ export const SegmentsScreen = forwardRef<
                 replaces it in one go; a typed label arrives unselected, as a
                 book's does, so a small fix is an edit, not a retype. */}
             <NameEdit
-              initialValue={chapterHeading}
+              initialValue={renameSeed}
               selectInitialValue={chapterName === null}
               fieldLabel={strings.chapterNameField}
               onSave={onSaveChapterName}

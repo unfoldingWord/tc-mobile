@@ -2156,10 +2156,9 @@ export function BooksScreen({
           Placement (DRI ruling on PR #1019, 2026-09-26): About renders as
           a tile in the `TileGrid`.
 
-          The toggle (#171) is `ThemeControl`: a row on the Settings screen
-          now, and still mounted in the chapter and recorder menus (#149), so
-          a translator can switch mid-take. Its own docblock holds why it is
-          one shared component and why the glyph names the destination.
+          The toggle (#171) is `ThemeControl`, and it lives only on the
+          Settings screen (DRI on #1623, 2026-10-22: "Remove, Settings only").
+          Its own docblock holds why the glyph names the destination.
 
           This menu used to end with the design switch (#938's pencil, "New
           look (O4)"). #1244 removed it, and #954 removed the old look it
