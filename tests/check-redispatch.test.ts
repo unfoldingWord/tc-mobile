@@ -285,6 +285,26 @@ describe("main: reads through gh and prints one verdict", () => {
       "STARTED: run 6 is started; do not dispatch again"
     );
   });
+
+  it("George r3 on #1641: with no run at the commit, --known= is the follow-up and waits, not a second OK", () => {
+    const empty = world({ atCommit: [] });
+    expect(run(PRE, empty).lines.at(-1)).toBe("OK to dispatch apk");
+    expect(parseArgs([...PRE, "--known="]).known).toEqual([]);
+    const r = run([...PRE, "--known="], empty);
+    expect(r.status).toBe(1);
+    expect(r.lines.at(-1)).toBe(`WAIT: no new apk run at ${RC_SHA} yet`);
+    const started = run(
+      [...PRE, "--known="],
+      world({
+        atCommit: [{ databaseId: 6, status: "waiting", headSha: RC_SHA }],
+        views: { "6": fixture("apk-waiting-reviewer.view") },
+        artifacts: { "6": fixture("apk-prod-expired.artifacts") },
+      })
+    );
+    expect(started.lines.at(-1)).toBe(
+      "STARTED: run 6 is started; do not dispatch again"
+    );
+  });
 });
 
 describe("entry path: the real script, run by node from a path with a space", () => {

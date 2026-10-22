@@ -106,6 +106,16 @@ describe("runbook §3a step 7 points at the script and holds no second rule", ()
     );
   });
 
+  // George r3 on #1641: an OK line with no prior runs lists no ids, and the
+  // step gave no follow-up for it, so the pre-dispatch form was the only one
+  // to rerun.
+  it("gives the follow-up for an OK line that lists no ids", () => {
+    expect(step7).toContain("`--known=<the ids the OK line lists>`");
+    expect(step7).toContain(
+      "lists no ids: the rerun is then `--known=`, with nothing after the `=`."
+    );
+  });
+
   it("builds no workflow file name from the lane token", () => {
     expect(step7).not.toContain("<lane>.yml");
   });

@@ -349,8 +349,12 @@ freeze note on every new PR to `develop`.
    `gh workflow run android-play.yml --repo unfoldingWord/tc-mobile --ref staging`,
    `testflight` is
    `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`;
-   then the agent reruns it with `--known <the ids the OK line lists>` until
-   it prints `STARTED`. Any `STOP:` line means no dispatch: tell the DRI its
+   then the agent reruns it with `--known=<the ids the OK line lists>` until
+   it prints `STARTED`. An OK line with no `(runs at the commit before: …)`
+   lists no ids: the rerun is then `--known=`, with nothing after the `=`.
+   That rerun is the `STARTED` / `WAIT` / `STOP` follow-up; never rerun the
+   form without `--known` after a dispatch, which can print
+   `OK to dispatch` again before GitHub lists the new run. Any `STOP:` line means no dispatch: tell the DRI its
    reason. A lane that did not start on its own is a finding. While
    `release-signing` still has a required reviewer (#1281's transition
    window), each signing job waits for the DRI's approval; once it is

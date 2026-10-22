@@ -13,7 +13,8 @@
  * `stop: <reason>` line for every stop, and a last line, `OK to dispatch
  * <lane>` or `STOP: <the first reason>`. The OK line lists the
  * run ids at the commit; after the dispatch, the second form (`--known`
- * those ids) prints `STARTED`, `WAIT` or `STOP` for a NEW run. The rules
+ * those ids; `--known=` when the OK line lists none) prints `STARTED`,
+ * `WAIT` or `STOP` for a NEW run. The rules
  * live in `redispatch-core.mjs`; this file only reads.
  */
 
