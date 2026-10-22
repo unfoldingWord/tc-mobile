@@ -60,9 +60,6 @@ let loading: Promise<LanguageList> | null = null;
 /**
  * The list, loaded once. A failed load is not cached, so the next ask tries
  * again.
- *
- * @pivotpending #1492 — the language ask on Export project is the caller,
- * in the PR after this one.
  */
 export function loadLanguageList(): Promise<LanguageList> {
   loading ??= import("@/data/language-list.json").then(
@@ -98,9 +95,6 @@ function rank(keys: readonly string[], query: string): number | null {
  * and accents, best first and in list order within a rank; at most `limit`
  * of them. `total` counts every match, so the caller can say there are more.
  * An empty query matches everything, in list order.
- *
- * @pivotpending #1492 — the language ask on Export project is the caller,
- * in the PR after this one.
  */
 export function searchLanguages(
   list: LanguageList,

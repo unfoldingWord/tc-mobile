@@ -371,6 +371,37 @@ export async function setBookCoverColour(
 }
 
 /**
+ * Write the language a book's recordings are in, once (#1492, R12).
+ * Get-or-create in ONE readwrite transaction: a book that already has a
+ * language keeps it and nothing is written, so a second ask (another tab, a
+ * stale card) never replaces the first answer. Returns the stored book, whose
+ * language is the one to export. `tag` is trimmed and a blank one refused; it
+ * is not checked against the bundled list, so a stored tag keeps loading if a
+ * later list drops it. Stamps `modifiedAt`, not `updatedAt`: naming the
+ * language is not shelf activity.
+ */
+export async function setBookLanguageOnce(
+  id: BookId,
+  tag: string,
+  now: number = Date.now()
+): Promise<Book> {
+  const trimmed = tag.trim();
+  if (trimmed === "") throw new Error("A blank language tag is not a language");
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  const book = await tx.store.get(id);
+  if (!book) throw new Error(`No such book: ${id}`);
+  if (book.languageCode !== null && book.languageCode.trim() !== "") {
+    await tx.done; // already answered: no write.
+    return book;
+  }
+  const updated: Book = { ...book, languageCode: trimmed, modifiedAt: now };
+  await tx.store.put(updated);
+  await tx.done;
+  return updated;
+}
+
+/**
  * Whether a caught failure from {@link renameBook} or {@link addChapter}
  * describes a book that is gone because an UNRELATED delete already succeeded
  * — not a fresh failure the screen should speak (George, PR #344 round 8).

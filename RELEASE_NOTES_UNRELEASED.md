@@ -7,6 +7,8 @@ its body and empties it.
 
 ## Added
 
+- Export project asks once what language a book is in, from a searchable list of languages, and writes it into the book and its export (#1630).
+
 ## Changed
 
 ## Fixed

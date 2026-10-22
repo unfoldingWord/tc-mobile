@@ -62,6 +62,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     coverColourKey: book.coverColourKey,
     createdAt: book.createdAt,
     licence: book.licence,
+    languageCode: book.languageCode,
   };
 }
 
@@ -628,6 +629,7 @@ export function useBooks() {
             coverColourKey: book.coverColourKey,
             createdAt: book.createdAt,
             licence: book.licence,
+            languageCode: book.languageCode,
           },
           ...prev,
         ]);

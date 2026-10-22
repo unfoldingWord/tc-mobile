@@ -44,6 +44,16 @@ async function newBook(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Create book" }).click();
 }
 
+/** A new book has no language, so its first export asks it (#1492). */
+async function pickLanguage(page: Page): Promise<void> {
+  await page
+    .getByRole("searchbox", { name: "Search languages" })
+    .fill("tok pisin");
+  await page
+    .getByRole("button", { name: "Tok Pisin, tpi", exact: true })
+    .click();
+}
+
 async function recordOneSegment(page: Page): Promise<void> {
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
   await page.getByRole("button", { name: "Create chapter" }).click();
@@ -138,6 +148,7 @@ test("Export project sits right after Share book and shares the project zip from
   }
 
   await page.getByRole("button", { name: "Export project" }).click();
+  await pickLanguage(page);
   await page.getByRole("button", { name: "Share now" }).click();
 
   await expect
@@ -182,6 +193,7 @@ test("Export project on a book with no audio says there is nothing to share, in 
   await newBook(page);
   await page.getByRole("button", { name: "More actions for Book 001" }).click();
   await page.getByRole("button", { name: "Export project" }).click();
+  await pickLanguage(page);
   await expect(
     page.getByText("Record a segment before sharing this book.")
   ).toBeVisible();

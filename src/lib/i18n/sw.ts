@@ -315,6 +315,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   ): string {
     return stringsEn.exportProjectFilename.apply(this, args);
   },
+  languageAskTitle: "Lugha ya kitabu hiki",
+  languageAskLead:
+    "Rekodi hizi ziko katika lugha gani? Unaichagua mara moja, na kila uhamishaji wa kitabu hiki unaitumia.",
+  languageSearch: "Tafuta lugha",
+  languageSearchHint: "Jina au msimbo",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Inapakia lugha.",
+  languageLoadFailed: "Lugha hazikuweza kupakiwa.",
+  languageNoMatch: "Hakuna lugha inayolingana. Jaribu jina au msimbo mwingine.",
+  languageNarrow: "Andika zaidi ili uone lugha nyingine.",
+  languageSaving: "Inahifadhi lugha.",
+  languageAskCancel: "Ghairi",
   shareBookNothing: "Rekodi kipande kimoja kabla ya kushiriki kitabu hiki.",
   shareBookFailed: "Kitabu hiki hakikuweza kushirikiwa. Jaribu tena.",
   shareBookFailedWeb:
