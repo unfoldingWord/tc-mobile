@@ -58,7 +58,14 @@ function reportPendingResult(
 
 /**
  * Hold the take on disk so a kill before its save lands does not lose it
- * (#38). Started, never awaited: the save must not wait on its safety net.
+ * (#38). Started, never awaited by this hook. That is not the same as the
+ * save never waiting: the hold's transaction and the commit's share stores
+ * (`segments`, `takes`, `clipMeta`, `clipData`, `pendingTakes`,
+ * `takeDispositions`), and the hold's is opened first, so IndexedDB queues
+ * the commit behind it, the hold's `clipData` read and row put included
+ * (docs/design/pending-take-lifecycle.md, §3 "Ordering against the clip
+ * write"). What the hook guarantees is only that a hold which fails, or whose
+ * promise never settles, does not fail or hold the save itself.
  * The hold writes nothing for a take that is saved, given up for quota,
  * discarded, or being discarded in this copy, so a Retry after a quota
  * failure does not write the row again. A segment held by another take's row

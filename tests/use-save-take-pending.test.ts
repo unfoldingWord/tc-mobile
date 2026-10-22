@@ -189,7 +189,11 @@ describe("performSaveTake — the pending row", () => {
     expect(await pendingClipIds()).toEqual([]);
   });
 
-  it("never delays the save: a hold that has not settled does not hold the commit", async () => {
+  // This pins the hook only: it does not await the hold's promise. It stubs
+  // `writePendingTake`, so no hold transaction opens, and it says nothing
+  // about IndexedDB queueing the commit's transaction behind a real hold's,
+  // which it does (the stores overlap; see `holdPendingTake`).
+  it("does not await the hold: a hold promise that never settles does not hold the commit", async () => {
     const segmentId = await freshSegment();
     const take = heldTake(segmentId, newClipId());
     write.mockImplementationOnce(() => new Promise(() => {}));
