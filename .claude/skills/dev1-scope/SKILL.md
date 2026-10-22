@@ -63,7 +63,7 @@ places in a comment.
 
 One comment: Problem, Outcome, In scope, Out of scope, Premise check (SHA),
 Risks, Tier, Target, the done-when rows (with `Check:` and `Source:`), Open
-decisions. End with the session link.
+decisions.
 
 Exit: the contract is posted and every open decision is routed. If a decision
 blocks everything, stop with `BLOCKED-ON <owner> <question>`. Next: dev2-plan.

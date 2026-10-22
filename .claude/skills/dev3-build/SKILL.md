@@ -39,8 +39,7 @@ never carries a run's output.
 
 ## 4. Commit and push
 
-Conventional Commits, subject and body, neither blank. End the message with the
-session line the harness gives you. Keep each slice of a split plan to its own
+Conventional Commits, subject and body, neither blank. The harness supplies the commit footer. Keep each slice of a split plan to its own
 branch. Push the branch; the pre-push hook runs the checks. Never force-push,
 and never push to `develop`, `staging` or `main`.
 

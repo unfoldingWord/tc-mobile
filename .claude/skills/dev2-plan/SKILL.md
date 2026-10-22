@@ -51,8 +51,7 @@ artifacts; an on-device check on Android and iOS for T2.
 ## 5. Post the plan
 
 One comment: tier and why, branch name, the tasks with `Covers:`, architecture
-notes (or "none"), review requirements, slices if any. End with the session
-link.
+notes (or "none"), review requirements, slices if any.
 
 Exit: the plan is posted, every row is covered, the first task is named. Next:
 dev3-build.

@@ -7,7 +7,7 @@ description: Stage dev4 of the tC Mobile issue pipeline. The quality gate before
 
 **dev4 is a gate, not a review.** It blocks the PR if anything fails. It does
 not read the diff for quality, and its report is never called independent or
-clean: the uwreview bench (Frank and George) reviews, on the PR.
+clean: the uwreview bench reviews, on the PR.
 
 ## 1. Run the suites
 
@@ -40,7 +40,9 @@ so" is not evidence.
 
 ## 5. Walk the seven Collateral surfaces
 
-Run `npm run collateral` for the hint, then answer all seven (one line each in
+If `package.json` has a `collateral` script, run `npm run collateral` for the
+hint; if it does not, answer the seven by hand from the template. A missing hint
+script is not a FAIL. Then answer all seven (one line each in
 `.github/pull_request_template.md`): release-notes (add the line to
 `RELEASE_NOTES_UNRELEASED.md` now), legal-content, help-articles, feature-doc,
 schema-doc, service-catalog, mobile-parity. Each answer is what changed, or
@@ -56,7 +58,9 @@ against the cap, so a PR that needs splitting is found here, not in CI.
 ## 7. Report
 
 PASS or FAIL, one line per check with its real result. Never write a result you
-did not observe.
+did not observe. A PASS reads `PASS <sha>`, where `<sha>` is the output of
+`git rev-parse HEAD` taken after the last check ran. Any commit made after the
+report voids it: rerun the gate on the new head.
 
-Exit: PASS, with the body gate green on the drafted body, or FAIL with the list.
-Do not suggest dev5 on a FAIL. Next: dev5-ship.
+Exit: `PASS <sha>`, with the body gate green on the drafted body, or FAIL with
+the list. Do not suggest dev5 on a FAIL. Next: dev5-ship.

@@ -39,4 +39,5 @@ Post `**[dev6 · Validate]**` with one of:
   capture) needs a device run; do not call it PASS from Node alone.
 
 Exit: a verdict is posted on the issue with evidence. A FAIL reopens the work at
-dev3. Next: dev7-close.
+dev3 and never goes to dev7-close. Next: dev3-build on a FAIL, dev7-close on a
+PASS or NEEDS-DEVICE.

@@ -57,7 +57,7 @@ describe.each(STAGES)("%s", (name) => {
     expect(skill(name)).not.toMatch(new RegExp(`\\b${PROD_LINE_CAP}\\b`));
   });
 
-  it("mentions --no-verify and merging only to forbid them", () => {
+  it("never mentions --no-verify, gh pr merge or --admin without a nearby never/not/no", () => {
     const text = skill(name);
     for (const m of text.matchAll(/--no-verify|gh pr merge|--admin/g)) {
       const before = text.slice(Math.max(0, m.index - 25), m.index);
@@ -80,14 +80,14 @@ describe("the stages point at the tooling that enforces them", () => {
     }
   });
 
-  it("dev5 runs the body gate before opening, refuses on failure, and hands back the READY-FOR-REVIEW line", () => {
+  it("dev5 names the body gate, the READY-FOR-REVIEW line and closingIssuesReferences", () => {
     const t = skill("dev5-ship");
     expect(t).toContain("npm run check:pr-body");
     expect(t).toContain("READY-FOR-REVIEW");
     expect(t).toMatch(/closingIssuesReferences/);
   });
 
-  it("dev1 names the always-stop decision categories and the ruling format", () => {
+  it("dev1 names the Ruling: format and Check: rows", () => {
     const t = skill("dev1-scope");
     expect(t).toContain("Ruling:");
     expect(t).toMatch(/Check:/);
@@ -97,9 +97,59 @@ describe("the stages point at the tooling that enforces them", () => {
     expect(skill("dev2-plan")).toMatch(/failing test/i);
   });
 
-  it("dev6 validates a different agent's work and says what a develop merge deploys", () => {
+  it("dev6 names the NEEDS-DEVICE verdict and the preview build a develop merge reaches", () => {
     const t = skill("dev6-validate");
     expect(t).toMatch(/NEEDS-DEVICE/);
     expect(t).toMatch(/preview/);
+  });
+});
+
+describe("the exits that gate the next stage", () => {
+  it("dev4 treats a missing collateral script as not a FAIL", () => {
+    const t = skill("dev4-check");
+    expect(t).toMatch(/package\.json/);
+    expect(t).toMatch(/not a FAIL/);
+  });
+
+  it("dev4's PASS carries the SHA from git rev-parse HEAD, and a later commit voids it", () => {
+    const t = skill("dev4-check");
+    expect(t).toContain("git rev-parse HEAD");
+    expect(t).toMatch(/PASS <sha>/);
+    expect(t).toMatch(/voids/);
+  });
+
+  it("dev5 refuses gh pr create unless HEAD equals dev4's SHA", () => {
+    const t = skill("dev5-ship");
+    expect(t).toMatch(/refuse/i);
+    expect(t).toMatch(/HEAD/);
+    expect(t).toMatch(/dev4/);
+    expect(t).toMatch(/SHA/);
+  });
+
+  it("dev6 sends a FAIL to dev3-build and never to dev7-close", () => {
+    const t = skill("dev6-validate");
+    const exit = t.slice(t.indexOf("Exit:"));
+    expect(exit).toContain("dev3-build");
+    expect(exit).toMatch(/never[^.]*dev7|dev7[^.]*never/i);
+  });
+
+  it("dev7 closes on a recorded device check only with the needs-device label, and never on a FAIL", () => {
+    const t = skill("dev7-close");
+    expect(t).toContain("needs-device");
+    expect(t).toMatch(/never[^.]*FAIL|FAIL[^.]*never/i);
+  });
+
+  it("no skill tells an agent to post a session link or carries a session URL", () => {
+    for (const n of STAGES) {
+      expect(skill(n), n).not.toMatch(
+        /session (?:link|line)|session_|claude\.ai/i
+      );
+    }
+  });
+
+  it("no skill names a person or a reviewer", () => {
+    for (const n of STAGES) {
+      expect(skill(n), n).not.toMatch(/\b(?:tim|seth|frank|george)\b/i);
+    }
   });
 });
