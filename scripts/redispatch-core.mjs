@@ -63,6 +63,12 @@ export function versionCore(version) {
 
 const fatal = (reason) => ({ token: "unknown", reason, fatal: true });
 
+/** Job conclusions that say, with no step run, that the build did not happen. */
+const NO_BUILD = new Set(["skipped", "cancelled", "failure", "timed_out"]);
+const FULL_SHA = /^[0-9a-f]{40}$/;
+const BRANCHES = ["staging", "main"];
+const isLane = (lane) => typeof lane === "string" && Object.hasOwn(LANES, lane);
+
 /** A step with no conclusion yet: GitHub sends `""` or `null` (#1613 r4). */
 function unfinished(step) {
   return (
@@ -79,6 +85,7 @@ function unfinished(step) {
  * whatever the run's version.
  */
 export function classifyRun(lane, run, view, artifacts) {
+  if (!isLane(lane)) return fatal(`unknown lane ${JSON.stringify(lane)}`);
   const spec = LANES[lane];
   const open = run.status !== "completed";
   if (!view || !Array.isArray(view.jobs)) {
@@ -103,13 +110,17 @@ export function classifyRun(lane, run, view, artifacts) {
   if (!step) {
     if (open)
       return { token: "started", reason: "job has not reached its steps" };
-    if (steps.length === 0) {
+    // Only a job that says it never ran is "not built"; a success, blank or
+    // null conclusion with no steps is a gap in the read, so it stops.
+    if (steps.length === 0 && NO_BUILD.has(jobs[0].conclusion)) {
       return {
         token: "not built",
-        reason: `job ${jobs[0].conclusion || "ended"} before any step`,
+        reason: `job ${jobs[0].conclusion} before any step`,
       };
     }
-    return fatal(`run ${run.databaseId}'s job has steps but no "${spec.step}"`);
+    return fatal(
+      `run ${run.databaseId}'s job has no usable "${spec.step}" (conclusion ${JSON.stringify(jobs[0].conclusion)}, ${steps.length} steps)`
+    );
   }
   if (unfinished(step)) {
     if (open)
@@ -118,6 +129,12 @@ export function classifyRun(lane, run, view, artifacts) {
       token: "unknown",
       reason: `run ${run.databaseId} completed with "${spec.step}" unfinished`,
     };
+  }
+  // `not built` needs a finished non-success STRING (#1640 George r1 (a)).
+  if (typeof step.conclusion !== "string") {
+    return fatal(
+      `run ${run.databaseId}: "${spec.step}" conclusion is not a string`
+    );
   }
   if (step.conclusion !== "success") {
     return { token: "not built", reason: `"${spec.step}" ${step.conclusion}` };
@@ -134,6 +151,14 @@ function classifyApkArtifacts(run, artifacts) {
   if (artifacts.total_count !== artifacts.artifacts.length) {
     return fatal(`artifact listing for run ${run.databaseId} is cut`);
   }
+  // Without the run's full sha, or with a nameless entry, a listing that holds
+  // the real APK would read as "not built".
+  if (typeof run.headSha !== "string" || !FULL_SHA.test(run.headSha)) {
+    return fatal(`run ${run.databaseId} has no full headSha`);
+  }
+  if (artifacts.artifacts.some((a) => !a || typeof a.name !== "string")) {
+    return fatal(`artifact entry without a name on run ${run.databaseId}`);
+  }
   const names = artifacts.artifacts.map((a) => a.name);
   if (names.length === 0) {
     // Retention is 14 days, so an empty list on a finished run cannot tell an
@@ -142,7 +167,7 @@ function classifyApkArtifacts(run, artifacts) {
       return { token: "started", reason: "APK built, not yet uploaded" };
     return {
       token: "unknown",
-      reason: `run ${run.databaseId}: APK step succeeded, artifacts expired`,
+      reason: `run ${run.databaseId}: APK step succeeded, artifact listing empty`,
     };
   }
   // The run's OWN commit: a production run is judged by its headSha, never
@@ -182,6 +207,21 @@ function summary(label, judged) {
  */
 export function decide(input) {
   const { lane, sha, branch } = input;
+  // Types are erased at runtime: an unknown lane or branch would skip a rule.
+  if (!isLane(lane)) {
+    return {
+      lines: [],
+      ok: false,
+      reason: `unknown lane ${JSON.stringify(lane)}`,
+    };
+  }
+  if (!BRANCHES.includes(branch)) {
+    return {
+      lines: [],
+      ok: false,
+      reason: `branch ${JSON.stringify(branch)} is not "staging" or "main"`,
+    };
+  }
   const lines = [];
   const stops = [];
   const read = (label, rows) => {
@@ -284,6 +324,13 @@ export function afterDispatch({
   views,
   artifacts,
 }) {
+  if (!isLane(lane) || !Array.isArray(known)) {
+    return {
+      lines: [],
+      state: "stop",
+      reason: `unknown lane ${JSON.stringify(lane)} or no list of known runs`,
+    };
+  }
   if (truncated(laneRuns)) {
     return {
       lines: [],
