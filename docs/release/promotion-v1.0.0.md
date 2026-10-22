@@ -343,8 +343,12 @@ freeze note on every new PR to `develop`.
    with the full oid. Its lines name each run at `PROMO_SHA` `built`,
    `not built`, `started` or `unknown`; record the `built` run. The DRI
    dispatches a lane (human-only) only after its last line reads
-   `OK to dispatch <lane>`, with
-   `gh workflow run <lane>.yml --repo unfoldingWord/tc-mobile --ref staging`;
+   `OK to dispatch <lane>`, with that lane's own workflow file — `apk` is
+   `gh workflow run android-apk.yml --repo unfoldingWord/tc-mobile --ref staging`,
+   `play` is
+   `gh workflow run android-play.yml --repo unfoldingWord/tc-mobile --ref staging`,
+   `testflight` is
+   `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`;
    then the agent reruns it with `--known <the ids the OK line lists>` until
    it prints `STARTED`. Any `STOP:` line means no dispatch: tell the DRI its
    reason. A lane that did not start on its own is a finding. While
@@ -416,7 +420,8 @@ build at `PROMO_SHA` is the RC, not this build). Record each run's resolved SHA 
 require it to equal `v1.0.0` before accepting its artifact. If `main` moved,
 stop and select an explicitly approved ref strategy; do not label a different
 build as the tagged release. A manual rebuild, if one is ever needed, is the
-DRI's dispatch from the `main` branch.
+DRI's dispatch from the `main` branch: §3a step 7's command for that lane,
+with `--ref main` in place of `--ref staging`.
 
 The lanes build `staging` and `main` only, never an arbitrary tag: both
 preflights refuse a tag and any other branch, and the environment's branch

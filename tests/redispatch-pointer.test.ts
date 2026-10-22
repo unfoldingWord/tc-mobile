@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -71,6 +71,25 @@ describe("runbook §3a step 7 points at the script and holds no second rule", ()
     expect(step7).toContain(
       "The DRI\n   dispatches a lane (human-only) only after"
     );
+  });
+
+  // Frank and George round 1 on #1641: `<lane>.yml` resolved to `apk.yml`,
+  // a workflow that does not exist. Each lane token names its real file.
+  it.each([
+    ["apk", "android-apk.yml"],
+    ["play", "android-play.yml"],
+    ["testflight", "ios-testflight.yml"],
+  ])("gives %s's dispatch command with %s", (lane, file) => {
+    expect(step7).toContain(
+      `\`${lane}\` is\n   \`gh workflow run ${file} --repo unfoldingWord/tc-mobile --ref staging\``
+    );
+    expect(existsSync(path.join(ROOT, ".github", "workflows", file))).toBe(
+      true
+    );
+  });
+
+  it("builds no workflow file name from the lane token", () => {
+    expect(step7).not.toContain("<lane>.yml");
   });
 });
 
