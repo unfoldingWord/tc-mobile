@@ -31,3 +31,8 @@ third_party
 # fields neutralised, #1478), as fetched at the pinned commit; see tests/fixtures/scripture-bundle/README.md.
 tests/fixtures/scripture-bundle/schema-1.0.0
 tests/fixtures/scripture-bundle/examples/spec-audioTranslation.json
+
+# The bundled language list (#1492, ADR 0017), written by
+# scripts/build-language-list.mjs one language per line so a release bump
+# reads as a diff of languages; prettier would put each field on its own line.
+src/data/language-list.json

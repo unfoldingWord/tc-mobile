@@ -274,14 +274,19 @@ export interface LicenseText {
 /**
  * The licence texts that ship with the app, in reading order: the app's own
  * MIT, the collected third-party notices (every permissive dependency's
- * verbatim licence and copyright), and the two GNU texts lamejs's LGPL-3.0
- * requires (LGPL v3 incorporates the GPL by reference, so both ship).
+ * verbatim licence and copyright), the two GNU texts lamejs's LGPL-3.0
+ * requires (LGPL v3 incorporates the GPL by reference, so both ship), and the
+ * MIT licence of the bundled language list (SIL langtags, ADR 0017).
  */
 export const licenseTexts: readonly LicenseText[] = [
   { label: "This app — MIT licence", href: "/licenses/MIT.txt" },
   { label: "Third-party notices", href: "/licenses/THIRD-PARTY-NOTICES.txt" },
   { label: "GNU LGPL v3 — lamejs", href: "/licenses/GNU-LGPL-3.0.txt" },
   { label: "GNU GPL v3 — lamejs", href: "/licenses/GNU-GPL-3.0.txt" },
+  {
+    label: "Language data — SIL langtags, MIT",
+    href: "/licenses/SIL-LANGTAGS-MIT.txt",
+  },
 ];
 
 /**
@@ -341,5 +346,14 @@ export const contentAttribution: readonly ContentAttribution[] = [
     holder: "© Sweet Publishing",
     license: "CC BY-SA 3.0",
     href: "https://creativecommons.org/licenses/by-sa/3.0/",
+  },
+  {
+    // The language ask's list (#1492, ADR 0017): SIL's langtags, MIT, whose
+    // names and autonyms come from Ethnologue. Its licence text is also one
+    // of the in-drawer texts above.
+    what: "Language data",
+    holder: "© 2019-2025 SIL International (langtags)",
+    license: "MIT",
+    href: "https://github.com/silnrsi/langtags/blob/26242.1446/LICENSE",
   },
 ];
