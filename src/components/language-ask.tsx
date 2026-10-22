@@ -10,22 +10,17 @@ import { TileGrid } from "./o4-tile-menu";
 const SHOWN = 50;
 
 /**
- * The language ask (#1492), in the book sheet where the tiles were, as the
- * cover picker is, inside the tile grid so the sheet keeps its bottom-sheet
- * shell. A search over the bundled list (ADR 0017); a tap on a row is the
- * answer. Each row's accessible name is the English name and the tag, and the
- * autonym is drawn in its own language. Up and Down move between the field
- * and the rows. Presentational: the list, the write and its outcome arrive by
- * prop.
+ * The language ask (#1492): a search over the bundled list (ADR 0017) in the
+ * book sheet's tile grid, as the cover picker is. A row tap is the answer; a
+ * row is named by English name and tag; Up and Down move between the field
+ * and the rows. Presentational: everything else arrives by prop.
  */
 export function LanguageAsk(props: {
   state: LanguageListState;
   onRetry: () => void;
   onPick: (tag: string) => void;
   onCancel: () => void;
-  /** The pick is being written: rows ignore taps meanwhile. */
   saving: boolean;
-  /** A failed write, already worded. */
   error: string | null;
 }) {
   const { state, saving, error } = props;

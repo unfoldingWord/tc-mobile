@@ -314,7 +314,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   ): string {
     return stringsEn.exportProjectFilename.apply(this, args);
   },
-  // The language ask (#1492).
   languageAskTitle: "Lugha ya kitabu hiki",
   languageAskLead:
     "Rekodi hizi ziko katika lugha gani? Unaichagua mara moja, na kila uhamishaji wa kitabu hiki unaitumia.",

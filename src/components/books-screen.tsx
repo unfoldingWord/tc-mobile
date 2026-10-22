@@ -1421,10 +1421,8 @@ export function BooksScreen({
   // Export project (#1457): the same tap-1 handling as Share Book above — the
   // focus capture, the chapter stop, the rename-session bump, the chained
   // close — through the same flow, handed a Scripture Bundle instead of the
-  // MP3 zip. A book with no language asks it first (#1492; R12, "Ask at
-  // export, then write it into the metadata for that book"): the export
-  // starts only once the answer is stored, and `gatherBundleInput` reads the
-  // book again, so the tag reaches `metadata.json` through the stored row.
+  // MP3 zip. A book with no language asks it first (#1492, R12); the export
+  // reads the stored book, so the tag reaches `metadata.json`.
   const runBookExport = useCallback(
     (bookId: BookId) => {
       void bookShare

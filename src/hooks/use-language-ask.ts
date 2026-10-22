@@ -21,11 +21,9 @@ export async function performSetBookLanguage(
 }
 
 /**
- * The language ask's state on one screen: the book it is open for (`ask`,
- * `cancel`), whether the pick is being written, and a failed write's key.
- * `choose` goes busy before its first await; a run that a `cancel`, a newer
- * `ask` or an unmount overtook resolves `null`, so a closed ask never
- * continues an export.
+ * The ask's book, its in-flight write and a failed write's key. `choose` goes
+ * busy before its first await; a run a `cancel`, a newer `ask` or an unmount
+ * overtook resolves `null`, so a closed ask never continues an export.
  */
 export function useLanguageAsk() {
   const [askingFor, setAskingFor] = useState<BookId | null>(null);

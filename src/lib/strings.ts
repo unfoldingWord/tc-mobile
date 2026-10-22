@@ -905,14 +905,12 @@ export const stringsEn = {
       this.shareNameFallback;
     return `${label}${suffix}`;
   },
-  // The language ask (#1492): the first Export project of a book with no
-  // language asks it once, from the bundled list (ADR 0017).
+  // The language ask on a book's first Export project (#1492, ADR 0017).
   languageAskTitle: "Language of this book",
   languageAskLead:
     "What language are the recordings in? You choose once, and every export of this book uses it.",
   languageSearch: "Search languages",
   languageSearchHint: "Name or code",
-  // A row's spoken name: the English name, then the tag.
   languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
   languageLoading: "Loading the languages.",
   languageLoadFailed: "Could not load the languages.",

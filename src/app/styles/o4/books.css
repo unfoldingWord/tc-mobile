@@ -494,11 +494,9 @@
       0 0 0 6px var(--s-ink);
   }
 
-  /* The language ask (#1492), where the book sheet's tiles were. The rows
-     scroll on their own so the field stays in view, and while focus is
-     inside the sheet docks at the top, as the name sheets do (sheets.css),
-     so the soft keyboard cannot cover the field. Its title has its own class:
-     this sheet hides .t-title (o4/menus.css). */
+  /* The language ask (#1492). The rows scroll so the field stays in view; with
+     focus inside, the sheet docks at the top above the keyboard (sheets.css).
+     Its own title class: this sheet hides .t-title (o4/menus.css). */
   :root .menu-scrim:has(.language-ask:focus-within) {
     align-items: flex-start;
   }
