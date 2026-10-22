@@ -475,6 +475,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "Tidak dapat dimuat. Coba lagi.",
   saveFailed: "Tidak dapat disimpan. Coba lagi.",
   noRoom: "Tidak ada ruang lagi di ponsel ini.",
+  bookNameTaken: "Buku lain memakai nama ini. Ketik nama yang berbeda.",
   stopToEdit: "Hentikan rekaman untuk mengedit.",
   stopToErase: "Hentikan rekaman untuk menyetel ulang.",
 

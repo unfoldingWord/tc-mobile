@@ -524,6 +524,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "Haikuweza kupakiwa. Jaribu tena.",
   saveFailed: "Haikuweza kuhifadhiwa. Jaribu tena.",
   noRoom: "Hakuna nafasi tena kwenye simu hii.",
+  bookNameTaken: "Kitabu kingine kina jina hili. Andika jina tofauti.",
   stopToEdit: "Acha kurekodi ili uhariri.",
   stopToErase: "Acha kurekodi ili uweke upya.",
 

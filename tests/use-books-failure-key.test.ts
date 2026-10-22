@@ -161,3 +161,17 @@ it('maps a quota-exceeded addChapter failure to "noRoom" (#172)', async () => {
 
   expect(hook().error).toBe("noRoom");
 });
+
+it('returns the "bookNameTaken" KEY for a name another book has, and keeps it out of the problem report (#1272)', async () => {
+  await createBook("Mark");
+  await mount();
+  vi.mocked(reportFailure).mockClear();
+
+  let result: { ok: boolean; key?: string } | undefined;
+  await act(async () => {
+    result = await hook().createBook("mark");
+  });
+
+  expect(result).toEqual({ ok: false, key: "bookNameTaken" });
+  expect(reportFailure).not.toHaveBeenCalled();
+});
