@@ -126,6 +126,7 @@ function segmentRow(
     createdAt: planned.createdAt,
     modifiedAt: planned.modifiedAt,
     templateKey: planned.templateKey,
+    audioRevision: 0,
   };
 }
 

@@ -53,6 +53,7 @@ function resolvedPcm(segmentId: SegmentId, clipId: ClipId): SegmentAudio<Clip> {
       activeTakeId: "take" as TakeId,
       status: "affirmed",
       ...ROW_V12_FIELDS,
+      audioRevision: 0,
     },
     take: {
       id: "take" as TakeId,

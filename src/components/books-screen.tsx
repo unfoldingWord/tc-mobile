@@ -39,7 +39,8 @@ import { storagePressureNotice } from "./storage-pressure-notice";
 import { shelfNoticeText } from "./shelf-notice-text";
 import { activeLocale } from "@/lib/locale";
 import { strings } from "@/lib/strings";
-import { ThemeControl } from "./theme-control";
+import { SettingsPanel } from "./settings-panel";
+import { useChapterHeading } from "@/hooks/use-settings";
 import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
@@ -129,7 +130,8 @@ type BooksLayerId =
   | "books:book-menu"
   | "books:delete-confirm"
   | "books:about"
-  | "books:about-text";
+  | "books:about-text"
+  | "books:settings";
 
 interface BooksScreenProps {
   /** Chapter play (#1469): the row controls' view of the audio session. */
@@ -239,6 +241,9 @@ export function BooksScreen({
   // About closes the menu, and the About panel owns its own Menu.
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutViewing, setAboutViewing] = useState<LicenseText | null>(null);
+  // Settings (#1575), opened by the gear in the header. Its own flag and its
+  // own Back layer, like About's, so the two never share a close path.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
   // shelf read included, which is precisely when a facilitator needs the report.
@@ -690,6 +695,14 @@ export function BooksScreen({
         setAboutViewing(null);
       },
     },
+    // Settings (#1575) writes through its own rows, each of which lands in
+    // one synchronous tap, so Back is never refused.
+    "books:settings": {
+      busy: () => false,
+      dismiss: () => {
+        setSettingsOpen(false);
+      },
+    },
   });
 
   // The ≡ that opened the global menu, handed focus back when it closes
@@ -807,6 +820,24 @@ export function BooksScreen({
     },
     [layers]
   );
+  // The gear's ONE open and ONE close. Opened from the tap itself, so the
+  // layer is registered in the gesture, and the ≡ menu is not involved: the
+  // gear is its own opener.
+  const settingsFocusRestore = useFocusRestore();
+  const openSettings = useCallback(() => {
+    settingsFocusRestore.capture();
+    layers.open("books:settings");
+    setSettingsOpen(true);
+  }, [layers, settingsFocusRestore]);
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    layers.close("books:settings");
+  }, [layers]);
+  // Once the screen is gone and the shelf's `inert` has lifted.
+  useLayoutEffect(() => {
+    if (settingsOpen) return;
+    settingsFocusRestore.restore({ suppressed: false, fallback: null });
+  }, [settingsOpen, settingsFocusRestore]);
   const closeLicenseText = useCallback(() => {
     setAboutViewing(null);
     layers.close("books:about-text");
@@ -1763,6 +1794,7 @@ export function BooksScreen({
   const shelfInert =
     menuOpen ||
     aboutOpen ||
+    settingsOpen ||
     shareMenuBook !== null ||
     deleteTargetId !== null ||
     newBookSeed !== null ||
@@ -1920,6 +1952,15 @@ export function BooksScreen({
             render. Same two classes, same `aria-hidden` sibling shape, so the
             two marks cannot drift apart visually; the only difference is the
             colour, because this one is a state mark rather than a reason. */}
+        {/* Settings (#1575, the DRI: "Gear icon on Books header"). Its own
+            Control, ahead of the ≡, so the ≡'s hint wrapper below is untouched. */}
+        <Control
+          icon="gear"
+          label={strings.settingsOpen}
+          variant="quiet"
+          className="books-ghost"
+          onClick={openSettings}
+        />
         <span className="control-hinted">
           <Control
             icon="menu"
@@ -2127,8 +2168,9 @@ export function BooksScreen({
         {reorderStatus}
       </span>
 
-      {/* The global menu: the failure-log panel, then About & licenses, then
-          the theme toggle.
+      {/* The global menu: the failure-log panel, then About & licenses. The
+          theme toggle left it for the Settings screen (#1575), which the gear
+          in the header opens.
 
           THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
           focus on its first actionable child on open, and while the log is
@@ -2144,16 +2186,11 @@ export function BooksScreen({
           menu and hands off to the About panel, which owns its own Menu.
 
           Placement (DRI ruling on PR #1019, 2026-09-26): About renders as
-          a tile in the same `TileGrid` the theme tile uses, ahead of the
-          `TileSpacer` — so it is the grid's first tile and the theme tile
-          keeps the far end, the position `tests/books-menus-tiles-o4.test.ts`
-          already pins for it.
+          a tile in the `TileGrid`.
 
-          The toggle (#171) is `ThemeControl`, which is also mounted in the
-          chapter and recorder menus (#149) — its own docblock holds why it is
-          one shared component, why the glyph names the destination, and why
-          the tap leaves this menu open. What stays Books-only is the panel
-          above it, for the two reasons recorded there.
+          The toggle (#171) is `ThemeControl`, and it lives only on the
+          Settings screen (DRI on #1623, 2026-10-22: "Remove, Settings only").
+          Its own docblock holds why the glyph names the destination.
 
           This menu used to end with the design switch (#938's pencil, "New
           look (O4)"). #1244 removed it, and #954 removed the old look it
@@ -2170,10 +2207,8 @@ export function BooksScreen({
             onClearConfirmClose={onClearConfirmClose}
           />
         )}
-        {/* The workbench's G1, plus the DRI's About placement above: About
-            is a tile ahead of the spacer, the theme tile stays at the far
-            end, where every menu draws it. The report panel above stays as
-            it is (its Export tile's words are a DRI call). */}
+        {/* The report panel above stays as it is (its Export tile's words are
+            a DRI call). */}
         <TileGrid>
           <Tile
             tone="plain"
@@ -2182,10 +2217,10 @@ export function BooksScreen({
             caption={strings.tileAbout}
             onClick={openAbout}
           />
-          <TileSpacer />
-          <ThemeControl tile />
         </TileGrid>
       </Menu>
+
+      <SettingsPanel open={settingsOpen} onClose={closeSettings} />
 
       <AboutPanel
         open={aboutOpen}
@@ -2722,7 +2757,7 @@ function ChapterItem({
   reorderY,
 }: ChapterItemProps) {
   // The passage label the facilitator set (#264), else "Chapter {number}".
-  const heading = strings.chapterHeading(chapter.name, chapter.number);
+  const heading = useChapterHeading(chapter.name, chapter.number);
   const status = chapterRowStatus(audio.chapterPlay, chapter.chapterId);
   return (
     <li
@@ -2789,6 +2824,7 @@ function ChapterItem({
  * tier 2 (after the training) and is not drawn here.
  */
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
+  const heading = useChapterHeading(chapter.name, chapter.number);
   const dots = dotStates(chapter);
   const [size, gap] = dotFit(dots.length, TITLED_DOT_ROOM);
   return (
@@ -2799,9 +2835,11 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
       <span className="books-chapter-mid" aria-hidden="true">
         <span
           className="books-chapter-title"
-          dir={chapter.name === null ? undefined : "auto"}
+          dir={
+            heading === strings.chapterName(chapter.number) ? undefined : "auto"
+          }
         >
-          {strings.chapterHeading(chapter.name, chapter.number)}
+          {heading}
         </span>
         <span
           className="books-dots"

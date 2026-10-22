@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
+import { noteObservedRevision } from "./observed-revision";
 import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
@@ -63,6 +64,11 @@ export interface RecorderSegmentView {
    * screen). The read's one failure point is this effect, before any recording.
    */
   readonly samples: Int16Array | null;
+  /**
+   * The segment's `audioRevision`, read in the same transaction as `samples`.
+   * The hook notes it for the hold only when it adopts this view (cell HM).
+   */
+  readonly audioRevision: number;
 }
 
 /**
@@ -133,6 +139,11 @@ export async function loadRecorderSegmentView(
     finished: isFinished(segment.status),
     hasClip: samples !== null,
     samples,
+    // `segment` above is a separate, earlier read; this one is the samples'.
+    audioRevision:
+      audio.kind === "no-segment"
+        ? segment.audioRevision
+        : audio.segment.audioRevision,
   };
 }
 
@@ -178,6 +189,10 @@ export function useRecorderSegment(segmentId: SegmentId) {
         // exactly this reason). Here we only re-read/re-decode.
         const next = await loadRecorderSegmentView(segmentId);
         if (cancelled) return;
+        // Only the adopted view notes its revision: a cancelled load may have
+        // read a newer one than the samples the editor holds (George r2 on
+        // #1618). No React commit can run between this and `setView`.
+        noteObservedRevision(segmentId, next.audioRevision);
         setView(next);
         setError(null);
       } catch (cause) {
@@ -232,6 +247,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
   const reload = useCallback(async (): Promise<RecorderSegmentView | null> => {
     try {
       const next = await loadRecorderSegmentView(segmentId);
+      noteObservedRevision(segmentId, next.audioRevision);
       setView(next);
       setError(null);
       return next;
