@@ -137,7 +137,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   stop: "Arrêter l'enregistrement",
   zoomAtWhole: "Zoom normal. Zoomez pour agrandir.",
   zoomAtQuarter: "Zoom agrandi. Dézoomez pour revenir au zoom normal.",
-  micOffTitle: "Le microphone est éteint",
+  micOffTitle: "Microphone éteint",
   micRetry: "Réessayer",
   micBack: "Retour",
   micStepsLabel: "Étapes pour activer le microphone",
