@@ -435,7 +435,9 @@ the list may be cut.
   `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <SHA> --limit 100 --json databaseId,event,status,conclusion`
 - **B. Each run's signing job**: `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<signing job>") | .conclusion'`.
   A run's own `conclusion` is not the job's: a run whose signing job was
-  `skipped` still concludes `success`.
+  `skipped` still concludes `success`. On the Play lane, also read the
+  upload step (`| .steps[] | select(.name=="Upload to Google Play") | .conclusion`
+  after the job select): a `build_only` run skips it and uploads nothing.
 - **C. The APK lane's artifact names** for a run:
   `gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`.
   An ordinary build holds `android-apk-<SHA>`. `android-apk-diagnostic-<SHA>`
@@ -443,22 +445,25 @@ the list may be cut.
 - **D. Open runs of the lane on every branch**, one read per open status,
   because the group carries no branch and a `main` run can hold the slot:
   `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --status <status> --limit 100 --json databaseId,headBranch,headSha,status`
-  for `<status>` in `queued`, `in_progress`, `waiting`, `pending` and
-  `requested`. All five empty means the lane is free.
+  for `<status>` in `queued`, `in_progress`, `waiting`, `pending`,
+  `requested` and `action_required`. All six empty means the lane is free.
 - **E. The canonical tip**:
   `gh api repos/unfoldingWord/tc-mobile/git/ref/heads/<branch> --jq .object.sha`
   (`staging` for a promotion RC, `main` for production).
 - **F. A newer `main` build** (staging recovery only):
-  `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch main --limit 1 --json databaseId,headSha,createdAt,status`,
-  against the promotion PR's `mergedAt`
-  (`gh pr view <N> --repo unfoldingWord/tc-mobile --json mergedAt --jq .mergedAt`).
+  `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch main --status success --limit 100 --json databaseId,headSha,createdAt`,
+  against `mergedAt` of the promotion PR `<N>` that merged `<SHA>` into
+  `staging` (`gh pr view <N> --repo unfoldingWord/tc-mobile --json mergedAt --jq .mergedAt`).
+  A run's `success` is not a build: read B (and C) for each run after it.
 
 The procedure, in order. Stop at the first step that says stop.
 
 1. **Already built?** Read A, then B for every run in A, then C for the APK
    lane. If any run's signing job is `success` and (APK lane) its artifact
-   is the ordinary name, `<SHA>` is built: stop and record that run. A run
-   whose signing job is open is not a failure and is not built yet: go to 2.
+   is the ordinary name, or (Play lane) its upload step is `success`, `<SHA>`
+   is built: stop and record that run. A run whose signing job is open (B
+   prints an empty conclusion) is not built yet and holds the lane: do not
+   dispatch while it is open; go to 2.
 2. **Lane free?** Read D. If any status lists a run, wait, and when D is
    empty return to 1 (a run that was open may have built `<SHA>` meanwhile).
    An open run whose `headSha` is `<SHA>` is that build in progress, so do
@@ -467,7 +472,9 @@ The procedure, in order. Stop at the first step that says stop.
    because `--ref <branch>` builds the tip at dispatch. If it is not exactly
    `<SHA>`, stop.
 4. **Newer production build** (a staging dispatch only). Read F. If a `main`
-   run was created after the promotion's `mergedAt`, stop. The rule (DRI
+   run created after the promotion's `mergedAt` has a signing job `success`
+   in B (APK lane: the ordinary artifact in C), stop. A failed, cancelled or
+   skipped `main` run is not a production build. The rule (DRI
    pick, 2026-10-22, #1321 item 2: "Never dispatch an RC after prod"): once
    a version has a production build, no tester RC is dispatched for that
    version, and the next tester build is a new version. Tell the DRI.
@@ -477,8 +484,8 @@ The procedure, in order. Stop at the first step that says stop.
    remedy: uninstalling deletes recordings.
 5. **Dispatch** (human-only):
    `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref <branch>`.
-   The agent then re-reads D until the new run's signing job has started (an
-   empty conclusion on an open run: waiting for the `release-signing`
+   The agent then re-reads A and B until the new run's signing job has
+   started (B prints an empty conclusion while A shows the run open: waiting for the `release-signing`
    reviewer, or running; either way it has started, so do not dispatch a
    second). A dispatch that ends `cancelled` while pending returns to 1.
 
@@ -491,12 +498,12 @@ Scenario table. Each row is what the reads show and what to do.
 | Lane never started                | A has a run, signing job `skipped`                              | Not built; find the cause (a finding), carry on from 2                                                                                                                                             |
 | Replaced while pending            | A has a run at `<SHA>` that is `cancelled`                      | Not built; carry on from 2                                                                                                                                                                         |
 | Main run in the shared group      | D lists a run on `main`                                         | Wait, then 1                                                                                                                                                                                       |
-| Open run builds `<SHA>` meanwhile | D was non-empty, A now has a `success`                          | Stop; record it                                                                                                                                                                                    |
+| Open run builds `<SHA>` meanwhile | D was non-empty; B now shows a signing job `success`            | Stop; record it                                                                                                                                                                                    |
 | Tip moved                         | E is not `<SHA>`                                                | Stop; tell the DRI (the red team read another tree)                                                                                                                                                |
-| Long history                      | Twenty or more completed runs sit newer than an open one        | No effect: D filters by status, A by commit                                                                                                                                                        |
+| Long history                      | Many completed runs sit newer than an open one                  | No effect: D filters by status, A by commit                                                                                                                                                        |
 | Dispatch cancelled while pending  | The new run ends `cancelled` before its signing job starts      | Back to 1                                                                                                                                                                                          |
-| Production build already made     | F shows a `main` run after `mergedAt`                           | Stop; no RC for a version with a production build (DRI, 2026-10-22); the next tester build is a new version                                                                                        |
-| Play draft missing                | `android-play.yml`: A has no run whose signing job is `success` | The Play group sits on the whole run, so a pending push or dispatch can be replaced and never build. Same procedure with `<lane>` `android-play.yml`; dispatch with no `build_only`, which uploads |
+| Production build already made     | F lists a `main` run after `mergedAt` whose B is `success`      | Stop; no RC for a version with a production build (DRI, 2026-10-22); the next tester build is a new version                                                                                        |
+| Play draft missing                | `android-play.yml`: no run in A passes step 1 with an upload    | The Play group spans the whole run, so a pending push or dispatch can be replaced and never build. Same procedure on `android-play.yml`; dispatch with no `build_only` (default `false`: uploads)  |
 
 ## 4. Native candidate and durable delivery
 
