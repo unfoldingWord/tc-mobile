@@ -118,12 +118,32 @@ describe("the exits that gate the next stage", () => {
     expect(t).toMatch(/voids/);
   });
 
-  it("dev5 refuses gh pr create unless HEAD equals dev4's SHA", () => {
-    const t = skill("dev5-ship");
-    expect(t).toMatch(/refuse/i);
-    expect(t).toMatch(/HEAD/);
-    expect(t).toMatch(/dev4/);
-    expect(t).toMatch(/SHA/);
+  it("dev5 refuses gh pr create unless HEAD and @{u} both equal the PASS SHA", () => {
+    const t = skill("dev5-ship").replace(/\s+/g, " ");
+    expect(t).toMatch(
+      /Refuse to run `gh pr create` unless [^.]*HEAD and `@\{u\}` both equal [^.]*PASS <sha>/
+    );
+  });
+
+  it("dev4 requires every edit committed and `git status --porcelain` empty before it stamps PASS", () => {
+    const t = skill("dev4-check").replace(/\s+/g, " ");
+    expect(t).toMatch(/Commit every edit/);
+    expect(t).toMatch(/`git status --porcelain` prints nothing/);
+  });
+
+  it("dev4's Exit sends a PASS to dev5-ship and a FAIL to the stage that owes the fix", () => {
+    const t = skill("dev4-check").replace(/\s+/g, " ");
+    expect(t).toMatch(
+      /Next: dev5-ship on a PASS; on a FAIL, the stage that owes the fix/
+    );
+  });
+
+  it("dev7 closes a NEEDS-DEVICE issue only once the label is confirmed on it", () => {
+    const t = skill("dev7-close").replace(/\s+/g, " ");
+    expect(t).toMatch(/Add `needs-device` first/);
+    expect(t).toMatch(/gh issue view <n> --json labels/);
+    expect(t).toMatch(/only then close/);
+    expect(t).toMatch(/leave the issue open/);
   });
 
   it("dev6 sends a FAIL to dev3-build and never to dev7-close", () => {

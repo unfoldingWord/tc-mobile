@@ -10,9 +10,10 @@ Open the PR and stop. Never merge, and never push to `develop`, `staging` or
 
 ## 1. Before opening
 
-Confirm the branch is pushed and run `git rev-parse HEAD`. Refuse to run
-`gh pr create` unless that SHA equals the one in dev4's `PASS <sha>`: a commit
-made after the gate was never gated, so go back to dev4. Gather the issue, the plan
+Confirm the branch is pushed. Refuse to run `gh pr create` unless
+HEAD and `@{u}` both equal the SHA in dev4's `PASS <sha>` (compare
+`git rev-parse HEAD` and `git rev-parse @{u}`): a commit made or left unpushed
+after the gate was never gated, so go back to dev4. Gather the issue, the plan
 and the done-when evidence from dev4.
 
 ## 2. Write the body from the template

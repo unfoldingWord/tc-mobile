@@ -58,9 +58,11 @@ against the cap, so a PR that needs splitting is found here, not in CI.
 ## 7. Report
 
 PASS or FAIL, one line per check with its real result. Never write a result you
-did not observe. A PASS reads `PASS <sha>`, where `<sha>` is the output of
-`git rev-parse HEAD` taken after the last check ran. Any commit made after the
+did not observe. Commit every edit first: a PASS requires
+that `git status --porcelain` prints nothing. A PASS then reads `PASS <sha>`, where
+`<sha>` is the output of `git rev-parse HEAD` taken after the last check ran. Any commit made after the
 report voids it: rerun the gate on the new head.
 
 Exit: `PASS <sha>`, with the body gate green on the drafted body, or FAIL with
-the list. Do not suggest dev5 on a FAIL. Next: dev5-ship.
+the list. Do not suggest dev5 on a FAIL. Next: dev5-ship on a PASS; on a FAIL, the stage
+that owes the fix.
