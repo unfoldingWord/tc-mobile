@@ -315,6 +315,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   ): string {
     return stringsEn.exportProjectFilename.apply(this, args);
   },
+  languageAskTitle: "इस पुस्तक की भाषा",
+  languageAskLead:
+    "ये रिकॉर्डिंग किस भाषा में हैं? आप इसे एक बार चुनते हैं, और इस पुस्तक का हर निर्यात इसी का उपयोग करता है।",
+  languageSearch: "भाषाएँ खोजें",
+  languageSearchHint: "नाम या कोड",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "भाषाएँ लोड हो रही हैं।",
+  languageLoadFailed: "भाषाएँ लोड नहीं हो सकीं।",
+  languageNoMatch: "कोई भाषा मेल नहीं खाती। कोई दूसरा नाम या कोड आज़माएँ।",
+  languageNarrow: "दूसरी भाषाएँ देखने के लिए और टाइप करें।",
+  languageSaving: "भाषा सहेजी जा रही है।",
+  languageAskCancel: "रद्द करें",
   shareBookNothing: "इस पुस्तक को साझा करने से पहले एक खंड रिकॉर्ड करें।",
   shareBookFailed: "यह पुस्तक साझा नहीं हो सकी। फिर से कोशिश करें।",
   shareBookFailedWeb:
