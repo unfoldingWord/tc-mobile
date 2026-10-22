@@ -88,6 +88,13 @@ export interface PendingTake {
    * survives, so "delete this recording for good" is only true of a recording.
    */
   readonly editOnly: boolean;
+  /**
+   * The segment's `audioRevision` read with the audio `existing` came from,
+   * or `null` when the caller does not know it. The hold stamps this, never
+   * its own live read, so a replay sees an erase or save that landed between
+   * the base read and the hold (George r1 on #1618).
+   */
+  readonly baseRevision: number | null;
   readonly state: "saving" | "failed";
   readonly kind: SaveFailureKind | null;
   /** Failures so far. Zero means the first attempt is still in flight. */
@@ -107,6 +114,8 @@ export interface NewTake {
   readonly finished: boolean;
   /** Whether this is an edit-only save rather than a recording (see `PendingTake`). */
   readonly editOnly: boolean;
+  /** The revision `existing` was read at, or `null` (see `PendingTake`). */
+  readonly baseRevision: number | null;
 }
 
 /**
@@ -131,6 +140,7 @@ export function startSave(
     offset: take.offset,
     finished: take.finished,
     editOnly: take.editOnly,
+    baseRevision: take.baseRevision,
     state: "saving",
     kind: null,
     attempts: 0,
@@ -208,8 +218,9 @@ export function succeedSave(
  * `orphan` is the clip the caller now has to delete: a failed attempt may have
  * written the samples before the take row failed, and nothing references them
  * once the slot is empty, so leaving them would hold exactly the space the save
- * just ran out of. It is `null` when there was nothing to discard, so a caller
- * cannot be told to delete a clip that is still in use.
+ * just ran out of. It is `null` when there was nothing to discard. The caller
+ * hands it to the Discard settle, which deletes it only if nothing uses it
+ * (v13, #38): another copy may have saved this very take.
  */
 export function discardSave(current: PendingTake | null): {
   readonly next: null;

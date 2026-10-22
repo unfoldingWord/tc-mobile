@@ -106,6 +106,15 @@ export const stringsEn = {
   // Every OTHER menu passes its own `title` and still shows it.
   menuTitle: "Menu",
   menuClose: "Close menu",
+  // Settings (#1575): the gear in the Books header, and the screen it opens.
+  // The gear's name is the screen's title, so the heading a screen reader
+  // announces is the word the control carried. The screen's Back reads
+  // `backToBooks`. Theme rows reuse `useLightTheme` and `useDarkTheme`.
+  settingsOpen: "Settings",
+  settingsTitle: "Settings",
+  // S12: the requirements owner's option. Off, a chapter shows its name when
+  // it has one and its number when it does not. On, always the number.
+  settingsChapterNumbers: "Always show chapter numbers",
   booksEmpty: "Start your first book",
   // #406 item 3 (George round 2 residual, then George round 1 on #423 P2):
   // an earlier fix hedged this line with "unless space runs low" instead of
@@ -352,8 +361,6 @@ export const stringsEn = {
   // The app ≡ menu's About tile (#36, DRI ruling on PR #1019): its name is
   // `aboutOpen` ("About and licenses"), which already holds this word.
   tileAbout: "About",
-  tileLight: "Light",
-  tileDark: "Dark",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment

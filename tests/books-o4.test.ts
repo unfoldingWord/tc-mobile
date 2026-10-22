@@ -478,6 +478,7 @@ describe("O4 Books list, state 03 (#942)", () => {
     // rows under its own controls.
     expect(buttonNames()).toEqual([
       strings.newBook,
+      strings.settingsOpen,
       strings.menuOpen,
       strings.bookRow("Mark", 2, true),
       strings.addChapter("Mark"),

@@ -204,133 +204,63 @@ describe("the light theme is reachable (#171)", () => {
     );
   });
 
-  it("the toggle is mounted in the global menu, not just written", () => {
+  it("the toggle is mounted on the Settings screen, not just written (#1575)", () => {
     // The hook could exist and be called by nothing. Since #149 the control
-    // itself is `ThemeControl` — one component mounted in three menus — so the
-    // wiring lives in that file and the MOUNT is what each screen shows.
+    // itself is `ThemeControl`, so the wiring lives in that file and the MOUNT
+    // is what each screen shows. Since #1575 the Books global menu no longer
+    // mounts it: it is the Settings screen's first row.
     const control = code("src/components/theme-control.tsx");
     expect(control).toMatch(/useTheme\(\)/);
     expect(control).toMatch(/onClick=\{theme\.toggle\}/);
-    const screen = code("src/components/books-screen.tsx");
-    // The tile form: every menu draws its actions on the tile grid (#949).
-    expect(screen).toMatch(/<ThemeControl\s+tile\s*\/>/);
-    // A `<Menu>` with CHILDREN — before this it was a self-closing empty panel.
-    //
-    // The close handler is matched loosely on purpose (#452 PR3): it was the
-    // inline `() => setMenuOpen(false)` until the global menu became a Back
-    // layer, at which point opening and closing it had to go through ONE named
-    // pair so no call site could forget the registration. Pinning the exact
-    // expression made this assertion a tripwire for any refactor of that
-    // handler rather than for the thing it is about — that the panel has
-    // children.
-    expect(screen).toMatch(new RegExp(GLOBAL_MENU_OPEN_TAG));
+    expect(control).toMatch(/<SettingRow[^>]*onClick=\{theme\.toggle\}/);
+    const settings = code("src/components/settings-panel.tsx");
+    expect(settings.match(/<ThemeControl\s*\/>/g)?.length ?? 0).toBe(1);
+    // `<Menu` with CHILDREN, so a Settings screen that opens empty fails here.
+    expect(settings).toMatch(
+      /<Menu[\s\S]*?>\s*<div className="settings-list">/
+    );
   });
 
-  it("sits AFTER the failure-log panel, so ≡-with-failures lands on the report", () => {
-    // `Menu` focuses its first actionable child on open (`menu.tsx`). While
-    // the log is non-empty the ≡ is named "Open menu. N problems recorded."
-    // and its whole point is reaching the report — so the toggle, which is
-    // unconditional, must not be the first child in front of the panel, or a
-    // switch/AT user who activates what they landed on flips the theme
-    // instead (George R1 P2 on #457). The panel is mounted only while
-    // `failureCount > 0`, so on a quiet phone the toggle is still first.
-    const screen = code("src/components/books-screen.tsx");
-    const menu = screen.search(new RegExp(GLOBAL_MENU_OPEN_TAG));
-    expect(menu).toBeGreaterThan(-1);
-    const body = screen.slice(menu);
-    const panel = body.indexOf("<FailureLogPanel");
+  it("is gone from the Books global menu: moved, not duplicated (#1575)", () => {
     // `<ThemeControl`, with the angle bracket, so a prose mention of the
-    // component in a nearby comment can never stand in for the mount — the
-    // capture-by-comment trap AGENTS.md records from #529 round 3.
-    const toggle = body.indexOf("<ThemeControl");
-    expect(panel, "FailureLogPanel is not in the global menu").toBeGreaterThan(
-      -1
-    );
-    expect(toggle, "the toggle is not in the global menu").toBeGreaterThan(-1);
-    expect(
-      panel,
-      "the theme toggle is mounted ahead of the failure-log panel"
-    ).toBeLessThan(toggle);
+    // component in a nearby comment can never stand in for the mount, or for
+    // its absence — the capture-by-comment trap AGENTS.md records from #529.
+    const screen = code("src/components/books-screen.tsx");
+    expect(screen).not.toContain("<ThemeControl");
+    expect(screen).toMatch(new RegExp(GLOBAL_MENU_OPEN_TAG));
+    // The one place Books reaches the toggle is the Settings panel it mounts.
+    expect(screen).toContain("<SettingsPanel");
   });
 
-  it("follows the translator into a chapter and into the recorder (#149)", () => {
-    // WHAT THIS IS AND IS NOT. The behavioural claim — that the toggle is
-    // reachable from the chapter `⋮` and the recorder `⋮` and repaints the
-    // shipped cascade from each — is `e2e/theme-toggle.spec.ts`, in real
-    // Chromium against `dist/`. This is the cheap Node companion that fails
-    // fast when a mount is DELETED, which is the way this regresses: both
-    // screens are large, and neither reviewer's eye is a gate.
-    //
-    // COUNTED, not merely present, so a second mount or a lost one both
-    // fail. The recorder menu draws ONE tile grid for record and edit mode
-    // alike (the mode only changes the tiles ahead of the spacer), so its one
-    // mount serves both modes.
-    //
-    // Matched as `<ThemeControl`, never as the bare identifier, for the
-    // comment-capture reason above.
+  it("Settings lists the theme first, then the chapter-number switch (#1575)", () => {
+    const body = code("src/components/settings-panel.tsx");
+    const theme = body.indexOf("<ThemeControl");
+    const chapters = body.indexOf("<ChapterNumbersRow");
+    expect(theme, "no theme row").toBeGreaterThan(-1);
+    expect(chapters, "no chapter-number row").toBeGreaterThan(-1);
+    expect(theme).toBeLessThan(chapters);
+  });
+
+  it("is mounted in exactly one place: Settings, and none of the three former mounts (#1575)", () => {
+    // The DRI's pick on #1623 (2026-10-22): "Remove, Settings only". #149
+    // had mounted the toggle in the chapter `⋮` and the recorder `⋮` beside
+    // the Books `≡`; each of the three is pinned ABSENT here, by the mount's
+    // angle bracket so a prose mention can never stand in for it (the
+    // capture-by-comment trap AGENTS.md records from #529), and the one mount
+    // that remains is counted. `recorder.tsx` is held to none as well, so a
+    // half-finished move cannot leave one behind in the screen.
     const mounts = (file: string) =>
-      code(file).match(/<ThemeControl\s+tile\s*\/>/g)?.length ?? 0;
-    // The chapter `⋮`'s one action branch (the stale and rename branches are
-    // transient sub-states with no action list of their own).
-    expect(mounts("src/components/segments-screen.tsx")).toBe(1);
-    // In `recorder-menu.tsx` since #662 lifted the recorder's `⋮` out of
-    // `recorder.tsx` into its own component. The count follows the menu
-    // rather than the screen, and `recorder.tsx` is asserted to hold NONE, so
-    // a half-finished move that leaves one mount behind in the screen fails
-    // here instead of silently double-mounting.
-    expect(mounts("src/components/recorder-menu.tsx")).toBe(1);
+      code(file).match(/<ThemeControl\b/g)?.length ?? 0;
+    expect(mounts("src/components/books-screen.tsx")).toBe(0);
+    expect(mounts("src/components/segments-screen.tsx")).toBe(0);
+    expect(mounts("src/components/recorder-menu.tsx")).toBe(0);
     expect(mounts("src/components/recorder.tsx")).toBe(0);
+    expect(mounts("src/components/settings-panel.tsx")).toBe(1);
+    // The tile form is gone with them: no `tile` prop, no tile captions.
+    expect(code("src/components/theme-control.tsx")).not.toMatch(/\btile\b/);
+  });
 
-    // ORDER, not just presence (George, this head). The e2e focus assertion
-    // cannot catch a reorder — in the empty state the toggle is the only
-    // actionable row wherever it sits — and an earlier version of this file's
-    // companion comment credited THIS test with holding order when it only
-    // counted. It holds it now.
-    //
-    // Last is the position that matters: `Menu` lands open-edge focus on the
-    // first ACTIONABLE child, so while Edit/Done and the chapter's Rename are
-    // actionable they must come first, and the toggle must not displace them.
-    // The Books case below already pins its own order this way.
-    // Each mount is checked against the end of ITS OWN group: the first of
-    // `</TileGrid>` (the recorder and Books grids) or `</>` (the chapter
-    // menu's `tiles.after` fragment, which `ShareMenuSection` renders last in
-    // its grid) that follows it. No tile or control may open in between.
-    // `Menu` lands open-edge focus on the first ACTIONABLE child, so while
-    // Done/Erase and the chapter's Rename are actionable they must come first
-    // and the toggle must not displace them.
-    const toggleClosesEveryBranch = (file: string) => {
-      const body = code(file);
-      const mounts = [...body.matchAll(/<ThemeControl\b/g)].map((m) => m.index);
-      expect(mounts.length, `no ThemeControl mount in ${file}`).toBeGreaterThan(
-        0
-      );
-      return mounts.every((mount) => {
-        const rest = body.slice(mount);
-        const ends = ["</TileGrid>", "</>"]
-          .map((token) => rest.indexOf(token))
-          .filter((at) => at !== -1);
-        expect(
-          ends.length,
-          `no branch end after a mount in ${file}`
-        ).toBeGreaterThan(0);
-        // Any component element counts — a `<Tile>`, a `<Control>`, or a
-        // group of them such as `<RecorderMenuTiles>` — except the spacer,
-        // which only pushes the toggle to the far end. Sliced from 1 so the
-        // mount's own `<ThemeControl` is not the match.
-        const between = rest.slice(1, Math.min(...ends));
-        return !/<(?!TileSpacer\b)[A-Z]\w*/.test(between);
-      });
-    };
-    expect(toggleClosesEveryBranch("src/components/recorder-menu.tsx")).toBe(
-      true
-    );
-    expect(toggleClosesEveryBranch("src/components/segments-screen.tsx")).toBe(
-      true
-    );
-    expect(toggleClosesEveryBranch("src/components/books-screen.tsx")).toBe(
-      true
-    );
-
+  it("keeps the theme subscription in the leaf, not in the screens", () => {
     // And the other half of the claim, which the counts alone do NOT pin
     // (George round 10, #623). The whole argument for mounting this control
     // on a live take is that the SUBSCRIPTION stays in the leaf: a toggle

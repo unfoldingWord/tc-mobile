@@ -129,6 +129,16 @@
  *
  * Roll forward only: a phone that has opened v12 cannot be opened by an older
  * build (`DatabaseDowngradeError`, nothing written).
+ *
+ * ── v13 (#38): the audio revision and take dispositions — append-only ──
+ *
+ * The design is docs/design/pending-take-lifecycle.md (§2). `Segment` gained
+ * `audioRevision`, backfilled to 0, keyed on absence, no clock. One new store,
+ * `takeDispositions` (keyPath `clipId`, index `bySegment`), and one new index,
+ * `pendingTakes.bySourceClip`, created beside v12's stores before any await.
+ * Takes, clips and pending rows are not read. It is a version step, not an
+ * optional field, so that no build without the rules in that note's
+ * "compatibility boundary" can write the same database.
  */
 
 import {
@@ -149,13 +159,14 @@ import type {
   StoredPendingTake,
   Take,
   TakeId,
+  TakeDisposition,
   Tombstone,
 } from "@/types/domain";
 import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 
 /**
  * What the v12 step adds to a row that lacks it, per store. Plain data and no
@@ -259,8 +270,21 @@ export interface TcMobileDb extends DBSchema {
   failures: { key: number; value: StoredFailure };
   /** v12: the deletion log, out-of-line auto-increment like `failures`. */
   tombstones: { key: number; value: Tombstone };
-  /** v12: one unsaved take per segment, keyPath `segmentId`. */
-  pendingTakes: { key: SegmentId; value: StoredPendingTake };
+  /**
+   * v12: one unsaved take per segment, keyPath `segmentId`. v13 indexes a
+   * `stored` base's clip, so clip clean-up can count it as a use.
+   */
+  pendingTakes: {
+    key: SegmentId;
+    value: StoredPendingTake;
+    indexes: { bySourceClip: ClipId };
+  };
+  /** v13: why a take stopped being pending, keyPath `clipId`. */
+  takeDispositions: {
+    key: ClipId;
+    value: TakeDisposition;
+    indexes: { bySegment: SegmentId };
+  };
 }
 
 /**
@@ -628,6 +652,19 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           db.createObjectStore("pendingTakes", { keyPath: "segmentId" });
         }
 
+        // v13 (#38): structure, also before any await. Rows with an inline
+        // base have no `base.sourceClipId`, so the index holds stored bases
+        // only.
+        if (oldVersion < 13) {
+          db.createObjectStore("takeDispositions", {
+            keyPath: "clipId",
+          }).createIndex("bySegment", "segmentId");
+          tx.objectStore("pendingTakes").createIndex(
+            "bySourceClip",
+            "base.sourceClipId"
+          );
+        }
+
         // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
         // rows and the audio behind them are kept. On a fresh install, or straight
         // after the v3 recreate above, the store is empty and this loops zero
@@ -818,6 +855,19 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
               }
               cursor = await cursor.continue();
             }
+          }
+        }
+
+        // v13 (#38): every segment starts at revision 0, recorded or not. Keyed
+        // on absence, so a row a newer build already wrote is left alone.
+        if (oldVersion < 13) {
+          let cursor = await tx.objectStore("segments").openCursor();
+          while (cursor) {
+            const row: Omit<Segment, "audioRevision"> = cursor.value;
+            if (!("audioRevision" in row)) {
+              await cursor.update({ ...row, audioRevision: 0 });
+            }
+            cursor = await cursor.continue();
           }
         }
       },

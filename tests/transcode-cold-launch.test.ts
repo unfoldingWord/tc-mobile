@@ -66,6 +66,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
       activeTakeId: takeId,
       status: "affirmed",
       ...ROW_V12_FIELDS,
+      audioRevision: 0,
     });
     await tx.objectStore("takes").put({
       id: takeId,

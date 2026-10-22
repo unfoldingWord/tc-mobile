@@ -455,8 +455,10 @@ track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
-delete of the held take's pending row (same file, `"pending-take-write"`,
-`"pending-take-delete"`, #38), a failed book delete
+delete of the held take's pending row, or a hold that found another take's
+row and so kept no safety copy (same file, `"pending-take-write"`,
+`"pending-take-delete"`, #38), a save refused because the take was already
+discarded (same file, `"pending-take-refused"`, #38), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
@@ -909,7 +911,7 @@ shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
 "Restart to use the new version."); Restart leads back to the same screen
 (inference). All of this was read from the code, not seen on a device.
 v1.1.0 moved the schema from 9 to 11 (v10 and v11 in #1346 and #1367), and
-v1.2.0 moves it from 11 to 12 (#1462). **Roll forward with a fix rather than
+v1.2.0 moves it from 11 to 13 (v12 and v13 in #1462 and #38). **Roll forward with a fix rather than
 back when the build to undo raised the schema, and never uninstall to clear the
 screen: uninstalling deletes the recordings.**
 `docs/release/promotion-v1.0.0.md` §5 has the procedure.
@@ -1067,6 +1069,24 @@ A test-only PR is tiered by what it covers, and a gate test is its own tier
 (Harness); the tier sets which reviewers run and how many rounds, not this
 table's on-device check — a test-only PR never gets the device check, only
 code changes do — see `docs/review/dual-review.md` ("Merge policy").
+
+## Issue pipeline (dev1–dev7)
+
+Every issue moves through seven stages: **dev1 Scope** (a scope contract on the
+issue), **dev2 Plan** (tasks, each with a done-when and a test-first pair),
+**dev3 Build** (a branch from `develop`, red test first), **dev4 Check** (the
+quality gate), **dev5 Ship** (open the PR), **dev6 Validate** (a second agent
+checks the merged base), **dev7 Close** (issues, learnings, tracker). Each stage
+is a skill that says how it ends: `.claude/skills/dev1-scope`,
+`.claude/skills/dev2-plan`, `.claude/skills/dev3-build`,
+`.claude/skills/dev4-check`, `.claude/skills/dev5-ship`,
+`.claude/skills/dev6-validate` and `.claude/skills/dev7-close`.
+
+**dev4 is a gate, not a review.** It runs `npm run verify` and
+`npm run check:prepush`, confirms each done-when with evidence, and walks the
+seven Collateral surfaces. It blocks the PR if anything fails. The review is
+the uwreview bench's (Frank and George, see "Review"); no stage reviews its own
+diff, and a stage's own report is never "independent" or "clean".
 
 ## Known open items
 
