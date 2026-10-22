@@ -7,11 +7,12 @@ description: Stage dev7 of the tC Mobile issue pipeline. Update the issues and m
 
 ## 1. Update the issues
 
-- **Close an issue only when** every plan task has merged and dev6 passed, or
-  its only open item is a recorded NEEDS-DEVICE check. Add `needs-device` first,
-  confirm it with `gh issue view <n> --json labels`, and only then close, so a
-  filter finds every closed but unchecked item. If the add fails or the label
-  is missing, stop and leave the issue open. The label exists in the repo.
+- **Close an issue only when** every plan task has merged and dev6 passed (the
+  issue closes with no label), or its only open item is a recorded NEEDS-DEVICE
+  check. Only on the NEEDS-DEVICE path, add `needs-device` first, confirm it
+  with `gh issue view <n> --json labels`, and only then close, so a filter finds
+  every closed but unchecked item and nothing that was checked. If the add
+  fails or the confirm does not show the label, stop and leave the issue open.
   Never close on a FAIL. Otherwise update the checklist and leave it open.
 - A PR that said `Part-of #N` never closed it; check before saying "done".
 - Milestones: every closed issue and merged PR is in the milestone of the sprint

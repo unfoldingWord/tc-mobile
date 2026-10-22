@@ -46,6 +46,7 @@ PR; any push voids a round for both lenses, and fix rounds go back to dev3 and
 dev4 on the same branch. A bench comment is evidence, not approval; the merge is
 the DRI's.
 
-Exit: the PR is open, the gate is green, `closingIssuesReferences` is checked,
-and the `READY-FOR-REVIEW` line is reported. Next: the bench, then dev6-validate
+Exit: the PR is open, the gate is green, `closingIssuesReferences` is empty for
+a `Part-of` PR (refuse to report READY-FOR-REVIEW until it is), and the
+`READY-FOR-REVIEW` line is reported. Next: the bench, then dev6-validate
 after the DRI merges.

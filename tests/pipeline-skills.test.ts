@@ -105,6 +105,23 @@ describe("the stages point at the tooling that enforces them", () => {
 });
 
 describe("the exits that gate the next stage", () => {
+  it("dev7 adds the label only on the NEEDS-DEVICE path, and does not assert that it exists", () => {
+    const t = skill("dev7-close").replace(/\s+/g, " ");
+    expect(t).toMatch(/dev6 passed[^.]*closes with no label/);
+    expect(t).toMatch(
+      /Only on the NEEDS-DEVICE path, add `needs-device` first/
+    );
+    expect(t).not.toMatch(/label exists/i);
+  });
+
+  it("dev5's Exit says closingIssuesReferences must be empty for a Part-of PR before READY-FOR-REVIEW", () => {
+    const t = skill("dev5-ship").replace(/\s+/g, " ");
+    const exit = t.slice(t.indexOf("Exit:"));
+    expect(exit).toMatch(
+      /`closingIssuesReferences` is empty for a `Part-of` PR[^.]*READY-FOR-REVIEW/
+    );
+  });
+
   it("dev4 treats a missing collateral script as not a FAIL", () => {
     const t = skill("dev4-check");
     expect(t).toMatch(/package\.json/);
@@ -140,7 +157,7 @@ describe("the exits that gate the next stage", () => {
 
   it("dev7 closes a NEEDS-DEVICE issue only once the label is confirmed on it", () => {
     const t = skill("dev7-close").replace(/\s+/g, " ");
-    expect(t).toMatch(/Add `needs-device` first/);
+    expect(t).toMatch(/add `needs-device` first/);
     expect(t).toMatch(/gh issue view <n> --json labels/);
     expect(t).toMatch(/only then close/);
     expect(t).toMatch(/leave the issue open/);
