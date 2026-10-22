@@ -493,4 +493,67 @@
       0 0 0 3px var(--s-surface),
       0 0 0 6px var(--s-ink);
   }
+
+  /* The language ask (#1492), where the book sheet's tiles were. The rows
+     scroll on their own so the field stays in view, and while focus is
+     inside the sheet docks at the top, as the name sheets do (sheets.css),
+     so the soft keyboard cannot cover the field. Its title has its own class:
+     this sheet hides .t-title (o4/menus.css). */
+  :root .menu-scrim:has(.language-ask:focus-within) {
+    align-items: flex-start;
+  }
+  :root .language-ask {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--p-space-3);
+    min-width: 0;
+  }
+  :root .language-ask-title {
+    font-size: var(--p-text-20);
+    font-weight: 700; /* #939 token */
+  }
+  :root .language-ask-lead,
+  :root .language-row [lang],
+  :root .language-row-tag {
+    color: var(--s-ink-muted);
+    font-size: var(--p-text-15);
+  }
+  :root .language-search {
+    flex: none; /* selectable as a .name-input (3-components.css) */
+  }
+  :root .language-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p-space-1);
+    max-height: 34vh;
+    overflow-y: auto;
+  }
+  :root .language-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--p-space-2);
+    width: 100%;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    border-radius: var(--p-radius-12);
+    background: var(--s-well);
+    color: var(--s-ink);
+    text-align: start;
+  }
+  :root .language-row-name,
+  :root .language-ask-quiet {
+    font-size: var(--p-text-17);
+    font-weight: 600;
+  }
+  :root .language-row-tag {
+    margin-inline-start: auto;
+  }
+  :root .language-ask-quiet {
+    align-self: flex-start;
+    min-height: var(--c-control-md);
+    padding: 0 var(--p-space-3);
+    color: var(--s-ink);
+  }
 }

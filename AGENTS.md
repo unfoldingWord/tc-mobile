@@ -474,6 +474,8 @@ editor (recorder) shows Erase only") pulled Delete back out of the recorder's
 back to one caller), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
+the Export project language ask's failed write and failed list load
+(`hooks/use-language-ask.ts`, `"book-language"` and `"language-list"`, #1492),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context

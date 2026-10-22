@@ -302,6 +302,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileExport: "Exportar",
   exportProjectPreparing: "Preparando el proyecto para exportar.",
   exportProjectFileWord: "proyecto",
+  languageAskTitle: "Idioma de este libro",
+  languageAskLead:
+    "¿En qué idioma están las grabaciones? Lo eliges una vez y cada exportación de este libro lo usa.",
+  languageSearch: "Buscar idiomas",
+  languageSearchHint: "Nombre o código",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Cargando los idiomas.",
+  languageLoadFailed: "No se pudieron cargar los idiomas.",
+  languageNoMatch: "Ningún idioma coincide. Prueba otro nombre o código.",
+  languageNarrow: "Escribe más para ver otros idiomas.",
+  languageSaving: "Guardando el idioma.",
+  languageAskCancel: "Cancelar",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>

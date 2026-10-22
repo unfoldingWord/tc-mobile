@@ -906,6 +906,21 @@ export const stringsEn = {
   },
   // The word in that file name. ASCII-safe per locale is the translator's job.
   exportProjectFileWord: "project",
+  // The language ask (#1492): the first Export project of a book with no
+  // language asks it once, from the bundled list (ADR 0017).
+  languageAskTitle: "Language of this book",
+  languageAskLead:
+    "What language are the recordings in? You choose once, and every export of this book uses it.",
+  languageSearch: "Search languages",
+  languageSearchHint: "Name or code",
+  // A row's spoken name: the English name, then the tag.
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Loading the languages.",
+  languageLoadFailed: "Could not load the languages.",
+  languageNoMatch: "No language matches. Try another name or code.",
+  languageNarrow: "Type more to see other languages.",
+  languageSaving: "Saving the language.",
+  languageAskCancel: "Cancel",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome

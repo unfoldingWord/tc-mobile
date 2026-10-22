@@ -280,6 +280,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileExport: "Ekspor",
   exportProjectPreparing: "Menyiapkan proyek untuk diekspor.",
   exportProjectFileWord: "proyek",
+  languageAskTitle: "Bahasa buku ini",
+  languageAskLead:
+    "Rekaman ini dalam bahasa apa? Kamu memilihnya sekali, dan setiap ekspor buku ini memakainya.",
+  languageSearch: "Cari bahasa",
+  languageSearchHint: "Nama atau kode",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Memuat daftar bahasa.",
+  languageLoadFailed: "Daftar bahasa tidak dapat dimuat.",
+  languageNoMatch: "Tidak ada bahasa yang cocok. Coba nama atau kode lain.",
+  languageNarrow: "Ketik lagi untuk melihat bahasa lain.",
+  languageSaving: "Menyimpan bahasa.",
+  languageAskCancel: "Batal",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>

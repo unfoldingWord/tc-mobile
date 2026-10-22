@@ -73,6 +73,13 @@ export interface BookCard {
    * fixture can omit it; a card without it shares untagged, like a `null`.
    */
   readonly licence?: LicenceId | null;
+  /**
+   * `Book.languageCode` (#1492), so Export project knows whether to ask the
+   * book's language first. Optional so a test fixture can omit it; a card
+   * without it asks, like a `null`, and the store keeps any language the book
+   * already has (`setBookLanguageOnce`).
+   */
+  readonly languageCode?: string | null;
 }
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────
