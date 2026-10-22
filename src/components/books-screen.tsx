@@ -2414,14 +2414,19 @@ export function BooksScreen({
                 tiles={{
                   after: (
                     <>
-                      <Tile
-                        tone="send"
-                        icon="file-zip"
-                        label={strings.exportProject}
-                        caption={strings.tileExport}
-                        busy={bookShare.status === "preparing"}
-                        onClick={onPrepareBookExport}
-                      />
+                      {/* Off while a file is armed: Share now sends what was
+                          prepared, so Export cannot sit beside it as if it
+                          would swap the file in. */}
+                      {bookShare.status !== "ready" && (
+                        <Tile
+                          tone="send"
+                          icon="file-zip"
+                          label={strings.exportProject}
+                          caption={strings.tileExport}
+                          busy={bookShare.status === "preparing"}
+                          onClick={onPrepareBookExport}
+                        />
+                      )}
                       <CoverTile
                         ref={coverTileRef}
                         coverHex={shareMenuCoverHex}

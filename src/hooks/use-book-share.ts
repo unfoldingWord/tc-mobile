@@ -109,6 +109,9 @@ export function useBookShare(): UseBookShare {
       zipFilename: string,
       nameChapter: ChapterNamer
     ): Promise<ShareOutcome | null> => {
+      // The flow ignores a prepare while it is busy or armed; so does `kind`,
+      // or the busy line and the armed file would name different exports.
+      if (status !== "idle") return Promise.resolve(null);
       setKind("zip");
       return run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {
@@ -146,7 +149,7 @@ export function useBookShare(): UseBookShare {
         })
       );
     },
-    [run]
+    [run, status]
   );
 
   const prepareProject = useCallback(
@@ -154,6 +157,9 @@ export function useBookShare(): UseBookShare {
       bookId: BookId,
       params: BookBundleParams
     ): Promise<ShareOutcome | null> => {
+      // Same guard as `prepare`: with Share book's zip armed, Export must not
+      // relabel the flow while Share now would still send the zip.
+      if (status !== "idle") return Promise.resolve(null);
       setKind("project");
       return run(async (_isCurrent, signal) => {
         // The flow's abort (menu close, reset, unmount) cancels the build too;
@@ -174,7 +180,7 @@ export function useBookShare(): UseBookShare {
         };
       });
     },
-    [run, build, cancel]
+    [run, build, cancel, status]
   );
 
   return {

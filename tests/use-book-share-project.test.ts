@@ -12,6 +12,7 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { addChapter, addSegment, createBook } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
+import type { AudioCodec } from "@/types/audio";
 import type { BookId } from "@/types/domain";
 import { type FakeOpfs, fakeOpfs } from "./fake-opfs";
 import { clearAllStores } from "./support";
@@ -24,6 +25,20 @@ import { clearAllStores } from "./support";
  */
 
 vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
+// Share book's MP3 zip needs an encoder; a stub one, as the spool test uses.
+vi.mock("@/hooks/mp3-codec", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/hooks/mp3-codec")>();
+  return {
+    ...actual,
+    withEncoder: vi.fn(
+      async (_signal: AbortSignal, work: (codec: AudioCodec) => unknown) =>
+        work({
+          encodeMp3: () => Promise.resolve(new Uint8Array(4096).fill(7)),
+          decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
+        })
+    ),
+  };
+});
 
 let dom: JSDOM;
 let root: Root;
@@ -160,7 +175,7 @@ describe("prepareProject", () => {
     expect(reportFailure).not.toHaveBeenCalled();
   });
 
-  it("reports a failed build once to the funnel and shows the failed state", async () => {
+  it("files the build's own row, then the flow's, and shows the failed state", async () => {
     // A book id with no rows reads as empty, so break the read instead.
     const bookId = await bookWith(1);
     const writer = await import("@/lib/export/bundle/write");
@@ -175,6 +190,47 @@ describe("prepareProject", () => {
       expect.objectContaining({ message: "zip broke" }),
       "book-export-bundle"
     );
+    expect(vi.mocked(reportFailure).mock.calls.map((c) => c[1])).toEqual([
+      "book-export-bundle",
+      "share-prepare",
+    ]);
+    await filesBecome(0);
+  });
+
+  it("does nothing while Share book's zip is armed: Share now still sends that zip, named as such (#1624 Frank R1)", async () => {
+    const bookId = await bookWith(1);
+    let zipped!: Promise<unknown>;
+    act(() => {
+      zipped = hook().prepare(bookId, "Mark.zip", (n) => `Chapter ${n}.mp3`);
+    });
+    await settle();
+    await act(async () => zipped);
+    expect(hook().status).toBe("ready");
+
+    expect(await prepareProject(bookId)).toBeNull();
+    expect(hook().kind).toBe("zip");
+    expect(hook().status).toBe("ready");
+    expect(opfs.files()).toHaveLength(1);
+
+    await send();
+    expect(share).toHaveBeenCalledTimes(1);
+    const [{ files }] = share.mock.calls[0] as [{ files: File[] }];
+    expect(files[0]!.name).toBe("Mark.zip");
+    await filesBecome(0);
+  });
+
+  it("leaves the armed bundle alone when Share book is tapped (kind stays project)", async () => {
+    const bookId = await bookWith(1);
+    await prepareProject(bookId);
+    let zipped!: Promise<unknown>;
+    act(() => {
+      zipped = hook().prepare(bookId, "Mark.zip", (n) => `Chapter ${n}.mp3`);
+    });
+    expect(await act(async () => zipped)).toBeNull();
+    expect(hook().kind).toBe("project");
+    await send();
+    const [{ files }] = share.mock.calls[0] as [{ files: File[] }];
+    expect(files[0]!.name).toBe("Mark - project.zip");
     await filesBecome(0);
   });
 
