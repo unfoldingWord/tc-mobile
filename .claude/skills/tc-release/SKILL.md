@@ -172,58 +172,18 @@ from.
 
 ## 5. Native builds, one commit
 
-- [ ] Agent-allowed: the staging push starts `android-apk.yml` and
-      `ios-testflight.yml` by itself (#1281). Confirm both runs started at
-      `PROMO_SHA` with `event` `push` and no dispatch (and, once #1281 has
-      removed the required reviewer, no approval):
-      `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch staging --limit 3 --json databaseId,headSha,event,status`.
-      A green run is not a build: a push the preflight did not read as a
-      promotion still makes a successful run, with the signing job
-      `skipped`. So read each run's signing job (`Build release APK`,
-      `Build and upload to TestFlight`) with
-      `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
-      `skipped` means the lane did not start, and only `success` is a build.
-      A run at `PROMO_SHA` that is `cancelled` was replaced while pending
-      (one signing job runs at a time across both branches; a later push or
-      dispatch took the single pending slot) and did not start. Read the
-      tip before deciding: if `origin/staging` has moved past `PROMO_SHA`,
-      stop. **Before any dispatch of a lane** (a `cancelled` run, or a lane
-      that did not start), make both reads. (1) **Already built?**
-      `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`
-      lists the lane's runs at that commit on any branch and from any event.
-      Read each one's signing job as above; the run's `conclusion` is not the
-      signing job's (a run whose signing job was `skipped` still concludes
-      `success`). A `success` counts only if it is an ordinary build: for the
-      APK lane, the run's artifact must be `android-apk-<PROMO_SHA>`, not
-      `android-apk-diagnostic-<PROMO_SHA>`
-      (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
-      a diagnostic APK is not a training build. If an ordinary build
-      concluded `success`, `PROMO_SHA` is already built: stop, and record
-      that run instead. (2) **Lane free?** The group carries no branch, so
-      a `main` run, which the `--commit` read does not list, can hold the slot or replace a pending
-      dispatch. List the lane's recent runs on every branch
-      (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
-      and wait until every one is `completed`. A run still open at the
-      first read may have built `PROMO_SHA` while you waited, so repeat read
-      (1); if an ordinary build has since concluded `success`, stop and
-      record that run. The wait can move the tip, and `--ref staging`
-      builds the tip at dispatch, so immediately before dispatching re-read
-      the canonical tip
-      (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`);
-      if it is not exactly `PROMO_SHA`, stop. Only if (1) still finds none
-      and the tip is still `PROMO_SHA` does the DRI dispatch it
-      (human-only), and the agent re-reads the new run until its signing job has started. A dispatch `cancelled`
-      while pending goes back to the two reads.
-      An empty conclusion with the run still open means the job is waiting
-      for the `release-signing` reviewer or running: it has started, so do
-      not dispatch a second one.
-- [ ] Human-only, only if a lane did not start (its signing job `skipped`)
-      and the two reads above allow it: the DRI dispatches it from
-      `staging` via `!`:
-      `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`.
-      Record why it did not start on its own.
-- [ ] Agent-allowed: both runs' `headSha` equal `PROMO_SHA`, and so do the web
-      and Play builds. If not, stop and re-promote. Do not mix refs.
+- [ ] Agent-allowed: the staging push starts `android-apk.yml`,
+      `ios-testflight.yml` and `android-play.yml` by itself (#1281). Run
+      runbook §3a step 7's script for each lane, read-only, and follow its
+      last line; this skill carries no rule of its own for whether a lane
+      built or may be dispatched:
+      `npm run check:redispatch -- --lane <apk|play|testflight> --sha <PROMO_SHA>`.
+- [ ] Human-only: a dispatch, only after that script prints
+      `OK to dispatch <lane>`. The DRI dispatches it from `staging` via `!`
+      as runbook §3a step 7 gives it. Record why the lane did not start on
+      its own.
+- [ ] Agent-allowed: every channel (web, Play, APK, TestFlight) comes from
+      `PROMO_SHA`. If not, stop and re-promote. Do not mix refs.
 
 ## 6. Check the APK
 
@@ -341,11 +301,10 @@ compares with it.
 - [ ] Agent-allowed: the native lanes start on the `main` merge by
       themselves (#1281). Both runs' `headSha` equal `PROD_SHA` (a run that
       started on a moved `main` built a commit that is not the tag; runbook
-      §4 says stop and do not label it the release), and each run's signing
-      job concluded `success`, not `skipped` (the step 5 check and its two
-      reads, with `--branch main` and `PROD_SHA` for `PROMO_SHA`; a success
-      at `PROMO_SHA` is the RC, not this build); only a lane whose signing
-      job was `skipped` is a human-only dispatch from `main`.
+      §4 says stop and do not label it the release), and each run
+      is `built` (step 5's script with `--sha <PROD_SHA> --branch main`; a
+      build at `PROMO_SHA` is the RC, not this build); a dispatch from
+      `main` is human-only, as step 5 says.
       `npm run check:deploy:prod -- --sha=<PROD_SHA> --version=1.0.0` (the
       full oid, never a 7-character slice, which the checker's prefix match
       would also accept for a colliding later commit; explicit, so a PASS
