@@ -305,6 +305,30 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareBookUnconfirmed:
     "Shiriki kitabu. Jaribio la mwisho halikuthibitishwa: gusa ili ujaribu tena.",
   shareBookPreparing: "Inaandaa kitabu ili kishirikiwe.",
+  // Export project (#1457). Carried here only because #1624 predates the
+  // Swahili table; if #1624 lands its own copy first, that copy wins.
+  exportProject: "Hamisha mradi",
+  tileExport: "Hamisha",
+  exportProjectPreparing: "Inaandaa mradi ili uhamishwe.",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
+  // The language ask (#1492).
+  languageAskTitle: "Lugha ya kitabu hiki",
+  languageAskLead:
+    "Rekodi hizi ziko katika lugha gani? Unaichagua mara moja, na kila uhamishaji wa kitabu hiki unaitumia.",
+  languageSearch: "Tafuta lugha",
+  languageSearchHint: "Jina au msimbo",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Inapakia lugha.",
+  languageLoadFailed: "Lugha hazikuweza kupakiwa.",
+  languageNoMatch: "Hakuna lugha inayolingana. Jaribu jina au msimbo mwingine.",
+  languageNarrow: "Andika zaidi ili uone lugha nyingine.",
+  languageSaving: "Inahifadhi lugha.",
+  languageAskCancel: "Ghairi",
   shareBookNothing: "Rekodi kipande kimoja kabla ya kushiriki kitabu hiki.",
   shareBookFailed: "Kitabu hiki hakikuweza kushirikiwa. Jaribu tena.",
   shareBookFailedWeb:
