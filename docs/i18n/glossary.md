@@ -289,6 +289,27 @@ These were read from `Intl.PluralRules(...).resolvedOptions().pluralCategories`
 on Node 22 with ICU 78.2, on 2026-10-19. That is a Node run, not a phone's
 engine; a phone's ICU may differ.
 
+**When `many` selects (French, Spanish, Portuguese).** In these three languages
+CLDR's `many` is the category for a whole number of millions: a count that is a
+non-zero multiple of 1 000 000. Read on the same Node run
+(ICU 78.2, CLDR 48.0, 2026-10-22), `select` returned `many` for 1000000,
+2000000 and 1000000000, and `other` for 999999 and 1500000, in all three
+languages. French and Portuguese select `one` for 0 and 1; Spanish selects
+`one` for 1 only. So `many` is never chosen for a count below one million.
+`plural()` falls back to `other` when a table has no `many` arm
+(`src/lib/plural.ts`), so a draft that gives `many` the same wording as `other`
+loses nothing.
+
+The counts these tables receive are small: chapters, segments and books in a
+person's own work, the minutes left in a take (a take is capped at 20 minutes,
+`src/lib/audio/take-cap.ts:20`), and failure-log entries (the log keeps 50,
+`src/lib/storage/failures.ts:49`). I found no cap on chapters, segments or
+books, but none of them can plausibly reach a million. The `many` arms are
+therefore unreachable in practice; they are there so the table is complete for
+the categories CLDR defines, not because a screen can show them. A drafter
+writes `many` as `other` (as the catalogs do today) and does not need a native
+reader to check it. This is a Node run, not a phone's engine.
+
 **Digits (R19).** "Use Arabic numerals". Every number the interface shows is
 written 0 to 9, in every language including Arabic and Hindi. A draft never
 writes a number as Arabic-Indic or Devanagari digits and never spells one out
