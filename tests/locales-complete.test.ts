@@ -79,4 +79,12 @@ describe("completeLocales and the English-only keys", () => {
     expect(resolveLocale(["pt-BR"], completeLocales()).tag).toBe("pt");
     expect(resolveLocale(["pt-PT", "es"], completeLocales()).tag).toBe("pt");
   });
+
+  it("counts id complete, and resolves an Indonesian phone to id (#1619)", () => {
+    expect(tags()).toContain("id");
+    const id = LOCALE_OVERRIDES.id as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(id, key)).toBe(false);
+    expect(resolveLocale(["id-ID"], completeLocales()).tag).toBe("id");
+    expect(resolveLocale(["id", "es"], completeLocales()).tag).toBe("id");
+  });
 });
