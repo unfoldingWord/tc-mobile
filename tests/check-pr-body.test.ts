@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -980,6 +980,34 @@ index 1..2 100644
 `,
       /package-lock\.json/,
     ],
+    // Bench round 1 (Frank 2): one or two lines is a count, not a location.
+    [
+      "a lockfile dependency moved to the bumped number, alone",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -500 +500 @@
+-      "version": "0.1.0",
++      "version": "1.2.0",
+`,
+      /package-lock\.json/,
+    ],
+    [
+      "a lockfile root bump plus one dependency moved to the bumped number",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -3 +3 @@
+-  "version": "1.0.0",
++  "version": "1.2.0",
+@@ -500 +500 @@
+-      "version": "0.1.0",
++      "version": "1.2.0",
+`,
+      /package-lock\.json/,
+    ],
     [
       "a pbxproj edit that is not MARKETING_VERSION",
       PKG_ONLY("1.2.0") +
@@ -1200,18 +1228,30 @@ describe("evaluate — exemption and body together", () => {
     expect(bump.exempt).toBeTruthy();
   });
 
-  it("gates a bump title the diff did not prove, and says why", () => {
+  it("gates a bump title the diff did not prove", () => {
     const r = evaluate(
       { ...empty, title: "chore(release): v1.2.0" },
       { bump: { ok: false, reason: "src/x.ts is not a version file" } }
     );
     expect(r.ok).toBe(false);
     expect(r.exempt).toBeNull();
-    expect(r.missing.join("\n")).toContain("src/x.ts is not a version file");
     // No verdict at all (diff skipped) is gated too, without the diff note.
     const none = evaluate({ ...empty, title: "chore(release): v1.2.0" });
     expect(none.ok).toBe(false);
     expect(none.exempt).toBeNull();
+  });
+
+  // Bench round 1 (Frank 1, George 1): "the full gate" is the gate, not a veto.
+  it("passes a disproved bump title on a complete body under the cap", () => {
+    expect(
+      evaluate(
+        { ...empty, title: "chore(release): v1.2.0", body: body() },
+        {
+          prodLines: 20,
+          bump: { ok: false, reason: "CHANGELOG.md is not a version file" },
+        }
+      )
+    ).toEqual({ ok: true, exempt: null, missing: [] });
   });
 
   it("passes a full body from a human", () => {
@@ -1329,23 +1369,15 @@ describe("prFromEvent / fetchPr / parseArgs", () => {
 
 describe("CLI entry point (real subprocess, not just the exported functions)", () => {
   function run(args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
-    try {
-      const stdout = execFileSync("node", [SCRIPT, ...args], {
-        encoding: "utf8",
-        timeout: 15_000,
-        cwd,
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      return { status: 0, stdout, stderr: "" };
-    } catch (err) {
-      const e = err as {
-        status: number | null;
-        stdout: string;
-        stderr: string;
-      };
-      return { status: e.status, stdout: e.stdout, stderr: e.stderr };
-    }
+    // spawnSync, not execFileSync: a passing run's stderr (a NOTE) is kept too.
+    const r = spawnSync("node", [SCRIPT, ...args], {
+      encoding: "utf8",
+      timeout: 15_000,
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: r.status, stdout: r.stdout, stderr: r.stderr };
   }
 
   function withTemp<T>(fn: (dir: string) => T, name = "pr-body-") {
@@ -1757,6 +1789,35 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         expect(r.stderr).toMatch(why);
       })
   );
+
+  it("a bump title that is not a bump passes on a complete body, and says why it was not exempt", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => {
+        bumpFiles(d, "1.1.0");
+        writeFileSync(path.join(d, "CHANGELOG.md"), "v1.1.0\n");
+      });
+      const f = path.join(dir, "..", `${path.basename(dir)}-full.md`);
+      writeFileSync(f, body());
+      try {
+        const r = run(
+          [
+            "--body-file",
+            f,
+            "--range",
+            RANGE,
+            "--title",
+            "chore(release): v1.1.0",
+          ],
+          dir,
+          cleanGitEnv()
+        );
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.stdout).toMatch(/every required PR body field/);
+        expect(r.stderr).toMatch(/release bump but the diff is not one/);
+      } finally {
+        rmSync(f, { force: true });
+      }
+    }));
 
   it("a promotion PR from release/* with a huge diff passes by its base", () =>
     withTemp((dir) => {

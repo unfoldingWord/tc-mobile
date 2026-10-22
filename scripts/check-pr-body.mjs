@@ -523,25 +523,44 @@ export function claimsBump({ baseRef, title }) {
 
 const VERSION_LINE = /^\s*"version": "([^"]*)",?$/;
 const MARKETING_LINE = /^\s*MARKETING_VERSION = \d+(?:\.\d+)*;$/;
+const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+/**
+ * In npm's v2/v3 lockfile layout the root `"version"` (indent 2) and
+ * `packages[""].version` (indent 6) both sit in the first lines, ahead of
+ * every `node_modules/...` entry; a dependency's `"version"` cannot. The bound
+ * is a reading of that layout, not a JSON parse.
+ */
+const LOCK_HEADER_LINES = 10;
+const isLockRootVersion = ({ text, at }) =>
+  at <= LOCK_HEADER_LINES && /^(?: {2}| {6})"version"/.test(text);
 
 /**
  * Whether a unified diff is a version bump to `version`, and nothing else.
  * Allowed: `package.json` (exactly its `"version"` line, to `version`),
- * `package-lock.json` (one or two `"version"` lines, all to `version`) and the
- * iOS `MARKETING_VERSION` lines. `package.json` must be in it. Anything the
- * parser does not recognise (a rename, a mode change, a binary file, a quoted
- * path, an unknown header line) rejects: this fails closed.
- * Returns `{ ok: true }` or `{ ok: false, reason }`.
+ * `package-lock.json` (its root and `packages[""]` `"version"` lines, all to
+ * `version`) and the iOS `MARKETING_VERSION` lines. `package.json` must be in
+ * it. Anything the parser does not recognise (a rename, a mode change, a
+ * binary file, a quoted path, an unknown header line) rejects: this fails
+ * closed. Returns `{ ok: true }` or `{ ok: false, reason }`.
  */
 export function checkBumpDiff(diff, version) {
   const no = (reason) => ({ ok: false, reason });
-  const files = new Map(); // path -> { added: string[], removed: string[] }
+  // path -> { added, removed: Array<{ text, at }> }, `at` the line number in
+  // the new (added) or old (removed) file.
+  const files = new Map();
   let cur = null;
   let inHunk = false;
+  let oldAt = 0;
+  let newAt = 0;
   for (const line of (diff ?? "").replace(/\r\n?/g, "\n").split("\n")) {
     if (inHunk && /^[-+ \\]/.test(line)) {
-      if (line[0] === "+") cur.added.push(line.slice(1));
-      else if (line[0] === "-") cur.removed.push(line.slice(1));
+      const text = line.slice(1);
+      if (line[0] === "+") cur.added.push({ text, at: newAt++ });
+      else if (line[0] === "-") cur.removed.push({ text, at: oldAt++ });
+      else if (line[0] === " ") {
+        oldAt++;
+        newAt++;
+      }
       continue;
     }
     if (line === "") continue;
@@ -557,21 +576,27 @@ export function checkBumpDiff(diff, version) {
     if (cur === null) {
       return no(`unrecognised diff line: ${line.slice(0, 60)}`);
     }
-    if (line.startsWith("@@")) inHunk = true;
-    else if (!/^(?:index |--- |\+\+\+ )/.test(line)) {
+    if (line.startsWith("@@")) {
+      const m = HUNK.exec(line);
+      if (!m) return no(`unrecognised hunk header: ${line.slice(0, 60)}`);
+      oldAt = Number(m[1]);
+      newAt = Number(m[2]);
+      inHunk = true;
+    } else if (!/^(?:index |--- |\+\+\+ )/.test(line)) {
       return no(`unrecognised diff line: ${line.slice(0, 60)}`);
     }
   }
   if (!files.has("package.json")) return no("package.json is not in the diff");
   for (const [path, { added, removed }] of files) {
     if (path === "package.json" || path === "package-lock.json") {
-      const max = path === "package.json" ? 1 : 2;
+      const lock = path === "package-lock.json";
       const ok =
         added.length >= 1 &&
-        added.length <= max &&
+        added.length <= (lock ? 2 : 1) &&
         removed.length === added.length &&
-        added.every((l) => VERSION_LINE.exec(l)?.[1] === version) &&
-        removed.every((l) => VERSION_LINE.test(l));
+        added.every((l) => VERSION_LINE.exec(l.text)?.[1] === version) &&
+        removed.every((l) => VERSION_LINE.test(l.text)) &&
+        (!lock || [...added, ...removed].every(isLockRootVersion));
       if (!ok) {
         return no(
           `${path} changes more than its "version" line, or not to ${version}`
@@ -580,7 +605,7 @@ export function checkBumpDiff(diff, version) {
     } else if (path === "ios/App/App.xcodeproj/project.pbxproj") {
       const ok =
         added.length === removed.length &&
-        [...added, ...removed].every((l) => MARKETING_LINE.test(l));
+        [...added, ...removed].every((l) => MARKETING_LINE.test(l.text));
       if (!ok) return no(`${path} changes more than MARKETING_VERSION`);
     } else {
       return no(`${path} is not a version file`);
@@ -622,11 +647,8 @@ export function evaluate(pr, { prodLines = null, bump = null } = {}) {
         `Size: ${prodLines} production lines is over the cap of ${PROD_LINE_CAP}; split the PR, or add "size-exception: <reason>"`;
     }
   }
-  if (claimsBump(pr) && bump?.ok === false) {
-    missing.push(
-      `Title claims a release bump but the diff is not one (${bump.reason}); it gets the full gate`
-    );
-  }
+  // A disproved bump gets the full gate, not a veto: `main` prints why it was
+  // not exempt, and the body and the cap decide (bench round 1).
   return { ok: missing.length === 0, exempt: null, missing };
 }
 
@@ -756,6 +778,11 @@ function main() {
             ? defaultRunGh(["pr", "diff", args.value, "--repo", REPO])
             : diffTextInRange(range);
         bump = checkBumpDiff(diff, bumpTitleVersion(pr.title));
+        if (!bump.ok) {
+          console.error(
+            `NOTE: title claims a release bump but the diff is not one (${bump.reason}); it gets the full gate`
+          );
+        }
       } catch (err) {
         const why = `could not read the diff (${String(err.stderr || err.message).trim()})`;
         if (args.source === "event")
