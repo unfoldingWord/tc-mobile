@@ -162,10 +162,13 @@ test("the language ask at 360 px, dark and light (#1492)", async ({
     await expect(page.locator("#launch-intro")).toBeHidden({
       timeout: 10_000,
     });
-    if (scheme === "light") {
-      await page.getByRole("button", { name: "Open menu" }).click();
+    if (scheme === "dark") {
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    } else {
+      // The theme control lives in Settings (#1575).
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page
-        .getByRole("dialog", { name: "Menu" })
+        .getByRole("dialog", { name: "Settings", exact: true })
         .getByRole("button", { name: /light screen/i })
         .click();
       await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
