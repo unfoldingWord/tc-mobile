@@ -27,6 +27,7 @@ import { chapterShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
+import { useChapterHeading } from "@/hooks/use-settings";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -174,7 +175,7 @@ export const SegmentsScreen = forwardRef<
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
-  const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
+  const chapterHeading = useChapterHeading(chapterName, chapterNumber);
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu

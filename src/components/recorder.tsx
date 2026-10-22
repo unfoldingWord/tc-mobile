@@ -81,6 +81,7 @@ import type { RecorderAudio } from "@/hooks/use-audio-session";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useChapterHeading } from "@/hooks/use-settings";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
@@ -649,9 +650,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const takeActive = state !== "idle" || isClosing;
 
     // The chapter's resolved name for the header's chapter crumb (#1230).
-    const chapterHeading = view
-      ? strings.chapterHeading(view.chapterName, view.chapterNumber)
-      : "";
+    const shownChapterHeading = useChapterHeading(
+      view?.chapterName ?? null,
+      view?.chapterNumber ?? 0
+    );
+    const chapterHeading = view ? shownChapterHeading : "";
 
     // `finishedIntent` is the translator's EXPLICIT choice, null until they tap
     // the checkbox — never written speculatively (an optimistic reset at Record
@@ -4230,11 +4233,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           chapterNumber={view?.chapterNumber}
           // The header's own chapter chip text (#1230), so the ⋮ menu's
           // sheet head always matches the header it was opened from.
-          chapterHeading={
-            view
-              ? strings.chapterHeading(view.chapterName, view.chapterNumber)
-              : undefined
-          }
+          chapterHeading={view ? chapterHeading : undefined}
         />
         <EraseConfirm
           key={confirmMount}

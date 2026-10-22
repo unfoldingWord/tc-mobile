@@ -98,8 +98,10 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     expect(await statusBarStyle(page)).toBe("black-translucent");
 
     // --- 2. the toggle is where a translator can find it -------------------
-    await page.getByRole("button", { name: "Open menu" }).click();
-    const menu = page.getByRole("dialog", { name: "Menu" });
+    // The Settings screen's first row (#1575): the gear in the Books header
+    // opens it. The ≡ menu no longer holds the toggle.
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const menu = page.getByRole("dialog", { name: "Settings", exact: true });
     await expect(menu).toBeVisible();
     // Named by DESTINATION, not state — a control reading "Dark theme" while
     // the screen is already dark tells an AT user nothing.
@@ -167,9 +169,9 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     // this reads INK as well as the floor, in the shipped cascade, rather than
     // trusting that one attribute selected the whole block.
     await page.goto("/");
-    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page
-      .getByRole("dialog", { name: "Menu" })
+      .getByRole("dialog", { name: "Settings", exact: true })
       .getByRole("button", { name: /light screen/i })
       .click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -244,9 +246,9 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
     await expect(failureMarker(page)).toHaveCount(0);
 
     // Switch to light, with the write failing underneath.
-    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page
-      .getByRole("dialog", { name: "Menu" })
+      .getByRole("dialog", { name: "Settings", exact: true })
       .getByRole("button", { name: /light screen/i })
       .click();
     await page.keyboard.press("Escape");

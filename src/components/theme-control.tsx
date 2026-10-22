@@ -1,4 +1,5 @@
 import { Control } from "./control";
+import { SettingRow } from "./setting-row";
 import { Tile } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { useTheme } from "@/hooks/use-theme";
@@ -8,7 +9,8 @@ import { useTheme } from "@/hooks/use-theme";
  *
  * ── Why it is a component and not three copies of a `Control` ──
  *
- * It is mounted in three menus now — the Books global `≡`, the chapter `⋮` and
+ * It is mounted in three places now — the Settings screen (#1575; it left the
+ * Books global `≡` for it), the chapter `⋮` and
  * the recorder's own menu (its header `⋮`, #1225, its one opener in both
  * modes since #1243) — and the three facts it has to get right are
  * the same at each one:
@@ -46,11 +48,22 @@ import { useTheme } from "@/hooks/use-theme";
  * the opposite of the toggle on both counts. #149 is the issue that owns that
  * split; it is a scope decision, not an oversight.
  */
-export function ThemeControl({ tile = false }: { tile?: boolean }) {
+export function ThemeControl({
+  tile = false,
+  row = false,
+}: {
+  tile?: boolean;
+  row?: boolean;
+}) {
   const theme = useTheme();
   const dark = theme.theme === "dark";
   const icon = dark ? "sun" : "moon";
   const label = dark ? strings.useLightTheme : strings.useDarkTheme;
+  // The Settings screen's row (#1575): the same destination glyph, name and
+  // tap, with the name drawn beside it. The Books ≡ no longer mounts the
+  // toggle; this row is where it lives there.
+  if (row)
+    return <SettingRow icon={icon} label={label} onClick={theme.toggle} />;
   // The O4 menus' plain tile (#949): the same glyph, name and tap, with the
   // destination's word under it. A caller opts in from its O4 branch only.
   if (tile)

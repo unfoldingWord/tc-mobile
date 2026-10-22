@@ -204,53 +204,41 @@ describe("the light theme is reachable (#171)", () => {
     );
   });
 
-  it("the toggle is mounted in the global menu, not just written", () => {
+  it("the toggle is mounted on the Settings screen, not just written (#1575)", () => {
     // The hook could exist and be called by nothing. Since #149 the control
-    // itself is `ThemeControl` — one component mounted in three menus — so the
-    // wiring lives in that file and the MOUNT is what each screen shows.
+    // itself is `ThemeControl`, so the wiring lives in that file and the MOUNT
+    // is what each screen shows. Since #1575 the Books global menu no longer
+    // mounts it: it is the Settings screen's first row.
     const control = code("src/components/theme-control.tsx");
     expect(control).toMatch(/useTheme\(\)/);
     expect(control).toMatch(/onClick=\{theme\.toggle\}/);
-    const screen = code("src/components/books-screen.tsx");
-    // The tile form: every menu draws its actions on the tile grid (#949).
-    expect(screen).toMatch(/<ThemeControl\s+tile\s*\/>/);
-    // A `<Menu>` with CHILDREN — before this it was a self-closing empty panel.
-    //
-    // The close handler is matched loosely on purpose (#452 PR3): it was the
-    // inline `() => setMenuOpen(false)` until the global menu became a Back
-    // layer, at which point opening and closing it had to go through ONE named
-    // pair so no call site could forget the registration. Pinning the exact
-    // expression made this assertion a tripwire for any refactor of that
-    // handler rather than for the thing it is about — that the panel has
-    // children.
-    expect(screen).toMatch(new RegExp(GLOBAL_MENU_OPEN_TAG));
+    expect(control).toMatch(/<SettingRow[^>]*onClick=\{theme\.toggle\}/);
+    const settings = code("src/components/settings-panel.tsx");
+    expect(settings.match(/<ThemeControl\s+row\s*\/>/g)?.length ?? 0).toBe(1);
+    // `<Menu` with CHILDREN, so a Settings screen that opens empty fails here.
+    expect(settings).toMatch(
+      /<Menu[\s\S]*?>\s*<div className="settings-list">/
+    );
   });
 
-  it("sits AFTER the failure-log panel, so ≡-with-failures lands on the report", () => {
-    // `Menu` focuses its first actionable child on open (`menu.tsx`). While
-    // the log is non-empty the ≡ is named "Open menu. N problems recorded."
-    // and its whole point is reaching the report — so the toggle, which is
-    // unconditional, must not be the first child in front of the panel, or a
-    // switch/AT user who activates what they landed on flips the theme
-    // instead (George R1 P2 on #457). The panel is mounted only while
-    // `failureCount > 0`, so on a quiet phone the toggle is still first.
-    const screen = code("src/components/books-screen.tsx");
-    const menu = screen.search(new RegExp(GLOBAL_MENU_OPEN_TAG));
-    expect(menu).toBeGreaterThan(-1);
-    const body = screen.slice(menu);
-    const panel = body.indexOf("<FailureLogPanel");
+  it("is gone from the Books global menu: moved, not duplicated (#1575)", () => {
     // `<ThemeControl`, with the angle bracket, so a prose mention of the
-    // component in a nearby comment can never stand in for the mount — the
-    // capture-by-comment trap AGENTS.md records from #529 round 3.
-    const toggle = body.indexOf("<ThemeControl");
-    expect(panel, "FailureLogPanel is not in the global menu").toBeGreaterThan(
-      -1
-    );
-    expect(toggle, "the toggle is not in the global menu").toBeGreaterThan(-1);
-    expect(
-      panel,
-      "the theme toggle is mounted ahead of the failure-log panel"
-    ).toBeLessThan(toggle);
+    // component in a nearby comment can never stand in for the mount, or for
+    // its absence — the capture-by-comment trap AGENTS.md records from #529.
+    const screen = code("src/components/books-screen.tsx");
+    expect(screen).not.toContain("<ThemeControl");
+    expect(screen).toMatch(new RegExp(GLOBAL_MENU_OPEN_TAG));
+    // The one place Books reaches the toggle is the Settings panel it mounts.
+    expect(screen).toContain("<SettingsPanel");
+  });
+
+  it("Settings lists the theme first, then the chapter-number switch (#1575)", () => {
+    const body = code("src/components/settings-panel.tsx");
+    const theme = body.indexOf("<ThemeControl");
+    const chapters = body.indexOf("<ChapterNumbersRow");
+    expect(theme, "no theme row").toBeGreaterThan(-1);
+    expect(chapters, "no chapter-number row").toBeGreaterThan(-1);
+    expect(theme).toBeLessThan(chapters);
   });
 
   it("follows the translator into a chapter and into the recorder (#149)", () => {
@@ -325,9 +313,6 @@ describe("the light theme is reachable (#171)", () => {
       true
     );
     expect(toggleClosesEveryBranch("src/components/segments-screen.tsx")).toBe(
-      true
-    );
-    expect(toggleClosesEveryBranch("src/components/books-screen.tsx")).toBe(
       true
     );
 
