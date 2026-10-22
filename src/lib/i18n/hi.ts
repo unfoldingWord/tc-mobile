@@ -40,6 +40,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuOpen: "मेनू खोलें",
   menuTitle: "मेनू",
   menuClose: "मेनू बंद करें",
+  settingsOpen: "सेटिंग",
+  settingsTitle: "सेटिंग",
+  settingsChapterNumbers: "अध्याय संख्या हमेशा दिखाएँ",
   booksEmpty: "अपनी पहली पुस्तक शुरू करें",
   booksEmptyTeach: "पुस्तक में वे अध्याय होते हैं जो आप रिकॉर्ड करते हैं।",
   loadingBooks: "आपकी पुस्तकें लोड हो रही हैं।",
@@ -128,8 +131,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "हटाएँ",
   tileShare: "साझा करें",
   tileAbout: "जानकारी",
-  tileLight: "हल्की",
-  tileDark: "गहरी",
   closeRecorder: "रिकॉर्डर बंद करें",
   recorderBreadcrumb(
     book: string,
