@@ -245,8 +245,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Фрагмент ${from} теперь фрагмент ${to}.`,
   reorderStayed: (n: number): string => `Фрагмент ${n} остался на месте.`,
   chapterReorderLifted: (n: number): string => `Перемещение главы ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Глава ${from} теперь глава ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Глава ${n} перемещена на место ${to}.`,
   chapterReorderStayed: (n: number): string => `Глава ${n} осталась на месте.`,
   bookReorderLifted: (heading: string): string => `Перемещение: «${heading}».`,
   bookReorderMoved: (heading: string, to: number): string =>
@@ -367,6 +367,27 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   ): string {
     return stringsEn.shareBookFilename.apply(this, args);
   },
+  exportProject: "Экспортировать проект",
+  tileExport: "Экспорт",
+  exportProjectPreparing: "Готовим проект к экспорту.",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
+  languageAskTitle: "Язык этой книги",
+  languageAskLead:
+    "На каком языке эти записи? Вы выбираете один раз, и каждый экспорт этой книги использует его.",
+  languageSearch: "Поиск языков",
+  languageSearchHint: "Название или код",
+  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
+  languageLoading: "Загружаются языки.",
+  languageLoadFailed: "Не удалось загрузить языки.",
+  languageNoMatch: "Языков не найдено. Введите другое название или код.",
+  languageNarrow: "Введите больше, чтобы увидеть другие языки.",
+  languageSaving: "Сохраняем язык.",
+  languageAskCancel: "Отмена",
   shareNameFallback: "Книга",
 
   // Save and recovery
@@ -563,6 +584,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   noRoom: "На этом телефоне не осталось места.",
   stopToEdit: "Остановите запись, чтобы изменить.",
   stopToErase: "Остановите запись, чтобы сбросить.",
+  aboutLanguageCodes: "Коды языков: ISO 639-3, с сайта iso639-3.sil.org.",
+  bookNameTaken: "Книга с таким названием уже есть. Введите другое название.",
 
   // Cover colours and chapter playback
   coverColourLabel: "Цвет обложки",
