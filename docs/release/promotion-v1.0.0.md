@@ -413,7 +413,10 @@ Use this before dispatching any native lane by hand: `android-apk.yml`,
 `ios-testflight.yml`, or `android-play.yml`. It replaces the separate guards
 that earlier rounds patched one case at a time (#1308, #1313, #1321). A
 dispatch is the DRI's, human-only; every read below is agent-allowed and
-read-only. A new case is a new row in the table, not a new rule.
+read-only. A new case is a new row in the table, not a new rule. The
+workflows do not enforce this procedure: the concurrency group is still on
+the whole Play run, and no workflow refuses an RC after a production build.
+Moving the group onto the upload job is #1616.
 
 Fixed values. `<lane>` is the workflow file. `<SHA>` is the full 40-character
 oid being built (`PROMO_SHA` on `staging`, `PROD_SHA` on `main`); a
@@ -464,12 +467,14 @@ The procedure, in order. Stop at the first step that says stop.
    because `--ref <branch>` builds the tip at dispatch. If it is not exactly
    `<SHA>`, stop.
 4. **Newer production build** (a staging dispatch only). Read F. If a `main`
-   run was created after the promotion's `mergedAt`, stop and tell the DRI.
-   The build numbers are the time the signing job ran, so a staging build
-   made after a production build carries the higher number, and Android
+   run was created after the promotion's `mergedAt`, stop. The rule (DRI
+   pick, 2026-10-22, #1321 item 2: "Never dispatch an RC after prod"): once
+   a version has a production build, no tester RC is dispatched for that
+   version, and the next tester build is a new version. Tell the DRI.
+   The reason: build numbers are the time the signing job ran, so an RC
+   built after a production build carries the higher number, and Android
    refuses the production APK over it as a downgrade. Uninstall is not the
-   remedy: uninstalling deletes recordings. The rule for this case is not
-   decided (#1321 item 2); the DRI chooses.
+   remedy: uninstalling deletes recordings.
 5. **Dispatch** (human-only):
    `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref <branch>`.
    The agent then re-reads D until the new run's signing job has started (an
@@ -490,7 +495,7 @@ Scenario table. Each row is what the reads show and what to do.
 | Tip moved                         | E is not `<SHA>`                                                | Stop; tell the DRI (the red team read another tree)                                                                                                                                                |
 | Long history                      | Twenty or more completed runs sit newer than an open one        | No effect: D filters by status, A by commit                                                                                                                                                        |
 | Dispatch cancelled while pending  | The new run ends `cancelled` before its signing job starts      | Back to 1                                                                                                                                                                                          |
-| Production build already made     | F shows a `main` run after `mergedAt`                           | Stop; the DRI decides (open, #1321)                                                                                                                                                                |
+| Production build already made     | F shows a `main` run after `mergedAt`                           | Stop; no RC for a version with a production build (DRI, 2026-10-22); the next tester build is a new version                                                                                        |
 | Play draft missing                | `android-play.yml`: A has no run whose signing job is `success` | The Play group sits on the whole run, so a pending push or dispatch can be replaced and never build. Same procedure with `<lane>` `android-play.yml`; dispatch with no `build_only`, which uploads |
 
 ## 4. Native candidate and durable delivery
