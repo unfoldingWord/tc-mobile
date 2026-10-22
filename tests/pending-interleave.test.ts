@@ -50,6 +50,11 @@ import type {
  *   C1  a take recorded discarded is never the active take;
  *   C2  a `saved` or `discarded` record never changes kind.
  *
+ * And, per disk, after every step (rebuild PR 2, cell RP-D):
+ *   D1  a deleted segment leaves no pending row behind;
+ *   L1  every clip on disk is named by a take or by a pending row's `stored`
+ *       base, so a delete that drops a row also lets its base clip go.
+ *
  * The scenario list is a floor. PR 3 adds the replay as one more step kind.
  */
 
@@ -287,6 +292,10 @@ type Disk = {
   /** A person deleted the segment (or its book): final, and it takes its
    * takes and their records with it (rule 5). */
   readonly segmentGone: boolean;
+  /** Whether a pending row is keyed by the scenario's segment. */
+  readonly segmentRow: boolean;
+  /** Clips on disk that no take and no row's `stored` base names. */
+  readonly unnamedClips: readonly ClipId[];
 };
 
 async function readDisk(world: World): Promise<Disk> {
@@ -313,11 +322,22 @@ async function readDisk(world: World): Promise<Disk> {
   for (const r of await db.getAll("takeDispositions")) {
     records.set(r.clipId, r.kind);
   }
+  const named = new Set<ClipId>(
+    (await db.getAll("takes")).map((t) => t.clipId)
+  );
+  for (const row of await db.getAll("pendingTakes")) {
+    if (row.base.kind === "stored") named.add(row.base.sourceClipId);
+  }
+  const unnamedClips = (await db.getAllKeys("clipMeta")).filter(
+    (id) => !named.has(id)
+  );
   return {
     rows,
     active: take?.clipId ?? null,
     records,
     segmentGone: segment === undefined,
+    segmentRow: (await db.get("pendingTakes", world.segmentId)) !== undefined,
+    unnamedClips,
   };
 }
 
@@ -329,6 +349,14 @@ function violations(
   stepCopy: Copy["name"]
 ): string[] {
   const found: string[] = [];
+  if (after.segmentGone && after.segmentRow) {
+    found.push("D1: a deleted segment left its pending row");
+  }
+  if (after.unnamedClips.length > 0) {
+    found.push(
+      `L1: ${after.unnamedClips.length} clip(s) on disk named by nothing`
+    );
+  }
   const requested = (id: ClipId): boolean =>
     world.live.A.rowAtTap.has(id) || world.live.B.rowAtTap.has(id);
   for (const [letter, t] of Object.entries(world.takes)) {
