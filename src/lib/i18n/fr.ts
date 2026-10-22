@@ -28,6 +28,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuOpen: "Ouvrir le menu",
   menuTitle: "Menu",
   menuClose: "Fermer le menu",
+  settingsOpen: "Réglages",
+  settingsTitle: "Réglages",
+  settingsChapterNumbers: "Toujours afficher le numéro de chapitre",
   booksEmpty: "Commencez votre premier livre",
   booksEmptyTeach: "Un livre contient les chapitres que vous enregistrez.",
   loadingBooks: "Chargement de vos livres.",
@@ -118,8 +121,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "Supprimer",
   tileShare: "Partager",
   tileAbout: "À propos",
-  tileLight: "Clair",
-  tileDark: "Sombre",
   closeRecorder: "Fermer l'enregistreur",
   recorderBreadcrumb(
     book: string,

@@ -30,6 +30,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuOpen: "Buka menu",
   menuTitle: "Menu",
   menuClose: "Tutup menu",
+  settingsOpen: "Pengaturan",
+  settingsTitle: "Pengaturan",
+  settingsChapterNumbers: "Selalu tampilkan nomor pasal",
   booksEmpty: "Mulai buku pertamamu",
   booksEmptyTeach: "Satu buku berisi pasal-pasal yang kamu rekam.",
   loadingBooks: "Memuat bukumu.",
@@ -111,8 +114,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileDelete: "Hapus",
   tileShare: "Bagikan",
   tileAbout: "Tentang",
-  tileLight: "Terang",
-  tileDark: "Gelap",
   closeRecorder: "Tutup perekam",
   recorderBreadcrumb(
     book: string,

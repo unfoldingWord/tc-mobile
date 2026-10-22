@@ -160,7 +160,7 @@ describe("one ✕ closes every sheet (#1268 item 2)", () => {
     expect(glyphOf(named(strings.aboutBack))).toBe(glyphPath("back"));
   });
 
-  it("every <Menu> in src/ is a known caller, and only About asks for back", () => {
+  it("every <Menu> in src/ is a known caller, and only About and Settings ask for back", () => {
     // Every .tsx under src/, recursively, so a sheet added in a new folder
     // trips this too.
     const dir = path.resolve(import.meta.dirname, "..", "src");
@@ -183,8 +183,14 @@ describe("one ✕ closes every sheet (#1268 item 2)", () => {
       "components/recorder-menu.tsx": 1,
       "components/segment-row.tsx": 1,
       "components/segments-screen.tsx": 1,
+      "components/settings-panel.tsx": 1,
     });
-    expect(backs).toEqual(["components/about-panel.tsx"]);
+    // Settings (#1575) keeps the chevron: it is a screen opened from the
+    // Books header, and its header control is "Back to books".
+    expect(backs).toEqual([
+      "components/about-panel.tsx",
+      "components/settings-panel.tsx",
+    ]);
   });
 });
 
