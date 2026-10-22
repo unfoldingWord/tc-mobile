@@ -312,8 +312,10 @@ export interface StoredPendingTake {
   readonly editOnly: boolean;
   readonly createdAt: number;
   /**
-   * The segment's `audioRevision` when the row was put (v13). Absent on a row
-   * written before v13; the step does not guess one.
+   * The segment's `audioRevision` that the take's base was read at, carried
+   * on the take from the recorder's load (v13; the note's §1 and step 6 of
+   * "The hold"), never the hold's own read. Absent on a row written before
+   * v13, which the step does not guess, and on a take that did not know it.
    */
   readonly baseRevision?: number;
 }

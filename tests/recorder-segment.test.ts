@@ -2,7 +2,10 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { withObservedRevision } from "@/hooks/observed-revision";
+import {
+  noteObservedRevision,
+  withObservedRevision,
+} from "@/hooks/observed-revision";
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
 import { writePendingTake } from "@/lib/storage/pending-takes";
 import {
@@ -193,6 +196,9 @@ describe("the revision a recording's base was read at (cell HM, George r1 on #16
         CANONICAL_SAMPLE_RATE
       );
       const view = await loadRecorderSegmentView(segmentId);
+      // What `useRecorderSegment` does when it adopts the view
+      // (tests/hold-revision-hooks.test.ts pins that it does).
+      noteObservedRevision(segmentId, view.audioRevision);
       await move(segmentId);
 
       const take = recording(segmentId, view.samples!);
@@ -208,14 +214,16 @@ describe("the revision a recording's base was read at (cell HM, George r1 on #16
     }
   );
 
-  it("a load after the move notes the new revision", async () => {
+  it("a view carries the revision read with its samples, and loading notes nothing", async () => {
     const segmentId = await freshSegment();
     await saveTake(segmentId, newClipId(), samples(20), CANONICAL_SAMPLE_RATE);
-    await loadRecorderSegmentView(segmentId);
+    const before = await loadRecorderSegmentView(segmentId);
+    expect(before.audioRevision).toBe(1);
+    noteObservedRevision(segmentId, before.audioRevision);
     await clearSegmentTake(segmentId);
-    const view = await loadRecorderSegmentView(segmentId);
-    expect(recording(segmentId, view.samples ?? samples(0)).baseRevision).toBe(
-      2
-    );
+    const after = await loadRecorderSegmentView(segmentId);
+    expect(after.audioRevision).toBe(2);
+    // Only the hook's adoption notes (George r2 on #1618).
+    expect(recording(segmentId, samples(0)).baseRevision).toBe(1);
   });
 });

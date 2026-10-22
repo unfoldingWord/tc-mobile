@@ -6,15 +6,16 @@ import type { SegmentId } from "@/types/domain";
  * per segment, so a save can say which revision its base belongs to (George
  * r1 on #1618, docs/design/pending-take-lifecycle.md cell HM).
  *
- * Written by {@link noteObservedRevision} when the recorder's view loads
- * (`loadRecorderSegmentView`, from the segment read in the same transaction as
- * the samples) and read by {@link withObservedRevision} when `saveRecording`
- * builds the take.
+ * Written by {@link noteObservedRevision} when `useRecorderSegment` adopts a
+ * view (its `audioRevision`, read in the same transaction as the samples), and
+ * never by a load it cancelled (George r2 on #1618). Read by
+ * {@link withObservedRevision} when `saveRecording` builds the take.
  *
  * The value and the editor's buffer are kept together by the recorder, not by
- * this module: the note is made as a load returns, and the recorder's editor
- * re-bases on that load's `view.samples` (`useSegmentEditor`). That pairing is
- * read from the code, not tested. A value older than the buffer makes a replay
+ * this module: the note is made where the view is set, and the recorder's
+ * editor re-bases on that view's `samples` (`useSegmentEditor`). The note's
+ * placement is tested (`tests/hold-revision-hooks.test.ts`); the editor's
+ * re-base is read from the code. A value older than the buffer makes a replay
  * judge the row `moved` and keep it unsaved, the fail-safe direction; a newer
  * one is the direction this exists to prevent.
  */

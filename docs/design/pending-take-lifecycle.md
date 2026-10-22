@@ -808,10 +808,17 @@ names where it must be seen red first, and the mutation that must kill it.
   revision" and "holds a take whose revision is unknown with none, as a
   legacy row" (`tests/pending-lifecycle-store.test.ts`); "a take recorded
   over the loaded view keeps the view's revision when another copy erases /
-  saves first" and "a load after the move notes the new revision"
-  (`tests/recorder-segment.test.ts`). Red: #1618 at `5ce8272f` (the hold
-  stamps its own read); then the mutation "the hold stamps the live
-  revision" must kill the first pair.
+  saves first" and "a view carries the revision read with its samples, and
+  loading notes nothing" (`tests/recorder-segment.test.ts`). Red: #1618 at
+  `5ce8272f` (the hold stamps its own read); then the mutation "the hold
+  stamps the live revision" must kill the first pair. The revision is noted
+  only where `useRecorderSegment` adopts a view: a load it cancelled can
+  have read a newer revision than the samples the editor holds (George r2
+  on #1618). Tests (PR 1): "a load the recorder cancelled notes nothing,
+  even when it read a newer revision" and "reload notes the revision of the
+  view it returns" (`tests/hold-revision-hooks.test.ts`). Red: #1618 at
+  `c4b696dc`; then the mutation "the load effect notes before its cancelled
+  check" must kill the first.
 - **NR-E.** `clearSegmentTake` on a segment with no take: nothing removed,
   revision unchanged. Test (PR 1): W3. Red: mutation W3.
 - **NR-D.** `deleteSegment` removes the segment and writes its tombstone;
