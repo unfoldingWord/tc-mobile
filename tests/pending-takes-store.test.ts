@@ -8,7 +8,6 @@ import { addChapter, addSegment, createBook } from "@/lib/storage/books";
 import { getClipMeta, newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import {
-  deletePendingTake,
   encodePendingBase,
   listPendingTakes,
   loadPendingRecipe,
@@ -17,23 +16,24 @@ import {
 import { saveTake } from "@/lib/storage/takes";
 import type { NewTake } from "@/lib/takes/pending-take";
 import type { ClipMeta } from "@/types/audio";
-import type { ClipId, SegmentId, StoredPendingTake } from "@/types/domain";
+import type { SegmentId, StoredPendingTake } from "@/types/domain";
 import {
   clearAllStores,
   ramp,
   recordTake,
+  savedTake,
   throwWhenStoreRequested,
 } from "./support";
 
 /**
- * The pending-take store (#38, slice 1): the write, read and delete of one
- * take whose save has not landed, in v12's `pendingTakes` store, and the
- * stored | inline base encoding (the DRI's 2026-10-19 pick, shape in
- * docs/design/v12-schema.md, "The pending-takes store").
+ * The pending-take store (#38, slice 1): the write and read of one take
+ * whose save has not landed, in v12's `pendingTakes` store, and the stored |
+ * inline base encoding (the DRI's 2026-10-19 pick, shape in
+ * docs/design/v12-schema.md, "The pending-takes store"). The v13 lifecycle
+ * (the hold's seven steps, the settles, the records) is pinned in
+ * `tests/pending-lifecycle-store.test.ts`.
  *
- * Node, fake-indexeddb, every store cleared between cases. No hook is wired
- * to any of this yet; what these cases pin is the store's contract, which the
- * save hook (slice 2) and the launch replay (slice 3) will lean on.
+ * Node, fake-indexeddb, every store cleared between cases.
  */
 
 const RATE = CANONICAL_SAMPLE_RATE;
@@ -56,6 +56,7 @@ const take = (
   offset: 0,
   finished: false,
   editOnly: false,
+  baseRevision: 0,
   ...overrides,
 });
 
@@ -172,24 +173,22 @@ describe("writePendingTake — get-or-create in one transaction", () => {
     expect(row.recorded.byteLength).toBe(50 * 2);
   });
 
-  it("never overwrites a newer row with an older one", async () => {
+  it("a hold never overwrites another take's row", async () => {
+    // RP-S, the hold half (docs/design/pending-take-lifecycle.md §3 step 5):
+    // the row there may be another take's only copy, so neither an older nor
+    // a newer write replaces it.
     const segmentId = await freshSegment();
-    const newer = take(segmentId);
-    await writePendingTake(newer, { now: 20 });
-    const older = await writePendingTake(take(segmentId), { now: 10 });
-    expect(older).toEqual({ ok: true, outcome: "kept" });
-    expect((await rows()).map((r) => r.clipId)).toEqual([newer.clipId]);
-  });
-
-  it("replaces an older row for the same segment with a different take", async () => {
-    const segmentId = await freshSegment();
-    await writePendingTake(take(segmentId), { now: 10 });
-    const later = take(segmentId);
-    expect(await writePendingTake(later, { now: 20 })).toEqual({
+    const first = take(segmentId);
+    await writePendingTake(first, { now: 10 });
+    expect(await writePendingTake(take(segmentId), { now: 20 })).toEqual({
       ok: true,
-      outcome: "written",
+      outcome: "kept-foreign",
     });
-    expect((await rows()).map((r) => r.clipId)).toEqual([later.clipId]);
+    expect(await writePendingTake(take(segmentId), { now: 5 })).toEqual({
+      ok: true,
+      outcome: "kept-foreign",
+    });
+    expect((await rows()).map((r) => r.clipId)).toEqual([first.clipId]);
   });
 
   it("keeps one row per segment", async () => {
@@ -202,20 +201,13 @@ describe("writePendingTake — get-or-create in one transaction", () => {
     );
   });
 
-  it("asks IndexedDB for pendingTakes only, so saveTake is never queued behind it", async () => {
-    const segmentId = await freshSegment();
-    const raw = unwrap(await getDb());
-    const spy = vi.spyOn(raw, "transaction");
-    await writePendingTake(take(segmentId), { now: 1 });
-    const scopes = spy.mock.calls.map((call) => [call[0]].flat());
-    expect(scopes).toEqual([["pendingTakes"]]);
-  });
-
   it("lets a saveTake started while it is still in flight land", async () => {
     const segmentId = await freshSegment();
     const t = take(segmentId);
     const write = writePendingTake(t, { now: 1 });
-    const saved = await saveTake(segmentId, t.clipId, ramp(50), RATE);
+    const saved = savedTake(
+      await saveTake(segmentId, t.clipId, ramp(50), RATE)
+    );
     expect(saved.clipId).toBe(t.clipId);
     expect(await write).toEqual({ ok: true, outcome: "written" });
   });
@@ -248,62 +240,6 @@ describe("writePendingTake — get-or-create in one transaction", () => {
     await vi.waitFor(() => expect(result).toBeDefined());
     expect(result?.ok).toBe(false);
     expect(await rows()).toEqual([]);
-  });
-});
-
-describe("deletePendingTake — conditional on clipId", () => {
-  it("removes the row for that take", async () => {
-    const segmentId = await freshSegment();
-    const t = take(segmentId);
-    await writePendingTake(t, { now: 1 });
-    expect(await deletePendingTake(segmentId, t.clipId)).toEqual({
-      ok: true,
-      outcome: "deleted",
-    });
-    expect(await rows()).toEqual([]);
-  });
-
-  it("leaves another take's row for the same segment alone", async () => {
-    const segmentId = await freshSegment();
-    const held = take(segmentId);
-    await writePendingTake(held, { now: 1 });
-    expect(
-      await deletePendingTake(segmentId, "someone-else" as ClipId)
-    ).toEqual({ ok: true, outcome: "kept" });
-    expect((await rows()).map((r) => r.clipId)).toEqual([held.clipId]);
-  });
-
-  it("is a no-op when nothing is there, and repeatable", async () => {
-    const segmentId = await freshSegment();
-    const clipId = newClipId();
-    expect(await deletePendingTake(segmentId, clipId)).toEqual({
-      ok: true,
-      outcome: "absent",
-    });
-    expect(await deletePendingTake(segmentId, clipId)).toEqual({
-      ok: true,
-      outcome: "absent",
-    });
-  });
-
-  it("wins over a write that was called first but has not settled", async () => {
-    const segmentId = await freshSegment();
-    const t = take(segmentId);
-    const write = writePendingTake(t, { now: 1 });
-    const del = deletePendingTake(segmentId, t.clipId);
-    await Promise.all([write, del]);
-    expect(await rows()).toEqual([]);
-  });
-
-  it("returns a failure instead of rejecting when the store throws", async () => {
-    const segmentId = await freshSegment();
-    throwWhenStoreRequested(
-      unwrap(await getDb()),
-      "pendingTakes",
-      new Error("boom")
-    );
-    const result = await deletePendingTake(segmentId, newClipId());
-    expect(result.ok).toBe(false);
   });
 });
 

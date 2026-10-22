@@ -449,4 +449,70 @@
     border: 1px solid var(--s-card-edge);
     border-radius: 26px; /* #939 token */
   }
+
+  /* === #1575: the Settings screen ==========================================
+     A full-width panel (the gear's destination is a screen, not the About
+     drawer's 320px side sheet), keyed on the list it holds, like the tile
+     sheets above. Its header is the Menu's own: the back chevron and title.
+
+     A row is the glyph, the words, and for an on/off setting a switch drawn
+     on the row. Off is an outlined track with the knob at the start; on is
+     the done fill with the knob at the end, so the state is told by position
+     as well as colour. Logical properties throughout, so it mirrors at RTL. */
+  :root .menu-panel:has(.settings-list) {
+    width: 100%;
+    border-inline-start: 0;
+  }
+  :root .settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  :root .setting-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-height: 56px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: var(--p-radius-12);
+    background: var(--s-well);
+    color: var(--s-ink);
+    font: inherit;
+    font-size: var(--p-text-md);
+    text-align: start;
+  }
+  :root .setting-row-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  :root .setting-switch {
+    position: relative;
+    flex: none;
+    width: 46px;
+    height: 28px;
+    box-sizing: border-box;
+    border: 2px solid var(--s-ink-faint);
+    border-radius: 14px;
+    background: var(--s-raised);
+  }
+  :root .setting-switch::after {
+    content: "";
+    position: absolute;
+    inset-block: 3px;
+    inset-inline-start: 3px;
+    width: 18px;
+    border-radius: 50%;
+    background: var(--s-ink-faint);
+  }
+  :root .setting-row.is-on .setting-switch {
+    border-color: var(--s-done);
+    background: var(--s-done);
+  }
+  :root .setting-row.is-on .setting-switch::after {
+    inset-inline-start: auto;
+    inset-inline-end: 3px;
+    background: var(--s-done-ink);
+  }
 }

@@ -48,6 +48,7 @@ function segment(id: string): Segment {
     activeTakeId: "take" as TakeId,
     status: "affirmed",
     ...ROW_V12_FIELDS,
+    audioRevision: 0,
   };
 }
 

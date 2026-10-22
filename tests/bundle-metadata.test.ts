@@ -107,6 +107,7 @@ function seg(
       createdAt: 1,
       modifiedAt: null,
       templateKey: null,
+      audioRevision: 0,
     } satisfies Segment,
     take: hasTake
       ? {

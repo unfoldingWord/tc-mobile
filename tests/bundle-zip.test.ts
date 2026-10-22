@@ -116,6 +116,7 @@ function seg(
       createdAt: 1,
       modifiedAt: null,
       templateKey: null,
+      audioRevision: 0,
     },
     take:
       take === "with"

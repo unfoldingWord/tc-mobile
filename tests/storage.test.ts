@@ -51,7 +51,14 @@ import {
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { Book, BookId, RecordingStatus } from "@/types/domain";
-import { recordTake, samplesOf, storeOrphanClip } from "./support";
+import {
+  forgetDisposition,
+  loseClip,
+  recordTake,
+  samplesOf,
+  savedTake,
+  storeOrphanClip,
+} from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -125,8 +132,10 @@ describe("clip storage", () => {
     // The name is deliberately narrow: these two calls both go through
     // `clipMeta`, so they say nothing about the samples. That is the test
     // below.
-    const { segmentId } = await oneSegment();
-    const { clipId: id } = await recordTake(segmentId, { frames: 10 });
+    // An orphan: `deleteClip` keeps a clip a take or a pending row still
+    // names (v13, #38).
+    const id = newClipId();
+    await storeOrphanClip(id, new Int16Array(10).fill(1));
     await deleteClip(id);
     expect(await getClipMeta(id)).toBeUndefined();
     expect(await getClip(id)).toBeUndefined();
@@ -139,8 +148,8 @@ describe("clip storage", () => {
     // `clipMeta` so it cannot see the orphan either. Discarding a failed take
     // deletes its clip precisely to give the bytes back on a phone that has
     // just run out of room, so the data store is checked directly.
-    const { segmentId } = await oneSegment();
-    const { clipId: id } = await recordTake(segmentId, { frames: 1000 });
+    const id = newClipId();
+    await storeOrphanClip(id, new Int16Array(1000).fill(1));
     const db = await getDb();
     expect(await db.get("clipData", id)).toBeDefined();
 
@@ -405,18 +414,25 @@ describe("book tree", () => {
 
   it("keeps the audio when a re-record reuses the same clip id", async () => {
     // The pending-take retry path re-runs the save with the SAME clipId
-    // (retrySave keeps it; the clip write is an upsert). The take write then
-    // sees prior.clipId === new clipId, and deleting "the superseded clip"
-    // would strand the take it just wrote — the reference check in takes.ts is
-    // what stops that.
+    // (retrySave keeps it; the clip write is an upsert). Once the first run
+    // has landed, its `saved` record (v13, #38) makes the second a no-op, so
+    // nothing can strand the take it already wrote.
     const { segmentId } = await oneSegment();
-    const { clipId } = await recordTake(segmentId, { frames: 1000 });
+    const first = await recordTake(segmentId, { frames: 1000 });
+    const clipId = first.clipId;
 
     // Same id again, as a retry does.
-    const second = await recordTake(segmentId, { clipId, frames: 1000 });
+    expect(
+      await saveTake(
+        segmentId,
+        clipId,
+        new Int16Array(1000).fill(1000),
+        CANONICAL_SAMPLE_RATE
+      )
+    ).toEqual({ outcome: "already-saved" });
 
     const db = await getDb();
-    expect((await db.get("segments", segmentId))?.activeTakeId).toBe(second.id);
+    expect((await db.get("segments", segmentId))?.activeTakeId).toBe(first.id);
     // The audio the active take points at must still be present.
     expect(await db.get("clipMeta", clipId)).toBeDefined();
     expect(await db.get("clipData", clipId)).toBeDefined();
@@ -465,6 +481,7 @@ describe("book tree", () => {
     const s2 = await addSegment(chapter.id);
     const shared = newClipId();
     await recordTake(s1.id, { clipId: shared, frames: 500 });
+    await forgetDisposition(shared);
     await recordTake(s2.id, { clipId: shared, frames: 500 }); // both point at the same clip
 
     await clearSegmentTake(s1.id);
@@ -540,7 +557,7 @@ describe("book tree", () => {
     // The take row is fine. The audio it names is gone — deleted from under
     // it, since the commit write stores the clip in the take's own transaction.
     const lost = await recordTake(s2.id);
-    await deleteClip(lost.clipId);
+    await loseClip(lost.clipId);
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId]);
@@ -1092,11 +1109,8 @@ describe("atomic take save (saveTake)", () => {
   it("writes the clip and the take together", async () => {
     const { segmentId } = await oneSegment();
     const clipId = newClipId();
-    const take = await saveTake(
-      segmentId,
-      clipId,
-      samples(1000),
-      CANONICAL_SAMPLE_RATE
+    const take = savedTake(
+      await saveTake(segmentId, clipId, samples(1000), CANONICAL_SAMPLE_RATE)
     );
 
     expect(take.clipId).toBe(clipId);
@@ -1237,7 +1251,7 @@ describe("segment audio resolution", () => {
     // Nothing checks on read that a take's clip exists, which is how a chapter
     // can hold takes pointing at no audio at all once a clip is lost.
     const take = await recordTake(segmentId);
-    await deleteClip(take.clipId);
+    await loseClip(take.clipId);
 
     for (const audio of [
       await resolveSegmentAudio(segmentId),
@@ -1284,7 +1298,7 @@ describe("segment audio resolution", () => {
   it("resolves again once the missing clip is stored", async () => {
     const { segmentId } = await oneSegment();
     const { clipId } = await recordTake(segmentId);
-    await deleteClip(clipId);
+    await loseClip(clipId);
     expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
 
     // The resolver reads; it does not repair and it does not latch. Storing

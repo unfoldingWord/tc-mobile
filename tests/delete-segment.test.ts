@@ -112,6 +112,8 @@ describe("deleteSegment", () => {
     const [s1, s2] = segmentIds as [SegmentId, SegmentId];
     const shared = newClipId();
     await saveTake(s1, shared, samples(300), CANONICAL_SAMPLE_RATE);
+    // Two takes on one clip id: drop the first record (see forgetDisposition).
+    await (await getDb()).delete("takeDispositions", shared);
     await saveTake(s2, shared, samples(300), CANONICAL_SAMPLE_RATE);
 
     await deleteSegment(s1);
