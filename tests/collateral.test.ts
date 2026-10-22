@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -204,9 +205,44 @@ describe("parseDiff", () => {
     ].join("\n");
     expect(parseDiff(diff)).toEqual([
       { path: "src/a.ts", added: ["new line"] },
-      { path: "new name.md", added: [] },
+      { path: "new name.md", oldPath: "old name.md", added: [] },
       { path: "gone.ts", added: [] },
     ]);
+  });
+
+  it("unquotes a header git C-quotes, and keeps a rename's source path", () => {
+    const diff = [
+      String.raw`diff --git "a/docs/training/caf\303\251.md" "b/docs/training/caf\303\251.md"`,
+      "new file mode 100644",
+      "--- /dev/null",
+      String.raw`+++ "b/docs/training/caf\303\251.md"`,
+      "@@ -0,0 +1 @@",
+      "+hi",
+      "diff --git a/x b/y.md b/x b/y.md",
+      "diff --git a/PRIVACY.md b/docs/PRIVACY.md",
+      "similarity index 100%",
+      "rename from PRIVACY.md",
+      "rename to docs/PRIVACY.md",
+    ].join("\n");
+    expect(parseDiff(diff)).toEqual([
+      { path: "docs/training/café.md", added: ["hi"] },
+      { path: "x b/y.md", added: [] },
+      { path: "docs/PRIVACY.md", oldPath: "PRIVACY.md", added: [] },
+    ]);
+  });
+
+  it("refuses a header it cannot read rather than dropping the file", () => {
+    for (const h of ["AGENTS.md AGENTS.md", "i/AGENTS.md w/AGENTS.md"]) {
+      expect(() => parseDiff(`diff --git ${h}`)).toThrow(/diff header/);
+    }
+  });
+
+  it("a rename matches a path rule on either name", () => {
+    const r = classify([
+      { path: "docs/PRIVACY.md", oldPath: "PRIVACY.md", added: [] },
+    ]).find((x) => x.key === "legal-content");
+    expect(r?.state).toBe("touched");
+    expect(r?.paths).toEqual(["PRIVACY.md → docs/PRIVACY.md"]);
   });
 
   it("does not take a '+++' content line for a file header", () => {
@@ -333,6 +369,38 @@ describe("CLI entry point (real subprocess)", () => {
       });
       expect(out).toMatch(/AGENTS\.md/);
     }, "collateral with space "));
+
+  it("reads real git output under diff.noprefix and diff.mnemonicPrefix: a quoted non-ASCII path and a rename source", () =>
+    withRepo((dir) => {
+      const git = (...a: string[]) =>
+        execFileSync("git", a, { cwd: dir, env: cleanGitEnv(), stdio: "pipe" });
+      writeFileSync(path.join(dir, "PRIVACY.md"), "one\ntwo\nthree\n");
+      git("add", ".");
+      git("commit", "-q", "-m", "privacy", "-m", "body");
+      git("update-ref", "refs/remotes/origin/develop", "HEAD");
+      git("mv", "PRIVACY.md", "docs/PRIVACY.md");
+      writeFileSync(path.join(dir, "docs", "training", "café.md"), "hi\n");
+      git("add", ".");
+      git("commit", "-q", "-m", "move", "-m", "body");
+      for (const cfg of [[], ["diff.noprefix"], ["diff.mnemonicPrefix"]]) {
+        if (cfg[0]) git("config", cfg[0], "true");
+        const r = run([], dir);
+        expect(r.status, cfg[0]).toBe(0);
+        expect(r.stdout, cfg[0]).toMatch(
+          /legal-content: <touched: PRIVACY\.md → docs\/PRIVACY\.md/
+        );
+        expect(r.stdout, cfg[0]).toMatch(
+          /help-articles: <touched: docs\/training\/café\.md/
+        );
+      }
+    }));
+
+  it("refuses a range git would read as an option", () =>
+    withRepo((dir) => {
+      const r = run(["--output=x"], dir);
+      expect(r.status).toBe(1);
+      expect(existsSync(path.join(dir, "x"))).toBe(false);
+    }));
 
   it("exits 1 with a message for a range git cannot resolve, and for outside a repo", () =>
     withRepo((dir) => {

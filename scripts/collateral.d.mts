@@ -4,6 +4,7 @@
 
 export interface FileChange {
   path: string;
+  oldPath?: string; // a rename's or copy's source path
   added: string[];
 }
 
