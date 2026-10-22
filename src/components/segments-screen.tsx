@@ -1496,6 +1496,7 @@ export const SegmentsScreen = forwardRef<
               book={bookName}
               bookCoverHex={bookCoverHex ?? undefined}
               chapter={chapterHeading}
+              fullName={renameSeed}
             />
             <ShareMenuSection
               status={share.status}

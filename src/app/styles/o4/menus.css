@@ -178,6 +178,16 @@
     gap: 12px;
     min-width: 0;
   }
+  /* The chapter's name whole, under the crumbs (#1284, U3): wraps onto as many
+     lines as it needs and is never elided. */
+  :root .o4-sheet-name {
+    margin: 8px 0 0;
+    color: var(--s-ink);
+    font-size: 20px; /* #939 token */
+    font-weight: 700; /* #939 token */
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
   :root .o4-crumbs {
     display: flex;
     align-items: center;
@@ -366,12 +376,12 @@
     min-width: 0;
   }
   :root .o4-menu-title {
-    overflow: hidden;
     color: var(--s-ink);
     font-size: 16px; /* #939 token */
     font-weight: 800; /* #939 token */
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wraps, never elides: the menu is where a long segment name is read
+       whole (#1284, U3). */
+    overflow-wrap: anywhere;
   }
 
   /* D20 (#949): the segment menu as the workbench draws 07. Rename is a
