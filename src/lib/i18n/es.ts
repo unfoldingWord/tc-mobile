@@ -136,7 +136,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   zoomAtWhole: "Se ve todo el segmento. Acerca la vista a un cuarto.",
   zoomAtQuarter:
     "Se ve un cuarto del segmento. Aleja la vista para ver todo el segmento.",
-  micOffTitle: "El micrófono está apagado",
+  micOffTitle: "Micrófono apagado",
   micRetry: "Intentar de nuevo",
   micBack: "Volver",
   micStepsLabel: "Pasos para activar el micrófono",
