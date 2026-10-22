@@ -76,6 +76,7 @@ export declare function decide(input: DecideInput): {
   lines: string[];
   ok: boolean;
   reason: string;
+  stops: string[];
 };
 
 export declare function afterDispatch(input: {
@@ -85,4 +86,5 @@ export declare function afterDispatch(input: {
   known: number[];
   views: Record<number, RunView | undefined>;
   artifacts: Record<number, ArtifactList | undefined>;
+  tip: unknown;
 }): { lines: string[]; state: "started" | "wait" | "stop"; reason: string };

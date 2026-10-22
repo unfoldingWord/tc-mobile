@@ -50,6 +50,24 @@ describe("the tc-release skill points at the script and holds no second rule", (
     });
     expect(bullet).toContain("OK to dispatch <lane>");
   });
+
+  // George r1 and r2 on #1641: the final-release bullet sent a `main`
+  // rebuild "as step 5 says", and step 5 leads only to `--ref staging`.
+  it("sends a main rebuild to runbook §4's --ref main command, not through step 5", () => {
+    const at = uniqueIndexOf(
+      skill,
+      "- [ ] Agent-allowed: the native lanes start on the `main` merge"
+    );
+    // The last bullet of the file; the paragraph after it ends the slice.
+    const bullet = region(skill, {
+      from: at,
+      to: uniqueIndexOf(skill, "The shape, from v1.0.0"),
+    });
+    expect(bullet).toContain(
+      "with runbook §4's command:\n      that lane's §3a step 7 command with `--ref main` in place of\n      `--ref staging`."
+    );
+    expect(bullet).not.toContain("as step 5 says");
+  });
 });
 
 describe("runbook §3a step 7 points at the script and holds no second rule", () => {

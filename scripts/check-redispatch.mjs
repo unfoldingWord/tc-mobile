@@ -9,8 +9,9 @@
  *
  * The first form reads the lane's runs at the commit, its open runs on every
  * branch, every Android lane's production (`main`) runs when the dispatch is
- * a staging RC, and the branch tip, then prints one line per read and a last
- * line, `OK to dispatch <lane>` or `STOP: <reason>`. The OK line lists the
+ * a staging RC, and the branch tip, then prints one line per read, a
+ * `stop: <reason>` line for every stop, and a last line, `OK to dispatch
+ * <lane>` or `STOP: <the first reason>`. The OK line lists the
  * run ids at the commit; after the dispatch, the second form (`--known`
  * those ids) prints `STARTED`, `WAIT` or `STOP` for a NEW run. The rules
  * live in `redispatch-core.mjs`; this file only reads.
@@ -44,7 +45,13 @@ export function parseArgs(argv) {
     else if (flag === "--sha") out.sha = value;
     else if (flag === "--branch") out.branch = value;
     else if (flag === "--known") {
-      out.known = value === "" ? [] : value.split(",").map(Number);
+      // Digits only: Number() would read "1e2", "1.0" or "1," as other ids
+      // (#1641 George r1).
+      const ids = value === "" ? [] : value.split(",");
+      if (!ids.every((id) => /^[0-9]+$/.test(id))) {
+        throw new Error("--known must be run ids");
+      }
+      out.known = ids.map(Number);
     } else throw new Error(`unrecognized argument ${flag}`);
   }
   if (!Object.hasOwn(LANES, out.lane ?? ""))
@@ -107,9 +114,13 @@ export function gather({ lane, sha, branch, known }, ghText = defaultGh) {
         ]);
     }
   };
+  const tipOf = () =>
+    gh(["api", `repos/${REPO}/git/ref/heads/${branch}`]).object.sha;
   const laneRuns = list(lane, ["--commit", sha]);
   readRuns(lane, laneRuns);
-  if (known) return { lane, sha, laneRuns, known, views, artifacts };
+  // The follow-up reads the tip too, so a moved tip is a stop, not a wait.
+  if (known)
+    return { lane, sha, laneRuns, known, views, artifacts, tip: tipOf() };
 
   const openRuns = Object.fromEntries(
     OPEN_STATUSES.map((s) => [s, list(lane, ["--status", s])])
@@ -135,7 +146,7 @@ export function gather({ lane, sha, branch, known }, ghText = defaultGh) {
       ).version;
     }
   }
-  const tip = gh(["api", `repos/${REPO}/git/ref/heads/${branch}`]).object.sha;
+  const tip = tipOf();
   return {
     lane,
     sha,
@@ -171,6 +182,8 @@ export function main(argv, { gh = defaultGh, log = console.log } = {}) {
     }
     const r = decide(input);
     r.lines.forEach((line) => log(line));
+    // Every stop is printed; the last line carries the first (#1640).
+    for (const stop of r.stops ?? []) log(`stop: ${stop}`);
     log(r.ok ? r.reason : `STOP: ${r.reason}`);
     return r.ok ? 0 : 1;
   } catch (e) {

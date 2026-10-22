@@ -129,6 +129,15 @@ describe("parseArgs", () => {
     });
   });
 
+  it.each(["1e2", "1.0", "1,", ",1", "-1", "0x1f", " 1"])(
+    "George r1 on #1641: refuses the --known id list %j",
+    (known) => {
+      expect(() => parseArgs([...PRE, "--known", known])).toThrow(
+        "--known must be run ids"
+      );
+    }
+  );
+
   it("refuses a short sha, an unknown lane or branch, and stray flags", () => {
     expect(() => parseArgs(["--lane", "apk", "--sha", "a87c2f6"])).toThrow(
       "full 40-character"
@@ -182,6 +191,33 @@ describe("main: reads through gh and prints one verdict", () => {
       .filter((a) => a.includes("--status"))
       .map((a) => a[a.indexOf("--status") + 1]);
     expect(statuses).toEqual([...OPEN_STATUSES]);
+  });
+
+  it("#1640 deferral: prints every stop, then the first as the verdict", () => {
+    const r = run(
+      PRE,
+      world({
+        tip: PROD_SHA,
+        versions: { [RC_SHA]: "1.0.1-rc.3", [PROD_SHA]: "1.0.1" },
+      })
+    );
+    expect(r.status).toBe(1);
+    const stops = r.lines.filter((l) => l.startsWith("stop: "));
+    expect(stops).toEqual([
+      "stop: production run 36948776880 (apk) is unknown at 1.0.1; no RC for a version with a production build",
+      "stop: production run 36948498218 (play) is built at 1.0.1; no RC for a version with a production build",
+      `stop: staging tip is ${PROD_SHA}, not ${RC_SHA}`,
+    ]);
+    expect(r.lines.at(-1)).toBe(`STOP: ${stops[0]?.slice(6)}`);
+  });
+
+  it("George r1 on #1641: the --known follow-up reads the tip and stops when it moved", () => {
+    const r = run([...PRE, "--known", "37380372475"], world({ tip: PROD_SHA }));
+    expect(r.status).toBe(1);
+    expect(r.lines.at(-1)).toBe(`STOP: tip is ${PROD_SHA}, not ${RC_SHA}`);
+    expect(
+      r.calls.some((a) => a[1] === `repos/${REPO}/git/ref/heads/staging`)
+    ).toBe(true);
   });
 
   it("stops on a production build of the RC's version", () => {

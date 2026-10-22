@@ -303,8 +303,10 @@ compares with it.
       started on a moved `main` built a commit that is not the tag; runbook
       §4 says stop and do not label it the release), and each run
       is `built` (step 5's script with `--sha <PROD_SHA> --branch main`; a
-      build at `PROMO_SHA` is the RC, not this build); a dispatch from
-      `main` is human-only, as step 5 says.
+      build at `PROMO_SHA` is the RC, not this build). A rebuild from
+      `main` is the DRI's dispatch, human-only, with runbook §4's command:
+      that lane's §3a step 7 command with `--ref main` in place of
+      `--ref staging`.
       `npm run check:deploy:prod -- --sha=<PROD_SHA> --version=1.0.0` (the
       full oid, never a 7-character slice, which the checker's prefix match
       would also accept for a colliding later commit; explicit, so a PASS

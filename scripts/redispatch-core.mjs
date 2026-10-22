@@ -208,19 +208,17 @@ function summary(label, judged) {
 export function decide(input) {
   const { lane, sha, branch } = input;
   // Types are erased at runtime: an unknown lane or branch would skip a rule.
-  if (!isLane(lane)) {
-    return {
-      lines: [],
-      ok: false,
-      reason: `unknown lane ${JSON.stringify(lane)}`,
-    };
-  }
+  const refuse = (reason) => ({
+    lines: [],
+    ok: false,
+    reason,
+    stops: [reason],
+  });
+  if (!isLane(lane)) return refuse(`unknown lane ${JSON.stringify(lane)}`);
   if (!BRANCHES.includes(branch)) {
-    return {
-      lines: [],
-      ok: false,
-      reason: `branch ${JSON.stringify(branch)} is not "staging" or "main"`,
-    };
+    return refuse(
+      `branch ${JSON.stringify(branch)} is not "staging" or "main"`
+    );
   }
   const lines = [];
   const stops = [];
@@ -302,11 +300,12 @@ export function decide(input) {
   if (input.tip !== sha)
     stops.push(`${branch} tip is ${input.tip}, not ${sha}`);
 
-  if (stops.length > 0) return { lines, ok: false, reason: stops[0] };
+  if (stops.length > 0) return { lines, ok: false, reason: stops[0], stops };
   const ids = atSha.map((j) => j.run.databaseId).join(",");
   return {
     lines,
     ok: true,
+    stops,
     reason: `OK to dispatch ${lane}${ids ? ` (runs at the commit before: ${ids})` : ""}`,
   };
 }
@@ -314,7 +313,9 @@ export function decide(input) {
 /**
  * After the dispatch: `known` is the run ids at the commit before it. Only a
  * run NOT in `known` is the dispatch's (#1613 r4: an older run's terminal
- * token is not this dispatch's). Returns `{ lines, state, reason }`.
+ * token is not this dispatch's). `tip` is the branch tip read with it: a
+ * moved tip is a stop, not a wait (#1641 George r1). Returns
+ * `{ lines, state, reason }`.
  */
 export function afterDispatch({
   lane,
@@ -323,6 +324,7 @@ export function afterDispatch({
   known,
   views,
   artifacts,
+  tip,
 }) {
   if (!isLane(lane) || !Array.isArray(known)) {
     return {
@@ -338,6 +340,9 @@ export function afterDispatch({
       reason: `${lane} runs at ${sha}: read may be cut`,
     };
   }
+  if (tip !== sha) {
+    return { lines: [], state: "stop", reason: `tip is ${tip}, not ${sha}` };
+  }
   const fresh = laneRuns.filter((r) => !known.includes(r.databaseId));
   const judged = judgeRows(lane, fresh, { views, artifacts });
   const lines = [summary(`${lane} new at ${sha.slice(0, 12)}`, judged)];
@@ -350,6 +355,15 @@ export function afterDispatch({
       reason: `${judged.length} new runs; tell the DRI`,
     };
   const [j] = judged;
+  // The read is filtered by commit; a row at another commit means the read
+  // is not what this check assumes (#1640 George r1 follow-up).
+  if (j.run.headSha !== sha) {
+    return {
+      lines,
+      state: "stop",
+      reason: `new run ${j.run.databaseId} is not at ${sha}`,
+    };
+  }
   if (j.token === "started" || j.token === "built") {
     return {
       lines,

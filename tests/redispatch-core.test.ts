@@ -358,9 +358,18 @@ const rows = (n: number) =>
   Array.from({ length: n }, (_, i) => row(i + 1, "completed", RC_SHA));
 
 describe("decide: the pre-dispatch verdict", () => {
+  it("#1640 deferral: returns every stop, not only the first", () => {
+    const r = decide(clean({ tip: PROD_SHA, laneRuns: rows(LIST_LIMIT) }));
+    expect(r.ok).toBe(false);
+    expect(r.stops).toHaveLength(2);
+    expect(r.reason).toBe(r.stops[0]);
+    expect(r.stops[1]).toBe(`staging tip is ${PROD_SHA}, not ${RC_SHA}`);
+  });
+
   it("allows a dispatch when every read is clean, and lists the runs already there", () => {
     const r = decide(clean());
     expect(r.ok).toBe(true);
+    expect(r.stops).toEqual([]);
     expect(r.reason).toBe(
       "OK to dispatch apk (runs at the commit before: 37380372475)"
     );
@@ -556,7 +565,28 @@ describe("afterDispatch: only a run id not seen before the dispatch counts", () 
     known: [37380372475],
     views: { 37380372475: view("apk-cancelled-pending") },
     artifacts: {},
+    tip: RC_SHA,
   };
+
+  it("George r1 on #1641: a moved tip is a stop, not a wait", () => {
+    const r = afterDispatch({
+      ...base,
+      tip: PROD_SHA,
+      laneRuns: [row(37380372475, "completed", RC_SHA)],
+    });
+    expect(r.state).toBe("stop");
+    expect(r.reason).toBe(`tip is ${PROD_SHA}, not ${RC_SHA}`);
+  });
+
+  it("#1640 deferral: a new run whose headSha is not the commit is a stop", () => {
+    const r = afterDispatch({
+      ...base,
+      laneRuns: [row(8, "waiting", PROD_SHA)],
+      views: { 8: view("apk-waiting-reviewer") },
+    });
+    expect(r.state).toBe("stop");
+    expect(r.reason).toContain(`not at ${RC_SHA}`);
+  });
 
   it("George r4 (step 4): an older not-built run is not the dispatch's verdict; wait", () => {
     const r = afterDispatch({
