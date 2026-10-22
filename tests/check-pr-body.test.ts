@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -24,6 +24,9 @@ import {
   evaluate,
   exemption,
   FREE_TEXT_SLOTS,
+  bumpTitleVersion,
+  checkBumpDiff,
+  claimsBump,
   readSlots,
   fetchPr,
   isAnswer,
@@ -705,9 +708,24 @@ describe("size — the production-line cap", () => {
     ).toBe(false);
   });
 
-  it("exempts a release/* head from the cap", () => {
+  // #1582: a branch name is not a signal. Red on the old rule, which let a
+  // `release/*` head skip the cap by name alone.
+  it("does not exempt a release/* head from the cap", () => {
+    const r = evaluate(
+      { ...empty, headRef: "release/big-feature", body: body() },
+      { prodLines: 9999 }
+    );
+    expect(r.ok).toBe(false);
+    expect(r.missing.join("\n")).toContain("9999");
+  });
+
+  it("still lets a release/* head past the cap with a size-exception", () => {
+    const b = body({ extra: "size-exception: one generated table\n" });
     expect(
-      evaluate({ ...empty, headRef: "release/v1.2.0" }, { prodLines: 9999 }).ok
+      evaluate(
+        { ...empty, headRef: "release/v1.2.0", body: b },
+        { prodLines: 9999 }
+      ).ok
     ).toBe(true);
   });
 
@@ -744,22 +762,54 @@ describe("exemption — which PR kinds the gate lets through", () => {
     expect(exemption({ ...human, baseRef, title })).toMatch(/promotion/i);
   });
 
-  it("exempts a chore(release): bump into develop", () => {
-    expect(exemption({ ...human, title: "chore(release): v1.1.0" })).toMatch(
-      /release/i
-    );
+  const bumpOk = { bump: { ok: true as const } };
+
+  it("exempts a chore(release): bump into develop whose diff proved it", () => {
+    expect(
+      exemption({ ...human, title: "chore(release): v1.1.0" }, bumpOk)
+    ).toMatch(/release/i);
+  });
+
+  // #1582: the title alone is a claim, not a proof.
+  it("does not exempt a bump title on its own, unproved or disproved", () => {
+    const pr = { ...human, title: "chore(release): v1.1.0" };
+    expect(exemption(pr)).toBeNull();
+    expect(exemption(pr, { bump: null })).toBeNull();
+    expect(
+      exemption(pr, {
+        bump: { ok: false, reason: "src/x.ts is not a version file" },
+      })
+    ).toBeNull();
   });
 
   // Bench round 1 (George 2): AGENTS.md's release PR is `chore(release): vX.Y.Z`.
   it.each(["chore(release): v1.1.0-rc.2", "chore(release): v0.2.14 — promote"])(
-    "exempts the release title %j",
-    (title) => expect(exemption({ ...human, title })).toMatch(/release/i)
+    "exempts the release title %j once proved",
+    (title) =>
+      expect(exemption({ ...human, title }, bumpOk)).toMatch(/release/i)
   );
 
   it.each(["chore(release): wip", "chore(release): v9", "chore(release):"])(
-    "does not exempt the release look-alike %j into develop",
-    (title) => expect(exemption({ ...human, title })).toBeNull()
+    "does not exempt the release look-alike %j into develop, even with a proof",
+    (title) => expect(exemption({ ...human, title }, bumpOk)).toBeNull()
   );
+
+  it("reads the version out of the title, or null", () => {
+    expect(bumpTitleVersion("chore(release): v1.1.0")).toBe("1.1.0");
+    expect(bumpTitleVersion("chore(release): v1.1.0-rc.2 — x")).toBe(
+      "1.1.0-rc.2"
+    );
+    expect(bumpTitleVersion("chore(release): v9.9.9-not-a-bump")).toBeNull();
+    expect(bumpTitleVersion("chore(release): v9.9.9-x.1")).toBe("9.9.9-x.1");
+    expect(bumpTitleVersion("chore(release): v9")).toBeNull();
+    expect(bumpTitleVersion(undefined)).toBeNull();
+    expect(
+      claimsBump({ baseRef: "develop", title: "chore(release): v1.0.0" })
+    ).toBe(true);
+    expect(
+      claimsBump({ baseRef: "release/v1.0.0", title: "chore(release): v1.0.0" })
+    ).toBe(false);
+  });
 
   it("does not exempt a docs-only PR", () => {
     expect(exemption({ ...human, title: "docs: replace names" })).toBeNull();
@@ -773,17 +823,264 @@ describe("exemption — which PR kinds the gate lets through", () => {
 
   it("does not exempt a chore(release): title aimed at another base", () => {
     expect(
-      exemption({
-        ...human,
-        baseRef: "feat/other",
-        title: "chore(release): v1.2.0",
-      })
+      exemption(
+        { ...human, baseRef: "feat/other", title: "chore(release): v1.2.0" },
+        bumpOk
+      )
     ).toBeNull();
   });
 
   it("does not exempt a lookalike bot name or a release-looking head", () => {
+    expect(
+      exemption({ ...human, headRef: "release/v1.2.0" } as typeof human)
+    ).toBeNull();
     expect(exemption({ ...human, author: "dependabot-fan" })).toBeNull();
     expect(exemption({ ...human, author: "dependabot[bot]x" })).toBeNull();
+  });
+});
+
+/** The real shape of a bump: `git show 700b5a74` (chore(release): v1.1.0). */
+const REAL_BUMP_DIFF = `diff --git a/package-lock.json b/package-lock.json
+index 72ab5906..ed101eba 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "tc-mobile",
+-  "version": "1.0.2",
++  "version": "1.1.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "tc-mobile",
+-      "version": "1.0.2",
++      "version": "1.1.0",
+       "license": "MIT",
+       "dependencies": {
+         "@breezystack/lamejs": "^1.2.7",
+diff --git a/package.json b/package.json
+index 56db9cb8..b2036f86 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "tc-mobile",
+-  "version": "1.0.2",
++  "version": "1.1.0",
+   "private": true,
+   "license": "MIT",
+   "type": "module",
+`;
+
+const PKG_ONLY = (v: string, extra = "") =>
+  `diff --git a/package.json b/package.json
+index 1..2 100644
+--- a/package.json
++++ b/package.json
+@@ -2 +2 @@
+-  "version": "1.0.0",
++  "version": "${v}",
+${extra}`;
+
+describe("checkBumpDiff — a version bump and nothing else (#1582)", () => {
+  it("accepts the real v1.1.0 bump diff, with context and with -U0", () => {
+    expect(checkBumpDiff(REAL_BUMP_DIFF, "1.1.0")).toEqual({ ok: true });
+    const u0 = REAL_BUMP_DIFF.split("\n")
+      .filter((l) => !l.startsWith(" "))
+      .join("\n");
+    expect(checkBumpDiff(u0, "1.1.0")).toEqual({ ok: true });
+  });
+
+  it("accepts a CRLF diff and a prerelease version", () => {
+    expect(
+      checkBumpDiff(PKG_ONLY("1.2.0-rc.1").replace(/\n/g, "\r\n"), "1.2.0-rc.1")
+    ).toEqual({ ok: true });
+  });
+
+  it("accepts the iOS MARKETING_VERSION lines beside package.json", () => {
+    const d =
+      PKG_ONLY("1.2.0") +
+      `diff --git a/ios/App/App.xcodeproj/project.pbxproj b/ios/App/App.xcodeproj/project.pbxproj
+index 1..2 100644
+--- a/ios/App/App.xcodeproj/project.pbxproj
++++ b/ios/App/App.xcodeproj/project.pbxproj
+@@ -314 +314 @@
+-				MARKETING_VERSION = 1.1;
++				MARKETING_VERSION = 1.2;
+`;
+    expect(checkBumpDiff(d, "1.2.0")).toEqual({ ok: true });
+  });
+
+  it("rejects the title/diff mismatch (v9.9.9 title, 1.0.1 diff)", () => {
+    const r = checkBumpDiff(PKG_ONLY("1.0.1"), "9.9.9-not-a-bump");
+    expect(r.ok).toBe(false);
+  });
+
+  it.each([
+    [
+      "a source file beside the bump",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/src/app.ts b/src/app.ts
+index 1..2 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1 +1 @@
+-a
++b
+`,
+      /src\/app\.ts/,
+    ],
+    [
+      "a dependency added in package.json",
+      PKG_ONLY(
+        "1.2.0",
+        '@@ -9 +9,2 @@\n-    "x": "1"\n+    "x": "1",\n+    "y": "2"\n'
+      ),
+      /package\.json/,
+    ],
+    [
+      "a script edit in package.json in place of a version line",
+      `diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -5 +5 @@
+-    "lint": "eslint .",
++    "lint": "echo ok",
+`,
+      /package\.json/,
+    ],
+    [
+      "a lockfile line that is not a version line",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -9 +9 @@
+-      "resolved": "https://a",
++      "resolved": "https://b",
+`,
+      /package-lock\.json/,
+    ],
+    [
+      "a lockfile that bumps a dependency to the same number",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,3 +1,3 @@
+-  "version": "1.0.0",
++  "version": "1.2.0",
+@@ -5 +5 @@
+-      "version": "1.0.0",
++      "version": "1.2.0",
+@@ -9 +9 @@
+-      "version": "0.1.0",
++      "version": "1.2.0",
+`,
+      /package-lock\.json/,
+    ],
+    // Bench round 1 (Frank 2): one or two lines is a count, not a location.
+    [
+      "a lockfile dependency moved to the bumped number, alone",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -500 +500 @@
+-      "version": "0.1.0",
++      "version": "1.2.0",
+`,
+      /package-lock\.json/,
+    ],
+    [
+      "a lockfile root bump plus one dependency moved to the bumped number",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -3 +3 @@
+-  "version": "1.0.0",
++  "version": "1.2.0",
+@@ -500 +500 @@
+-      "version": "0.1.0",
++      "version": "1.2.0",
+`,
+      /package-lock\.json/,
+    ],
+    [
+      "a pbxproj edit that is not MARKETING_VERSION",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/ios/App/App.xcodeproj/project.pbxproj b/ios/App/App.xcodeproj/project.pbxproj
+--- a/ios/App/App.xcodeproj/project.pbxproj
++++ b/ios/App/App.xcodeproj/project.pbxproj
+@@ -1 +1 @@
+-				CODE_SIGN_STYLE = Automatic;
++				CODE_SIGN_STYLE = Manual;
+`,
+      /pbxproj/,
+    ],
+  ])("rejects %s", (_name, diff, why) => {
+    const r = checkBumpDiff(diff, "1.2.0");
+    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({ reason: expect.stringMatching(why) });
+  });
+
+  it.each([
+    ["an empty diff", ""],
+    [
+      "a lockfile bump with no package.json",
+      REAL_BUMP_DIFF.split("diff --git a/package.json")[0],
+    ],
+    [
+      "a rename",
+      `diff --git a/package.json b/package.json.bak
+similarity index 100%
+rename from package.json
+rename to package.json.bak
+`,
+    ],
+    [
+      "a file mode change",
+      PKG_ONLY("1.2.0").replace(
+        "index 1..2 100644",
+        "old mode 100644\nnew mode 100755"
+      ),
+    ],
+    [
+      "a new file",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/x.sh b/x.sh
+new file mode 100755
+index 0..1
+`,
+    ],
+    [
+      "a binary file",
+      PKG_ONLY("1.2.0") +
+        `diff --git a/public/a.png b/public/a.png
+index 1..2 100644
+Binary files a/public/a.png and b/public/a.png differ
+`,
+    ],
+    [
+      "a quoted path",
+      PKG_ONLY("1.2.0") +
+        'diff --git "a/src/a b.ts" "b/src/a b.ts"\nindex 1..2 100644\n',
+    ],
+    ["the same file twice", PKG_ONLY("1.2.0") + PKG_ONLY("1.2.0")],
+    ["a body line before any header", "+hello\n" + PKG_ONLY("1.2.0")],
+  ])("fails closed on %s", (_name, diff) => {
+    expect(checkBumpDiff(diff, "1.2.0").ok).toBe(false);
+  });
+
+  it("does not read a content line that looks like a header as a header", () => {
+    // A removed line `-- x` shows in a diff as `--- x`; inside a hunk it is content.
+    const d = PKG_ONLY(
+      "1.2.0",
+      "@@ -9 +9 @@\n--- a/src/evil.ts\n+++ b/src/evil.ts\n"
+    );
+    expect(checkBumpDiff(d, "1.2.0").ok).toBe(false);
   });
 });
 
@@ -917,12 +1214,44 @@ describe("evaluate — exemption and body together", () => {
       { ...empty, author: "dependabot[bot]" },
       { ...empty, baseRef: "staging" },
       { ...empty, baseRef: "main" },
-      { ...empty, title: "chore(release): v1.2.0" },
+      { ...empty, baseRef: "staging", headRef: "release/v1.2.0" },
     ]) {
       const r = evaluate(pr, { prodLines: 99999 });
       expect(r.ok).toBe(true);
       expect(r.exempt).toBeTruthy();
     }
+    const bump = evaluate(
+      { ...empty, title: "chore(release): v1.2.0" },
+      { prodLines: 99999, bump: { ok: true } }
+    );
+    expect(bump.ok).toBe(true);
+    expect(bump.exempt).toBeTruthy();
+  });
+
+  it("gates a bump title the diff did not prove", () => {
+    const r = evaluate(
+      { ...empty, title: "chore(release): v1.2.0" },
+      { bump: { ok: false, reason: "src/x.ts is not a version file" } }
+    );
+    expect(r.ok).toBe(false);
+    expect(r.exempt).toBeNull();
+    // No verdict at all (diff skipped) is gated too, without the diff note.
+    const none = evaluate({ ...empty, title: "chore(release): v1.2.0" });
+    expect(none.ok).toBe(false);
+    expect(none.exempt).toBeNull();
+  });
+
+  // Bench round 1 (Frank 1, George 1): "the full gate" is the gate, not a veto.
+  it("passes a disproved bump title on a complete body under the cap", () => {
+    expect(
+      evaluate(
+        { ...empty, title: "chore(release): v1.2.0", body: body() },
+        {
+          prodLines: 20,
+          bump: { ok: false, reason: "CHANGELOG.md is not a version file" },
+        }
+      )
+    ).toEqual({ ok: true, exempt: null, missing: [] });
   });
 
   it("passes a full body from a human", () => {
@@ -1040,23 +1369,15 @@ describe("prFromEvent / fetchPr / parseArgs", () => {
 
 describe("CLI entry point (real subprocess, not just the exported functions)", () => {
   function run(args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
-    try {
-      const stdout = execFileSync("node", [SCRIPT, ...args], {
-        encoding: "utf8",
-        timeout: 15_000,
-        cwd,
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      return { status: 0, stdout, stderr: "" };
-    } catch (err) {
-      const e = err as {
-        status: number | null;
-        stdout: string;
-        stderr: string;
-      };
-      return { status: e.status, stdout: e.stdout, stderr: e.stderr };
-    }
+    // spawnSync, not execFileSync: a passing run's stderr (a NOTE) is kept too.
+    const r = spawnSync("node", [SCRIPT, ...args], {
+      encoding: "utf8",
+      timeout: 15_000,
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: r.status, stdout: r.stdout, stderr: r.stderr };
   }
 
   function withTemp<T>(fn: (dir: string) => T, name = "pr-body-") {
@@ -1298,5 +1619,338 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
       const bad = path.join(dir, "bad.json");
       writeFileSync(bad, "{not json");
       expect(run(["--event", bad]).status).toBe(1);
+    }));
+  // #1582, the entry path: real subprocess, real git, one scratch repo per case.
+  /** develop holds package.json + package-lock.json at 1.0.0; `feat/x` is then `edit`ed. */
+  function releaseRepo(dir: string, edit: (dir: string) => void) {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, {
+        cwd: dir,
+        env: cleanGitEnv(),
+        stdio: "pipe",
+      });
+    const pkg = (v: string, dep = "1") =>
+      JSON.stringify(
+        {
+          name: "t",
+          version: v,
+          scripts: { a: "x" },
+          dependencies: { d: dep },
+        },
+        null,
+        2
+      ) + "\n";
+    const lock = (v: string) =>
+      JSON.stringify(
+        { name: "t", version: v, packages: { "": { name: "t", version: v } } },
+        null,
+        2
+      ) + "\n";
+    git("init", "-q", "-b", "develop");
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    writeFileSync(path.join(dir, "package.json"), pkg("1.0.0"));
+    writeFileSync(path.join(dir, "package-lock.json"), lock("1.0.0"));
+    git("add", ".");
+    git("commit", "-q", "-m", "base", "-m", "base body");
+    git("update-ref", "refs/remotes/origin/develop", "HEAD");
+    git("checkout", "-q", "-b", "release/x");
+    edit(dir);
+    git("add", ".");
+    git("commit", "-q", "-m", "change", "-m", "body");
+    return { pkg, lock };
+  }
+  const RANGE = "origin/develop...HEAD";
+  const bumpFiles = (dir: string, v: string) => {
+    writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify(
+        {
+          name: "t",
+          version: v,
+          scripts: { a: "x" },
+          dependencies: { d: "1" },
+        },
+        null,
+        2
+      ) + "\n"
+    );
+    writeFileSync(
+      path.join(dir, "package-lock.json"),
+      JSON.stringify(
+        { name: "t", version: v, packages: { "": { name: "t", version: v } } },
+        null,
+        2
+      ) + "\n"
+    );
+  };
+  const emptyBody = (dir: string) => {
+    const f = path.join(dir, "..", `${path.basename(dir)}-empty.md`);
+    writeFileSync(f, "");
+    return f;
+  };
+  function runBump(dir: string, title: string, head = "release/x") {
+    const f = emptyBody(dir);
+    try {
+      return run(
+        ["--body-file", f, "--range", RANGE, "--title", title, "--head", head],
+        dir,
+        cleanGitEnv()
+      );
+    } finally {
+      rmSync(f, { force: true });
+    }
+  }
+
+  it("a real bump (version files only) with an empty body passes as exempt", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => bumpFiles(d, "1.1.0"));
+      const r = runBump(dir, "chore(release): v1.1.0");
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toMatch(/exempt.*version files only/i);
+    }));
+
+  it("a bump's `release/x` branch name changes nothing: still passes with a feature branch name", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => bumpFiles(d, "1.1.0"));
+      expect(runBump(dir, "chore(release): v1.1.0", "chore/bump").status).toBe(
+        0
+      );
+    }));
+
+  it("a release/* branch with a production diff over the cap fails the size cap", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => {
+        mkdirSync(path.join(d, "src"), { recursive: true });
+        writeFileSync(
+          path.join(d, "src", "big.ts"),
+          "x\n".repeat(PROD_LINE_CAP + 1)
+        );
+      });
+      const f = path.join(dir, "full.md");
+      writeFileSync(f, body());
+      const r = run(
+        ["--body-file", f, "--range", RANGE, "--head", "release/big-feature"],
+        dir,
+        cleanGitEnv()
+      );
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(String(PROD_LINE_CAP + 1));
+    }));
+
+  it.each([
+    [
+      "a bump title that carries a source file",
+      (d: string) => {
+        bumpFiles(d, "1.1.0");
+        mkdirSync(path.join(d, "src"), { recursive: true });
+        writeFileSync(
+          path.join(d, "src", "feature.ts"),
+          "export const a = 1;\n"
+        );
+      },
+      "chore(release): v1.1.0",
+      /new file mode/,
+    ],
+    [
+      "a bump title whose version is not the bumped one",
+      (d: string) => bumpFiles(d, "1.0.1"),
+      "chore(release): v1.1.0",
+      /package(-lock)?\.json changes more than its "version" line, or not to 1\.1\.0/,
+    ],
+    [
+      "a bump title that also edits a dependency in package.json",
+      (d: string) => {
+        bumpFiles(d, "1.1.0");
+        writeFileSync(
+          path.join(d, "package.json"),
+          JSON.stringify(
+            {
+              name: "t",
+              version: "1.1.0",
+              scripts: { a: "x" },
+              dependencies: { d: "2" },
+            },
+            null,
+            2
+          ) + "\n"
+        );
+      },
+      "chore(release): v1.1.0",
+      /package\.json/,
+    ],
+  ])(
+    "%s into develop fails with the full gate and names why",
+    (_n, edit, title, why) =>
+      withTemp((dir) => {
+        releaseRepo(dir, edit);
+        const r = runBump(dir, title);
+        expect(r.status).toBe(1);
+        expect(r.stderr).toMatch(why);
+      })
+  );
+
+  it("a bump title that is not a bump passes on a complete body, and says why it was not exempt", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => {
+        bumpFiles(d, "1.1.0");
+        writeFileSync(path.join(d, "CHANGELOG.md"), "v1.1.0\n");
+      });
+      const f = path.join(dir, "..", `${path.basename(dir)}-full.md`);
+      writeFileSync(f, body());
+      try {
+        const r = run(
+          [
+            "--body-file",
+            f,
+            "--range",
+            RANGE,
+            "--title",
+            "chore(release): v1.1.0",
+          ],
+          dir,
+          cleanGitEnv()
+        );
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.stdout).toMatch(/every required PR body field/);
+        expect(r.stderr).toMatch(/release bump but the diff is not one/);
+      } finally {
+        rmSync(f, { force: true });
+      }
+    }));
+
+  it("a promotion PR from release/* with a huge diff passes by its base", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => {
+        mkdirSync(path.join(d, "src"), { recursive: true });
+        writeFileSync(
+          path.join(d, "src", "big.ts"),
+          "x\n".repeat(PROD_LINE_CAP * 3)
+        );
+      });
+      for (const base of ["staging", "main"]) {
+        const f = emptyBody(dir);
+        const r = run(
+          [
+            "--body-file",
+            f,
+            "--range",
+            RANGE,
+            "--base",
+            base,
+            "--head",
+            "release/v1.2.0",
+            "--title",
+            "Promote v1.2.0",
+          ],
+          dir,
+          cleanGitEnv()
+        );
+        rmSync(f, { force: true });
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.stdout).toMatch(/promotion/i);
+      }
+    }));
+
+  it("a patch PR into a release/* base (the #1523 shape) is not exempt and passes only with a full body", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => bumpFiles(d, "1.1.1"));
+      const title = "chore(release): v1.1.1 — silent-switch fix";
+      const f = emptyBody(dir);
+      const bare = run(
+        [
+          "--body-file",
+          f,
+          "--range",
+          RANGE,
+          "--base",
+          "release/v1.1.1",
+          "--head",
+          "fix/silent",
+          "--title",
+          title,
+        ],
+        dir,
+        cleanGitEnv()
+      );
+      rmSync(f, { force: true });
+      expect(bare.status).toBe(1);
+      const full = path.join(dir, "full.md");
+      writeFileSync(full, body());
+      const ok = run(
+        [
+          "--body-file",
+          full,
+          "--range",
+          RANGE,
+          "--base",
+          "release/v1.1.1",
+          "--head",
+          "fix/silent",
+          "--title",
+          title,
+        ],
+        dir,
+        cleanGitEnv()
+      );
+      expect(ok.status, ok.stderr).toBe(0);
+    }));
+
+  it("--range none skips the diff, so a bump title is gated, not trusted", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => bumpFiles(d, "1.1.0"));
+      const f = emptyBody(dir);
+      const r = run(
+        [
+          "--body-file",
+          f,
+          "--range",
+          "none",
+          "--title",
+          "chore(release): v1.1.0",
+        ],
+        dir,
+        cleanGitEnv()
+      );
+      rmSync(f, { force: true });
+      expect(r.status).toBe(1);
+    }));
+
+  it("--event: a real bump passes; the same title with a source file fails; an unreadable diff fails closed", () =>
+    withTemp((dir) => {
+      releaseRepo(dir, (d) => bumpFiles(d, "1.1.0"));
+      const sha = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: dir,
+        env: cleanGitEnv(),
+        encoding: "utf8",
+      }).trim();
+      const ev = (headSha: string, title = "chore(release): v1.1.0") => {
+        const f = path.join(dir, `ev-${headSha.slice(0, 4)}.json`);
+        writeFileSync(
+          f,
+          JSON.stringify({
+            pull_request: {
+              body: "",
+              title,
+              user: { login: "sethstoll" },
+              base: { ref: "develop" },
+              head: { ref: "release/x", sha: headSha },
+            },
+          })
+        );
+        return f;
+      };
+      const good = run(["--event", ev(sha)], dir, cleanGitEnv());
+      expect(good.status, good.stderr).toBe(0);
+      expect(good.stdout).toMatch(/exempt/i);
+      const mismatch = run(
+        ["--event", ev(sha, "chore(release): v7.7.7")],
+        dir,
+        cleanGitEnv()
+      );
+      expect(mismatch.status).toBe(1);
+      const lost = run(["--event", ev("0000000")], dir, cleanGitEnv());
+      expect(lost.status).toBe(1);
+      expect(lost.stderr).toMatch(/bump not checked/);
     }));
 });

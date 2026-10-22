@@ -39,12 +39,24 @@ export declare function crossesSizeBoundary(e: {
 export declare function countProdLines(
   entries: Array<{ added: number; deleted: number; path: string }>
 ): number;
+export type BumpVerdict = { ok: true } | { ok: false; reason: string };
+export declare function bumpTitleVersion(
+  title: string | undefined
+): string | null;
+export declare function claimsBump(
+  pr: Partial<Pick<PrFields, "baseRef" | "title">>
+): boolean;
+export declare function checkBumpDiff(
+  diff: string | null | undefined,
+  version: string
+): BumpVerdict;
 export declare function exemption(
-  pr: Partial<Pick<PrFields, "author" | "baseRef" | "title">>
+  pr: Partial<Pick<PrFields, "author" | "baseRef" | "title">>,
+  options?: { bump?: BumpVerdict | null }
 ): string | null;
 export declare function evaluate(
   pr: PrFields,
-  options?: { prodLines?: number | null }
+  options?: { prodLines?: number | null; bump?: BumpVerdict | null }
 ): { ok: boolean; exempt: string | null; missing: string[] };
 export declare function prFromEvent(payload: unknown): PrFields & {
   body: string;
