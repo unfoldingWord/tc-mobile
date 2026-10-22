@@ -305,8 +305,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareBookUnconfirmed:
     "Shiriki kitabu. Jaribio la mwisho halikuthibitishwa: gusa ili ujaribu tena.",
   shareBookPreparing: "Inaandaa kitabu ili kishirikiwe.",
-  // Export project (#1457). Carried here only because #1624 predates the
-  // Swahili table; if #1624 lands its own copy first, that copy wins.
   exportProject: "Hamisha mradi",
   tileExport: "Hamisha",
   exportProjectPreparing: "Inaandaa mradi ili uhamishwe.",
