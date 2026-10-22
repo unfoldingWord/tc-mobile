@@ -1,0 +1,38 @@
+name: PR Body
+
+# The PR-body gate (#1442). Its own workflow, not a job in ci.yml: `edited`
+# must re-run it when a body or title is fixed, and putting `edited` on ci.yml
+# would re-run, and cancel, the whole CI on every body edit.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body:
+    name: PR Body
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Full history: the gate's size cap diffs origin/<base>...<head sha>, and
+      # fails closed when it cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # No `npm ci`: the script imports only node: builtins and a sibling
+      # script. The body is read from the event payload on disk and is never
+      # interpolated into this command.
+      - name: Check the PR body
+        run: node scripts/check-pr-body.mjs --event "$GITHUB_EVENT_PATH"
