@@ -489,6 +489,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "Composants libres",
   aboutTexts: "Textes des licences",
   aboutContent: "Contenu inclus",
+  aboutLanguageCodes: "Codes de langue : ISO 639-3, de iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Lire ${name}`,
   aboutBack: "Retour à la liste",
   aboutTextLoading: "Chargement du texte de la licence.",

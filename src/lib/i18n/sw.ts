@@ -489,6 +489,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "Vipengele vya chanzo wazi",
   aboutTexts: "Maandishi ya leseni",
   aboutContent: "Maudhui yaliyojumuishwa",
+  aboutLanguageCodes: "Misimbo ya lugha: ISO 639-3, kutoka iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Soma ${name}`,
   aboutBack: "Rudi kwenye orodha",
   aboutTextLoading: "Inapakia maandishi ya leseni.",
