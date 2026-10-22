@@ -67,8 +67,7 @@ const fatal = (reason) => ({ token: "unknown", reason, fatal: true });
 const NO_BUILD = new Set(["skipped", "cancelled", "failure", "timed_out"]);
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const BRANCHES = ["staging", "main"];
-const isLane = (lane) =>
-  typeof lane === "string" && Object.hasOwn(LANES, lane);
+const isLane = (lane) => typeof lane === "string" && Object.hasOwn(LANES, lane);
 
 /** A step with no conclusion yet: GitHub sends `""` or `null` (#1613 r4). */
 function unfinished(step) {
