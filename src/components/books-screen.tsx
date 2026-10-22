@@ -2423,7 +2423,10 @@ export function BooksScreen({
                           icon="file-zip"
                           label={strings.exportProject}
                           caption={strings.tileExport}
-                          busy={bookShare.status === "preparing"}
+                          busy={
+                            bookShare.status === "preparing" &&
+                            bookShare.kind === "project"
+                          }
                           onClick={onPrepareBookExport}
                         />
                       )}

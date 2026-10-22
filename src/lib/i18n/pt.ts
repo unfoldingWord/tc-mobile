@@ -308,7 +308,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Exportar projeto",
   tileExport: "Exportar",
   exportProjectPreparing: "Preparando o projeto para exportar.",
-  exportProjectFileWord: "projeto",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>

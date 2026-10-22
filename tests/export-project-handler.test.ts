@@ -57,7 +57,7 @@ describe("onPrepareBookExport", () => {
 describe("the Export project tile", () => {
   it("is the first tile after Share book, calls the handler, and goes busy with the flow", () => {
     expect(source).toMatch(
-      /<Tile[^>]*icon="file-zip"[^>]*label=\{strings\.exportProject\}[^>]*busy=\{bookShare\.status === "preparing"\}[^>]*onClick=\{onPrepareBookExport\}/
+      /<Tile[^>]*icon="file-zip"[^>]*label=\{strings\.exportProject\}[^>]*busy=\{\s*bookShare\.status === "preparing"\s*&&\s*bookShare\.kind === "project"\s*\}[^>]*onClick=\{onPrepareBookExport\}/
     );
     const exportAt = source.indexOf("label={strings.exportProject}");
     const coverAt = source.indexOf("<CoverTile", exportAt);
