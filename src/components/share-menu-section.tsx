@@ -63,6 +63,8 @@ export interface ShareMenuSectionProps {
    * the grid rather than sit in it.
    */
   tiles: { before?: ReactNode; after?: ReactNode };
+  /** The book menu's four tiles take the compact size (`o4-tiles--compact`). */
+  compact?: boolean;
 }
 
 export function ShareMenuSection({
@@ -79,6 +81,7 @@ export function ShareMenuSection({
   onPrepare,
   onSend,
   tiles,
+  compact,
 }: ShareMenuSectionProps) {
   const affordance = shareControlAffordance(
     status,
@@ -139,7 +142,7 @@ export function ShareMenuSection({
   // any error code mapped above. After the grid, never inside it.
   return (
     <>
-      <TileGrid>
+      <TileGrid className={compact ? "o4-tiles--compact" : undefined}>
         {tiles.before}
         {control}
         {tiles.after}

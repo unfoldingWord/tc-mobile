@@ -88,9 +88,6 @@ export async function buildBookBundle(
  * newer `build`, by `cancel` or by unmount; a cancelled run's spool is
  * released before it returns, and a run that finishes after that is released
  * here too, so no File is left for a screen that is gone.
- *
- * @pivotpending #1457 — the "Export project" menu row that calls this is a
- * later slice.
  */
 export function useBookExport(): {
   build: (

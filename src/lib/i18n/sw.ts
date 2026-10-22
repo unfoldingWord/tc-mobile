@@ -306,6 +306,15 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareBookUnconfirmed:
     "Shiriki kitabu. Jaribio la mwisho halikuthibitishwa: gusa ili ujaribu tena.",
   shareBookPreparing: "Inaandaa kitabu ili kishirikiwe.",
+  exportProject: "Hamisha mradi",
+  tileExport: "Hamisha",
+  exportProjectPreparing: "Inaandaa mradi ili uhamishwe.",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
   shareBookNothing: "Rekodi kipande kimoja kabla ya kushiriki kitabu hiki.",
   shareBookFailed: "Kitabu hiki hakikuweza kushirikiwa. Jaribu tena.",
   shareBookFailedWeb:
