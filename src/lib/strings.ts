@@ -1393,6 +1393,9 @@ export const stringsEn = {
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
   aboutContent: "Bundled content",
+  // The ISO 639-3 terms of use ask that "attribution is given to
+  // iso639-3.sil.org as the source of the codes" (ADR 0017).
+  aboutLanguageCodes: "Language codes: ISO 639-3, from iso639-3.sil.org.",
   // The licence texts open in-drawer (no new tab), so their controls are
   // buttons: this is the spoken action, and the two states while it loads.
   aboutReadText: (name: string): string => `Read ${name}`,

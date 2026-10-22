@@ -467,6 +467,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "Komponen sumber terbuka",
   aboutTexts: "Teks lisensi",
   aboutContent: "Konten bawaan",
+  aboutLanguageCodes: "Kode bahasa: ISO 639-3, dari iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Baca ${name}`,
   aboutBack: "Kembali ke daftar",
   aboutTextLoading: "Memuat teks lisensi.",

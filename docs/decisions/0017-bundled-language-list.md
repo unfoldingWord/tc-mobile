@@ -70,8 +70,11 @@ holds the generated file, so it is fair to ask whether that is a "means to
 redistribute the code set", and whether the MIT grant on langtags covers the
 Ethnologue names inside it.
 
-**DRI decision, 2026-10-22 (#1492), verbatim:** "MIT grant is enough, bundle
-langtags". The list ships from SIL's `langtags.json` under SIL's MIT licence.
+**The DRI's picks, 2026-10-22 (#1492), verbatim:** first, how the language is
+picked: "Bundled searchable list (Recommended)"; then the licence: "MIT grant
+is enough, bundle langtags". The list ships from SIL's `langtags.json` under
+SIL's MIT licence, and the ISO 639-3 codes in it carry the attribution their
+terms ask for (point 4 below).
 
 ## What we owe, concretely
 
@@ -84,12 +87,15 @@ langtags". The list ships from SIL's `langtags.json` under SIL's MIT licence.
    writes it and never mints one.
 3. **One source.** The file is regenerated only by the script, from a release
    the script names and hashes.
+4. **The codes are attributed to their registrar.** The ISO 639-3 terms ask
+   that "attribution is given to iso639-3.sil.org as the source of the
+   codes". Met: **Menu → About & licenses** says "Language codes: ISO 639-3,
+   from iso639-3.sil.org." (`aboutLanguageCodes` in `src/lib/strings.ts`,
+   translated with the rest of the table; pinned by
+   `tests/about-language-codes.test.ts`). This is compliance with the terms
+   the DRI's decision already accepts, not a further decision.
 
 ## Not decided here
 
-- The ISO 639-3 terms also ask that "attribution is given to iso639-3.sil.org
-  as the source of the codes". The DRI's decision above reads the MIT grant as
-  enough, and this ADR records that reading; whether to add that attribution
-  line as well was not put to the DRI and is left open on #1492.
 - The language's name in `metadata.json` is still the tag (ADR 0014's
   default); writing the English name or the autonym there is not in #1492.
