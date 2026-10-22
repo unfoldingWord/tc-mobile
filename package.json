@@ -43,7 +43,8 @@
     "check:commit-msg": "node scripts/check-commit-messages.mjs",
     "check:prepush": "node scripts/prepush-check.mjs",
     "check:pr-body": "node scripts/check-pr-body.mjs",
-    "i18n:pending": "node scripts/i18n-pending.mjs"
+    "i18n:pending": "node scripts/i18n-pending.mjs",
+    "collateral": "node scripts/collateral.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
