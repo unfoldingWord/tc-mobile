@@ -1,0 +1,17 @@
+{
+  "_source": "real: `gh api repos/unfoldingWord/tc-mobile/actions/runs/39457261742/artifacts`, read 2026-10-22; fields trimmed to name, expired, workflow_run",
+  "total_count": 1,
+  "artifacts": [
+    {
+      "name": "android-apk-a87c2f6f1d44d020f096b9cf1b6028853b1121a6",
+      "expired": false,
+      "workflow_run": {
+        "id": 39457261742,
+        "repository_id": 1343131383,
+        "head_repository_id": 1343131383,
+        "head_branch": "staging",
+        "head_sha": "a87c2f6f1d44d020f096b9cf1b6028853b1121a6"
+      }
+    }
+  ]
+}

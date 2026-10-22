@@ -1,0 +1,211 @@
+{
+  "_source": "real: `gh run view 39457261751 --json jobs (ios-testflight.yml, staging push)`, read 2026-10-22",
+  "jobs": [
+    {
+      "completedAt": "2026-10-20T16:25:15Z",
+      "conclusion": "success",
+      "databaseId": 118747272680,
+      "name": "Preflight (promotion or dispatch)",
+      "startedAt": "2026-10-20T16:25:13Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-20T16:25:13Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-20T16:25:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Build a promotion merge, or a dispatch from staging/main",
+          "number": 2,
+          "startedAt": "2026-10-20T16:25:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-10-20T16:25:14Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/39457261751/job/118747272680"
+    },
+    {
+      "completedAt": "2026-10-20T17:15:11Z",
+      "conclusion": "success",
+      "databaseId": 118747313882,
+      "name": "Build and upload to TestFlight",
+      "startedAt": "2026-10-20T17:11:24Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-20T17:11:27Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-20T17:11:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:27Z",
+          "conclusion": "success",
+          "name": "Require all seven secrets",
+          "number": 2,
+          "startedAt": "2026-10-20T17:11:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:30Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 3,
+          "startedAt": "2026-10-20T17:11:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:31Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 4,
+          "startedAt": "2026-10-20T17:11:30Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:45Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 5,
+          "startedAt": "2026-10-20T17:11:31Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:51Z",
+          "conclusion": "success",
+          "name": "Build the web bundle",
+          "number": 6,
+          "startedAt": "2026-10-20T17:11:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:53Z",
+          "conclusion": "success",
+          "name": "Check the built artifacts",
+          "number": 7,
+          "startedAt": "2026-10-20T17:11:51Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:53Z",
+          "conclusion": "success",
+          "name": "OBS thumbnail precache policy (web build;",
+          "number": 8,
+          "startedAt": "2026-10-20T17:11:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:11:56Z",
+          "conclusion": "success",
+          "name": "Rebuild and check dist/ for the native shell (self-destroying service worker,",
+          "number": 9,
+          "startedAt": "2026-10-20T17:11:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:00Z",
+          "conclusion": "success",
+          "name": "Select Xcode",
+          "number": 10,
+          "startedAt": "2026-10-20T17:11:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:02Z",
+          "conclusion": "success",
+          "name": "Sync dist/ into the iOS project",
+          "number": 11,
+          "startedAt": "2026-10-20T17:12:00Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:02Z",
+          "conclusion": "success",
+          "name": "Guard the synced bundle",
+          "number": 12,
+          "startedAt": "2026-10-20T17:12:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:02Z",
+          "conclusion": "success",
+          "name": "Write the App Store Connect API key",
+          "number": 13,
+          "startedAt": "2026-10-20T17:12:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:02Z",
+          "conclusion": "success",
+          "name": "Write the signing credentials",
+          "number": 14,
+          "startedAt": "2026-10-20T17:12:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:12:45Z",
+          "conclusion": "success",
+          "name": "Install fastlane",
+          "number": 15,
+          "startedAt": "2026-10-20T17:12:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:15:01Z",
+          "conclusion": "success",
+          "name": "Archive and upload to TestFlight",
+          "number": 16,
+          "startedAt": "2026-10-20T17:12:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:15:02Z",
+          "conclusion": "success",
+          "name": "Remove decoded credentials",
+          "number": 17,
+          "startedAt": "2026-10-20T17:15:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:15:07Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "number": 33,
+          "startedAt": "2026-10-20T17:15:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:15:08Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 34,
+          "startedAt": "2026-10-20T17:15:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T17:15:09Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 35,
+          "startedAt": "2026-10-20T17:15:08Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/39457261751/job/118747313882"
+    }
+  ]
+}

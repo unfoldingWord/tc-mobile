@@ -1,0 +1,50 @@
+{
+  "_source": "real: `gh run view 37380372475 --json jobs (android-apk.yml, staging push, cancelled while pending)`, read 2026-10-22",
+  "jobs": [
+    {
+      "completedAt": "2026-10-05T22:07:10Z",
+      "conclusion": "success",
+      "databaseId": 112000494680,
+      "name": "Preflight (promotion or dispatch)",
+      "startedAt": "2026-10-05T22:07:07Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T22:07:07Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T22:07:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T22:07:08Z",
+          "conclusion": "success",
+          "name": "Build a promotion merge, or a dispatch from staging/main",
+          "number": 2,
+          "startedAt": "2026-10-05T22:07:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T22:07:08Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-10-05T22:07:08Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/37380372475/job/112000494680"
+    },
+    {
+      "completedAt": "2026-10-09T14:44:40Z",
+      "conclusion": "cancelled",
+      "databaseId": 112000527680,
+      "name": "Build release APK",
+      "startedAt": "2026-10-05T22:07:10Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/37380372475/job/112000527680"
+    }
+  ]
+}
