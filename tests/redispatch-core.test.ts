@@ -249,6 +249,58 @@ describe("classifyRun: one run's token", () => {
       classifyRun("play", row(1, "completed", RC_SHA), undefined, undefined)
     ).toMatchObject({ fatal: true });
   });
+
+  // George #1640 r1 finding 1: "not built" only on positive evidence.
+  it.each([["success"], [""], [null]])(
+    "George #1640 r1: a completed job with no steps and conclusion %j is a fatal stop, not not built",
+    (conclusion) => {
+      const v: RunView = {
+        jobs: [{ name: "Build release APK", conclusion, steps: [] }],
+      };
+      expect(
+        classifyRun("apk", row(1, "completed", RC_SHA), v, undefined)
+      ).toMatchObject({ token: "unknown", fatal: true });
+    }
+  );
+
+  it("George #1640 r1: an APK run with no full headSha is a fatal stop", () => {
+    for (const headSha of [undefined, "", RC_SHA.slice(0, 12)]) {
+      expect(
+        classifyRun(
+          "apk",
+          { databaseId: 1, status: "completed", headSha },
+          view("apk-staging-built"),
+          arts("apk-staging-built")
+        )
+      ).toMatchObject({ token: "unknown", fatal: true });
+    }
+  });
+
+  it("George #1640 r1: an artifact entry without a string name is a fatal stop", () => {
+    const listing = {
+      total_count: 1,
+      artifacts: [{} as { name: string }],
+    };
+    expect(
+      classifyRun(
+        "apk",
+        row(1, "completed", RC_SHA),
+        view("apk-staging-built"),
+        listing
+      )
+    ).toMatchObject({ token: "unknown", fatal: true });
+  });
+
+  it("George #1640 r1: an unknown lane is a fatal stop, not a throw", () => {
+    expect(
+      classifyRun(
+        "APK" as never,
+        row(1, "completed", RC_SHA),
+        view("apk-staging-built"),
+        arts("apk-staging-built")
+      )
+    ).toMatchObject({ token: "unknown", fatal: true });
+  });
 });
 
 describe("versionCore: -rc.N stripped in code", () => {
@@ -460,6 +512,28 @@ describe("decide: the pre-dispatch verdict", () => {
       );
       expect(r.ok).toBe(true);
     });
+
+    it("George #1640 r1: a branch other than exactly staging or main stops, so the rule cannot be skipped", () => {
+      const sameVersion = {
+        prodRuns: { apk: [], play: clean().prodRuns?.play },
+        versions: { [RC_SHA]: "1.0.1-rc.4", [PROD_SHA]: "1.0.1" },
+      };
+      expect(decide(clean(sameVersion)).ok).toBe(false);
+      const r = decide(clean({ ...sameVersion, branch: "Staging" as never }));
+      expect(r.ok).toBe(false);
+      expect(r.reason).toContain("branch");
+    });
+  });
+
+  it("George #1640 r1: an unknown lane stops, with empty lists or with runs", () => {
+    const empty = decide(
+      clean({ lane: "APK" as never, branch: "main", laneRuns: [] })
+    );
+    expect(empty.ok).toBe(false);
+    expect(empty.reason).toContain("lane");
+    expect(decide(clean({ lane: "APK" as never, branch: "main" })).ok).toBe(
+      false
+    );
   });
 });
 
@@ -506,5 +580,14 @@ describe("afterDispatch: only a run id not seen before the dispatch counts", () 
     expect(afterDispatch({ ...base, laneRuns: rows(LIST_LIMIT) }).state).toBe(
       "stop"
     );
+  });
+
+  it("George #1640 r1: stops, not throws, when known is not a list or the lane is unknown", () => {
+    expect(
+      afterDispatch({ ...base, known: undefined as never, laneRuns: [] }).state
+    ).toBe("stop");
+    expect(
+      afterDispatch({ ...base, lane: "APK" as never, laneRuns: [] }).state
+    ).toBe("stop");
   });
 });
