@@ -37,17 +37,17 @@ including #1456 and an `AVAudioPlayer` plugin for #1518, until this reports.
 
 From the research note §2, in short:
 
-| Need                                 | Line                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| Audio session and the silent switch  | Stays in Capacitor: the `"playback"` declaration (#1518); an `AVAudioPlayer` plugin if that fails |
-| microSD record and backup (Android)  | Stays in Capacitor: a custom plugin (#1456 chain); same native code in Expo                       |
-| Cloud backup (iCloud, Google Drive)  | Stays: share sheet or Files picker; a plugin only for automatic backup                            |
-| Background and interruptions         | Stays: background capture is not wanted (#836)                                                    |
-| Share sheet                          | Stays: shipped                                                                                    |
-| Large files and storage quota        | Stays, with a watch: the iOS embedded-web quota (≈15% per origin) and the base64 bridge           |
-| MP3 encoder worker                   | Stays: shipped; a move would rewrite it                                                           |
-| Limiter at record time; 32-bit float | Limiter stays (Web Audio); float capture unproven in both stacks                                  |
-| Store listing and review             | Stays: no rejection on record                                                                     |
+| Need                                 | Line                                                                                                                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Audio session and the silent switch  | Stays in Capacitor: the `"playback"` declaration (#1518); an `AVAudioPlayer` plugin if that fails                                                                       |
+| microSD record and backup (Android)  | Stays in Capacitor: a custom plugin (#1456 chain); same native code in Expo                                                                                             |
+| Cloud backup (iCloud, Google Drive)  | Stays: share sheet or Files picker; a plugin only for automatic backup, written where the user can see it and where it survives uninstall (not Drive's app data folder) |
+| Background and interruptions         | Stays: background capture is not wanted (#836)                                                                                                                          |
+| Share sheet                          | Stays: shipped                                                                                                                                                          |
+| Large files and storage quota        | Stays, with a watch: the iOS embedded-web quota (≈15% per origin) and the base64 bridge                                                                                 |
+| MP3 encoder worker                   | Stays: shipped; a move would rewrite it                                                                                                                                 |
+| Limiter at record time; 32-bit float | Limiter stays (Web Audio); float capture unproven in both stacks                                                                                                        |
+| Store listing and review             | Stays: no rejection on record                                                                                                                                           |
 
 No need is in "needs a native app". The custom plugins the middle path needs
 would be needed in Expo too, because Expo has no first-party module for the
@@ -103,7 +103,11 @@ The move then ships a first-launch export of IndexedDB to native files that:
   `clipData`, and verifies the copy;
 - still opens the app when the export fails or is killed, with the old
   database as the copy of record until the verification passes;
-- never deletes the old database in the same release;
+- never mutates the old database: it opens it with no version, so no
+  upgrade runs on the original, and never deletes it in the same release;
+- reads every schema a shipped build left on a phone (at least v9, v11 and
+  v12, each with a test fixture), not only the current v12, and runs any
+  upgrade on the copy (note §4.3, Risks);
 - keeps the PWA at both origins, or ships Scripture Bundle export with an
   app-side import first, so PWA-only users are not stranded (note §4.4).
 

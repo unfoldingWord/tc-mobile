@@ -341,7 +341,12 @@ is the plan a move must pass before it starts.
 3. The page runs at the origin that owns every recording, so it is
    self-contained: no remote scripts, no navigation away, and the native side
    accepts only the export's own message envelope. [inference] In the page,
-   open `tc-mobile` read-only. For each `clipData` entry,
+   open `tc-mobile` **with no version argument**. IndexedDB has no read-only
+   open, and an open at a higher version runs an upgrade, which is a write
+   to the only copy. With no version, `upgradeneeded` fires only if the
+   database does not exist; the page then aborts the open rather than
+   create one (the proof's `src/probe-page.ts` does this). Read the stores
+   in `readonly` transactions. For each `clipData` entry,
    base64 it in chunks and `postMessage` it out — `react-native-webview`
    messages must be strings (Reference: "`data` must be a string"). Write each
    clip to a native file with `expo-file-system`, and write the metadata
@@ -375,8 +380,17 @@ This is what the Expo proof's probe does, in miniature (§7).
   killed every time would otherwise become a launch loop with the recordings
   behind it, which is why step 5 opens the app regardless. The §7 probe
   exports one entry, so it does not exercise this case.
-- The Expo build must also understand every schema version a phone could
-  hold. Today that is v12 (AGENTS.md "A rollback is not free").
+- **The exporter must handle every schema a shipped build left on a phone,
+  not only the current one.** Current code opens at v12
+  (`src/lib/storage/db.ts:158`). Shipped builds have carried v9, v11 and
+  v12 (AGENTS.md "A rollback is not free"), and the upgrade branches run
+  from `oldVersion < 3` to `oldVersion < 12` (`db.ts:578-811`). A phone that
+  never opened a v12 build has no `pendingTakes` or `tombstones` store
+  (created at v12, `db.ts:626-628`) and lacks later metadata backfills.
+  [observed] So the export reads the database at whatever version it finds,
+  using the stores it actually has. Any schema upgrade runs on the exported
+  copy, never on the original. Migration tests need a fixture for each
+  shipped schema, at least v9, v11 and v12. [inference]
 
 ### 4.4 PWA-only users
 
