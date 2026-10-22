@@ -81,6 +81,14 @@ const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
     shareBookFilename:
       "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
   },
+  pt: {
+    menuTitle:
+      "The Portuguese word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+  },
 };
 
 /** Latin words a non-Latin draft may carry beyond the brand words. */
