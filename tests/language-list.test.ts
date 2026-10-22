@@ -94,7 +94,10 @@ describe("the committed list", () => {
     const tags = new Set<string>();
     for (const row of file.languages) {
       expect([2, 3]).toContain(row.length);
-      for (const cell of row) expect(cell.trim()).not.toBe("");
+      for (const cell of row) {
+        expect(cell).toBe(cell.trim());
+        expect(cell.length).toBeGreaterThan(0);
+      }
       const [tag] = row as [string];
       expect(tag.startsWith("_")).toBe(false);
       expect(tags.has(tag)).toBe(false);
