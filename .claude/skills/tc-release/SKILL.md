@@ -194,7 +194,7 @@ from.
       filtered on the server by commit and by status, so a long run history
       cannot hide an open run, and its scenario table covers the diagnostic
       APK, a `main` run in the shared group, a run that builds `<PROMO_SHA>`
-      during the wait, a moved tip and a newer production build. Do not
+      during the wait, a moved tip and a production build of the same version. Do not
       dispatch from a shorter version of it. An empty conclusion with the run
       still open means the job is waiting for the `release-signing` reviewer
       or running: it has started, so do not dispatch a second one.

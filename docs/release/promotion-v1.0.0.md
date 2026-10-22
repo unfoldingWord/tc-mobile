@@ -420,11 +420,28 @@ Moving the group onto the upload job is #1616.
 
 Fixed values. `<lane>` is the workflow file. `<SHA>` is the full 40-character
 oid being built (`PROMO_SHA` on `staging`, `PROD_SHA` on `main`); a
-shortened sha makes the `--commit` filter list nothing. `<signing job>` is
-`Build release APK` for the APK lane, `Build and upload to TestFlight` for
-the iOS lane and `Build .aab and upload to Play (internal)` for the Play
-lane. Read the job names from a recent run if a workflow has been edited
-(`gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[].name'`).
+shortened sha makes the `--commit` filter list nothing. `<branch>` is
+`staging` for a promotion RC and `main` for production.
+
+**Built: the one completion predicate.** Every stop, every table row and
+step 3 use this and no other test. A run has _built_ a commit when the
+lane's completion step succeeded:
+
+| Lane                 | Job (name starts with)           | Completion step                    | Also required                         |
+| -------------------- | -------------------------------- | ---------------------------------- | ------------------------------------- |
+| `android-apk.yml`    | `Build release APK`              | `Build the release APK`            | read C lists `android-apk-<headSha>`  |
+| `ios-testflight.yml` | `Build and upload to TestFlight` | `Archive and upload to TestFlight` | nothing                               |
+| `android-play.yml`   | `Build .aab and upload to Play`  | `Upload to Google Play`            | nothing (a `build_only` run skips it) |
+
+Read B prints `<job count> <step conclusion>` for one run. Only `1 success`
+is built, plus the extra read for the APK lane. A run's own `conclusion` is
+not evidence: a run whose job was `skipped` still concludes `success`, and a
+diagnostic APK or a `build_only` Play run concludes `success` without being
+a build. A job count other than 1 means the workflow no longer looks like
+this table: stop and tell the DRI. For the APK lane, if C lists no artifact
+at all (retention is 14 days), the run is _unknown_, neither built nor not
+built: stop and tell the DRI. Anything else (the step `skipped`, `failure`
+or `cancelled`, or the diagnostic artifact only) is _not built_.
 
 The reads. Every list is filtered on the server by commit or by status, so
 a long completed history cannot hide a run, and each read passes
@@ -433,14 +450,12 @@ the list may be cut.
 
 - **A. Runs at the commit**, any branch, any event:
   `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <SHA> --limit 100 --json databaseId,event,status,conclusion`
-- **B. Each run's signing job**: `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<signing job>") | .conclusion'`.
-  A run's own `conclusion` is not the job's: a run whose signing job was
-  `skipped` still concludes `success`. On the Play lane, also read the
-  upload step (`| .steps[] | select(.name=="Upload to Google Play") | .conclusion`
-  after the job select): a `build_only` run skips it and uploads nothing.
+- **B. Completion read** for one run, with `<job>` and `<step>` from the
+  table:
+  `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '[.jobs[] | select(.name | startswith("<job>"))] | "\(length) \([.[].steps[]? | select(.name == "<step>") | .conclusion] | join(","))"'`
 - **C. The APK lane's artifact names** for a run:
   `gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`.
-  An ordinary build holds `android-apk-<SHA>`. `android-apk-diagnostic-<SHA>`
+  An ordinary build holds `android-apk-<SHA>`; `android-apk-diagnostic-<SHA>`
   is a diagnostic APK, not a training build.
 - **D. Open runs of the lane on every branch**, one read per open status,
   because the group carries no branch and a `main` run can hold the slot:
@@ -449,61 +464,65 @@ the list may be cut.
   `requested` and `action_required`. All six empty means the lane is free.
 - **E. The canonical tip**:
   `gh api repos/unfoldingWord/tc-mobile/git/ref/heads/<branch> --jq .object.sha`
-  (`staging` for a promotion RC, `main` for production).
-- **F. A newer `main` build** (staging recovery only):
-  `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch main --status success --limit 100 --json databaseId,headSha,createdAt`,
-  against `mergedAt` of the promotion PR `<N>` that merged `<SHA>` into
-  `staging` (`gh pr view <N> --repo unfoldingWord/tc-mobile --json mergedAt --jq .mergedAt`).
-  A run's `success` is not a build: read B (and C) for each run after it.
+- **F. Production runs of a lane** (a staging dispatch only), with no date
+  bound:
+  `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch main --status success --limit 100 --json databaseId,headSha`
+- **G. The version at a commit**:
+  `gh api "repos/unfoldingWord/tc-mobile/contents/package.json?ref=<commit>" --jq .content | base64 -d | jq -r .version`.
+  The version of an RC `1.2.0-rc.N` is `1.2.0`: drop the `-rc.N` suffix.
 
 The procedure, in order. Stop at the first step that says stop.
 
-1. **Already built?** Read A, then B for every run in A, then C for the APK
-   lane. If any run's signing job is `success` and (APK lane) its artifact
-   is the ordinary name, or (Play lane) its upload step is `success`, `<SHA>`
-   is built: stop and record that run. A run whose signing job is open (B
-   prints an empty conclusion) is not built yet and holds the lane: do not
-   dispatch while it is open; go to 2.
+1. **Already built?** Read A, then B (and C for the APK lane) for every
+   completed run in A. If any run is _built_, `<SHA>` is built: stop and
+   record that run. If any is _unknown_, stop. A run that is not completed
+   is not built yet and holds the lane: go to 2.
 2. **Lane free?** Read D. If any status lists a run, wait, and when D is
    empty return to 1 (a run that was open may have built `<SHA>` meanwhile).
    An open run whose `headSha` is `<SHA>` is that build in progress, so do
    not dispatch a second one.
-3. **Tip.** Read E, immediately before the dispatch and after the last wait,
-   because `--ref <branch>` builds the tip at dispatch. If it is not exactly
-   `<SHA>`, stop.
-4. **Newer production build** (a staging dispatch only). Read F. If a `main`
-   run created after the promotion's `mergedAt` has a signing job `success`
-   in B (APK lane: the ordinary artifact in C), stop. A failed, cancelled or
-   skipped `main` run is not a production build. The rule (DRI
-   pick, 2026-10-22, #1321 item 2: "Never dispatch an RC after prod"): once
-   a version has a production build, no tester RC is dispatched for that
-   version, and the next tester build is a new version. Tell the DRI.
-   The reason: build numbers are the time the signing job ran, so an RC
-   built after a production build carries the higher number, and Android
-   refuses the production APK over it as a downgrade. Uninstall is not the
-   remedy: uninstalling deletes recordings.
-5. **Dispatch** (human-only):
+3. **No RC after production** (a staging dispatch only). The rule (DRI pick,
+   2026-10-22, #1321 item 2: "Never dispatch an RC after prod"): once a
+   version has a production build, no tester RC is dispatched for that
+   version, and the next tester build is a new version. For each of the
+   three lanes, read F, then B (and C for the APK lane) and G at `headSha`
+   for every run F lists. If any such run is _built_ or _unknown_ and its
+   version equals the RC's version (G at `<SHA>`, suffix dropped), stop and
+   tell the DRI. There is no time window: a production build older than
+   the promotion counts the same as a newer one. The reason: build numbers
+   are the time the signing job ran, so an RC built after a production
+   build carries the higher number, and Android refuses the production APK
+   over it as a downgrade. Uninstall is not the remedy: uninstalling
+   deletes recordings.
+4. **Dispatch** (human-only). Immediately before it, and after every wait
+   and read above, read E: if it is not exactly `<SHA>`, stop, because
+   `--ref <branch>` builds the tip at dispatch. Then:
    `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref <branch>`.
-   The agent then re-reads A and B until the new run's signing job has
-   started (B prints an empty conclusion while A shows the run open: waiting for the `release-signing`
-   reviewer, or running; either way it has started, so do not dispatch a
-   second). A dispatch that ends `cancelled` while pending returns to 1.
+   The agent then re-reads A and B until the new run's job has started
+   (B prints `1 ` with no conclusion while A shows the run open: waiting for
+   the `release-signing` reviewer, or running; either way it has started, so
+   do not dispatch a second). A dispatch that ends `cancelled` while
+   pending returns to 1.
 
-Scenario table. Each row is what the reads show and what to do.
+Scenario table. Each row is what the reads show and what to do. "Built" is
+the predicate above.
 
-| Case                              | What the reads show                                            | Do                                                                                                                                                                                                |
-| --------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Already built                     | A has a run whose signing job is `success`, ordinary artifact  | Stop; record the run                                                                                                                                                                              |
-| Diagnostic APK only               | The `success` run's artifact is `android-apk-diagnostic-<SHA>` | Not built; carry on from 2                                                                                                                                                                        |
-| Lane never started                | A has a run, signing job `skipped`                             | Not built; find the cause (a finding), carry on from 2                                                                                                                                            |
-| Replaced while pending            | A has a run at `<SHA>` that is `cancelled`                     | Not built; carry on from 2                                                                                                                                                                        |
-| Main run in the shared group      | D lists a run on `main`                                        | Wait, then 1                                                                                                                                                                                      |
-| Open run builds `<SHA>` meanwhile | D was non-empty; B now shows a signing job `success`           | Stop; record it                                                                                                                                                                                   |
-| Tip moved                         | E is not `<SHA>`                                               | Stop; tell the DRI (the red team read another tree)                                                                                                                                               |
-| Long history                      | Many completed runs sit newer than an open one                 | No effect: D filters by status, A by commit                                                                                                                                                       |
-| Dispatch cancelled while pending  | The new run ends `cancelled` before its signing job starts     | Back to 1                                                                                                                                                                                         |
-| Production build already made     | F lists a `main` run after `mergedAt` whose B is `success`     | Stop; no RC for a version with a production build (DRI, 2026-10-22); the next tester build is a new version                                                                                       |
-| Play draft missing                | `android-play.yml`: no run in A passes step 1 with an upload   | The Play group spans the whole run, so a pending push or dispatch can be replaced and never build. Same procedure on `android-play.yml`; dispatch with no `build_only` (default `false`: uploads) |
+| Case                              | What the reads show                                                   | Do                                                                                                                                      |
+| --------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Already built                     | A has a run that is built                                             | Stop; record the run                                                                                                                    |
+| Diagnostic APK only               | The APK run's step succeeded and C lists only the diagnostic artifact | Not built; carry on from 2                                                                                                              |
+| Play `build_only` only            | The Play run's upload step is `skipped`                               | Not built; carry on from 2                                                                                                              |
+| Lane never started                | A has a run whose job is `skipped` (B prints `1 `)                    | Not built; find the cause (a finding), carry on from 2                                                                                  |
+| Replaced while pending            | A has a run at `<SHA>` that is `cancelled`                            | Not built; carry on from 2                                                                                                              |
+| Main run in the shared group      | D lists a run on `main`                                               | Wait, then 1                                                                                                                            |
+| Open run builds `<SHA>` meanwhile | D was non-empty; on the return to 1, a run in A is built              | Stop; record it                                                                                                                         |
+| Artifact expired                  | The APK run's step succeeded and C lists nothing                      | Unknown; stop and tell the DRI                                                                                                          |
+| Workflow renamed                  | B prints a job count other than 1                                     | Stop; the table above is out of date                                                                                                    |
+| Tip moved                         | E is not `<SHA>`                                                      | Stop; tell the DRI (the red team read another tree)                                                                                     |
+| Long history                      | Many completed runs sit newer than an open one                        | No effect: D filters by status, A by commit                                                                                             |
+| Dispatch cancelled while pending  | The new run ends `cancelled` before its job starts                    | Back to 1                                                                                                                               |
+| Production build of this version  | F lists a run on any lane that is built or unknown, G equals the RC's | Stop; no RC for a version with a production build (DRI, 2026-10-22); the next tester build is a new version                             |
+| Play draft missing                | `android-play.yml`: no run in A is built                              | The Play group spans the whole run, so a pending push or dispatch can be replaced and never build. Same procedure on `android-play.yml` |
 
 ## 4. Native candidate and durable delivery
 
