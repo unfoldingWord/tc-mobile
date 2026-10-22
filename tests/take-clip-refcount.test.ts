@@ -9,7 +9,7 @@ import { saveTake } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { ClipId, SegmentId } from "@/types/domain";
-import { recordTake } from "./support";
+import { forgetDisposition, recordTake, savedTake } from "./support";
 
 /**
  * The take write's prior-clip delete is reference-counted (#68).
@@ -22,7 +22,8 @@ import { recordTake } from "./support";
  * Nothing in `src/` shares a clip between takes today: every save mints its
  * clip id with `newClipId()` (`crypto.randomUUID()`). So these cases build the
  * sharing themselves, by handing two segments the same clip id through
- * `saveTake`, the commit write the recorder reaches (use-save-take.ts). They
+ * `saveTake`, the commit write the recorder reaches (use-save-take.ts), with
+ * the first save's disposition record dropped in between (v13, #38). They
  * pin a store invariant; they do not reproduce a path the app reaches.
  */
 
@@ -37,6 +38,7 @@ const twoSegmentsSharingAClip = async () => {
   const s2 = await addSegment(chapter.id);
   const shared = newClipId();
   await recordTake(s1.id, { clipId: shared, frames: 500 });
+  await forgetDisposition(shared);
   await recordTake(s2.id, { clipId: shared, frames: 500 });
   return { s1: s1.id, s2: s2.id, shared };
 };
@@ -101,12 +103,18 @@ describe("take write: the superseded clip is deleted only when nothing else name
 
   it("is idempotent: re-running the same save leaves the same state", async () => {
     // A save-failure retry re-runs `saveTake` with the SAME clip id
-    // (use-save-take.ts keeps it). Running it twice must converge: one take row
-    // for the segment, the new clip present, and the shared clip untouched.
+    // (use-save-take.ts keeps it). Once the first run has landed, the second
+    // finds the take's `saved` record (v13, #38) and writes nothing: one take
+    // row for the segment, the new clip present, the shared clip untouched.
     const { s1, s2, shared } = await twoSegmentsSharingAClip();
     const clipId = newClipId();
 
-    await saveTake(s1, clipId, samples(300), CANONICAL_SAMPLE_RATE);
+    const first = await saveTake(
+      s1,
+      clipId,
+      samples(300),
+      CANONICAL_SAMPLE_RATE
+    );
     const second = await saveTake(
       s1,
       clipId,
@@ -114,7 +122,8 @@ describe("take write: the superseded clip is deleted only when nothing else name
       CANONICAL_SAMPLE_RATE
     );
 
-    expect((await takesOf(s1)).map((t) => t.id)).toEqual([second.id]);
+    expect(second).toEqual({ outcome: "already-saved" });
+    expect((await takesOf(s1)).map((t) => t.id)).toEqual([savedTake(first).id]);
     expect(await clipPresent(clipId)).toEqual({ meta: true, data: true });
     expect((await loadSegmentClip(s1)).kind).toBe("resolved");
     expect(await clipPresent(shared)).toEqual({ meta: true, data: true });

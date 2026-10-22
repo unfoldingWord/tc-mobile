@@ -12,8 +12,8 @@ import { closeDb, getDb } from "@/lib/storage/db";
  * `idb` does not await the async callback, so before the guard in `db.ts` a
  * throw left the `versionchange` transaction to commit what it had written, at
  * the NEW version: the steps that had not run never ran again. These cases
- * simulate the throw (the fourth `books` write fails; for v12, which writes
- * through cursors, the fourth `segments` cursor update) and pin the guard: the
+ * simulate the throw (the fourth `books` write fails; for v12 and v13, which
+ * write through cursors, the fourth `segments` cursor update) and pin the guard: the
  * transaction aborts, the stored version stays where it was, nothing is
  * half-written, and the next open — with the fault gone — upgrades cleanly.
  *
@@ -22,7 +22,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
  */
 
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 
 async function wipe(): Promise<void> {
   await closeDb();
@@ -47,6 +47,12 @@ function createStores(db: Awaited<ReturnType<typeof openDB>>): void {
   db.createObjectStore("failures", { autoIncrement: true });
 }
 
+/** The two stores v12 adds, as v12 created them. */
+function createV12Stores(db: Awaited<ReturnType<typeof openDB>>): void {
+  db.createObjectStore("tombstones", { autoIncrement: true });
+  db.createObjectStore("pendingTakes", { keyPath: "segmentId" });
+}
+
 /** A clip that is on the old shelf before the upgrade runs. */
 const CLIP_KEY = "c-old";
 const CLIP_BYTES = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -67,25 +73,36 @@ const SHELF_ORDER = ["b2", "b4", "b6", "b3", "b5", "b1"];
 
 /**
  * A shelf at `version` (9: placeholder names, no slot; 10: slots, no position;
- * 11: slots and positions, none of the v12 fields).
+ * 11: slots and positions, none of the v12 fields; 12: every v12 field and
+ * store, no `audioRevision`).
  */
-async function seed(version: 9 | 10 | 11) {
+async function seed(version: 9 | 10 | 11 | 12) {
   const db = await openDB(DB_NAME, version, {
     upgrade(upgrading) {
       createStores(upgrading);
+      if (version === 12) createV12Stores(upgrading);
     },
   });
+  const v12Book =
+    version === 12
+      ? { provenance: { kind: "blank" }, licence: null, modifiedAt: null }
+      : {};
+  const v12Row =
+    version === 12
+      ? { createdAt: null, modifiedAt: null, templateKey: null }
+      : {};
   for (const [id, name, createdAt] of SEED) {
     await db.put("books", {
       id,
       name: version === 9 ? name : name.startsWith("Book 0") ? null : name,
       ...(version >= 10 ? { number: Number(id.slice(1)) } : {}),
-      ...(version === 11 ? { shelfPosition: SHELF_ORDER.indexOf(id) } : {}),
+      ...(version >= 11 ? { shelfPosition: SHELF_ORDER.indexOf(id) } : {}),
       languageCode: null,
       chapterIds: [`${id}-ch1`],
       createdAt,
       updatedAt: createdAt,
       coverColourKey: null,
+      ...v12Book,
     });
     await db.put("chapters", {
       id: `${id}-ch1`,
@@ -93,6 +110,7 @@ async function seed(version: 9 | 10 | 11) {
       number: 1,
       name: null,
       segmentIds: [`${id}-s1`],
+      ...v12Row,
     });
     await db.put("segments", {
       id: `${id}-s1`,
@@ -102,6 +120,7 @@ async function seed(version: 9 | 10 | 11) {
       label: null,
       activeTakeId: null,
       status: "not-started",
+      ...v12Row,
     });
   }
   await db.put("clipData", CLIP_BYTES.slice().buffer, CLIP_KEY);
@@ -196,14 +215,12 @@ function failSegmentsUpdateAt(nth: number, asRequest: boolean) {
   });
 }
 
-/** The fault for the step that `from` runs last before v12, or v12 itself. */
-function failAt(from: 9 | 10 | 11, nth: number) {
-  return from === 11 ? failSegmentsUpdateAt(nth, false) : failBooksPutAt(nth);
+/** The fault for the step that `from` runs first: a book pass, or v12/v13. */
+function failAt(from: 9 | 10 | 11 | 12, nth: number) {
+  return from >= 11 ? failSegmentsUpdateAt(nth, false) : failBooksPutAt(nth);
 }
-function failRequestAt(from: 9 | 10 | 11, nth: number) {
-  return from === 11
-    ? failSegmentsUpdateAt(nth, true)
-    : failBooksRequestAt(nth);
+function failRequestAt(from: 9 | 10 | 11 | 12, nth: number) {
+  return from >= 11 ? failSegmentsUpdateAt(nth, true) : failBooksRequestAt(nth);
 }
 
 /** The keys v12 adds to a chapter or segment row, each backfilled null. */
@@ -219,6 +236,7 @@ describe.each([
   { from: 9 as const, step: "v10 (placeholder slots)" },
   { from: 10 as const, step: "v11 (shelf position)" },
   { from: 11 as const, step: "v12" },
+  { from: 12 as const, step: "v13" },
 ])("a throw inside the $step upgrade", ({ from }) => {
   it("rejects the open with the thrown error and leaves the old version and every row as they were", async () => {
     const before = await seed(from);
@@ -265,8 +283,9 @@ describe.each([
     expect(await db.getAll("chapters")).toEqual(
       before.chapters.map((c) => ({ ...c, ...v12Fields }))
     );
+    // And v13 gave each segment its revision, 0, and nothing else.
     expect(await db.getAll("segments")).toEqual(
-      before.segments.map((s) => ({ ...s, ...v12Fields }))
+      before.segments.map((s) => ({ ...s, ...v12Fields, audioRevision: 0 }))
     );
     // The clip that was already there is untouched; the one the failed
     // attempt wrote never existed.

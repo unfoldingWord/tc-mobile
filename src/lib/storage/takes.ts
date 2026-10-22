@@ -30,13 +30,14 @@
 
 import type { IDBPDatabase } from "idb";
 
-import { buildClipMeta } from "./clips";
+import { buildClipMeta, deleteClipIfUnreferenced } from "./clips";
 import { getDb, type TcMobileDb } from "./db";
 import type {
   ClipId,
   RecordingStatus,
   SegmentId,
   Take,
+  TakeDisposition,
   TakeId,
 } from "@/types/domain";
 
@@ -49,10 +50,24 @@ const uuid = (): string => crypto.randomUUID();
  * `clearSegmentTake` both open it, so the clip reference check they share runs
  * on one transaction type. `TakeTx` is derived from this call's return so the
  * helper's parameter type cannot drift from what actually opens.
+ *
+ * v13 (#38): it also names `pendingTakes` and `takeDispositions`, so it is the
+ * one owning transaction for a pending row's end: the commit, a Discard and a
+ * give-up each delete their own row and record why here, together
+ * (docs/design/pending-take-lifecycle.md, §3).
  */
 function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
-    ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
+    [
+      "segments",
+      "takes",
+      "clipMeta",
+      "clipData",
+      "chapters",
+      "books",
+      "pendingTakes",
+      "takeDispositions",
+    ],
     "readwrite",
     // Strict durability: this transaction creates the ONLY copy of a recording,
     // and under the browser default (relaxed on Chromium) it can report success
@@ -145,6 +160,9 @@ async function writeTakeInTx(
   await tx.objectStore("segments").put({
     ...segment,
     activeTakeId: take.id,
+    // The active take changed (v13, #38): a pending row made against the old
+    // revision can see that, whatever `activeTakeId` reads.
+    audioRevision: segment.audioRevision + 1,
     // A new recording is draft unless the recorder carried an explicit Finished
     // mark for it: a fresh take demotes an approved segment and moves a first
     // take off "not-started", while an explicit mark lands finished atomically
@@ -179,27 +197,38 @@ async function writeTakeInTx(
 }
 
 /**
- * Delete a clip's metadata and bytes, unless some take still names it.
- *
- * Every take write and clear that lets go of a clip goes through here, so the
- * reference check is written once. Call it on the caller's transaction AFTER
- * the take row that let go of the clip is deleted, so `getAll` sees only the
- * references that survive; the check and the delete then land in the same
- * transaction as the take change.
- *
- * Nothing shares a clip today (every take mints a fresh `newClipId()`), but
- * nothing in the schema forbids it either, and an unconditional delete would
- * then punch a hole in another segment: unrecoverable audio loss. So this is a
- * defensive invariant, not a fix for a path the app reaches (#68, Frank R4).
+ * Delete a segment's pending row if it is this take's, then let its `stored`
+ * base clip go if nothing else uses it. A row for another clip is left alone.
  */
-async function deleteClipIfUnreferenced(
+async function endOwnRow(
   tx: TakeTx,
+  segmentId: SegmentId,
   clipId: ClipId
+): Promise<boolean> {
+  const row = await tx.objectStore("pendingTakes").get(segmentId);
+  if (row?.clipId !== clipId) return false;
+  await tx.objectStore("pendingTakes").delete(segmentId);
+  if (row.base.kind === "stored") {
+    await deleteClipIfUnreferenced(tx, row.base.sourceClipId);
+  }
+  return true;
+}
+
+/**
+ * Record why a take stopped being pending. Monotone: `saved` and `discarded`
+ * are final, and `given-up` may only be replaced by one of them, so a late or
+ * repeated settle never weakens what is stored.
+ */
+async function recordDisposition(
+  tx: TakeTx,
+  segmentId: SegmentId,
+  clipId: ClipId,
+  kind: TakeDisposition["kind"]
 ): Promise<void> {
-  const survivors = await tx.objectStore("takes").getAll();
-  if (survivors.some((t) => t.clipId === clipId)) return;
-  await tx.objectStore("clipMeta").delete(clipId);
-  await tx.objectStore("clipData").delete(clipId);
+  const store = tx.objectStore("takeDispositions");
+  const held = await store.get(clipId);
+  if (held && (held.kind !== "given-up" || kind === "given-up")) return;
+  await store.put({ clipId, segmentId, kind, at: Date.now() });
 }
 
 /**
@@ -219,6 +248,15 @@ async function priorClipGeneration(
   const meta = await tx.objectStore("clipMeta").get(take.clipId);
   return meta?.generation ?? 0;
 }
+
+/**
+ * What an ordinary commit did. `discarded`: this take was discarded (a
+ * request in this copy, or a record from any copy) and nothing was written.
+ * `already-saved`: another copy saved it; nothing was written.
+ */
+export type CommitResult =
+  | { readonly outcome: "saved"; readonly take: Take }
+  | { readonly outcome: "discarded" | "already-saved" };
 
 /**
  * Persist a recording — the clip AND the take — in ONE transaction.
@@ -243,8 +281,12 @@ export async function saveTake(
   clipId: ClipId,
   samples: Int16Array,
   sampleRate: number,
-  opts: { finished?: boolean; now?: number } = {}
-): Promise<Take> {
+  opts: {
+    finished?: boolean;
+    now?: number;
+    isDiscardRequested?: (clipId: ClipId) => boolean;
+  } = {}
+): Promise<CommitResult> {
   const now = opts.now ?? Date.now();
   // Built before the transaction opens, so a 0-frame clip is rejected without
   // ever starting a write. The generation is stamped below, inside the
@@ -255,6 +297,19 @@ export async function saveTake(
   const db = await getDb();
   const tx = openTakeTx(db);
   try {
+    // v13 (#38): a take discarded in this copy, or recorded as discarded or
+    // saved by any copy, is not written again (the writer rule,
+    // docs/design/pending-take-lifecycle.md §3). The request first, so a
+    // `given-up` record never hides it.
+    const record = await tx.objectStore("takeDispositions").get(clipId);
+    if (opts.isDiscardRequested?.(clipId) || record?.kind === "discarded") {
+      await tx.done;
+      return { outcome: "discarded" };
+    }
+    if (record?.kind === "saved") {
+      await tx.done;
+      return { outcome: "already-saved" };
+    }
     // The lossy-pass count carries over from the clip this take REPLACES (B8,
     // Q5). The only way a segment has a prior take at save time is that the
     // recorder opened it and edited or inserted into its audio — and if that
@@ -267,12 +322,16 @@ export async function saveTake(
     const meta = { ...base, generation };
     await tx.objectStore("clipMeta").put(meta);
     await tx.objectStore("clipData").put(bytes.buffer, clipId);
+    // The row goes before the take write, so a prior clip only its base named
+    // is released by the take write's own clean-up.
+    await endOwnRow(tx, segmentId, clipId);
     const take = await writeTakeInTx(tx, segmentId, clipId, meta.durationMs, {
-      ...opts,
+      finished: opts.finished,
       now,
     });
+    await recordDisposition(tx, segmentId, clipId, "saved");
     await tx.done;
-    return take;
+    return { outcome: "saved", take };
   } catch (cause) {
     // A THROWN error mid-transaction (e.g. `writeTakeInTx` finding no such
     // segment) does not roll the clip write back on its own: IndexedDB
@@ -332,6 +391,10 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
     activeTakeId: null,
     status: "not-started",
     modifiedAt: now,
+    // v13 (#38): an erase that removed a take moves the revision; a no-op
+    // clear of an empty segment does not, or it would refuse a valid
+    // first-take row for nothing.
+    audioRevision: segment.audioRevision + (priorTakeId === null ? 0 : 1),
   });
 
   // Editing is activity: bump the book's `updatedAt` in the same
@@ -347,6 +410,46 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
   }
 
   await tx.done;
+}
+
+/**
+ * End a take's pending row without a commit, in the owning transaction (v13,
+ * #38): `discard` (a person confirmed it, in any copy) or `give-up` (a quota
+ * failure dropped the row; the take is still wanted). Either deletes the row
+ * if it is this take's and records why, together. A Discard also deletes the
+ * take's own clip a failed attempt may have written, unless something uses it.
+ * Never rejects: a failure comes back as a value for the hook to report.
+ */
+export async function settlePendingTake(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  kind: "discard" | "give-up"
+): Promise<{ readonly ok: true } | { readonly ok: false; cause: unknown }> {
+  try {
+    const db = await getDb();
+    const tx = openTakeTx(db);
+    try {
+      await endOwnRow(tx, segmentId, clipId);
+      if (kind === "discard") {
+        await recordDisposition(tx, segmentId, clipId, "discarded");
+        await deleteClipIfUnreferenced(tx, clipId);
+      } else {
+        await recordDisposition(tx, segmentId, clipId, "given-up");
+      }
+      await tx.done;
+      return { ok: true };
+    } catch (cause) {
+      try {
+        tx.abort();
+      } catch {
+        // Already settled; the original cause is what the caller reports.
+      }
+      await tx.done.catch(() => {});
+      throw cause;
+    }
+  } catch (cause) {
+    return { ok: false, cause };
+  }
 }
 
 /**

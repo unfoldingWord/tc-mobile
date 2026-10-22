@@ -31,7 +31,13 @@ import type { Peaks } from "@/types/audio";
 import type { ClipId, SegmentId } from "@/types/domain";
 
 /** The stores the commit touches — the clip's two halves, the pointers to it. */
-const COMMIT_STORES = ["segments", "takes", "clipMeta", "clipData"] as const;
+const COMMIT_STORES = [
+  "segments",
+  "takes",
+  "clipMeta",
+  "clipData",
+  "pendingTakes",
+] as const;
 
 /**
  * What a `commitTranscode` did.
@@ -39,7 +45,8 @@ const COMMIT_STORES = ["segments", "takes", "clipMeta", "clipData"] as const;
  * `committed`: the MP3 is on disk and the PCM is gone. `already`: the clip was
  * already MP3 (a concurrent sweep beat us; nothing to do). `stale`: the segment
  * no longer matches what was encoded — not finished any more, a different
- * take/clip, or gone — and nothing was written; the PCM, if any, is untouched.
+ * take/clip, or gone — or a pending row's stored base names the clip (v13,
+ * #38) — and nothing was written; the PCM, if any, is untouched.
  */
 export type TranscodeOutcome = "committed" | "already" | "stale";
 
@@ -178,6 +185,13 @@ export async function commitTranscode(
     if (meta.encoding === "mp3") {
       await tx.done;
       return "already";
+    }
+    // v13 (#38): a pending row's stored base names this clip, and its recipe
+    // needs these PCM bytes. A later sweep converts it once the row has ended.
+    const bases = tx.objectStore("pendingTakes").index("bySourceClip");
+    if ((await bases.count(clipId)) > 0) {
+      await tx.done;
+      return "stale";
     }
 
     // The two halves in the same transaction: `put` replaces the PCM bytes

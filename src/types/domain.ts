@@ -229,6 +229,14 @@ export interface Segment {
    * and still needs a title.
    */
   readonly templateKey: string | null;
+  /**
+   * Which take is active, as a count (v13, #38): every write that changes
+   * `activeTakeId` or replaces the active take adds one, in the same
+   * transaction. Two reads with the same value saw the same active take. It
+   * does not move on a transcode, the Finished toggle or a rename
+   * (docs/design/pending-take-lifecycle.md, §1).
+   */
+  readonly audioRevision: number;
 }
 
 /**
@@ -303,4 +311,25 @@ export interface StoredPendingTake {
   readonly finished: boolean;
   readonly editOnly: boolean;
   readonly createdAt: number;
+  /**
+   * The segment's `audioRevision` that the take's base was read at, carried
+   * on the take from the recorder's load (v13; the note's §1 and step 6 of
+   * "The hold"), never the hold's own read. Absent on a row written before
+   * v13, which the step does not guess, and on a take that did not know it.
+   */
+  readonly baseRevision?: number;
+}
+
+/**
+ * Why a take stopped being pending (v13, #38), keyed by its `clipId`, written
+ * in the same transaction as the act that ends its row. `given-up` may become
+ * `saved` or `discarded`; those two are final. Deleted only with its segment.
+ * See docs/design/pending-take-lifecycle.md, §3.
+ */
+export interface TakeDisposition {
+  readonly clipId: ClipId;
+  readonly segmentId: SegmentId;
+  readonly kind: "given-up" | "discarded" | "saved";
+  /** Write time; diagnostic only, never a deletion clock. */
+  readonly at: number;
 }
