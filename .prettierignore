@@ -31,3 +31,7 @@ third_party
 # fields neutralised, #1478), as fetched at the pinned commit; see tests/fixtures/scripture-bundle/README.md.
 tests/fixtures/scripture-bundle/schema-1.0.0
 tests/fixtures/scripture-bundle/examples/spec-audioTranslation.json
+
+# Throwaway spike apps on draft branches that never merge (#1520). Each has
+# its own package.json and formatter defaults.
+spikes

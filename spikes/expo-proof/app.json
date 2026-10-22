@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "tC Mobile",
+    "slug": "tc-mobile-expo-proof",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.unfoldingword.tcmobile"
+    },
+    "android": {
+      "package": "org.unfoldingword.tcmobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "tC Mobile uses the microphone to record spoken translations."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}
