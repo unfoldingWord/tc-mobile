@@ -552,8 +552,12 @@ afterAll(async () => {
 
 describe("every interleaving of the pending-take writers keeps every take's last copy", () => {
   it("runs two connections to one database", async () => {
-    expect(copies.A.db).not.toBe(copies.B.db);
-    expect(await copies.A.db.getDb()).not.toBe(await copies.B.db.getDb());
+    const a = await copies.A.db.getDb();
+    const b = await copies.B.db.getDb();
+    // Two module instances, so two connections, both on the v13 database.
+    expect(Object.is(copies.A.db, copies.B.db)).toBe(false);
+    expect(Object.is(a, b)).toBe(false);
+    expect([a.version, b.version]).toEqual([13, 13]);
   });
 
   it.each(SCENARIOS)("$name", async (scenario) => {
