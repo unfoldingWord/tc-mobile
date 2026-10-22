@@ -413,12 +413,14 @@ threads hold the red-team summaries and publish records.
 
 ## 4. Native candidate and durable delivery
 
-The `staging → main` merge starts the
-[iOS](../../.github/workflows/ios-testflight.yml) and
-[Android](../../.github/workflows/android-apk.yml) lanes on `main` on its own
-(#1281); the `release-signing` environment admits them because they run on
-`main`. Confirm both runs started at the production merge commit (the one
-`v1.0.0` tags) with `event` `push`, and that each run
+The `staging → main` merge starts three lanes on `main` on its own:
+[`android-apk.yml`](../../.github/workflows/android-apk.yml) and
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) (#1281;
+the `release-signing` environment admits them because they run on `main`),
+and [`android-play.yml`](../../.github/workflows/android-play.yml) (its
+`play-upload` environment, to the closed-testing track). Confirm all three
+runs started at the production merge commit (the one `v1.0.0` tags) with
+`event` `push`, and that each run
 is `built` (§3a step 7's script, with `--sha <PROD_SHA> --branch main`; a
 build at `PROMO_SHA` is the RC, not this build). Record each run's resolved SHA and
 require it to equal `v1.0.0` before accepting its artifact. If `main` moved,

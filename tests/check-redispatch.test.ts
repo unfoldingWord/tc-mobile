@@ -238,6 +238,21 @@ describe("main: reads through gh and prints one verdict", () => {
     );
   });
 
+  it.each([
+    ["the runs at the commit", { atCommit: { runs: [] } }],
+    ["the production runs", { prod: { "android-play.yml": { runs: [] } } }],
+    ["an open-status read", { open: { queued: { runs: [] } } }],
+  ])(
+    "George r3 on #1641: %s returned as a non-array is a failed read",
+    (_, over) => {
+      const r = run(PRE, world(over as Partial<World>));
+      expect(r.status).toBe(1);
+      expect(r.lines.at(-1)).toBe(
+        "STOP: a read failed, tell the DRI: gh run list returned something that is not a list"
+      );
+    }
+  );
+
   it("turns a failed read into a STOP, never an empty list", () => {
     // The stand-in throws, as `gh` exits non-zero, when it has no view.
     const r = run(PRE, world({ views: {} }));

@@ -56,7 +56,7 @@ describe("the tc-release skill points at the script and holds no second rule", (
   it("sends a main rebuild to runbook §4's --ref main command, not through step 5", () => {
     const at = uniqueIndexOf(
       skill,
-      "- [ ] Agent-allowed: the native lanes start on the `main` merge"
+      "- [ ] Agent-allowed: the native lanes (`android-apk.yml`,"
     );
     // The last bullet of the file; the paragraph after it ends the slice.
     const bullet = region(skill, {
@@ -67,6 +67,9 @@ describe("the tc-release skill points at the script and holds no second rule", (
       "with runbook §4's command:\n      that lane's §3a step 7 command with `--ref main` in place of\n      `--ref staging`."
     );
     expect(bullet).not.toContain("as step 5 says");
+    // George r3 on #1641: Play also pushes on `main`; every lane is named.
+    expect(bullet).toContain("All three runs'");
+    expect(bullet).not.toContain("Both runs'");
   });
 });
 

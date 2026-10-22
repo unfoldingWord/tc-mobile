@@ -5,7 +5,7 @@
  * (docs/release/promotion-v1.0.0.md §3a step 7).
  *
  *   npm run check:redispatch -- --lane apk --sha <40-char oid> [--branch staging|main]
- *   npm run check:redispatch -- --lane apk --sha <oid> --known <id,id,...>
+ *   npm run check:redispatch -- --lane apk --sha <oid> --known=<ids the OK line lists; none: --known=>
  *
  * The first form reads the lane's runs at the commit, its open runs on every
  * branch, every Android lane's production (`main`) runs when the dispatch is
@@ -74,27 +74,37 @@ function defaultGh(args) {
   });
 }
 
+/** A list read that is not an array is a failed read, never "no runs". */
+function listed(rows) {
+  if (!Array.isArray(rows)) {
+    throw new Error("gh run list returned something that is not a list");
+  }
+  return rows;
+}
+
 /** Every read the core needs, through `gh` (injected in tests). */
 export function gather({ lane, sha, branch, known }, ghText = defaultGh) {
   const gh = (args) => JSON.parse(ghText(args));
   const list = (l, extra) =>
-    gh([
-      "run",
-      "list",
-      "--repo",
-      REPO,
-      "--workflow",
-      LANES[l].workflow,
-      ...extra,
-      "--limit",
-      String(LIST_LIMIT),
-      "--json",
-      "databaseId,status,headSha,headBranch",
-    ]);
+    listed(
+      gh([
+        "run",
+        "list",
+        "--repo",
+        REPO,
+        "--workflow",
+        LANES[l].workflow,
+        ...extra,
+        "--limit",
+        String(LIST_LIMIT),
+        "--json",
+        "databaseId,status,headSha,headBranch",
+      ])
+    );
   const views = {};
   const artifacts = {};
   const readRuns = (l, rows) => {
-    for (const run of Array.isArray(rows) ? rows : []) {
+    for (const run of rows) {
       const id = run.databaseId;
       if (!Number.isSafeInteger(id))
         throw new Error(`run id ${JSON.stringify(id)} is not a number`);

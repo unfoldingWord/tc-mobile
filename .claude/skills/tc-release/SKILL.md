@@ -298,8 +298,9 @@ compares with it.
       passed and a fresh canonical read shows `main` still at `PROD_SHA`
       (runbook §3 step 4); publishing the GitHub Release on `v1.0.0` with
       the APK, QR and TestFlight build.
-- [ ] Agent-allowed: the native lanes start on the `main` merge by
-      themselves (#1281). Both runs' `headSha` equal `PROD_SHA` (a run that
+- [ ] Agent-allowed: the native lanes (`android-apk.yml`,
+      `ios-testflight.yml`, `android-play.yml`) start on the `main` merge by
+      themselves (#1281). All three runs' `headSha` equal `PROD_SHA` (a run that
       started on a moved `main` built a commit that is not the tag; runbook
       §4 says stop and do not label it the release), and each run
       is `built` (step 5's script with `--sha <PROD_SHA> --branch main`; a
