@@ -208,8 +208,9 @@ export function succeedSave(
  * `orphan` is the clip the caller now has to delete: a failed attempt may have
  * written the samples before the take row failed, and nothing references them
  * once the slot is empty, so leaving them would hold exactly the space the save
- * just ran out of. It is `null` when there was nothing to discard, so a caller
- * cannot be told to delete a clip that is still in use.
+ * just ran out of. It is `null` when there was nothing to discard. The caller
+ * hands it to the Discard settle, which deletes it only if nothing uses it
+ * (v13, #38): another copy may have saved this very take.
  */
 export function discardSave(current: PendingTake | null): {
   readonly next: null;

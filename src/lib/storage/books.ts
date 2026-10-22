@@ -23,6 +23,7 @@ import type { PlaylistCandidate } from "@/lib/audio/chapter-queue";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
+import { deleteClipIfUnreferenced, type ClipUseTx } from "./clips";
 import { isFinished } from "./takes";
 import type {
   Book,
@@ -350,7 +351,9 @@ export function isStaleBookFailure(
 
 /**
  * The stores a book delete touches: the tree, both halves of every clip that
- * goes with it, and the tombstone it leaves (#1463).
+ * goes with it, and the tombstone it leaves (#1463). v13 (#38): the pending
+ * rows a clip's use is counted from, and the disposition records of the
+ * segments it deletes.
  */
 const DELETE_BOOK_STORES = [
   "books",
@@ -360,6 +363,8 @@ const DELETE_BOOK_STORES = [
   "clipMeta",
   "clipData",
   "tombstones",
+  "pendingTakes",
+  "takeDispositions",
 ] as const;
 
 /**
@@ -487,7 +492,10 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
   }
 
   for (const take of doomedTakes) await takes.delete(take.id);
-  for (const segmentId of doomedSegments) await segments.delete(segmentId);
+  for (const segmentId of doomedSegments) {
+    await segments.delete(segmentId);
+    await deleteDispositionsOf(tx, segmentId);
+  }
   for (const chapter of ownedChapters) await chapters.delete(chapter.id);
   // `delete` on an absent key is a no-op in IndexedDB, so the orphan case needs
   // no branch for the delete: the row goes if it is there, and nothing is
@@ -506,18 +514,27 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
     });
   }
 
-  // The take rows are gone, so what `getAll` returns now is exactly the set of
-  // references that survive this delete. A clip nothing in that set names is
-  // unreachable audio and goes with the book; a clip something still names is
-  // another segment's only copy and stays.
-  const survivingClipIds = new Set(
-    (await takes.getAll()).map((take) => take.clipId)
-  );
-  const doomedClipIds = new Set(doomedTakes.map((take) => take.clipId));
-  for (const clipId of doomedClipIds) {
-    if (survivingClipIds.has(clipId)) continue;
-    await tx.objectStore("clipMeta").delete(clipId);
-    await tx.objectStore("clipData").delete(clipId);
+  // The take rows are gone, so the clip-use check sees only the references
+  // that survive this delete. A clip nothing uses is unreachable audio and
+  // goes with the book; a clip another segment's take, or a pending row's
+  // stored base, still names stays (v13, #38).
+  for (const clipId of new Set(doomedTakes.map((take) => take.clipId))) {
+    await deleteClipIfUnreferenced(tx, clipId);
+  }
+}
+
+/**
+ * Delete a segment's disposition records (v13, #38), on the transaction that
+ * deletes the segment: the records' only deletion, because a deleted segment
+ * is final and nothing can install audio there again.
+ */
+async function deleteDispositionsOf(
+  tx: ClipUseTx,
+  segmentId: SegmentId
+): Promise<void> {
+  const records = tx.objectStore("takeDispositions");
+  for (const clipId of await records.index("bySegment").getAllKeys(segmentId)) {
+    await records.delete(clipId);
   }
 }
 
@@ -976,6 +993,7 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
     createdAt: now,
     modifiedAt: now,
     templateKey: null,
+    audioRevision: 0,
   };
   await tx.objectStore("segments").put(segment);
   await tx.objectStore("chapters").put({
@@ -1113,6 +1131,7 @@ async function renumberSegments(
  * The stores a segment delete touches: the tree link (the chapter it hangs
  * off), the segment itself, its take, both halves of its clip, the book
  * whose `updatedAt` it bumps (#590), and the tombstone it leaves (#1463).
+ * v13 (#38): as {@link DELETE_BOOK_STORES}.
  */
 const DELETE_SEGMENT_STORES = [
   "books",
@@ -1122,6 +1141,8 @@ const DELETE_SEGMENT_STORES = [
   "clipMeta",
   "clipData",
   "tombstones",
+  "pendingTakes",
+  "takeDispositions",
 ] as const;
 
 /**
@@ -1209,20 +1230,12 @@ export async function deleteSegment(
     if (priorTakeId !== null) {
       const priorTake = await takes.get(priorTakeId);
       await takes.delete(priorTakeId);
-      if (priorTake) {
-        const survivors = await takes.getAll();
-        const stillReferenced = survivors.some(
-          (t) => t.clipId === priorTake.clipId
-        );
-        if (!stillReferenced) {
-          await tx.objectStore("clipMeta").delete(priorTake.clipId);
-          await tx.objectStore("clipData").delete(priorTake.clipId);
-        }
-      }
+      if (priorTake) await deleteClipIfUnreferenced(tx, priorTake.clipId);
     }
 
     const now = Date.now();
     await segments.delete(segmentId);
+    await deleteDispositionsOf(tx, segmentId);
     // The tombstone (#1463), in this transaction: the row was here and is
     // removed, so the delete and its record land together or not at all.
     // The already-gone path above returned before this, so a repeated delete
