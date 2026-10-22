@@ -108,7 +108,7 @@ for (const width of [320, 390]) {
     // Zoom to a quarter. The span is narrower than the window, so the fit
     // lands the view about 0.43 of the way into the take.
     const zoomIn = page.getByRole("button", {
-      name: "Zoomed to the whole segment. Zoom in to a quarter.",
+      name: "Zoomed out. Zoom in to a quarter.",
       exact: true,
     });
     await zoomIn.click();
