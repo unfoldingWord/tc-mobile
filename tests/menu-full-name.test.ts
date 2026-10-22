@@ -154,7 +154,7 @@ describe("the chapter menu shows the full chapter name at its top (#1284, U3)", 
     expect(document.querySelector(".o4-sheet-place")?.textContent).toContain(
       "Chapter 1"
     );
-    expect(heading.getAttribute("aria-hidden")).toBe("true");
+    expect(heading.getAttribute("aria-hidden")).toBeNull();
   });
 });
 
@@ -173,6 +173,45 @@ describe("the same pattern on the book and segment menus", () => {
     );
     expect(on.querySelector(".o4-sheet-name")?.textContent).toBe(LONG);
     expect(on.querySelector(".o4-sheet-place")?.textContent).toContain(LONG);
+  });
+
+  /** What a screen reader gets from a head: text outside any aria-hidden. */
+  function spoken(root: Element): string {
+    const out: string[] = [];
+    const walk = (el: Element) => {
+      if (el.getAttribute("aria-hidden") === "true") return;
+      for (const n of el.childNodes) {
+        if (n.nodeType === 3) out.push(n.textContent ?? "");
+        else if (n.nodeType === 1) walk(n as Element);
+      }
+    };
+    walk(root);
+    return out.join(" ");
+  }
+  const count = (text: string, part: string) => text.split(part).length - 1;
+
+  it("says the full name to a screen reader in both states of the number-only setting, and only once when it is the same text", () => {
+    // Setting off: the crumbs and the heading carry the same name, so the
+    // screen-reader line says it and the heading stays hidden.
+    const off = render(
+      createElement(O4SheetHead, {
+        book: "Book",
+        chapter: LONG,
+        fullName: LONG,
+      })
+    );
+    expect(count(spoken(off), LONG)).toBe(1);
+    // Setting on: the crumbs read "Chapter 1", the name is the heading, and
+    // the heading must be exposed because the place line does not carry it.
+    const on = render(
+      createElement(O4SheetHead, {
+        book: "Book",
+        chapter: "Chapter 1",
+        fullName: LONG,
+      })
+    );
+    expect(count(spoken(on), LONG)).toBe(1);
+    expect(spoken(on)).toContain("Chapter 1");
   });
 
   it("puts the whole book name in the book menu head", () => {
