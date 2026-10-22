@@ -23,7 +23,6 @@ import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
-import { NameReveal } from "./name-reveal";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
 import { CoverPicker } from "./cover-picker";
 import { CoverTile, O4BookHead, O4CoverPick } from "./o4-book-menu";
@@ -49,7 +48,6 @@ import { useBookShare } from "@/hooks/use-book-share";
 import type { ChapterAudio } from "@/hooks/use-audio-session";
 import { useBooks } from "@/hooks/use-books";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
-import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import {
   useLibraryShare,
   type UseLibraryShare,
@@ -2521,8 +2519,6 @@ function BookItem({
   // The facilitator's name (#264), else the placeholder its slot renders
   // (#169) — `ChapterItem`'s `heading` one level up the tree.
   const heading = strings.bookHeading(book.name, book.number);
-  // Hold a cut-off name to read it whole (#1284, S14).
-  const nameHold = useHoldReveal();
   return (
     <li
       className={cn("books-card", lifted && "books-card-lifted")}
@@ -2578,12 +2574,11 @@ function BookItem({
                 size={expanded ? 36 : 34}
               />
             </span>
-            <span className="books-name" dir="auto" {...nameHold.nameProps}>
+            <span className="books-name" dir="auto">
               {heading}
             </span>
           </>
         </button>
-        <NameReveal reveal={nameHold.revealed} />
         <Control
           icon="plus"
           label={strings.addChapter(heading)}
@@ -2740,9 +2735,6 @@ function ChapterItem({
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
   const dots = dotStates(chapter);
   const [size, gap] = dotFit(dots.length, TITLED_DOT_ROOM);
-  // Hold a cut-off title to read it whole (#1284, S14). A hold on a title
-  // that fits still reaches the row's own reorder hold.
-  const titleHold = useHoldReveal();
   return (
     <>
       <span className="books-chapter-num is-dim" aria-hidden="true">
@@ -2752,7 +2744,6 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
         <span
           className="books-chapter-title"
           dir={chapter.name === null ? undefined : "auto"}
-          {...titleHold.nameProps}
         >
           {strings.chapterHeading(chapter.name, chapter.number)}
         </span>
@@ -2774,7 +2765,6 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
           44px one. Empty on purpose, so the dots' column is derived from a
           stylesheet width and not from a hand-kept number. */}
       <span className="books-chapter-go" aria-hidden="true" />
-      <NameReveal reveal={titleHold.revealed} />
     </>
   );
 }

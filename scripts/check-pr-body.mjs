@@ -7,10 +7,14 @@
  * answer, and text in HTML comments or code fences does not count.
  *
  * The cap is `PROD_LINE_CAP` below and nowhere else; docs cite this file.
- * Over it, the body needs `size-exception: <reason>`. A `release/*` head is
- * exempt from the cap. Dependabot, a promotion (base `staging` or `main`) and
- * a `chore(release): vX.Y.Z` title into `develop` are exempt from everything, by PR
- * metadata and never by the body. A hygiene gate, not a security control.
+ * Over it, the body needs `size-exception: <reason>`. No branch name exempts
+ * a PR from anything (#1582). Dependabot and a promotion (base `staging` or
+ * `main`) are exempt from everything by PR metadata, never by the body. A
+ * `chore(release): vX.Y.Z` title into `develop` is exempt only when the diff
+ * proves it is a bump: only the version files change, and `package.json`
+ * moves to the title's version (`checkBumpDiff`). A bump-titled PR whose diff
+ * cannot be read, or whose diff is anything more, gets the full gate. A
+ * hygiene gate, not a security control.
  *
  * Sources (exactly one): `--event <path>` (CI; size from `origin/<base>...<head
  * sha>`, fails closed if uncountable), `--pr <number>` (gh; size not
@@ -500,8 +504,122 @@ function prodLinesInRange(range) {
   return countProdLines(counted);
 }
 
-/** The reason a PR is exempt from the gate, or null. PR metadata only. */
-export function exemption({ author, baseRef, title }) {
+/**
+ * AGENTS.md "Versions and milestones": the bump PR is `chore(release): vX.Y.Z`.
+ * The version in the title, or null when the title does not claim a bump.
+ */
+export function bumpTitleVersion(title) {
+  const m =
+    /^chore\(release\): v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)(?:\s|$)/.exec(
+      title ?? ""
+    );
+  return m ? m[1] : null;
+}
+
+/** Does this PR claim to be the release bump into `develop`? */
+export function claimsBump({ baseRef, title }) {
+  return baseRef === "develop" && bumpTitleVersion(title) !== null;
+}
+
+const VERSION_LINE = /^\s*"version": "([^"]*)",?$/;
+const MARKETING_LINE = /^\s*MARKETING_VERSION = \d+(?:\.\d+)*;$/;
+const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+/**
+ * In npm's v2/v3 lockfile layout the root `"version"` (indent 2) and
+ * `packages[""].version` (indent 6) both sit in the first lines, ahead of
+ * every `node_modules/...` entry; a dependency's `"version"` cannot. The bound
+ * is a reading of that layout, not a JSON parse.
+ */
+const LOCK_HEADER_LINES = 10;
+const isLockRootVersion = ({ text, at }) =>
+  at <= LOCK_HEADER_LINES && /^(?: {2}| {6})"version"/.test(text);
+
+/**
+ * Whether a unified diff is a version bump to `version`, and nothing else.
+ * Allowed: `package.json` (exactly its `"version"` line, to `version`),
+ * `package-lock.json` (its root and `packages[""]` `"version"` lines, all to
+ * `version`) and the iOS `MARKETING_VERSION` lines. `package.json` must be in
+ * it. Anything the parser does not recognise (a rename, a mode change, a
+ * binary file, a quoted path, an unknown header line) rejects: this fails
+ * closed. Returns `{ ok: true }` or `{ ok: false, reason }`.
+ */
+export function checkBumpDiff(diff, version) {
+  const no = (reason) => ({ ok: false, reason });
+  // path -> { added, removed: Array<{ text, at }> }, `at` the line number in
+  // the new (added) or old (removed) file.
+  const files = new Map();
+  let cur = null;
+  let inHunk = false;
+  let oldAt = 0;
+  let newAt = 0;
+  for (const line of (diff ?? "").replace(/\r\n?/g, "\n").split("\n")) {
+    if (inHunk && /^[-+ \\]/.test(line)) {
+      const text = line.slice(1);
+      if (line[0] === "+") cur.added.push({ text, at: newAt++ });
+      else if (line[0] === "-") cur.removed.push({ text, at: oldAt++ });
+      else if (line[0] === " ") {
+        oldAt++;
+        newAt++;
+      }
+      continue;
+    }
+    if (line === "") continue;
+    const h = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+    if (h) {
+      if (h[1] !== h[2]) return no(`${h[1]} is renamed to ${h[2]}`);
+      if (files.has(h[2])) return no(`${h[2]} appears twice in the diff`);
+      cur = { added: [], removed: [] };
+      files.set(h[2], cur);
+      inHunk = false;
+      continue;
+    }
+    if (cur === null) {
+      return no(`unrecognised diff line: ${line.slice(0, 60)}`);
+    }
+    if (line.startsWith("@@")) {
+      const m = HUNK.exec(line);
+      if (!m) return no(`unrecognised hunk header: ${line.slice(0, 60)}`);
+      oldAt = Number(m[1]);
+      newAt = Number(m[2]);
+      inHunk = true;
+    } else if (!/^(?:index |--- |\+\+\+ )/.test(line)) {
+      return no(`unrecognised diff line: ${line.slice(0, 60)}`);
+    }
+  }
+  if (!files.has("package.json")) return no("package.json is not in the diff");
+  for (const [path, { added, removed }] of files) {
+    if (path === "package.json" || path === "package-lock.json") {
+      const lock = path === "package-lock.json";
+      const ok =
+        added.length >= 1 &&
+        added.length <= (lock ? 2 : 1) &&
+        removed.length === added.length &&
+        added.every((l) => VERSION_LINE.exec(l.text)?.[1] === version) &&
+        removed.every((l) => VERSION_LINE.test(l.text)) &&
+        (!lock || [...added, ...removed].every(isLockRootVersion));
+      if (!ok) {
+        return no(
+          `${path} changes more than its "version" line, or not to ${version}`
+        );
+      }
+    } else if (path === "ios/App/App.xcodeproj/project.pbxproj") {
+      const ok =
+        added.length === removed.length &&
+        [...added, ...removed].every((l) => MARKETING_LINE.test(l.text));
+      if (!ok) return no(`${path} changes more than MARKETING_VERSION`);
+    } else {
+      return no(`${path} is not a version file`);
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * The reason a PR is exempt from the gate, or null. PR metadata, plus for a
+ * bump title the diff's verdict (`bump`, from `checkBumpDiff`); no `bump`, or a
+ * failed one, leaves the PR gated.
+ */
+export function exemption({ author, baseRef, title }, { bump = null } = {}) {
   // `gh pr view` reports the bot as `app/dependabot`, the event payload as `dependabot[bot]`.
   if (author === "dependabot[bot]" || author === "app/dependabot") {
     return "Dependabot PR";
@@ -509,26 +627,17 @@ export function exemption({ author, baseRef, title }) {
   if (baseRef === "staging" || baseRef === "main") {
     return `promotion PR (base ${baseRef})`;
   }
-  // AGENTS.md "Versions and milestones": the bump PR is `chore(release): vX.Y.Z`.
-  if (
-    baseRef === "develop" &&
-    /^chore\(release\): v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?(?:\s|$)/.test(
-      title ?? ""
-    )
-  ) {
-    return "release version-bump PR (chore(release): into develop)";
+  if (claimsBump({ baseRef, title }) && bump?.ok === true) {
+    return "release version-bump PR (chore(release): into develop, version files only)";
   }
   return null;
 }
 
 /** Exemption, then the body, then the size when a count is given. */
-export function evaluate(pr, { prodLines = null } = {}) {
-  const exempt = exemption(pr);
+export function evaluate(pr, { prodLines = null, bump = null } = {}) {
+  const exempt = exemption(pr, { bump });
   if (exempt) return { ok: true, exempt, missing: [] };
-  const overCap =
-    prodLines !== null &&
-    prodLines > PROD_LINE_CAP &&
-    !(pr.headRef ?? "").startsWith("release/");
+  const overCap = prodLines !== null && prodLines > PROD_LINE_CAP;
   const missing = checkBody(pr.body, { overCap });
   if (overCap) {
     // The slot table words the reason; here it names the count.
@@ -538,6 +647,8 @@ export function evaluate(pr, { prodLines = null } = {}) {
         `Size: ${prodLines} production lines is over the cap of ${PROD_LINE_CAP}; split the PR, or add "size-exception: <reason>"`;
     }
   }
+  // A disproved bump gets the full gate, not a veto: `main` prints why it was
+  // not exempt, and the body and the cap decide (bench round 1).
   return { ok: missing.length === 0, exempt: null, missing };
 }
 
@@ -557,6 +668,20 @@ export function prFromEvent(payload) {
     headRef: pr.head?.ref ?? "",
     headSha: pr.head?.sha ?? "",
   };
+}
+
+/** The unified diff of a `a...b` range, for the bump check. */
+function diffTextInRange(range) {
+  if (range.startsWith("-")) throw new Error(`not a revision range: ${range}`);
+  return execFileSync(
+    "git",
+    ["--literal-pathspecs", "diff", "-U0", "--no-renames", range],
+    {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  );
 }
 
 /** `gh pr view`, with `runGh` injectable so tests never shell out. */
@@ -639,13 +764,39 @@ function main() {
         : args.source === "pr"
           ? fetchPr(args.value)
           : { ...args.meta, body: readFileSync(args.value, "utf8") };
+    const range =
+      args.range ??
+      (args.source === "event"
+        ? `origin/${pr.baseRef}...${pr.headSha}`
+        : "origin/develop...HEAD");
+    // A bump title is believed only on the diff's word: read it first.
+    let bump = null;
+    if (!exemption(pr) && claimsBump(pr) && args.range !== "none") {
+      try {
+        const diff =
+          args.source === "pr"
+            ? defaultRunGh(["pr", "diff", args.value, "--repo", REPO])
+            : diffTextInRange(range);
+        bump = checkBumpDiff(diff, bumpTitleVersion(pr.title));
+        if (!bump.ok) {
+          console.error(
+            `NOTE: title claims a release bump but the diff is not one (${bump.reason}); it gets the full gate`
+          );
+        }
+      } catch (err) {
+        const why = `could not read the diff (${String(err.stderr || err.message).trim()})`;
+        if (args.source === "event")
+          throw new Error(`bump not checked: ${why}`);
+        console.error(`WARN: bump not checked: ${why}`);
+        bump = { ok: false, reason: why };
+      }
+    }
     let prodLines = null;
-    if (!exemption(pr) && args.range !== "none" && args.source !== "pr") {
-      const range =
-        args.range ??
-        (args.source === "event"
-          ? `origin/${pr.baseRef}...${pr.headSha}`
-          : "origin/develop...HEAD");
+    if (
+      !exemption(pr, { bump }) &&
+      args.range !== "none" &&
+      args.source !== "pr"
+    ) {
       try {
         prodLines = prodLinesInRange(range);
       } catch (err) {
@@ -654,7 +805,7 @@ function main() {
         console.error(`WARN: ${why}`);
       }
     }
-    result = evaluate(pr, { prodLines });
+    result = evaluate(pr, { prodLines, bump });
   } catch (err) {
     console.error(`FAIL: ${err.message}`);
     process.exitCode = 1;

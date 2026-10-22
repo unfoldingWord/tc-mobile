@@ -60,8 +60,8 @@ describe("completeLocales and the English-only keys", () => {
   it("resolves a Spanish phone, and an unfinished language to English", () => {
     expect(resolveLocale(["es-419"], completeLocales()).tag).toBe("es");
     expect(resolveLocale(["es"], completeLocales()).tag).toBe("es");
-    expect(resolveLocale(["pt-BR"], completeLocales()).tag).toBe("en");
-    expect(resolveLocale(["pt-BR", "es-MX"], completeLocales()).tag).toBe("es");
+    expect(resolveLocale(["ru-RU"], completeLocales()).tag).toBe("en");
+    expect(resolveLocale(["ru-RU", "es-MX"], completeLocales()).tag).toBe("es");
   });
 
   it("counts fr complete, and resolves a French phone to fr (#1590)", () => {
@@ -70,5 +70,29 @@ describe("completeLocales and the English-only keys", () => {
     for (const key of ENGLISH_ONLY) expect(Object.hasOwn(fr, key)).toBe(false);
     expect(resolveLocale(["fr-FR"], completeLocales()).tag).toBe("fr");
     expect(resolveLocale(["fr-CA", "es"], completeLocales()).tag).toBe("fr");
+  });
+
+  it("counts pt complete, and resolves a Brazilian or European Portuguese phone to pt (#1597)", () => {
+    expect(tags()).toContain("pt");
+    const pt = LOCALE_OVERRIDES.pt as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(pt, key)).toBe(false);
+    expect(resolveLocale(["pt-BR"], completeLocales()).tag).toBe("pt");
+    expect(resolveLocale(["pt-PT", "es"], completeLocales()).tag).toBe("pt");
+  });
+
+  it("counts id complete, and resolves an Indonesian phone to id (#1619)", () => {
+    expect(tags()).toContain("id");
+    const id = LOCALE_OVERRIDES.id as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(id, key)).toBe(false);
+    expect(resolveLocale(["id-ID"], completeLocales()).tag).toBe("id");
+    expect(resolveLocale(["id", "es"], completeLocales()).tag).toBe("id");
+  });
+
+  it("counts sw complete, and resolves a Swahili phone to sw (#1625)", () => {
+    expect(tags()).toContain("sw");
+    const sw = LOCALE_OVERRIDES.sw as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(sw, key)).toBe(false);
+    expect(resolveLocale(["sw-KE"], completeLocales()).tag).toBe("sw");
+    expect(resolveLocale(["sw", "es"], completeLocales()).tag).toBe("sw");
   });
 });

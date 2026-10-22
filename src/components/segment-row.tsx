@@ -10,13 +10,11 @@ import { Control } from "./control";
 import { Menu } from "./menu";
 import { rowHint } from "./menu-row-state";
 import { NameEdit } from "./name-edit";
-import { NameReveal } from "./name-reveal";
 import { Notice } from "./notice";
 import { O4SheetHead } from "./o4-crumbs";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
-import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/lib/view/segment-rows";
@@ -217,7 +215,6 @@ export function SegmentRow({
   onHoldStart,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
-  const nameHold = useHoldReveal();
   const [menuOpen, setMenuOpen] = useState(false);
   // The menu is showing its rename field (#591) rather than its action list,
   // the rename write is in flight, and the last one did not land. All three
@@ -547,22 +544,15 @@ export function SegmentRow({
       <div className="row-mid">
         {titled && (
           // Visual only: the open button's name already carries the label.
-          // A hold on a title the row has cut off shows it whole (#1284, S14);
-          // on one that fits, the press goes to the reorder hold as before.
           <span
             className="row-title"
             dir="auto"
             aria-hidden="true"
             {...holdArea}
-            {...nameHold.nameProps}
-            onPointerDown={(e) => {
-              if (!nameHold.nameProps.onPointerDown(e)) onHoldStart?.(e);
-            }}
           >
             {row.label}
           </span>
         )}
-        <NameReveal reveal={nameHold.revealed} />
         {wave}
       </div>
 
