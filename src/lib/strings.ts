@@ -706,13 +706,13 @@ export const stringsEn = {
     `Segment ${from} is now segment ${to}.`,
   reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
   // The same three lines for a chapter on the Books screen (#953 PR2b). Said
-  // by the chapter's number, which is what renumbers: a typed name such as
-  // "Mark 6" stays as it is (the DRI's pick), so it would not say where the
-  // chapter landed. Whole sentences (#1483): each says "chapter" in its own
+  // by the chapter's number, which a move keeps (#1272, U2a), and then by the
+  // position it landed in; a typed name such as "Mark 6" stays as it is (the
+  // DRI's pick), so it would not say which chapter moved. Whole sentences (#1483): each says "chapter" in its own
   // words rather than wrapping `chapterName`'s.
   chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Chapter ${from} is now chapter ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Chapter ${n} moved to place ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `Chapter ${n} stayed where it was.`,
   // The same three lines for a book on the Books screen (#338). Said by the
@@ -1370,6 +1370,9 @@ export const stringsEn = {
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
   aboutContent: "Bundled content",
+  // The ISO 639-3 terms of use ask that "attribution is given to
+  // iso639-3.sil.org as the source of the codes" (ADR 0017).
+  aboutLanguageCodes: "Language codes: ISO 639-3, from iso639-3.sil.org.",
   // The licence texts open in-drawer (no new tab), so their controls are
   // buttons: this is the spoken action, and the two states while it loads.
   aboutReadText: (name: string): string => `Read ${name}`,
@@ -1452,6 +1455,9 @@ export const stringsEn = {
   // so the one condition a translator can act on reads the same everywhere a
   // write can hit it, not only on the take-save recovery screen.
   noRoom: "No room left on this phone.",
+  // A book name another book already has (#1272, S13). Shown in the name
+  // sheet itself; asks for another name rather than naming a fault.
+  bookNameTaken: "Another book has this name. Type a different name.",
 
   // ── Record-bar Edit, blocked by a live take (#857 round 1, Frank P2) ─────
   // `barHint`'s own words for the `"uncommitted-take"` reason (`menu-row-

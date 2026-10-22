@@ -1785,8 +1785,8 @@ export function BooksScreen({
   // supplies the one write, the words and the focus.
   //
   // One write, on the drop: `moveChapter` (#1053) patches the card
-  // optimistically, renumbers the badges (names such as "Mark 6" stay, the
-  // DRI's pick), leaves the book where it is on the shelf (#953 scope Q4),
+  // optimistically, keeps each chapter's own number (#1272; names such as
+  // "Mark 6" stay too), leaves the book where it is on the shelf (#953 scope Q4),
   // and on failure puts the stored order back and reports "chapter-reorder",
   // with nothing extra on screen (#172). Every cancel writes nothing.
   //
@@ -1809,8 +1809,8 @@ export function BooksScreen({
       if (active === document.body || (node && node.contains(active))) {
         rowReveal.armFocus(row.chapterId);
       }
-      // Chapters renumber after a move, so the row's new number is its new
-      // position among the card's rows (the ones `moveChapter` indexes).
+      // A chapter keeps its own number (#1272), so the line says the position
+      // it landed in, among the card's rows (the ones `moveChapter` indexes).
       const moved = strings.chapterReorderMoved(row.number, toIndex + 1);
       setReorderStatus(moved);
       // A write that did not land puts the row back (`moveChapter` resolves
@@ -2763,8 +2763,8 @@ function ChapterItem({
  * New Chapter prompt offered (#609) when it has none. A chapter always has a
  * name to show (#1219), so the line is always drawn and the badge always steps
  * back behind it, as the design reference's §3 and §7 describe for a titled
- * row. The default is derived here at read time rather than stored, so a
- * reorder (#953) renumbers it with the badge. A title that was only spoken is
+ * row. The default is derived here at read time rather than stored, from the
+ * chapter's own number, which a reorder (#1272) does not change. A title that was only spoken is
  * tier 2 (after the training) and is not drawn here.
  */
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {

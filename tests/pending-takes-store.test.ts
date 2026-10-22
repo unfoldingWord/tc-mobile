@@ -39,7 +39,7 @@ import {
 const RATE = CANONICAL_SAMPLE_RATE;
 
 const freshSegment = async (): Promise<SegmentId> => {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   return (await addSegment(chapter.id)).id;
 };

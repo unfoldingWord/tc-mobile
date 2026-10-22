@@ -55,7 +55,13 @@ async function bookWith(
   name: string,
   chapters: Array<Array<{ n: number; v: number } | null>>
 ): Promise<BookId> {
-  const book = await createBook(name);
+  // Written straight to the store: several cases here need two books that
+  // share a name (or differ only in case), the state a phone holds from before
+  // #1272, which `createBook` now refuses for a new book (U4a leaves those
+  // existing duplicates alone).
+  const made = await createBook("");
+  const book = { ...made, name };
+  await (await getDb()).put("books", book);
   for (const specs of chapters) {
     const chapter = await addChapter(book.id);
     for (const spec of specs) {

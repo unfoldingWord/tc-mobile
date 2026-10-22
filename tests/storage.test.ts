@@ -65,7 +65,7 @@ const samples = (n: number, value = 1000): Int16Array =>
 
 /** A book → chapter → one segment, and the ids to address it by. */
 const oneSegment = async () => {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   return { chapterId: chapter.id, segmentId: segment.id };
@@ -197,7 +197,7 @@ describe("book tree", () => {
   });
 
   it("numbers chapters max+1 and parents them to the book", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const c1 = await addChapter(book.id);
     const c2 = await addChapter(book.id);
 
@@ -210,7 +210,7 @@ describe("book tree", () => {
   });
 
   it("appends segments with a sequential index and empty defaults", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -232,7 +232,7 @@ describe("book tree", () => {
   });
 
   it("reads one segment by id, and nothing for an unknown id", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s = await addSegment(chapter.id);
 
@@ -246,7 +246,7 @@ describe("book tree", () => {
   });
 
   it("returns a chapter's segments in declared order, dropping dangling ids", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const a = await addSegment(chapter.id);
     const b = await addSegment(chapter.id);
@@ -306,7 +306,7 @@ describe("book tree", () => {
   });
 
   it("rolls up finished/total/recorded for the chapter counter and the storage-pressure gate", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -475,7 +475,7 @@ describe("book tree", () => {
   it("keeps a clip that another take still references when clearing", async () => {
     // Frank R4: clips are 1:1 today, but if two takes ever share a clipId,
     // clearing one segment must NOT delete the audio the other still plays.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -495,7 +495,7 @@ describe("book tree", () => {
   });
 
   it("leaves other segments untouched when one is cleared", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -511,7 +511,7 @@ describe("book tree", () => {
   });
 
   it("resolves export order across segments and counts gaps", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id); // left unrecorded
@@ -532,7 +532,7 @@ describe("book tree", () => {
     // longer there. Dropping it from the export without counting it would make
     // the UI report a chapter as complete while a segment is silently absent
     // from the MP3.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -548,7 +548,7 @@ describe("book tree", () => {
   });
 
   it("counts a segment whose active take points at no stored clip", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -678,15 +678,16 @@ describe("book placeholder slots (#314, #360, #169)", () => {
     expect((await createBook("")).number).toBe(1);
   });
 
-  it("does not make a SUPPLIED name unique", async () => {
-    // Deliberate, and long-standing: a facilitator may have two books called
-    // "Mark", and renameBook has always allowed it. It is also why the New Book
-    // dialog sends "" rather than the placeholder string it displayed — a
-    // supplied placeholder would take THIS path (George R1 P2-3).
-    const first = await createBook("Mark");
-    const second = await createBook("Mark");
-    expect([first.name, second.name]).toEqual(["Mark", "Mark"]);
-    expect(first.id).not.toBe(second.id);
+  it("refuses a SUPPLIED name another book already has (#1272)", async () => {
+    // Reversed by #1272 (S13, "require unique names for the books"); the
+    // full set of cases is in `book-unique-names.test.ts`. It is still why the
+    // New Book dialog sends "" rather than the placeholder string it
+    // displayed: a supplied placeholder would take THIS path (George R1 P2-3),
+    // and a second one would now be refused instead of written.
+    await createBook("Mark");
+    await expect(createBook("Mark")).rejects.toThrow(
+      "Another book already has this name"
+    );
   });
 
   it("leaves a blank or whitespace-only name unnamed (#314)", async () => {
@@ -756,7 +757,7 @@ describe("chapter naming at creation (#609)", () => {
     // field offered, whenever the loaded shelf still matches disk. When it does
     // not, the write's number wins and the row shows it, because a one-tap
     // create stores no label to contradict it.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const first = await addChapter(book.id);
     const second = await addChapter(book.id);
     const displayed = nextChapterNumber([first.number, second.number]);
@@ -765,14 +766,14 @@ describe("chapter naming at creation (#609)", () => {
   });
 
   it("stores a typed name, trimmed, like renameChapter does", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id, undefined, "  Mark 6  ");
     expect(chapter.name).toBe("Mark 6");
     expect((await getChapter(chapter.id))?.name).toBe("Mark 6");
   });
 
   it("stores null for a blank, whitespace-only, or omitted name", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     // Blank is what an untouched "Chapter N" default confirms as, and what an
     // emptied field sends: both keep the row on the ordinal display.
     expect((await addChapter(book.id, undefined, "")).name).toBeNull();
@@ -784,7 +785,7 @@ describe("chapter naming at creation (#609)", () => {
 
   it("does not let a name displace the ordinal", async () => {
     // The name is a label OVER `number`, exactly as `renameChapter` leaves it.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const first = await addChapter(book.id, undefined, "Mark 6");
     const second = await addChapter(book.id, undefined, "Mark 7");
     expect([first.number, second.number]).toEqual([1, 2]);
@@ -800,7 +801,7 @@ describe("chapter naming at creation (#609)", () => {
  */
 describe("rename book and chapter", () => {
   it("gives a fresh chapter a null name (default 'Chapter N' until renamed)", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     // The field is present and null, not absent — so a reader never sees
     // `undefined` and the display fallback keys on one shape.

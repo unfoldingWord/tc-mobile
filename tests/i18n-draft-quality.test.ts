@@ -138,8 +138,10 @@ const SCRIPT_BY_TAG: Readonly<Record<string, string>> = {
 /** Exempt by rule, not by listing: placeholders, probe sentinels, brand words. */
 const PLACEHOLDER = /\{[A-Za-z0-9_]+\}/g;
 const SENTINEL = /SENT[ab]?\d+/g;
+// The ISO 639-3 name and its registrar's address are kept as written: the
+// code terms ask for attribution "to iso639-3.sil.org" (ADR 0017).
 const BRAND =
-  /tC Mobile|MP3|ZIP|PWA|\.mp3|\.zip|CC BY-SA 4\.0|CC BY 4\.0|CC0 1\.0/g;
+  /tC Mobile|MP3|ZIP|PWA|\.mp3|\.zip|CC BY-SA 4\.0|CC BY 4\.0|CC0 1\.0|ISO 639-3|iso639-3\.sil\.org/g;
 
 function exempt(text: string): string {
   return text

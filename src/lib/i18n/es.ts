@@ -227,8 +227,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   reorderStayed: (n: number): string =>
     `El segmento ${n} se quedó donde estaba.`,
   chapterReorderLifted: (n: number): string => `Moviendo el capítulo ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `El capítulo ${from} ahora es el capítulo ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `El capítulo ${n} pasó al lugar ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `El capítulo ${n} se quedó donde estaba.`,
   bookReorderLifted: (heading: string): string => `Moviendo ${heading}.`,
@@ -488,6 +488,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "Componentes de código abierto",
   aboutTexts: "Textos de licencias",
   aboutContent: "Contenido incluido",
+  aboutLanguageCodes: "Códigos de idioma: ISO 639-3, de iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Leer ${name}`,
   aboutBack: "Volver a la lista",
   aboutTextLoading: "Cargando el texto de la licencia.",
@@ -527,6 +528,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadFailed: "No se pudo cargar. Intenta de nuevo.",
   saveFailed: "No se pudo guardar. Intenta de nuevo.",
   noRoom: "No queda espacio en este teléfono.",
+  bookNameTaken: "Otro libro tiene este nombre. Escribe un nombre distinto.",
   stopToEdit: "Detén la grabación para editar.",
   stopToErase: "Detén la grabación para restablecer.",
 
