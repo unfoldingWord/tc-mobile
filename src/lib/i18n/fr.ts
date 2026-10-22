@@ -228,8 +228,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Le segment ${from} est maintenant le segment ${to}.`,
   reorderStayed: (n: number): string => `Le segment ${n} est resté à sa place.`,
   chapterReorderLifted: (n: number): string => `Déplacement du chapitre ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Le chapitre ${from} est maintenant le chapitre ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Le chapitre ${n} est passé à la place ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `Le chapitre ${n} est resté à sa place.`,
   bookReorderLifted: (heading: string): string => `Déplacement de ${heading}.`,

@@ -684,9 +684,9 @@ export async function abortQuietly(
  *
  * **`max + 1`, deliberately NOT {@link nextBookNumber}'s first-unused rule.** A
  * book's placeholder is a label and reusing a freed one is the point (#360); a
- * chapter's `number` is its position in the export concatenation, so filling a
- * hole left by a removed chapter would drop the new recording into the middle
- * of the book rather than at the end.
+ * chapter's `number` is its own (#1272) and a new chapter goes at the end of
+ * the book, so filling a hole left by a removed chapter would give it a number
+ * that sits among the earlier ones rather than after them.
  */
 export function nextChapterNumber(existingNumbers: Iterable<number>): number {
   let max = 0;
@@ -836,13 +836,13 @@ export async function renameChapter(
  *     aborted on a thrown error (the `deleteBook` guard) — the array and the
  *     numbers commit together or not at all. A crash between the two would
  *     leave badges and export file names that disagree with the order.
- *   - **Dense renumbering** (DRI pick, #953 scope Q1): every resolvable
- *     chapter's `number` becomes its visible position + 1, so the badges read
- *     1..N and the export's `nameChapter(number)` follows the order. Only rows
- *     whose number changes are written. A dangling id is not numbered — it has
- *     no record — and export still counts it as missing.
- *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6"; only the
- *     number badge and the file name follow position.
+ *   - **No renumbering** (#1272, owner answer U2a, 2026-10-21: "The chapter's
+ *     own number (22 if someone typed 22)", not "Its place in the list (1, 2,
+ *     3)"). A chapter keeps the `number` the template gave or a person typed;
+ *     only `book.chapterIds` changes, so no chapter row is written. This
+ *     replaces #953's dense renumbering (its scope Q1). A dangling id has no
+ *     record, and export still counts it as missing.
+ *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6".
  *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
  *     activity on the book. This is the one tree edit that differs from
  *     `renameChapter` here, on purpose. (The shelf order does not depend on
@@ -850,8 +850,8 @@ export async function renameChapter(
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
- * Returns the book's resolvable chapters in their new order, with the numbers
- * they now hold — what a caller patches its rows from.
+ * Returns the book's resolvable chapters in their new order, each with the
+ * number it keeps — what a caller patches its rows from.
  */
 export async function moveChapter(
   chapterId: ChapterId,
@@ -883,19 +883,8 @@ export async function moveChapter(
     // is still a write, so `modifiedAt` moves (J6).
     const now = Date.now();
     await books.put({ ...book, chapterIds: plan.ids, modifiedAt: now });
-    const renumbered: Chapter[] = [];
-    for (const [position, row] of plan.order.entries()) {
-      const number = position + 1;
-      if (row.number === number) {
-        renumbered.push(row);
-        continue;
-      }
-      const updated: Chapter = { ...row, number, modifiedAt: now };
-      await chapters.put(updated);
-      renumbered.push(updated);
-    }
     await tx.done;
-    return renumbered;
+    return plan.order;
   } catch (cause) {
     await abortQuietly(() => tx.abort(), tx.done);
     throw cause;
