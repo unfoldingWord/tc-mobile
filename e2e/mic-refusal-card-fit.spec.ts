@@ -25,7 +25,7 @@ import { seedToRecorder } from "./support/seed";
  */
 test.use({ viewport: { width: 360, height: 640 } });
 
-const LOCALES = ["en", "es", "fr"] as const;
+const LOCALES = ["en", "es", "fr", "id"] as const;
 
 async function switchLanguage(page: Page, tag: string) {
   await page.evaluate((t) => {
