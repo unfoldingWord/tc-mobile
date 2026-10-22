@@ -239,6 +239,18 @@ describe("formatReport", () => {
     expect(missing).toHaveLength(7);
   });
 
+  it("the same lines, once the author answers each, pass the gate (the legitimate state)", async () => {
+    const { checkBody } = await import("../scripts/check-pr-body.mjs");
+    const lines = formatReport(classify([change("AGENTS.md")]))
+      .split("\n")
+      .filter((l) => l.startsWith("- "))
+      .map((l) => `${l.split(":")[0]}: N/A — nothing here changes it`);
+    const missing = checkBody(`## Collateral\n\n${lines.join("\n")}\n`).filter(
+      (m) => m.startsWith("Collateral:")
+    );
+    expect(missing).toEqual([]);
+  });
+
   it("says which paths touched a surface", () => {
     const text = formatReport(classify([change("AGENTS.md")]));
     expect(text).toMatch(/feature-doc: <touched.*AGENTS\.md/);
