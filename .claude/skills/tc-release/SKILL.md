@@ -168,7 +168,8 @@ from.
 - [ ] Agent-allowed: Play lane (`android-play.yml`) runs on the staging push.
       Note its release name (`<version> (<code>) staging@<PROMO_SHA short>`) and
       status (a draft on internal). Human-only: the DRI releases the draft in
-      the Play Console if wanted.
+      the Play Console if wanted. If no draft appeared, §3b covers the Play
+      lane too.
 
 ## 5. Native builds, one commit
 
@@ -188,37 +189,17 @@ from.
       dispatch took the single pending slot) and did not start. Read the
       tip before deciding: if `origin/staging` has moved past `PROMO_SHA`,
       stop. **Before any dispatch of a lane** (a `cancelled` run, or a lane
-      that did not start), make both reads. (1) **Already built?**
-      `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`
-      lists the lane's runs at that commit on any branch and from any event.
-      Read each one's signing job as above; the run's `conclusion` is not the
-      signing job's (a run whose signing job was `skipped` still concludes
-      `success`). A `success` counts only if it is an ordinary build: for the
-      APK lane, the run's artifact must be `android-apk-<PROMO_SHA>`, not
-      `android-apk-diagnostic-<PROMO_SHA>`
-      (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
-      a diagnostic APK is not a training build. If an ordinary build
-      concluded `success`, `PROMO_SHA` is already built: stop, and record
-      that run instead. (2) **Lane free?** The group carries no branch, so
-      a `main` run, which the `--commit` read does not list, can hold the slot or replace a pending
-      dispatch. List the lane's recent runs on every branch
-      (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
-      and wait until every one is `completed`. A run still open at the
-      first read may have built `PROMO_SHA` while you waited, so repeat read
-      (1); if an ordinary build has since concluded `success`, stop and
-      record that run. The wait can move the tip, and `--ref staging`
-      builds the tip at dispatch, so immediately before dispatching re-read
-      the canonical tip
-      (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`);
-      if it is not exactly `PROMO_SHA`, stop. Only if (1) still finds none
-      and the tip is still `PROMO_SHA` does the DRI dispatch it
-      (human-only), and the agent re-reads the new run until its signing job has started. A dispatch `cancelled`
-      while pending goes back to the two reads.
-      An empty conclusion with the run still open means the job is waiting
-      for the `release-signing` reviewer or running: it has started, so do
-      not dispatch a second one.
+      that did not start), run the lane redispatch procedure in
+      `docs/release/promotion-v1.0.0.md` §3b, read in full: its reads are
+      filtered on the server by commit and by status, so a long run history
+      cannot hide an open run, and its scenario table covers the diagnostic
+      APK, a `main` run in the shared group, a run that builds `<PROMO_SHA>`
+      during the wait, a moved tip and a newer production build. Do not
+      dispatch from a shorter version of it. An empty conclusion with the run
+      still open means the job is waiting for the `release-signing` reviewer
+      or running: it has started, so do not dispatch a second one.
 - [ ] Human-only, only if a lane did not start (its signing job `skipped`)
-      and the two reads above allow it: the DRI dispatches it from
+      and §3b allows it: the DRI dispatches it from
       `staging` via `!`:
       `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`.
       Record why it did not start on its own.
