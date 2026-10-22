@@ -890,6 +890,22 @@ export const stringsEn = {
   shareBookUnconfirmed:
     "Share book. The last attempt wasn't confirmed — tap to try again.",
   shareBookPreparing: "Preparing the book to share.",
+  // Export project (#1457): the Scripture Bundle of one book, in the book's
+  // ⋮ menu below Share book. The caption must be a word the label holds.
+  exportProject: "Export project",
+  tileExport: "Export",
+  exportProjectPreparing: "Preparing the project to export.",
+  // ADR 0014 point 8: `<book> - project.zip`, so it differs from Share
+  // Book's `<book>.zip`. Sanitised like shareBookFilename.
+  exportProjectFilename(book: string): string {
+    const suffix = ` - ${this.exportProjectFileWord}.zip`;
+    const label =
+      filenameSafe(book, new TextEncoder().encode(suffix).length) ||
+      this.shareNameFallback;
+    return `${label}${suffix}`;
+  },
+  // The word in that file name. ASCII-safe per locale is the translator's job.
+  exportProjectFileWord: "project",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome

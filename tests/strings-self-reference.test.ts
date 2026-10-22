@@ -293,6 +293,10 @@ describe("table entries that reach outside their own arguments (#169)", () => {
       ],
       saveFailedDiscardHint: ["this.takeRecoverDiscardHint"],
       shareAllFolder: ["this.shareNameFallback"],
+      exportProjectFilename: [
+        "this.exportProjectFileWord",
+        "this.shareNameFallback",
+      ],
       shareBookFilename: ["this.shareNameFallback"],
       shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareBookPartial: ["this.shareMissing"],
@@ -320,7 +324,7 @@ describe("table entries that reach outside their own arguments (#169)", () => {
  *   - NAMES. `segmentHeading` is the ordinal plus the facilitator's label
  *     ("3 · verses 3–4"), and it holds no word. The open control's spoken name
  *     must contain the text the row paints (WCAG 2.5.3), so it embeds the
- *     entry that paints it. `trail` joins names. The two file names embed a
+ *     entry that paints it. `trail` joins names. The three file names embed a
  *     fallback NAME (R18 on #1233: "Use the number and name").
  *   - ONE SENTENCE JOIN. `shareBookMissingAndPartial` puts two whole
  *     sentences side by side through `sentences`, which owns the separator
@@ -344,6 +348,10 @@ describe("no table sentence is built from another entry's words (#1483)", () => 
       editSegmentFinished: ["this.segmentHeading"],
       openSegment: ["this.segmentHeading"],
       recorderBreadcrumb: ["this.segmentHeading", "this.trail"],
+      exportProjectFilename: [
+        "this.exportProjectFileWord",
+        "this.shareNameFallback",
+      ],
       shareBookFilename: ["this.shareNameFallback"],
       shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareFilename: ["this.chapterName"],

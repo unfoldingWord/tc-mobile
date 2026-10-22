@@ -195,7 +195,7 @@ function swatch(name: string): HTMLButtonElement {
 }
 
 describe("O4: the book menu on the tile grid (04)", () => {
-  it("draws Share and Cover colour, then Delete past a gap; Rename is the head's pencil", async () => {
+  it("draws Share, Export project and Cover colour, then Delete past a gap; Rename is the head's pencil", async () => {
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
     const sheet = bookSheet();
@@ -205,6 +205,7 @@ describe("O4: the book menu on the tile grid (04)", () => {
     const labels = tilesIn(sheet!).map((t) => t.getAttribute("aria-label"));
     expect(labels).toEqual([
       strings.shareBook,
+      strings.exportProject,
       strings.coverColourLabel,
       strings.deleteBook,
     ]);
@@ -229,7 +230,7 @@ describe("O4: the book menu on the tile grid (04)", () => {
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
     const tiles = tilesIn(bookSheet()!);
-    expect(tiles.length).toBe(3);
+    expect(tiles.length).toBe(4);
     for (const tile of tiles) {
       const caption = tile.querySelector(".control-caption")?.textContent;
       expect(caption, tile.getAttribute("aria-label") ?? "").toBeTruthy();

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import { spoolArchive } from "./archive-spool";
 import { withEncoder } from "./mp3-codec";
@@ -7,10 +7,38 @@ import {
   type ShareSurface,
   useShareFlow,
 } from "./share-flow";
+import { type BookBundleParams, useBookExport } from "./use-book-export";
 import { type ChapterNamer, exportBookZip } from "@/lib/export/book";
 import type { BookId } from "@/types/domain";
 
+/**
+ * Which file the flow last prepared: the book's MP3 zip (Share Book) or its
+ * Scripture Bundle (Export project, #1457). One flow serves both, so the busy,
+ * progress, failure and send handling are Share Book's own.
+ */
+type BookShareKind = "zip" | "project";
+
+/** A bundle build that failed was already reported as "book-export-bundle". */
+class BundleBuildFailedError extends Error {
+  constructor() {
+    super("the book's Scripture Bundle could not be built");
+    this.name = "BundleBuildFailedError";
+  }
+}
+
 export interface UseBookShare extends ShareSurface {
+  /** What the flow was last asked to prepare; `"zip"` after a reset. */
+  readonly kind: BookShareKind;
+  /**
+   * Tap 1 of Export project: build the book's Scripture Bundle and arm it for
+   * the same send gesture Share Book uses. Same contract as {@link prepare}.
+   * A build failure is reported once by `buildBookBundle`
+   * (`"book-export-bundle"`) and surfaces through `error`.
+   */
+  prepareProject: (
+    bookId: BookId,
+    params: BookBundleParams
+  ) => Promise<ShareOutcome | null>;
   /**
    * Segments missing INSIDE chapters that DID make it into the zip — the
    * roll-up of each included chapter's own gap (#116). Zero until a prepare
@@ -66,16 +94,23 @@ export function useBookShare(): UseBookShare {
     progress,
     ownsScreen,
     dismissProgress,
-    reset,
+    reset: resetFlow,
   } = useShareFlow();
+  const { build, cancel } = useBookExport();
+  const [kind, setKind] = useState<BookShareKind>("zip");
+  const reset = useCallback(() => {
+    setKind("zip");
+    resetFlow();
+  }, [resetFlow]);
 
   const prepare = useCallback(
     (
       bookId: BookId,
       zipFilename: string,
       nameChapter: ChapterNamer
-    ): Promise<ShareOutcome | null> =>
-      run((isCurrent, signal, onStep) =>
+    ): Promise<ShareOutcome | null> => {
+      setKind("zip");
+      return run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {
           // The zip streams into a spool as it is built (#1003): an OPFS file
           // where the browser has one, memory where it does not
@@ -109,11 +144,42 @@ export function useBookShare(): UseBookShare {
             partialChapters: result.partialChapters,
           };
         })
-      ),
+      );
+    },
     [run]
   );
 
+  const prepareProject = useCallback(
+    (
+      bookId: BookId,
+      params: BookBundleParams
+    ): Promise<ShareOutcome | null> => {
+      setKind("project");
+      return run(async (_isCurrent, signal) => {
+        // The flow's abort (menu close, reset, unmount) cancels the build too;
+        // `useBookExport` then releases a File that finished after it.
+        signal.addEventListener("abort", cancel, { once: true });
+        const outcome = await build(bookId, params);
+        if (outcome.kind === "failed") throw new BundleBuildFailedError();
+        if (outcome.kind === "empty") return "nothing";
+        if (outcome.kind === "cancelled") return null;
+        // `missing` counts segments with no audio, the finest grain, so it
+        // rides `partial` and reads as Share Book's "segments left out".
+        return {
+          file: outcome.file,
+          release: outcome.release,
+          missing: 0,
+          partial: outcome.missing,
+          partialChapters: 0,
+        };
+      });
+    },
+    [run, build, cancel]
+  );
+
   return {
+    kind,
+    prepareProject,
     status,
     error,
     sendUnconfirmed,

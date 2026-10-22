@@ -37,6 +37,7 @@ import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
 import { shelfNoticeText } from "./shelf-notice-text";
+import { activeLocale } from "@/lib/locale";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
 import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
@@ -1403,6 +1404,37 @@ export function BooksScreen({
     onCloseShareMenu,
     stopChapter,
   ]);
+  // Export project (#1457): the same tap-1 handling as Share Book above — the
+  // focus capture, the chapter stop, the rename-session bump, the chained
+  // close — through the same flow, handed a Scripture Bundle instead of the
+  // MP3 zip. The book's language is not asked yet (#1492), so the bundle
+  // carries the language the book already has, or "und".
+  const onPrepareBookExport = useCallback(() => {
+    if (!shareMenuBook) return;
+    focusRestore.capture();
+    stopChapter();
+    bookMenuSession.current += 1;
+    setSavingName(false);
+    void bookShare
+      .prepareProject(shareMenuBook.bookId, {
+        filename: strings.exportProjectFilename(shareMenuBookName),
+        bookName: shareMenuBookName,
+        appVersion: __APP_VERSION__,
+        defaultLocale: activeLocale().tag,
+        exportedAt: Date.now(),
+      })
+      .then((outcome) => {
+        if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
+      });
+  }, [
+    focusRestore,
+    bookShare,
+    setSavingName,
+    shareMenuBook,
+    shareMenuBookName,
+    onCloseShareMenu,
+    stopChapter,
+  ]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
   // error Notice lives in the menu and must stay visible).
@@ -2365,15 +2397,31 @@ export function BooksScreen({
                 scope="book"
                 controlRef={shareControlRef}
                 idleLabel={strings.shareBook}
-                preparingLabel={strings.shareBookPreparing}
+                preparingLabel={
+                  bookShare.kind === "project"
+                    ? strings.exportProjectPreparing
+                    : strings.shareBookPreparing
+                }
                 unconfirmedLabel={strings.shareBookUnconfirmed}
                 hasGap={bookShareHasGap}
                 gapText={bookShareGapText}
                 onPrepare={onPrepareBookShare}
                 onSend={onSendBookShare}
+                // Share, Export, Cover colour and Delete are four tiles: at
+                // the pinned 76 px they run past a 360 px sheet, so the row
+                // takes the compact size the segment menu's four use.
+                compact
                 tiles={{
                   after: (
                     <>
+                      <Tile
+                        tone="send"
+                        icon="file-zip"
+                        label={strings.exportProject}
+                        caption={strings.tileExport}
+                        busy={bookShare.status === "preparing"}
+                        onClick={onPrepareBookExport}
+                      />
                       <CoverTile
                         ref={coverTileRef}
                         coverHex={shareMenuCoverHex}

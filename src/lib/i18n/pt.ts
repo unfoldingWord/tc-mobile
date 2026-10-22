@@ -305,6 +305,16 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareBookUnconfirmed:
     "Compartilhar livro. A última tentativa não foi confirmada: toque para tentar novamente.",
   shareBookPreparing: "Preparando o livro para compartilhar.",
+  exportProject: "Exportar projeto",
+  tileExport: "Exportar",
+  exportProjectPreparing: "Preparando o projeto para exportar.",
+  exportProjectFileWord: "projeto",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
   shareBookNothing: "Grave um segmento antes de compartilhar este livro.",
   shareBookFailed: "Não foi possível compartilhar este livro. Tente novamente.",
   shareBookFailedWeb:
