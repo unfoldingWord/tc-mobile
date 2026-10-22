@@ -509,7 +509,7 @@
   }
   :root .language-ask-title {
     font-size: var(--p-text-20);
-    font-weight: 700; /* #939 token */
+    font-weight: var(--p-weight-bold);
   }
   :root .language-ask-lead,
   :root .language-row [lang],
@@ -543,7 +543,7 @@
   :root .language-row-name,
   :root .language-ask-quiet {
     font-size: var(--p-text-17);
-    font-weight: 600;
+    font-weight: var(--p-weight-strong);
   }
   :root .language-row-tag {
     margin-inline-start: auto;
