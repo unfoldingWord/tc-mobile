@@ -102,7 +102,6 @@ class Arena {
   bytes = 0;
   f32 = (n: number) => this.count(new Float32Array(n));
   f64 = (n: number) => this.count(new Float64Array(n));
-  i32 = (n: number) => this.count(new Int32Array(n));
   u32 = (n: number) => this.count(new Uint32Array(n));
   private count<T extends ArrayBufferView>(array: T): T {
     this.bytes += array.byteLength;
@@ -333,6 +332,28 @@ export interface LoudnessMeasurement {
 
 const toDb = (ratio: number) => 20 * Math.log10(ratio);
 
+/** Refuses a NaN or infinite parameter, which would silently ruin a whole render. */
+function requireFinite(name: string, value: number): void {
+  if (!Number.isFinite(value))
+    throw new RangeError(`loudness: ${name} must be finite`);
+}
+
+function requireSampleRate(sampleRate: number): void {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0)
+    throw new RangeError("loudness: sampleRate must be positive and finite");
+}
+
+/**
+ * Refuses a chunk holding a NaN or infinite sample in `x[0..n)`. One such
+ * sample sticks in a biquad's state and ruins every later sample, so the
+ * check runs before the chunk is touched.
+ */
+function requireFiniteSamples(x: Float32Array, n: number): void {
+  for (let i = 0; i < n; i++)
+    if (!Number.isFinite(x[i]!))
+      throw new RangeError("loudness: chunk holds a non-finite sample");
+}
+
 /**
  * Pass 1. Feed every chunk of the take in order with {@link push}, then read
  * {@link finish} once.
@@ -351,6 +372,8 @@ export class LoudnessMeter {
 
   /** `maxChunk` is the longest chunk {@link push} will be given, in samples. */
   constructor(sampleRate: number, maxChunk: number) {
+    requireSampleRate(sampleRate);
+    requireFinite("maxChunk", maxChunk);
     const arena = new Arena();
     this.highPass = rumbleHighPass(sampleRate);
     this.shelf = kShelf(sampleRate);
@@ -371,6 +394,7 @@ export class LoudnessMeter {
       throw new Error("LoudnessMeter: already finished");
     if (n > this.weighted.length)
       throw new RangeError("LoudnessMeter: chunk longer than maxChunk");
+    requireFiniteSamples(x, n);
     this.highPass.process(x, n);
     lap?.("highPass");
     const w = this.weighted;
@@ -410,7 +434,10 @@ export function normalizationGainDb(
   targetLufs = DEFAULT_TARGET_LUFS,
   maxGainDb = DEFAULT_MAX_GAIN_DB
 ): number {
+  requireFinite("targetLufs", targetLufs);
+  requireFinite("maxGainDb", maxGainDb);
   if (integratedLufs === null) return 0;
+  requireFinite("integratedLufs", integratedLufs);
   return Math.min(maxGainDb, targetLufs - integratedLufs);
 }
 
@@ -427,7 +454,9 @@ class Limiter {
   private readonly detector: TruePeakDetector;
   // Sliding-minimum deque of gain requirements: values and their indices.
   private readonly dqValue: Float64Array;
-  private readonly dqIndex: Int32Array;
+  // Float64 holds every integer to 2^53; an Int32 index wrapped at 2^31
+  // samples (about 12 h at 48 kHz) and broke the expiry test (#1584).
+  private readonly dqIndex: Float64Array;
   private dqHead = 0;
   private dqSize = 0;
   // Box average over the held minimum.
@@ -450,7 +479,7 @@ class Limiter {
     this.release = 1 - Math.exp(-1 / (LIMITER_RELEASE_SECONDS * sampleRate));
     this.detector = new TruePeakDetector(arena);
     this.dqValue = arena.f64(this.lookahead);
-    this.dqIndex = arena.i32(this.lookahead);
+    this.dqIndex = arena.f64(this.lookahead);
     this.box = arena.f64(this.lookahead).fill(1);
     this.boxSum = this.lookahead;
     this.delay = arena.f32(this.latency + 1);
@@ -527,14 +556,14 @@ export class LoudnessNormalizer {
   private tail: number;
 
   constructor(options: LoudnessNormalizerOptions) {
+    const ceilingDbtp = options.ceilingDbtp ?? DEFAULT_CEILING_DBTP;
+    requireSampleRate(options.sampleRate);
+    requireFinite("gainDb", options.gainDb);
+    requireFinite("ceilingDbtp", ceilingDbtp);
     const arena = new Arena();
     this.highPass = rumbleHighPass(options.sampleRate);
     this.gain = 10 ** (options.gainDb / 20);
-    this.limiter = new Limiter(
-      arena,
-      options.sampleRate,
-      options.ceilingDbtp ?? DEFAULT_CEILING_DBTP
-    );
+    this.limiter = new Limiter(arena, options.sampleRate, ceilingDbtp);
     this.toTrim = this.limiter.latency;
     this.tail = this.limiter.latency;
     this.workingSetBytes = arena.bytes;
@@ -551,6 +580,7 @@ export class LoudnessNormalizer {
    * has been trimmed, fewer before.
    */
   process(x: Float32Array, n: number, lap?: LoudnessLap): number {
+    requireFiniteSamples(x, n);
     this.highPass.process(x, n);
     lap?.("highPass");
     const g = this.gain;

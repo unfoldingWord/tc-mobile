@@ -350,3 +350,101 @@ describe("the meter's contract", () => {
     expect(() => meter.push(new Float32Array(10), 10)).toThrow();
   });
 });
+
+describe("the limiter's sample counter past 2^31 (#1584)", () => {
+  /** The limiter inside a normalizer, reached to seed its running index. */
+  const limiterOf = (n: LoudnessNormalizer) =>
+    (n as unknown as { limiter: { index: number } }).limiter;
+
+  it("still holds the ceiling when the counter starts just under 2^31 and crosses it", () => {
+    const input = fromPcm(speechLikePcm(5));
+    const gainDb = normalizationGainDb(measure(input).integratedLufs, -19 + 12);
+    const ceilingDbtp = -1.5;
+    const normalizer = new LoudnessNormalizer({
+      sampleRate: RATE,
+      gainDb,
+      ceilingDbtp,
+    });
+    // Two seconds before the 32-bit boundary: the take crosses it mid-way.
+    limiterOf(normalizer).index = 2 ** 31 - 2 * RATE;
+    const work = Float32Array.from(input);
+    const kept = normalizer.process(work, work.length);
+    expect(limiterOf(normalizer).index).toBeGreaterThan(2 ** 31);
+    // The limiter did real work, so the ceiling below is not vacuous.
+    expect(normalizer.limiterMaxReductionDb).toBeGreaterThan(3);
+    let peak = 0;
+    for (let i = 0; i < kept; i++) peak = Math.max(peak, Math.abs(work[i]!));
+    expect(peak).toBeLessThanOrEqual(10 ** (ceilingDbtp / 20) * (1 + 1e-6));
+  });
+});
+
+describe("non-finite inputs are refused (#1584)", () => {
+  const bad = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  it("refuses a sample rate that is not a positive finite number, in the meter and the normalizer", () => {
+    for (const sampleRate of [...bad, 0, -44_100]) {
+      expect(() => new LoudnessMeter(sampleRate, 10)).toThrow(RangeError);
+      expect(() => new LoudnessNormalizer({ sampleRate, gainDb: 0 })).toThrow(
+        RangeError
+      );
+    }
+  });
+
+  it("refuses a gain or ceiling that is not finite, and a chunk size that is not a finite count", () => {
+    for (const v of bad) {
+      expect(
+        () => new LoudnessNormalizer({ sampleRate: RATE, gainDb: v })
+      ).toThrow(RangeError);
+      expect(
+        () =>
+          new LoudnessNormalizer({
+            sampleRate: RATE,
+            gainDb: 0,
+            ceilingDbtp: v,
+          })
+      ).toThrow(RangeError);
+      expect(() => new LoudnessMeter(RATE, v)).toThrow(RangeError);
+    }
+  });
+
+  it("refuses a non-finite loudness, target or cap in the gain calculation, and still takes null", () => {
+    for (const v of bad) {
+      expect(() => normalizationGainDb(v)).toThrow(RangeError);
+      expect(() => normalizationGainDb(-30, v)).toThrow(RangeError);
+      expect(() => normalizationGainDb(-30, -19, v)).toThrow(RangeError);
+    }
+    expect(normalizationGainDb(null)).toBe(0);
+  });
+
+  it("refuses a chunk holding a non-finite sample, before touching it or the filter state", () => {
+    for (const v of bad) {
+      const meter = new LoudnessMeter(RATE, 100);
+      const chunk = new Float32Array(100).fill(0.1);
+      chunk[57] = v;
+      const before = Float32Array.from(chunk);
+      expect(() => meter.push(chunk, 100)).toThrow(RangeError);
+      // Nothing was high-passed in place, and the meter still measures.
+      expect(Array.from(chunk.subarray(0, 57))).toEqual(
+        Array.from(before.subarray(0, 57))
+      );
+      meter.push(new Float32Array(100).fill(0.1), 100);
+      expect(Number.isFinite(meter.finish().truePeakDbtp)).toBe(true);
+
+      const normalizer = new LoudnessNormalizer({
+        sampleRate: RATE,
+        gainDb: 0,
+      });
+      expect(() => normalizer.process(chunk, 100)).toThrow(RangeError);
+      const clean = new Float32Array(RATE).fill(0.1);
+      normalizer.process(clean, RATE);
+      for (const s of clean) expect(Number.isFinite(s)).toBe(true);
+    }
+  });
+
+  it("looks only at the first n samples of a chunk", () => {
+    const meter = new LoudnessMeter(RATE, 100);
+    const chunk = new Float32Array(100).fill(0.1);
+    chunk[99] = Number.NaN;
+    expect(() => meter.push(chunk, 99)).not.toThrow();
+  });
+});
