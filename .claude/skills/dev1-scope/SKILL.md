@@ -66,4 +66,4 @@ Risks, Tier, Target, the done-when rows (with `Check:` and `Source:`), Open
 decisions.
 
 Exit: the contract is posted and every open decision is routed. If a decision
-blocks everything, stop with `BLOCKED-ON <owner> <question>`. Next: dev2-plan.
+blocks everything, stop with `BLOCKED-ON <owner> <question>`. Next: dev2-plan, unless blocked.

@@ -40,8 +40,9 @@ never carries a run's output.
 ## 4. Commit and push
 
 Conventional Commits, subject and body, neither blank. The harness supplies the commit footer. Keep each slice of a split plan to its own
-branch. Push the branch; the pre-push hook runs the checks. Never force-push,
-and never push to `develop`, `staging` or `main`.
+branch. Push the branch with `git push -u origin HEAD` so it has an upstream;
+the pre-push hook runs the checks. Never force-push, and never push to
+`develop`, `staging` or `main`.
 
 Exit: the branch is pushed with every task the plan assigns to this PR done,
-or `BLOCKED <reason>`. Next: dev4-check.
+or `BLOCKED <reason>`. Next: dev4-check, unless blocked.

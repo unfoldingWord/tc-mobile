@@ -105,6 +105,35 @@ describe("the stages point at the tooling that enforces them", () => {
 });
 
 describe("the exits that gate the next stage", () => {
+  it("dev3 and dev4 push with upstream set, and dev4 stamps PASS only when HEAD equals @{u}", () => {
+    const d3 = skill("dev3-build").replace(/\s+/g, " ");
+    const d4 = skill("dev4-check").replace(/\s+/g, " ");
+    const d5 = skill("dev5-ship").replace(/\s+/g, " ");
+    expect(d3).toContain("git push -u origin HEAD");
+    expect(d4).toMatch(/push (?:that|its own) commit[^.]*never force/i);
+    expect(d4).toMatch(
+      /only when `git rev-parse HEAD` equals `git rev-parse @\{u\}` and `git status --porcelain` is empty/
+    );
+    expect(d4).toMatch(/rerun them first/);
+    expect(d5).toMatch(
+      /already the PASS sha and `@\{u\}` is behind, fast-forward push/
+    );
+    expect(d5).not.toMatch(/never gated/);
+  });
+
+  it("an exit that allows BLOCKED does not carry an unconditional Next", () => {
+    for (const n of ["dev1-scope", "dev3-build"] as const) {
+      const t = skill(n).replace(/\s+/g, " ");
+      expect(t, n).toMatch(/Next: dev[2-4]-[a-z]+, unless blocked\./);
+    }
+  });
+
+  it("dev5 opens the PR from a request file, with no title on the command line", () => {
+    const t = skill("dev5-ship");
+    expect(t).not.toMatch(/--title/);
+    expect(t).toMatch(/gh api repos\/unfoldingWord\/tc-mobile\/pulls --input/);
+  });
+
   it("dev7 adds the label only on the NEEDS-DEVICE path, and does not assert that it exists", () => {
     const t = skill("dev7-close").replace(/\s+/g, " ");
     expect(t).toMatch(/dev6 passed[^.]*closes with no label/);
@@ -135,17 +164,17 @@ describe("the exits that gate the next stage", () => {
     expect(t).toMatch(/voids/);
   });
 
-  it("dev5 refuses gh pr create unless HEAD and @{u} both equal the PASS SHA", () => {
+  it("dev5 refuses to open the PR unless HEAD and @{u} both equal the PASS SHA", () => {
     const t = skill("dev5-ship").replace(/\s+/g, " ");
     expect(t).toMatch(
-      /Refuse to run `gh pr create` unless [^.]*HEAD and `@\{u\}` both equal [^.]*PASS <sha>/
+      /Refuse to open the PR unless [^.]*HEAD and `@\{u\}` both equal [^.]*PASS <sha>/
     );
   });
 
   it("dev4 requires every edit committed and `git status --porcelain` empty before it stamps PASS", () => {
     const t = skill("dev4-check").replace(/\s+/g, " ");
     expect(t).toMatch(/Commit every edit/);
-    expect(t).toMatch(/`git status --porcelain` prints nothing/);
+    expect(t).toMatch(/`git status --porcelain` is empty/);
   });
 
   it("dev4's Exit sends a PASS to dev5-ship and a FAIL to the stage that owes the fix", () => {

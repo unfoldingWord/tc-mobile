@@ -10,10 +10,10 @@ Open the PR and stop. Never merge, and never push to `develop`, `staging` or
 
 ## 1. Before opening
 
-Confirm the branch is pushed. Refuse to run `gh pr create` unless
-HEAD and `@{u}` both equal the SHA in dev4's `PASS <sha>` (compare
-`git rev-parse HEAD` and `git rev-parse @{u}`): a commit made or left unpushed
-after the gate was never gated, so go back to dev4. Gather the issue, the plan
+Refuse to open the PR unless HEAD and `@{u}` both equal the SHA in dev4's
+`PASS <sha>` (compare `git rev-parse HEAD` and `git rev-parse @{u}`). If HEAD
+is already the PASS sha and `@{u}` is behind, fast-forward push it (never
+force) and compare again. If HEAD is a different sha, go back to dev4. Gather the issue, the plan
 and the done-when evidence from dev4.
 
 ## 2. Write the body from the template
@@ -34,8 +34,11 @@ failure). Do not fill a field from memory.
 
 ## 4. Open it
 
-`gh pr create --repo unfoldingWord/tc-mobile --base develop --head <branch>
---title <title> --body-file <path>`, ready, not draft. Then set the sprint
+Write the title to a file, never onto a command line. Build the request file
+with `jq -n --rawfile title <title-file> --rawfile body <body-file> --arg
+head <branch> '{title: $title, body: $body, head: $head, base: "develop"}'`,
+then run `gh api repos/unfoldingWord/tc-mobile/pulls --input <request-file>`
+(ready, not draft). Then set the sprint
 milestone, one type label, one `area:` label, and the `a11y:` labels that apply.
 Check `closingIssuesReferences`: for a `Part-of` PR it must be empty.
 
