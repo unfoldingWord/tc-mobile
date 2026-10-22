@@ -24,6 +24,8 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import type { BookId, ClipId, SegmentId, TakeId } from "@/types/domain";
 import {
   clearAllStores,
+  forgetDisposition,
+  savedTake,
   storeOrphanClip,
   throwWhenStoreRequested,
 } from "./support";
@@ -72,6 +74,7 @@ const ALL_STORES = [
   "failures",
   "tombstones",
   "pendingTakes",
+  "takeDispositions",
 ] as const;
 
 type StoreCounts = Record<(typeof ALL_STORES)[number], number>;
@@ -89,6 +92,7 @@ async function countAll(): Promise<StoreCounts> {
     failures,
     tombstones,
     pendingTakes,
+    takeDispositions,
   ] = await Promise.all([
     tx.objectStore("books").count(),
     tx.objectStore("chapters").count(),
@@ -99,6 +103,7 @@ async function countAll(): Promise<StoreCounts> {
     tx.objectStore("failures").count(),
     tx.objectStore("tombstones").count(),
     tx.objectStore("pendingTakes").count(),
+    tx.objectStore("takeDispositions").count(),
   ]);
   await tx.done;
   // Every store the schema declares is covered: a delete that leaked into one
@@ -116,6 +121,7 @@ async function countAll(): Promise<StoreCounts> {
     failures,
     tombstones,
     pendingTakes,
+    takeDispositions,
   };
 }
 
@@ -194,6 +200,8 @@ describe("deleteBook", () => {
       // The one row this delete leaves: the book's tombstone (#1463).
       tombstones: 1,
       pendingTakes: 0,
+      // The records of the deleted takes go with their segments (v13, #38).
+      takeDispositions: 0,
     });
   });
 
@@ -230,6 +238,7 @@ describe("deleteBook", () => {
       failures: before.failures,
       tombstones: before.tombstones + 1,
       pendingTakes: before.pendingTakes,
+      takeDispositions: before.takeDispositions - 3,
     });
   });
 
@@ -284,11 +293,14 @@ describe("deleteBook", () => {
     const keeperBook = await createBook("Mark");
     const keeperChapter = await addChapter(keeperBook.id);
     const keeperSegment = await addSegment(keeperChapter.id);
-    const keeperTake = await saveTake(
-      keeperSegment.id,
-      shared,
-      samples(300),
-      CANONICAL_SAMPLE_RATE
+    await forgetDisposition(shared);
+    const keeperTake = savedTake(
+      await saveTake(
+        keeperSegment.id,
+        shared,
+        samples(300),
+        CANONICAL_SAMPLE_RATE
+      )
     );
 
     await deleteBook(doomedBook.id);
@@ -359,6 +371,7 @@ describe("deleteBook", () => {
       // The one row this delete leaves: the book's tombstone (#1463).
       tombstones: 1,
       pendingTakes: 0,
+      takeDispositions: 0,
     });
   });
 
@@ -442,6 +455,7 @@ describe("deleteBook", () => {
       // The one row this delete leaves: the book's tombstone (#1463).
       tombstones: 1,
       pendingTakes: 0,
+      takeDispositions: 0,
     });
   });
 
@@ -519,6 +533,7 @@ describe("deleteBook", () => {
       // there and is removed").
       tombstones: 0,
       pendingTakes: 0,
+      takeDispositions: 0,
     });
   });
 });

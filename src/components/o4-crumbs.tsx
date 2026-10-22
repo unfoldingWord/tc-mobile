@@ -178,11 +178,14 @@ interface O4SheetHeadProps {
    * Also draw the chapter's name whole, as a wrapping heading under the
    * crumbs (#1284, the requirements owner's U3: "When tapping the kebab to
    * open the menu, show the full chapter name at the top of that menu"). The
-   * crumbs elide a long name with "…"; this line never does. It is the name
-   * exactly as the header shows it, nothing added, and `aria-hidden` because
-   * the screen-reader line below already speaks the same name.
+   * crumbs elide a long name with "…"; this line never does. The caller
+   * passes the name as typed (or the default "Chapter N" when there is none),
+   * NOT the Settings label that may stand for it (S12's "always show the
+   * number"): that setting changes what a row is called, and U3 asks for the
+   * name itself. `aria-hidden` because the screen-reader line below already
+   * speaks the crumbs' place.
    */
-  fullName?: boolean;
+  fullName?: string;
 }
 
 /**
@@ -225,7 +228,7 @@ export function O4SheetHead({
   bookCoverHex,
   chapter,
   segment,
-  fullName = false,
+  fullName,
 }: O4SheetHeadProps) {
   const place =
     book === undefined || chapter === undefined
@@ -251,9 +254,9 @@ export function O4SheetHead({
         )}
         <O4Crumbs book={book} chapter={chapter} segment={segment} />
       </div>
-      {fullName && chapter !== undefined && (
+      {fullName !== undefined && fullName !== "" && (
         <p className="o4-sheet-name" dir="auto" aria-hidden="true">
-          {String(chapter)}
+          {fullName}
         </p>
       )}
       {place !== null && (

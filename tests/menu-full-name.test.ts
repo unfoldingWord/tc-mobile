@@ -29,6 +29,11 @@ import { cssRule, declarationValue, restingErase } from "./support";
  * layout). `e2e/menu-full-name.spec.ts` runs that in Chromium.
  */
 
+// The "always show the number" setting (S12) on: every chapter label reads
+// "Chapter N", and the menu's heading must still be the name (U3).
+vi.mock("@/hooks/use-settings", () => ({
+  useChapterHeading: (_name: string | null, n: number) => `Chapter ${n}`,
+}));
 const mocks = vi.hoisted(() => ({ chapter: vi.fn() }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: mocks.chapter,
@@ -144,8 +149,10 @@ describe("the chapter menu shows the full chapter name at its top (#1284, U3)", 
       dialog.getAttribute("aria-label") ??
       document.getElementById(labelledBy ?? "")?.textContent;
     expect(name).toBe(strings.chapterMenuTitle);
+    // The crumbs follow the setting, so they read "Chapter 1"; the heading
+    // does not.
     expect(document.querySelector(".o4-sheet-place")?.textContent).toContain(
-      LONG
+      "Chapter 1"
     );
     expect(heading.getAttribute("aria-hidden")).toBe("true");
   });
@@ -161,7 +168,7 @@ describe("the same pattern on the book and segment menus", () => {
       createElement(O4SheetHead, {
         book: "Book",
         chapter: LONG,
-        fullName: true,
+        fullName: LONG,
       })
     );
     expect(on.querySelector(".o4-sheet-name")?.textContent).toBe(LONG);
