@@ -93,11 +93,16 @@ Reopen this ADR, and plan a move, if **any one** of the first three fires, or
 No move starts until the proof's probe has read a real phone's `tc-mobile`
 IndexedDB, with matching per-store counts, from an Expo build under
 `org.unfoldingword.tcmobile` signed with the same key, on **both** iOS and
-Android (note §4).
+Android (note §4). On a phone that holds recordings the proof goes on as an
+in-place update; a refused install is never answered by uninstalling, which
+deletes the recordings (note §4.2).
 
 The move then ships a first-launch export of IndexedDB to native files that:
 
-- verifies the copy;
+- carries every audio byte, `pendingTakes` buffers included, not only
+  `clipData`, and verifies the copy;
+- still opens the app when the export fails or is killed, with the old
+  database as the copy of record until the verification passes;
 - never deletes the old database in the same release;
 - keeps the PWA at both origins, or ships Scripture Bundle export with an
   app-side import first, so PWA-only users are not stranded (note §4.4).

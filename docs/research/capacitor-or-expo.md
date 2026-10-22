@@ -27,10 +27,17 @@ each of those conditions against what has happened since.
 
 | Question (#1520)                                                                    | Short answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. For each native need: fine in Capacitor, a small custom plugin, or a native app? | No need is in "needs a native app" today. Two are "fine in Capacitor", five are "small custom plugin", and one (the audio session) is "fine in Capacitor if one web setting holds, a small plugin if not". The plugins needed are roughly the same size in Expo, because Expo has no first-party module for the microSD card, Google Drive or iCloud either (§2). [inference from §2's per-row evidence]                                                                                                 |
+| 1. For each native need: fine in Capacitor, a small custom plugin, or a native app? | No need is in "needs a native app" today. The tally per §2.1 row is under this table. The plugins needed are roughly the same size in Expo, because Expo has no first-party module for the microSD card, Google Drive or iCloud either (§2). [inference from §2's per-row evidence]                                                                                                                                                                                                                      |
 | 2. What would a move cost?                                                          | A rewrite of `components/` (≈22 400 lines of React DOM plus ≈4 100 lines of CSS) and most of `hooks/` (≈19 600 lines), a new storage backend for `lib/storage` (≈4 500 lines on IndexedDB), a new UI test harness and new release lanes. About 120–200 PRs at this repo's 500-line cap, against about 17–33 for the middle path. [inference, §3 and §6]                                                                                                                                                  |
 | 3. Can recordings carry over?                                                       | Probably, on both platforms, for the installed apps — but only if the Expo app ships under the same bundle id / package and the same signing key, and opens a web view at the old origin to export IndexedDB to files on first launch. Android looks straightforward from the docs; iOS has one unknown that only a phone can settle (whether a page loaded with base URL `capacitor://localhost` sees that origin's IndexedDB). PWA-only users cannot be carried over by an app at all. [inference, §4] |
 | 4. Is there a middle path?                                                          | Yes: stay on Capacitor and add targeted plugins — the line the ADR proposes, with named triggers for a move. [§5, §6]                                                                                                                                                                                                                                                                                                                                                                                    |
+
+The §2.1 tally, nine rows: four are fine in Capacitor (background, share
+sheet, MP3 worker, store listing); two need a small custom plugin (microSD,
+and storage once audio moves to files); cloud backup is fine when
+user-driven and a small plugin when automatic; the limiter is fine, with
+float capture unproven in both stacks; and the audio session is fine if one
+web setting holds, a small plugin if not. [inference, §2]
 
 ## 2. The native needs, one row each
 
@@ -126,7 +133,9 @@ each of those conditions against what has happened since.
   needs sign-in and entitlements — a plugin in Capacitor and a module in Expo;
   Expo ships neither.
 - **Verdict:** fine in Capacitor for a user-driven backup; a small plugin for
-  an automatic one. No difference between the stacks. [inference]
+  an automatic one. No difference between the stacks. An automatic backup
+  must write somewhere the user can see and that survives an uninstall; the
+  Drive app data folder is neither, so it is not a backup. [inference]
 
 **Background and interruptions** (#836, #59).
 
@@ -282,10 +291,16 @@ is the plan a move must pass before it starts.
 
 - [observed] Android "compares the certificate(s) in the new version with
   those in the existing version" and allows the update only "if the
-  certificates match". Otherwise the new build installs "as a completely new
-  app" under a different package name
-  ([app signing](https://developer.android.com/studio/publish/app-signing)).
+  certificates match". A build signed with a different certificate installs
+  "as a completely new app" only when it is also given a different package
+  name ([app signing](https://developer.android.com/studio/publish/app-signing)).
   `docs/native/README.md` records "One keystore, forever".
+- [inference] So the same `applicationId` with a different certificate is
+  refused as an update (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`); it does not
+  install beside the old app. The obvious recovery, uninstall and reinstall,
+  deletes the WebView data directory, and `allowBackup="false"` (§4.1) means
+  there is no second copy. On a phone that holds recordings, the only safe
+  install is an in-place update signed with the existing key.
 - [observed] The Expo proof's `app.json` sets `ios.bundleIdentifier` and
   `android.package` to `org.unfoldingword.tcmobile`. EAS accepts the existing
   keystore and iOS certificate and profile through `credentials.json`
@@ -323,14 +338,30 @@ is the plan a move must pass before it starts.
      `capacitor`, and serves the export page. That is the same thing
      Capacitor does today ([WKURLSchemeHandler](https://developer.apple.com/documentation/webkit/wkurlschemehandler)).
      [inference]
-3. In the page, open `tc-mobile` read-only. For each `clipData` entry,
+3. The page runs at the origin that owns every recording, so it is
+   self-contained: no remote scripts, no navigation away, and the native side
+   accepts only the export's own message envelope. [inference] In the page,
+   open `tc-mobile` read-only. For each `clipData` entry,
    base64 it in chunks and `postMessage` it out — `react-native-webview`
    messages must be strings (Reference: "`data` must be a string"). Write each
    clip to a native file with `expo-file-system`, and write the metadata
-   stores as JSON.
-4. Verify the copy (count and byte length per clip against `clipMeta`) before
-   marking the migration done. **Never delete the old IndexedDB** in the same
-   release; leave it as the fallback.
+   stores as JSON. **`clipData` is not the only store with audio bytes.** A
+   `pendingTakes` row holds `recorded` and, for an `inline` base,
+   `base.samples` as `ArrayBuffer`s (`src/types/domain.ts`,
+   `StoredPendingTake`, `PendingTakeBase`). `JSON.stringify` writes an
+   `ArrayBuffer` as `{}`, so those buffers go through the same chunked binary
+   path as `clipData`. [observed: types; inference: the path]
+4. Verify the copy before marking the migration done: count and byte length
+   per clip against `clipMeta.byteLength`, and the byte length of every
+   `pendingTakes` buffer. A migration test must round-trip a pending take
+   with recorded audio and an `inline` base; the proof's probe (§7) does not.
+   **Never delete the old IndexedDB** in the same release; leave it as the
+   fallback.
+5. **A failed or killed export still opens the app.** The exporter runs
+   before the main UI, but a crash or a failed check does not hold the UI
+   behind it on the next launch. The old IndexedDB stays the copy of record
+   until the verification in step 4 passes, so a translator is never left
+   with neither copy reachable. [inference]
 
 This is what the Expo proof's probe does, in miniature (§7).
 
@@ -340,7 +371,10 @@ This is what the Expo proof's probe does, in miniature (§7).
   written incrementally, or a low-memory Android phone will kill the app
   mid-migration.
 - The migration must be idempotent: a killed first launch re-runs from the
-  start, against an IndexedDB nothing has changed.
+  start, against an IndexedDB nothing has changed. A take large enough to be
+  killed every time would otherwise become a launch loop with the recordings
+  behind it, which is why step 5 opens the app regardless. The §7 probe
+  exports one entry, so it does not exercise this case.
 - The Expo build must also understand every schema version a phone could
   hold. Today that is v12 (AGENTS.md "A rollback is not free").
 
@@ -378,7 +412,8 @@ scheme with no handler. It has a known fallback, a small Swift module.
   check fails, add one Swift plugin that plays a take through
   `AVAudioPlayer` with the app's own session (on hold by the DRI's
   2026-10-22 pick until this spike reports).
-- **microSD.** The #1456 chain as scoped (#1472 spike, ADR 0013, a storage
+- **microSD.** The #1456 chain as scoped (#1472 spike, ADR 0013 — reserved
+  by #1473, not yet in `docs/decisions/` — a storage
   seam, an Android plugin). Same Java whichever shell hosts it. Also on hold.
 - **Cloud backup.** The share sheet or Files picker first; a Drive or iCloud
   plugin only if the requirements owner asks for automatic backup.
@@ -435,7 +470,9 @@ app under the same bundle id and package. It does three things:
    IndexedDB databases and per-store counts, and exports one `clipData`
    entry to a native file.
 3. Carries the old bundle id and package, with the signing caveat written in
-   its run sheet.
+   its run sheet. On a phone that holds recordings, the proof goes on as an
+   in-place update signed with the existing key. If the install is refused,
+   stop; do not uninstall, because uninstalling deletes the recordings (§4.2).
 
 Its `RUN-SHEET.md` says what the DRI runs on an iPhone (silent switch on) and
 an Android phone that holds recordings, and what each result means for the
