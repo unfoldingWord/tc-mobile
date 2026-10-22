@@ -43,6 +43,14 @@ npm-debug.log*
 # they are tracked.
 !.claude/skills/tc-prepush/
 !.claude/skills/tc-release/
+# The seven issue-pipeline stage skills (#1442) are repo-authored too.
+!.claude/skills/dev1-scope/
+!.claude/skills/dev2-plan/
+!.claude/skills/dev3-build/
+!.claude/skills/dev4-check/
+!.claude/skills/dev5-ship/
+!.claude/skills/dev6-validate/
+!.claude/skills/dev7-close/
 
 .lib-boundary-probe/
 .react-hooks-refs-probe/

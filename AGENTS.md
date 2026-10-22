@@ -1070,6 +1070,24 @@ A test-only PR is tiered by what it covers, and a gate test is its own tier
 table's on-device check — a test-only PR never gets the device check, only
 code changes do — see `docs/review/dual-review.md` ("Merge policy").
 
+## Issue pipeline (dev1–dev7)
+
+Every issue moves through seven stages: **dev1 Scope** (a scope contract on the
+issue), **dev2 Plan** (tasks, each with a done-when and a test-first pair),
+**dev3 Build** (a branch from `develop`, red test first), **dev4 Check** (the
+quality gate), **dev5 Ship** (open the PR), **dev6 Validate** (a second agent
+checks the merged base), **dev7 Close** (issues, learnings, tracker). Each stage
+is a skill that says how it ends: `.claude/skills/dev1-scope`,
+`.claude/skills/dev2-plan`, `.claude/skills/dev3-build`,
+`.claude/skills/dev4-check`, `.claude/skills/dev5-ship`,
+`.claude/skills/dev6-validate` and `.claude/skills/dev7-close`.
+
+**dev4 is a gate, not a review.** It runs `npm run verify` and
+`npm run check:prepush`, confirms each done-when with evidence, and walks the
+seven Collateral surfaces. It blocks the PR if anything fails. The review is
+the uwreview bench's (Frank and George, see "Review"); no stage reviews its own
+diff, and a stage's own report is never "independent" or "clean".
+
 ## Known open items
 
 1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker,

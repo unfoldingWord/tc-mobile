@@ -95,4 +95,12 @@ describe("completeLocales and the English-only keys", () => {
     expect(resolveLocale(["sw-KE"], completeLocales()).tag).toBe("sw");
     expect(resolveLocale(["sw", "es"], completeLocales()).tag).toBe("sw");
   });
+
+  it("counts hi complete, and resolves a Hindi phone to hi (#1628)", () => {
+    expect(tags()).toContain("hi");
+    const hi = LOCALE_OVERRIDES.hi as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(hi, key)).toBe(false);
+    expect(resolveLocale(["hi-IN"], completeLocales()).tag).toBe("hi");
+    expect(resolveLocale(["hi", "es"], completeLocales()).tag).toBe("hi");
+  });
 });
