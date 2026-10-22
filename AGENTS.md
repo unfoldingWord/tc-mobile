@@ -430,7 +430,9 @@ throws (`components/error-boundary.tsx`), encoder health and recovery
 (`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
 share _prepare_ (`hooks/share-flow.ts`), a share's zip spool that could not
 be deleted afterwards (`hooks/archive-spool.ts`, `"share-spool-release"`,
-#1003), the recorder's own guards and bounds
+#1003), a book's Scripture Bundle build that failed on a read, write or zip
+error (`hooks/use-book-export.ts`, `"book-export-bundle"`, #1457), the
+recorder's own guards and bounds
 (`hooks/use-recorder.ts`: `cancel()`'s native `stop()` guard
 `"recorder-cancel-stop"` #474, `start()`'s resume rejection
 `"recorder-start-resume"` #470 and its 1000 ms bound firing
