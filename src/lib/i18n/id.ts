@@ -214,8 +214,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Segmen ${from} sekarang menjadi segmen ${to}.`,
   reorderStayed: (n: number): string => `Segmen ${n} tetap di tempatnya.`,
   chapterReorderLifted: (n: number): string => `Memindahkan pasal ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `Pasal ${from} sekarang menjadi pasal ${to}.`,
+  chapterReorderMoved: (n: number, to: number): string =>
+    `Pasal ${n} dipindahkan ke urutan ${to}.`,
   chapterReorderStayed: (n: number): string => `Pasal ${n} tetap di tempatnya.`,
   bookReorderLifted: (heading: string): string => `Memindahkan ${heading}.`,
   bookReorderMoved: (heading: string, to: number): string =>
@@ -456,6 +456,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutThirdParty: "Komponen sumber terbuka",
   aboutTexts: "Teks lisensi",
   aboutContent: "Konten bawaan",
+  aboutLanguageCodes: "Kode bahasa: ISO 639-3, dari iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Baca ${name}`,
   aboutBack: "Kembali ke daftar",
   aboutTextLoading: "Memuat teks lisensi.",

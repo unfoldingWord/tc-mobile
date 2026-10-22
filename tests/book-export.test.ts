@@ -489,13 +489,13 @@ describe("exportBookZip — Finished chapters are joined, not re-encoded (#1004)
 });
 
 /**
- * #953: a chapter move renumbers, and the zip follows both the new order and
- * the new numbers — the entry name is `nameChapter(chapter.number)`, so the
- * audio a facilitator already shared can come out under a different name
- * after a move. That is the intended behaviour (scope §4, "File names").
+ * #953 / #1272: a chapter move changes the order and nothing else. The zip
+ * follows the new order, and each entry keeps the name from the chapter's own
+ * number (`nameChapter(chapter.number)`), so a moved chapter's file name does
+ * not change and a list sorted by file name no longer matches the book's order.
  */
 describe("exportBookZip after a chapter move (#953)", () => {
-  it("orders and names the entries by the moved order", async () => {
+  it("orders the entries by the moved order and names them by each chapter's own number", async () => {
     const bookId = await bookWith([
       [{ n: 100, v: 100 }],
       [{ n: 100, v: 150 }],
@@ -511,7 +511,7 @@ describe("exportBookZip after a chapter move (#953)", () => {
       );
     }
 
-    // The third chapter moves to the top: it becomes Chapter 1.
+    // The third chapter moves to the top and stays Chapter 3.
     await moveChapter(before[2]!.id, 0);
 
     const sink = memoryArchiveSink();
@@ -519,19 +519,19 @@ describe("exportBookZip after a chapter move (#953)", () => {
     expect(result).not.toBeNull();
     const entries = unzipSync(archive(sink.chunks));
     expect(Object.keys(entries)).toEqual([
+      "Chapter 3.mp3",
       "Chapter 1.mp3",
       "Chapter 2.mp3",
-      "Chapter 3.mp3",
     ]);
-    // Each name now holds the audio of the chapter that moved into that slot.
+    // Each name still holds the audio of the chapter that has that number.
     expect(audioAfterId3v2(entries["Chapter 1.mp3"]!)).toEqual(
-      solo.get(before[2]!.id)
-    );
-    expect(audioAfterId3v2(entries["Chapter 2.mp3"]!)).toEqual(
       solo.get(before[0]!.id)
     );
-    expect(audioAfterId3v2(entries["Chapter 3.mp3"]!)).toEqual(
+    expect(audioAfterId3v2(entries["Chapter 2.mp3"]!)).toEqual(
       solo.get(before[1]!.id)
+    );
+    expect(audioAfterId3v2(entries["Chapter 3.mp3"]!)).toEqual(
+      solo.get(before[2]!.id)
     );
   });
 });

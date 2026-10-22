@@ -200,6 +200,7 @@ export function AboutPanel({
                 </ExternalLink>
               </span>
             ))}
+            <span className="text-ink-muted">{strings.aboutLanguageCodes}</span>
           </section>
 
           <BuildStamp />

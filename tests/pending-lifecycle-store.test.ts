@@ -403,6 +403,19 @@ describe("a pending row's stored base clip is a use (RC-S)", () => {
     return { ...kept, c, x: kept.meta.id };
   };
 
+  /** K active on S with clip X, and a row on a segment in ANOTHER book whose
+   * stored base is X: a use of X that deleting S, or S's book, leaves. */
+  const heldElsewhere = async () => {
+    const kept = await keptSegment();
+    const { segmentId: other } = await freshSegment();
+    const c = take(other, { existing: kept.pcm });
+    await writePendingTake(c, { source: kept.meta });
+    expect((await rowsNow()).map((r) => [r.segmentId, r.base.kind])).toEqual([
+      [other, "stored"],
+    ]);
+    return { ...kept, c, x: kept.meta.id };
+  };
+
   it("a save keeps the prior clip while a pending row's stored base names it, and deletes it when that row ends", async () => {
     const { segmentId, c, x } = await heldOverKept();
     // Another copy saves D over K: K's clip X is no longer any take's.
@@ -418,8 +431,11 @@ describe("a pending row's stored base clip is a use (RC-S)", () => {
     await clearSegmentTake(erased.segmentId);
     expect(await clipPresent(erased.x)).toEqual({ meta: true, data: true });
 
+    // A segment or book delete drops the deleted segment's own row (RP-D,
+    // below), so the row that keeps X here hangs off a segment in another
+    // book that the delete does not touch.
     await clearAllStores();
-    const segmentGone = await heldOverKept();
+    const segmentGone = await heldElsewhere();
     await deleteSegment(segmentGone.segmentId);
     expect(await clipPresent(segmentGone.x)).toEqual({
       meta: true,
@@ -427,7 +443,7 @@ describe("a pending row's stored base clip is a use (RC-S)", () => {
     });
 
     await clearAllStores();
-    const bookGone = await heldOverKept();
+    const bookGone = await heldElsewhere();
     await deleteBook(bookGone.bookId);
     expect(await clipPresent(bookGone.x)).toEqual({ meta: true, data: true });
 
@@ -474,5 +490,95 @@ describe("deletes drop the disposition records (RP-D, the records half)", () => 
 
     await deleteBook(two.bookId);
     expect(await recordOf(b)).toBeUndefined();
+  });
+});
+
+describe("deletes drop the pending rows of the segments they delete (RP-D, the rows half)", () => {
+  /** S with kept take K (clip X), a row for C whose stored base is X, and a
+   * save of D over K by another copy: X is now named only by C's row. */
+  const baseOnlyInRow = async () => {
+    const kept = await keptSegment();
+    const c = take(kept.segmentId, { existing: kept.pcm });
+    await writePendingTake(c, { source: kept.meta });
+    const d = newClipId();
+    await saveTake(kept.segmentId, d, ramp(40), RATE);
+    expect(await clipPresent(kept.meta.id)).toEqual({ meta: true, data: true });
+    return { ...kept, c, d, x: kept.meta.id };
+  };
+
+  const rowClips = async (): Promise<ClipId[]> =>
+    (await rowsNow()).map((r) => r.clipId).sort();
+
+  it("deleting a segment removes its pending row and releases its base clip", async () => {
+    const s = await baseOnlyInRow();
+    // A row on another segment, which this delete must leave.
+    const other = await freshSegment();
+    const e = take(other.segmentId);
+    await writePendingTake(e);
+
+    // A fault on the tombstone rolls the row delete and the clip release back
+    // with the segment: one transaction.
+    throwWhenStoreRequested(
+      unwrap(await getDb()),
+      "tombstones",
+      new Error("boom")
+    );
+    await expect(deleteSegment(s.segmentId)).rejects.toThrow("boom");
+    vi.restoreAllMocks();
+    expect(await rowClips()).toEqual([s.c.clipId, e.clipId].sort());
+    expect(await clipPresent(s.x)).toEqual({ meta: true, data: true });
+
+    await deleteSegment(s.segmentId);
+    expect(await rowClips()).toEqual([e.clipId]);
+    expect(await clipPresent(s.x)).toEqual({ meta: false, data: false });
+    expect(await clipPresent(s.d)).toEqual({ meta: false, data: false });
+
+    // Idempotent: a second delete of the gone segment writes nothing.
+    await expect(deleteSegment(s.segmentId)).resolves.toBeNull();
+    expect(await rowClips()).toEqual([e.clipId]);
+  });
+
+  it("deleting a segment whose row's base is its own active clip leaves neither", async () => {
+    const kept = await keptSegment();
+    const c = take(kept.segmentId, { existing: kept.pcm });
+    await writePendingTake(c, { source: kept.meta });
+
+    await deleteSegment(kept.segmentId);
+    expect(await rowsNow()).toEqual([]);
+    expect(await clipPresent(kept.meta.id)).toEqual({
+      meta: false,
+      data: false,
+    });
+  });
+
+  it("deleting a book removes the pending rows of its segments", async () => {
+    const s = await baseOnlyInRow();
+    // A second segment of the same book, with an inline row.
+    const segment = await getSegment(s.segmentId);
+    const sibling = await addSegment(segment!.chapterId);
+    const f = take(sibling.id);
+    await writePendingTake(f);
+    // A segment in another book, whose row the delete must leave.
+    const other = await freshSegment();
+    const e = take(other.segmentId);
+    await writePendingTake(e);
+
+    throwWhenStoreRequested(
+      unwrap(await getDb()),
+      "tombstones",
+      new Error("boom")
+    );
+    await expect(deleteBook(s.bookId)).rejects.toThrow("boom");
+    vi.restoreAllMocks();
+    expect(await rowClips()).toEqual([s.c.clipId, f.clipId, e.clipId].sort());
+    expect(await clipPresent(s.x)).toEqual({ meta: true, data: true });
+
+    await deleteBook(s.bookId);
+    expect(await rowClips()).toEqual([e.clipId]);
+    expect(await clipPresent(s.x)).toEqual({ meta: false, data: false });
+
+    // Idempotent: a second delete of the gone book writes nothing.
+    await deleteBook(s.bookId);
+    expect(await rowClips()).toEqual([e.clipId]);
   });
 });

@@ -157,14 +157,15 @@ export interface Chapter {
   readonly id: ChapterId;
   readonly bookId: BookId;
   /**
-   * 1-based, unique within its book (max existing + 1 on create). A reorder
-   * (`moveChapter`, #953) renumbers every chapter of the book to its position
-   * + 1, so the badge and the export file name follow the order.
+   * The chapter's own number: the one the template gave, or max existing + 1
+   * on create. A reorder (`moveChapter`) does not change it (#1272, U2a: "The
+   * chapter's own number (22 if someone typed 22)"), so the badge, the heading
+   * and the export file name stay with the chapter, and the order is
+   * `Book.chapterIds`.
    *
    * From v12 this is the chapter's real number (R7: "Every chapter carries the
-   * number someone types or the template gives"), and the order is
-   * `Book.chapterIds`. The upgrade keeps every stored value; the writers and
-   * readers that still treat it as the position are #1272's to change.
+   * number someone types or the template gives"). The upgrade keeps every
+   * stored value. Nothing in the app lets a person type one yet.
    */
   readonly number: number;
   /**

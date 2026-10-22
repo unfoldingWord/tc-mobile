@@ -352,6 +352,7 @@ export function isStaleBookFailure(
 /**
  * The stores a book delete touches: the tree, both halves of every clip that
  * goes with it, and the tombstone it leaves (#1463). v13 (#38): the pending
+ * rows of the segments it deletes (deleted with them, rebuild PR 2) and the
  * rows a clip's use is counted from, and the disposition records of the
  * segments it deletes.
  */
@@ -408,6 +409,8 @@ type DeleteBookTx = ReturnType<typeof openDeleteBookTx>;
  *     clips at once, so an unconditional delete would, the day an import
  *     dedupes, punch a book's worth of holes in another book's audio. Same
  *     guard `clearSegmentTake` already holds; the take write's is #68.
+ *   - **Pending rows go with their segments** (#38 rebuild PR 2), and the
+ *     clips their `stored` bases named are released by the same check.
  *
  * **The walk goes by the parent links, not the ordering arrays.** `chapterIds`
  * and `segmentIds` are denormalised order; `chapter.bookId` and
@@ -492,9 +495,15 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
   }
 
   for (const take of doomedTakes) await takes.delete(take.id);
+  // The clips this delete lets go of: every doomed take's, and the `stored`
+  // base of every doomed segment's pending row (#38 rebuild PR 2).
+  const released = new Set(doomedTakes.map((take) => take.clipId));
   for (const segmentId of doomedSegments) {
     await segments.delete(segmentId);
     await deleteDispositionsOf(tx, segmentId);
+    for (const clipId of await deletePendingRowOf(tx, segmentId)) {
+      released.add(clipId);
+    }
   }
   for (const chapter of ownedChapters) await chapters.delete(chapter.id);
   // `delete` on an absent key is a no-op in IndexedDB, so the orphan case needs
@@ -514,16 +523,39 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
     });
   }
 
-  // The take rows are gone, so the clip-use check sees only the references
-  // that survive this delete. A clip nothing uses is unreachable audio and
-  // goes with the book; a clip another segment's take, or a pending row's
-  // stored base, still names stays (v13, #38).
-  // The surviving take rows are read once, after the last take delete, and
-  // nothing below deletes a take, so the set stays exact for every clip.
+  // The take rows and the pending rows are gone, so the clip-use check sees
+  // only the references that survive this delete. A clip nothing uses is
+  // unreachable audio and goes with the book; a clip another segment's take,
+  // or another segment's pending row's stored base, still names stays (v13,
+  // #38). The surviving take rows are read once, after the last take delete,
+  // and nothing below deletes a take, so the set stays exact for every clip.
   const takeClips = new Set((await takes.getAll()).map((take) => take.clipId));
-  for (const clipId of new Set(doomedTakes.map((take) => take.clipId))) {
+  for (const clipId of released) {
     await deleteClipIfUnreferenced(tx, clipId, takeClips);
   }
+}
+
+/**
+ * Delete a segment's pending row (#38 rebuild PR 2,
+ * docs/design/pending-take-lifecycle.md §3 and cell RP-D), on the transaction
+ * that deletes the segment, and return the clip its `stored` base named, for
+ * the caller to release once every row it is deleting is gone. A row ends
+ * only in the owning transaction or with its segment; this is the second.
+ * No disposition is written: the segment's records go in the same
+ * transaction, because a deleted segment is final. A row of any take goes,
+ * this copy's or another's, refused or not: nothing can install audio on a
+ * deleted segment, and the replay would only delete the row as `gone`.
+ * Idempotent: a segment with no row returns `[]` and writes nothing.
+ */
+async function deletePendingRowOf(
+  tx: ClipUseTx,
+  segmentId: SegmentId
+): Promise<ClipId[]> {
+  const rows = tx.objectStore("pendingTakes");
+  const row = await rows.get(segmentId);
+  if (!row) return [];
+  await rows.delete(segmentId);
+  return row.base.kind === "stored" ? [row.base.sourceClipId] : [];
 }
 
 /**
@@ -652,9 +684,9 @@ export async function abortQuietly(
  *
  * **`max + 1`, deliberately NOT {@link nextBookNumber}'s first-unused rule.** A
  * book's placeholder is a label and reusing a freed one is the point (#360); a
- * chapter's `number` is its position in the export concatenation, so filling a
- * hole left by a removed chapter would drop the new recording into the middle
- * of the book rather than at the end.
+ * chapter's `number` is its own (#1272) and a new chapter goes at the end of
+ * the book, so filling a hole left by a removed chapter would give it a number
+ * that sits among the earlier ones rather than after them.
  */
 export function nextChapterNumber(existingNumbers: Iterable<number>): number {
   let max = 0;
@@ -804,13 +836,13 @@ export async function renameChapter(
  *     aborted on a thrown error (the `deleteBook` guard) — the array and the
  *     numbers commit together or not at all. A crash between the two would
  *     leave badges and export file names that disagree with the order.
- *   - **Dense renumbering** (DRI pick, #953 scope Q1): every resolvable
- *     chapter's `number` becomes its visible position + 1, so the badges read
- *     1..N and the export's `nameChapter(number)` follows the order. Only rows
- *     whose number changes are written. A dangling id is not numbered — it has
- *     no record — and export still counts it as missing.
- *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6"; only the
- *     number badge and the file name follow position.
+ *   - **No renumbering** (#1272, owner answer U2a, 2026-10-21: "The chapter's
+ *     own number (22 if someone typed 22)", not "Its place in the list (1, 2,
+ *     3)"). A chapter keeps the `number` the template gave or a person typed;
+ *     only `book.chapterIds` changes, so no chapter row is written. This
+ *     replaces #953's dense renumbering (its scope Q1). A dangling id has no
+ *     record, and export still counts it as missing.
+ *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6".
  *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
  *     activity on the book. This is the one tree edit that differs from
  *     `renameChapter` here, on purpose. (The shelf order does not depend on
@@ -818,8 +850,8 @@ export async function renameChapter(
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
- * Returns the book's resolvable chapters in their new order, with the numbers
- * they now hold — what a caller patches its rows from.
+ * Returns the book's resolvable chapters in their new order, each with the
+ * number it keeps — what a caller patches its rows from.
  */
 export async function moveChapter(
   chapterId: ChapterId,
@@ -851,19 +883,8 @@ export async function moveChapter(
     // is still a write, so `modifiedAt` moves (J6).
     const now = Date.now();
     await books.put({ ...book, chapterIds: plan.ids, modifiedAt: now });
-    const renumbered: Chapter[] = [];
-    for (const [position, row] of plan.order.entries()) {
-      const number = position + 1;
-      if (row.number === number) {
-        renumbered.push(row);
-        continue;
-      }
-      const updated: Chapter = { ...row, number, modifiedAt: now };
-      await chapters.put(updated);
-      renumbered.push(updated);
-    }
     await tx.done;
-    return renumbered;
+    return plan.order;
   } catch (cause) {
     await abortQuietly(() => tx.abort(), tx.done);
     throw cause;
@@ -1168,6 +1189,9 @@ const DELETE_SEGMENT_STORES = [
  *     nothing shares a clip in the shipped app, but a future
  *     content-addressed import could dedupe, and an unconditional delete
  *     would then punch a hole in another segment's only copy.
+ *   - **The segment's pending row goes with it** (#38 rebuild PR 2), and the
+ *     clip its `stored` base named is released by the same check, unless
+ *     another segment's row still names it.
  *   - **Dense renumbering**, reusing {@link renumberSegments} — the same
  *     write `moveSegment` makes, not a second copy of it. A dangling id
  *     already in `chapter.segmentIds` (unrelated to this delete) keeps its
@@ -1227,13 +1251,20 @@ export async function deleteSegment(
     if (!chapter) throw new Error(`No such chapter: ${segment.chapterId}`);
 
     // The take and its clip, reference-counted exactly as `clearSegmentTake`
-    // deletes them (takes.ts). The take row goes first so the survivor scan
-    // below sees only the takes that are left.
+    // deletes them (takes.ts), and the segment's pending row with the clip
+    // its `stored` base names (v13, #38 rebuild PR 2). Both rows go first,
+    // so the clip-use check below sees only the uses that are left: a row
+    // whose base is this segment's own active clip would otherwise keep it.
+    const released: ClipId[] = [];
     const priorTakeId = segment.activeTakeId;
     if (priorTakeId !== null) {
       const priorTake = await takes.get(priorTakeId);
       await takes.delete(priorTakeId);
-      if (priorTake) await deleteClipIfUnreferenced(tx, priorTake.clipId);
+      if (priorTake) released.push(priorTake.clipId);
+    }
+    released.push(...(await deletePendingRowOf(tx, segmentId)));
+    for (const clipId of new Set(released)) {
+      await deleteClipIfUnreferenced(tx, clipId);
     }
 
     const now = Date.now();
