@@ -61,6 +61,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     chapters: chapters.filter((c): c is ChapterRow => c !== null),
     coverColourKey: book.coverColourKey,
     createdAt: book.createdAt,
+    licence: book.licence,
   };
 }
 
@@ -629,6 +630,7 @@ export function useBooks() {
             chapters: [],
             coverColourKey: book.coverColourKey,
             createdAt: book.createdAt,
+            licence: book.licence,
           },
           ...prev,
         ]);
