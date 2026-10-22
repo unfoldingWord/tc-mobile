@@ -195,9 +195,7 @@ from.
       cannot hide an open run, and its scenario table covers the diagnostic
       APK, a `main` run in the shared group, a run that builds `<PROMO_SHA>`
       during the wait, a moved tip and a production build of the same version. Do not
-      dispatch from a shorter version of it. An empty conclusion with the run
-      still open means the job is waiting for the `release-signing` reviewer
-      or running: it has started, so do not dispatch a second one.
+      dispatch from a shorter version of it.
 - [ ] Human-only, only if a lane did not start (its signing job `skipped`)
       and §3b allows it: the DRI dispatches it from
       `staging` via `!`:
