@@ -37,4 +37,32 @@
     font-size: 17px; /* #939 token */
     font-weight: 700; /* #939 token */
   }
+  /* --- a cut-off name read whole by holding it (#1284, S14) ---------------
+     The name only, in the surface a sheet uses. It spans the screen's width
+     less an 8px margin each side, so a long name wraps to as many lines as it
+     needs, and it takes no touches. A long press on the name must not select
+     text or raise the phone's callout. */
+  :root [data-hold-reveal] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  :root .name-reveal {
+    position: fixed;
+    inset-inline: 8px;
+    z-index: 100;
+    box-sizing: border-box;
+    max-height: 60vh;
+    overflow: hidden;
+    padding: 12px 16px;
+    border-radius: var(--p-radius-lg);
+    background: var(--s-overlay);
+    color: var(--s-ink);
+    box-shadow: inset 0 0 0 1px var(--s-edge);
+    font-size: 18px; /* #939 token */
+    font-weight: 700; /* #939 token */
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+  }
 }
