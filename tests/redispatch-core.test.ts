@@ -291,6 +291,18 @@ describe("classifyRun: one run's token", () => {
     ).toMatchObject({ token: "unknown", fatal: true });
   });
 
+  it("George #1640 r1 (a): a completion step whose conclusion is not a string is a fatal stop", () => {
+    const v = view("play-build-only");
+    for (const st of v.jobs?.[1]?.steps ?? []) {
+      if (st.name === "Upload to Google Play") {
+        st.conclusion = 0 as unknown as string;
+      }
+    }
+    expect(
+      classifyRun("play", row(1, "completed", RC_SHA), v, undefined)
+    ).toMatchObject({ token: "unknown", fatal: true });
+  });
+
   it("George #1640 r1: an unknown lane is a fatal stop, not a throw", () => {
     expect(
       classifyRun(

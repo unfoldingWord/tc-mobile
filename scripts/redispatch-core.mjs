@@ -130,6 +130,12 @@ export function classifyRun(lane, run, view, artifacts) {
       reason: `run ${run.databaseId} completed with "${spec.step}" unfinished`,
     };
   }
+  // `not built` needs a finished non-success STRING (#1640 George r1 (a)).
+  if (typeof step.conclusion !== "string") {
+    return fatal(
+      `run ${run.databaseId}: "${spec.step}" conclusion is not a string`
+    );
+  }
   if (step.conclusion !== "success") {
     return { token: "not built", reason: `"${spec.step}" ${step.conclusion}` };
   }
