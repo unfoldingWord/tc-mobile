@@ -90,6 +90,8 @@ const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
       "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
     shareBookFilename:
       "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+    exportProjectFilename:
+      "Builds `<book name> - project.zip`: ADR 0014 point 8 fixes the suffix in English on every phone language until #1627 is answered, so it equals English by design.",
   },
   id: {
     menuTitle:
@@ -145,11 +147,15 @@ const SCRIPT_BY_TAG: Readonly<Record<string, string>> = {
   "zh-Hans": "Han",
 };
 
-/** Exempt by rule, not by listing: placeholders, probe sentinels, brand words. */
+/**
+ * Exempt by rule, not by listing: placeholders, probe sentinels, brand words,
+ * and the Export project file name's fixed English suffix (ADR 0014 point 8,
+ * open on #1627).
+ */
 const PLACEHOLDER = /\{[A-Za-z0-9_]+\}/g;
 const SENTINEL = /SENT[ab]?\d+/g;
 const BRAND =
-  /tC Mobile|MP3|ZIP|PWA|\.mp3|\.zip|CC BY-SA 4\.0|CC BY 4\.0|CC0 1\.0/g;
+  /tC Mobile|MP3|ZIP|PWA|\.mp3|- project\.zip|\.zip|CC BY-SA 4\.0|CC BY 4\.0|CC0 1\.0/g;
 
 function exempt(text: string): string {
   return text
