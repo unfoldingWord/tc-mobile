@@ -1,0 +1,58 @@
+{
+  "_source": "real: `gh run view 34704510457 --json jobs (ios-testflight.yml, preflight failed, signing job skipped)`, read 2026-10-22",
+  "jobs": [
+    {
+      "completedAt": "2026-09-12T16:12:24Z",
+      "conclusion": "failure",
+      "databaseId": 103582024005,
+      "name": "Preflight (ref + secrets)",
+      "startedAt": "2026-09-12T16:12:20Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-12T16:12:22Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-12T16:12:21Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-12T16:12:22Z",
+          "conclusion": "success",
+          "name": "Require staging/main (or an explicit override)",
+          "number": 2,
+          "startedAt": "2026-09-12T16:12:22Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-12T16:12:22Z",
+          "conclusion": "failure",
+          "name": "Require all seven secrets",
+          "number": 3,
+          "startedAt": "2026-09-12T16:12:22Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-12T16:12:22Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 4,
+          "startedAt": "2026-09-12T16:12:22Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/34704510457/job/103582024005"
+    },
+    {
+      "completedAt": "2026-09-12T16:12:25Z",
+      "conclusion": "skipped",
+      "databaseId": 103582039288,
+      "name": "Build and upload to TestFlight",
+      "startedAt": "2026-09-12T16:12:25Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/34704510457/job/103582039288"
+    }
+  ]
+}
