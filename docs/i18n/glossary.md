@@ -69,6 +69,11 @@ launch)". Their cells in section 5 are left empty and marked "to draft": no
 proposal has been written for them, no human has reviewed any, and no native
 reader has been asked.
 
+The two level-3 tables carry an `English` column beside `#`, copied from the
+English table in this section. Join a drafted cell to its English term on that
+column, not on the row number, so a reorder of the table cannot pair a cell with
+the wrong word.
+
 | Code  | Language   | Script | Direction     |
 | ----- | ---------- | ------ | ------------- |
 | `ha`  | Hausa      | Latin  | left to right |
@@ -264,67 +269,67 @@ the site uses (section 3).
 
 **Hausa, Lingala, Malay, Tagalog (level 3, Latin script, to draft)**
 
-| #   | `ha`     | `ln`     | `ms`     | `tl`     | Source   |
-| --- | -------- | -------- | -------- | -------- | -------- |
-| 1   | to draft | to draft | to draft | to draft | none yet |
-| 2   | to draft | to draft | to draft | to draft | none yet |
-| 3   | to draft | to draft | to draft | to draft | none yet |
-| 4   | to draft | to draft | to draft | to draft | none yet |
-| 5   | to draft | to draft | to draft | to draft | none yet |
-| 6   | to draft | to draft | to draft | to draft | none yet |
-| 7   | to draft | to draft | to draft | to draft | none yet |
-| 8   | to draft | to draft | to draft | to draft | none yet |
-| 9   | to draft | to draft | to draft | to draft | none yet |
-| 10  | to draft | to draft | to draft | to draft | none yet |
-| 11  | to draft | to draft | to draft | to draft | none yet |
-| 12  | to draft | to draft | to draft | to draft | none yet |
-| 13  | to draft | to draft | to draft | to draft | none yet |
-| 14  | to draft | to draft | to draft | to draft | none yet |
-| 15  | to draft | to draft | to draft | to draft | none yet |
-| 16  | to draft | to draft | to draft | to draft | none yet |
-| 17  | to draft | to draft | to draft | to draft | none yet |
-| 18  | to draft | to draft | to draft | to draft | none yet |
-| 19  | to draft | to draft | to draft | to draft | none yet |
-| 20  | to draft | to draft | to draft | to draft | none yet |
-| 21  | to draft | to draft | to draft | to draft | none yet |
-| 22  | to draft | to draft | to draft | to draft | none yet |
-| 23  | to draft | to draft | to draft | to draft | none yet |
-| 24  | to draft | to draft | to draft | to draft | none yet |
-| 25  | to draft | to draft | to draft | to draft | none yet |
-| 26  | to draft | to draft | to draft | to draft | none yet |
-| 27  | to draft | to draft | to draft | to draft | none yet |
+| #   | English              | `ha`     | `ln`     | `ms`     | `tl`     | Source   |
+| --- | -------------------- | -------- | -------- | -------- | -------- | -------- |
+| 1   | Book                 | to draft | to draft | to draft | to draft | none yet |
+| 2   | Chapter              | to draft | to draft | to draft | to draft | none yet |
+| 3   | Segment              | to draft | to draft | to draft | to draft | none yet |
+| 4   | Recording (noun)     | to draft | to draft | to draft | to draft | none yet |
+| 5   | Record               | to draft | to draft | to draft | to draft | none yet |
+| 6   | Stop recording       | to draft | to draft | to draft | to draft | none yet |
+| 7   | Play                 | to draft | to draft | to draft | to draft | none yet |
+| 8   | Pause                | to draft | to draft | to draft | to draft | none yet |
+| 9   | Share                | to draft | to draft | to draft | to draft | none yet |
+| 10  | Done                 | to draft | to draft | to draft | to draft | none yet |
+| 11  | Reset recording      | to draft | to draft | to draft | to draft | none yet |
+| 12  | Delete               | to draft | to draft | to draft | to draft | none yet |
+| 13  | Rename               | to draft | to draft | to draft | to draft | none yet |
+| 14  | Cancel               | to draft | to draft | to draft | to draft | none yet |
+| 15  | Edit                 | to draft | to draft | to draft | to draft | none yet |
+| 16  | Undo                 | to draft | to draft | to draft | to draft | none yet |
+| 17  | Menu                 | to draft | to draft | to draft | to draft | none yet |
+| 18  | Close                | to draft | to draft | to draft | to draft | none yet |
+| 19  | Back / Go back       | to draft | to draft | to draft | to draft | none yet |
+| 20  | Try again            | to draft | to draft | to draft | to draft | none yet |
+| 21  | Save                 | to draft | to draft | to draft | to draft | none yet |
+| 22  | Name                 | to draft | to draft | to draft | to draft | none yet |
+| 23  | Microphone           | to draft | to draft | to draft | to draft | none yet |
+| 24  | Phone                | to draft | to draft | to draft | to draft | none yet |
+| 25  | Space (on the phone) | to draft | to draft | to draft | to draft | none yet |
+| 26  | Licence              | to draft | to draft | to draft | to draft | none yet |
+| 27  | About                | to draft | to draft | to draft | to draft | none yet |
 
 **Tok Pisin, Turkish, Vietnamese (level 3, Latin script, to draft)**
 
-| #   | `tpi`    | `tr`     | `vi`     | Source   |
-| --- | -------- | -------- | -------- | -------- |
-| 1   | to draft | to draft | to draft | none yet |
-| 2   | to draft | to draft | to draft | none yet |
-| 3   | to draft | to draft | to draft | none yet |
-| 4   | to draft | to draft | to draft | none yet |
-| 5   | to draft | to draft | to draft | none yet |
-| 6   | to draft | to draft | to draft | none yet |
-| 7   | to draft | to draft | to draft | none yet |
-| 8   | to draft | to draft | to draft | none yet |
-| 9   | to draft | to draft | to draft | none yet |
-| 10  | to draft | to draft | to draft | none yet |
-| 11  | to draft | to draft | to draft | none yet |
-| 12  | to draft | to draft | to draft | none yet |
-| 13  | to draft | to draft | to draft | none yet |
-| 14  | to draft | to draft | to draft | none yet |
-| 15  | to draft | to draft | to draft | none yet |
-| 16  | to draft | to draft | to draft | none yet |
-| 17  | to draft | to draft | to draft | none yet |
-| 18  | to draft | to draft | to draft | none yet |
-| 19  | to draft | to draft | to draft | none yet |
-| 20  | to draft | to draft | to draft | none yet |
-| 21  | to draft | to draft | to draft | none yet |
-| 22  | to draft | to draft | to draft | none yet |
-| 23  | to draft | to draft | to draft | none yet |
-| 24  | to draft | to draft | to draft | none yet |
-| 25  | to draft | to draft | to draft | none yet |
-| 26  | to draft | to draft | to draft | none yet |
-| 27  | to draft | to draft | to draft | none yet |
+| #   | English              | `tpi`    | `tr`     | `vi`     | Source   |
+| --- | -------------------- | -------- | -------- | -------- | -------- |
+| 1   | Book                 | to draft | to draft | to draft | none yet |
+| 2   | Chapter              | to draft | to draft | to draft | none yet |
+| 3   | Segment              | to draft | to draft | to draft | none yet |
+| 4   | Recording (noun)     | to draft | to draft | to draft | none yet |
+| 5   | Record               | to draft | to draft | to draft | none yet |
+| 6   | Stop recording       | to draft | to draft | to draft | none yet |
+| 7   | Play                 | to draft | to draft | to draft | none yet |
+| 8   | Pause                | to draft | to draft | to draft | none yet |
+| 9   | Share                | to draft | to draft | to draft | none yet |
+| 10  | Done                 | to draft | to draft | to draft | none yet |
+| 11  | Reset recording      | to draft | to draft | to draft | none yet |
+| 12  | Delete               | to draft | to draft | to draft | none yet |
+| 13  | Rename               | to draft | to draft | to draft | none yet |
+| 14  | Cancel               | to draft | to draft | to draft | none yet |
+| 15  | Edit                 | to draft | to draft | to draft | none yet |
+| 16  | Undo                 | to draft | to draft | to draft | none yet |
+| 17  | Menu                 | to draft | to draft | to draft | none yet |
+| 18  | Close                | to draft | to draft | to draft | none yet |
+| 19  | Back / Go back       | to draft | to draft | to draft | none yet |
+| 20  | Try again            | to draft | to draft | to draft | none yet |
+| 21  | Save                 | to draft | to draft | to draft | none yet |
+| 22  | Name                 | to draft | to draft | to draft | none yet |
+| 23  | Microphone           | to draft | to draft | to draft | none yet |
+| 24  | Phone                | to draft | to draft | to draft | none yet |
+| 25  | Space (on the phone) | to draft | to draft | to draft | none yet |
+| 26  | Licence              | to draft | to draft | to draft | none yet |
+| 27  | About                | to draft | to draft | to draft | none yet |
 
 Every cell in these two tables is empty on purpose: "to draft" is a placeholder,
 not a proposal. A drafting lane fills a cell from the row's English and its Note
