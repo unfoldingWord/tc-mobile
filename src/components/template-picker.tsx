@@ -113,6 +113,18 @@ export function TemplatePicker({
   const [chosen, setChosen] = useState<TemplateEntry | null>(null);
   const [error, setError] = useState<FailureKey | null>(null);
   const language = activeLocale().tag;
+  // Every close resets the picker, system Back included: Back dismisses the
+  // layer by `open` falling, without `close`, so the reset is keyed on that
+  // falling edge (adjusted during render, not in an effect). The hook forgets
+  // its held intent on the same edge.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (!open) {
+      setChosen(null);
+      setError(null);
+    }
+  }
 
   const close = useCallback(() => {
     if (creating) return;
@@ -134,6 +146,8 @@ export function TemplatePicker({
       if (chosen === null) return;
       setError(null);
       const outcome = await create(chosen, name);
+      // A create already in flight answers its own outcome; this one is none.
+      if (outcome === null) return;
       if (outcome.ok) {
         setChosen(null);
       } else {

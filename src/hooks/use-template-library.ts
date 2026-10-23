@@ -73,7 +73,7 @@ export type TemplateLibraryStatus = "loading" | "ready" | "failed";
 /**
  * The entries, loaded when the library opens, and a latched create. The latch
  * is taken before the first await, so a second tap while the write is in
- * flight does nothing.
+ * flight writes nothing and answers `null`.
  */
 export function useTemplateLibrary(
   open: boolean,
@@ -90,7 +90,12 @@ export function useTemplateLibrary(
   } | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // Every close forgets the held intent, system Back included: Back
+      // dismisses the layer by `open` falling, without the picker's `close`.
+      intent.current = null;
+      return;
+    }
     let live = true;
     // Deferred past the effect body: no state is set before the first await.
     void loadObsTemplate().then(
@@ -115,18 +120,29 @@ export function useTemplateLibrary(
   }, []);
 
   const create = useCallback(
-    async (entry: TemplateEntry, name: string): Promise<CreateOutcome> => {
-      if (latch.current) return { ok: false, key: "saveFailed" };
+    async (
+      entry: TemplateEntry,
+      name: string
+    ): Promise<CreateOutcome | null> => {
+      // A create already in flight answers this one: `null` is "nothing
+      // happened", which the caller shows as nothing. It is not a failure.
+      if (latch.current) return null;
       latch.current = true;
       onBusyChange?.(true);
       setCreating(true);
-      if (intent.current?.entry !== entry) {
-        intent.current = { entry, intent: newIntent(entry) };
+      let outcome: CreateOutcome;
+      try {
+        if (intent.current?.entry !== entry) {
+          intent.current = { entry, intent: newIntent(entry) };
+        }
+        outcome = await createFromEntry(intent.current.intent, name);
+      } finally {
+        // Released on a throw too: this picker never unmounts, so a stuck
+        // latch would hold the create and refuse Back for the session.
+        latch.current = false;
+        onBusyChange?.(false);
+        setCreating(false);
       }
-      const outcome = await createFromEntry(intent.current.intent, name);
-      latch.current = false;
-      onBusyChange?.(false);
-      setCreating(false);
       if (outcome.ok) {
         intent.current = null;
         onCreated();

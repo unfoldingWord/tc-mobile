@@ -55,6 +55,10 @@ const current = 'globPatterns: ["**/*.{js,css,html,svg,png,woff2}"]';
 const restored = 'globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2}"]';
 const disagree =
   "Emitted OBS thumbnails disagree with the reader-gated jpg policy";
+// George round 1 (#1655): a commented-out array above the live one must not
+// be read as the policy. The gate reads the raw file, so it refuses to choose.
+const decoy = `// ${current}\n${restored}`;
+const ambiguous = "More than one globPatterns array in vite.config.ts";
 
 describe.each([
   ["android-apk.yml", STEP],
@@ -86,7 +90,21 @@ describe.each([
       status: 0,
     },
     { label: "no globPatterns", config: "", thumbs: false, status: 1 },
-  ])("$label exits $status", ({ config, thumbs, status }) => {
+    {
+      label: "a commented decoy above the live array, none emitted",
+      config: decoy,
+      thumbs: false,
+      status: 1,
+      error: ambiguous,
+    },
+    {
+      label: "a commented decoy above the live array, thumbnails emitted",
+      config: decoy,
+      thumbs: true,
+      status: 1,
+      error: ambiguous,
+    },
+  ])("$label exits $status", ({ config, thumbs, status, error }) => {
     const root = mkdtempSync(path.join(tmpdir(), "thumb-gate-"));
     fixtures.push(root);
     mkdirSync(path.join(root, "dist"));
@@ -103,7 +121,7 @@ describe.each([
     });
     expect(result.status, result.stderr + result.stdout).toBe(status);
     if (status === 1 && config !== "") {
-      expect(result.stderr).toContain(`::error::${disagree}`);
+      expect(result.stderr).toContain(`::error::${error ?? disagree}`);
     }
   });
 });

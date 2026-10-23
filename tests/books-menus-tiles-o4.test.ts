@@ -7,6 +7,7 @@ import { BooksScreen } from "@/components/books-screen";
 import { idleChapterAudio } from "./chapter-audio";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
+import { loadObsTemplate } from "@/lib/templates/obs";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
@@ -415,5 +416,40 @@ describe("the app ≡ menu holds no way back to the old look (#1244)", () => {
     expect(menu!.querySelectorAll("[aria-pressed]")).toHaveLength(0);
     for (const b of all)
       expect(b.getAttribute("aria-label") ?? "").not.toMatch(/new look/i);
+  });
+});
+
+describe("the Template Library panel (#246)", () => {
+  const row = () =>
+    document.querySelector<HTMLButtonElement>("button.template-row");
+  const nameField = () =>
+    document.querySelector(`input[aria-label="${strings.bookNameField}"]`);
+  async function openLibrary() {
+    await openFrom(strings.menuOpen);
+    await click(strings.templatesOpen);
+    // The package list loads after the open edge.
+    for (let i = 0; i < 50 && row() === null; i++)
+      await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(row(), "the package list").not.toBeNull();
+  }
+
+  // Frank and George round 1 on #1655: system Back dismisses the layer by
+  // `open` falling, without the picker's own `close`.
+  it("reopens on the list after system Back from the name step", async () => {
+    // Warm the package's one-time load so the open edge settles quickly.
+    await loadObsTemplate();
+    await mount();
+    await openLibrary();
+    await act(async () => row()!.click());
+    expect(nameField(), "the name step").not.toBeNull();
+    const top = layers.get("books:templates");
+    expect(top).toBeDefined();
+    expect(top!.busy()).toBe(false);
+    await act(async () => {
+      top!.dismiss();
+      layers.delete("books:templates");
+    });
+    await openLibrary();
+    expect(nameField(), "no stale name step").toBeNull();
   });
 });
