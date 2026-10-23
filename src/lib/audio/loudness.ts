@@ -702,6 +702,13 @@ export function normalizePcm(
   }
   for (let n = normalizer.flush(work); n > 0; n = normalizer.flush(work))
     emit(n);
+  // The output must be exactly as long as the input: a short one would leave
+  // the take's tail as unprocessed samples, which are then encoded and the
+  // PCM dropped. Refuse it, so the sweep keeps the PCM instead.
+  if (written !== total)
+    throw new Error(
+      `normalizePcm: wrote ${written} samples for a ${total}-sample take`
+    );
 
   return {
     stages: NORMALIZE_STAGES,

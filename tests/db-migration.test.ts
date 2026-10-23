@@ -2313,6 +2313,53 @@ describe("the v13 → v14 schema (#1433)", () => {
     expect(await processing("pcm-orphan")).toBeNull();
   });
 
+  it("classifies a pre-v4 clip in the v14 step, though the v4 stamp wrote null first (George and Frank R2 on #1679)", async () => {
+    const v3 = await openLegacyV3();
+    const v3Clip = (id: string) => ({
+      id,
+      sampleRate: 44100,
+      frameCount: 4,
+      durationMs: 1,
+      createdAt: 1,
+    });
+    const v3Segment = (id: string, takeId: string, status: string) => ({
+      id,
+      chapterId: "ch",
+      index: 1,
+      reference: null,
+      activeTakeId: takeId,
+      status,
+    });
+    const v3Take = (id: string, clipId: string, segmentId: string) => ({
+      id,
+      segmentId,
+      clipId,
+      createdAt: 1,
+      durationMs: 1,
+    });
+    await v3.put("segments", v3Segment("s1", "t1", "affirmed"));
+    await v3.put("takes", v3Take("t1", "pcm-finished", "s1"));
+    await v3.put("clipMeta", v3Clip("pcm-finished"));
+    await v3.put("segments", v3Segment("s2", "t2", "draft"));
+    await v3.put("takes", v3Take("t2", "pcm-draft", "s2"));
+    await v3.put("clipMeta", v3Clip("pcm-draft"));
+    v3.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(
+      (await db.get("clipMeta", "pcm-finished" as never))?.processing
+    ).toEqual({
+      stages: [],
+      measuredLufs: null,
+      measuredTruePeakDbtp: null,
+      appliedGainDb: 0,
+    });
+    expect(
+      (await db.get("clipMeta", "pcm-draft" as never))?.processing
+    ).toBeNull();
+  });
+
   it("a fresh clip is written with processing null", async () => {
     const { buildClipMeta } = await import("@/lib/storage/clips");
     expect(

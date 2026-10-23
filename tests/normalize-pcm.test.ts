@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { INT16_MAX } from "@/lib/audio/format";
 import {
   LOUDNESS_TARGET,
   LoudnessMeter,
+  LoudnessNormalizer,
   NORMALIZE_STAGES,
   normalizePcm,
 } from "@/lib/audio/loudness";
@@ -74,5 +75,17 @@ describe("normalizePcm (#1433)", () => {
     expect(fractions.at(-1)).toBe(1);
     for (let i = 1; i < fractions.length; i++)
       expect(fractions[i]!).toBeGreaterThan(fractions[i - 1]!);
+  });
+
+  describe("when the limiter's tail does not come out", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("throws rather than hand back a take whose tail was never processed", () => {
+      // A flush that yields nothing leaves the last `latency` samples raw.
+      vi.spyOn(LoudnessNormalizer.prototype, "flush").mockReturnValue(0);
+      expect(() => normalizePcm(quietSpeech(1, 6), RATE)).toThrow(
+        /wrote \d+ samples for a 44100-sample take/
+      );
+    });
   });
 });

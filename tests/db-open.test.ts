@@ -346,10 +346,10 @@ async function writeShelf(): Promise<void> {
 }
 
 describe("roll forward only: the current database and an older build (#1462, #38)", () => {
-  it("a database at the current version holding a real shelf refuses an open one version older and keeps every row, clip byte and its version", async () => {
-    // State 1. A v12 build cannot be loaded here (`DB_VERSION` is a module
-    // constant), so the v12 build's open is a raw `openDB` at 12 — the request
-    // that build makes — and the app's own mapping of that refusal is pinned
+  it("a database at the current version holding a real shelf refuses an open at APP_VERSION - 1 and keeps every row, clip byte and its version", async () => {
+    // State 1. The previous build cannot be loaded here (`DB_VERSION` is a
+    // module constant), so its open is a raw `openDB` at APP_VERSION - 1 — the
+    // request that build makes — and the app's own mapping of that refusal is pinned
     // just below, by a newer database meeting this build.
     await writeShelf();
     await closeDb();
