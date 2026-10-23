@@ -49,6 +49,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesTitle: "Шаблоны",
   templateLicenceLabel: (licence: string): string => `Лицензия: ${licence}`,
   settingsChapterNumbers: "Всегда показывать номера глав",
+  settingsNormalizeOnFinished: "Выравнивать громкость при отметке «Готово»",
   booksEmpty: "Начните свою первую книгу",
   booksEmptyTeach: "В книге хранятся главы, которые вы записываете.",
   loadingBooks: "Загружаются ваши книги.",

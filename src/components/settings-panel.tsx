@@ -1,7 +1,10 @@
 import { Menu } from "./menu";
 import { SettingRow } from "./setting-row";
 import { ThemeControl } from "./theme-control";
-import { useAlwaysChapterNumberSetting } from "@/hooks/use-settings";
+import {
+  useAlwaysChapterNumberSetting,
+  useNormalizeOnFinishedSetting,
+} from "@/hooks/use-settings";
 import { strings } from "@/lib/strings";
 
 /**
@@ -14,7 +17,7 @@ import { strings } from "@/lib/strings";
  * control is the back chevron, named "Back to books".
  *
  * Rows, in order: the theme (moved here from the ≡ menu, `ThemeControl`'s row
- * form), then S12's chapter-number switch. A later setting is another row.
+ * form), then S12's chapter-number switch, then the loudness switch (#1433). A later setting is another row.
  * Each subscribes in its own leaf, so a toggle re-renders that row and the
  * screens that read the value, not this panel.
  */
@@ -36,6 +39,7 @@ export function SettingsPanel({
       <div className="settings-list">
         <ThemeControl />
         <ChapterNumbersRow />
+        <NormalizeRow />
       </div>
     </Menu>
   );
@@ -47,6 +51,18 @@ function ChapterNumbersRow() {
     <SettingRow
       icon="book-open"
       label={strings.settingsChapterNumbers}
+      on={on}
+      onClick={toggle}
+    />
+  );
+}
+
+function NormalizeRow() {
+  const { on, toggle } = useNormalizeOnFinishedSetting();
+  return (
+    <SettingRow
+      icon="hear"
+      label={strings.settingsNormalizeOnFinished}
       on={on}
       onClick={toggle}
     />
