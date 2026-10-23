@@ -377,3 +377,133 @@ export function afterDispatch({
     reason: `new run ${j.run.databaseId} is ${j.token} (${j.reason}); run the pre-dispatch check again`,
   };
 }
+
+/** Job statuses for an upload job that has not started its steps. */
+const NOT_STARTED = new Set(["queued", "waiting", "pending", "requested"]);
+
+/**
+ * The pre-upload guard (#1616), run inside a lane's upload job. That job
+ * holds the lane's concurrency group, so no other upload of the lane runs
+ * beside it. `input`: `{ lane, sha, runId, attempt, laneRuns, views,
+ * artifacts, priorAttempts: [{ attempt, view }], otherAttempts: { [id]:
+ * { attempt, views: [{ attempt, view }] } } }`: `laneRuns` is the lane's
+ * runs at `sha`, this run among them; `priorAttempts` is this run's earlier
+ * attempts; `otherAttempts` is every other run's attempt count and the views
+ * of its attempts before that count.
+ *
+ * Returns `{ decision, reason, lines }`. `upload`, or `skip` when any attempt
+ * of a run of this lane at this commit, or an earlier attempt of this run, is
+ * `built` by
+ * `classifyRun`, the same token `check:redispatch` reads. `stop` when the
+ * reads cannot settle it: the header's rule, never a guess. A stop outranks
+ * a skip. An open run whose upload job has not started is left to its own
+ * guard, which runs after this job leaves the group.
+ */
+export function guardUpload(input) {
+  const { lane, sha, runId, attempt } = input;
+  const stopNow = (reason) => ({ decision: "stop", reason, lines: [] });
+  if (!isLane(lane)) return stopNow(`unknown lane ${JSON.stringify(lane)}`);
+  if (
+    !Number.isSafeInteger(runId) ||
+    !Number.isSafeInteger(attempt) ||
+    attempt < 1
+  ) {
+    return stopNow("no run id or attempt");
+  }
+  if (truncated(input.laneRuns)) {
+    return stopNow(
+      `${lane} runs at ${sha}: read returned ${LIST_LIMIT} rows or no list; it may be cut`
+    );
+  }
+  if (!input.laneRuns.some((r) => r.databaseId === runId)) {
+    return stopNow(`this run (${runId}) is not in the read at ${sha}`);
+  }
+  const stops = [];
+  const built = [];
+  const lines = [];
+  const judge = (label, run, view, artifacts) => {
+    const j = classifyRun(lane, run, view, artifacts);
+    lines.push(`${label}: ${j.token} (${j.reason})`);
+    if (j.token === "built") built.push(`${label} already uploaded ${sha}`);
+    else if (j.token !== "not built") stops.push(j.reason);
+  };
+
+  for (const run of input.laneRuns) {
+    if (run.databaseId === runId) continue;
+    const label = `run ${run.databaseId}`;
+    if (run.headSha !== sha) {
+      stops.push(`${label} is at ${run.headSha}, not ${sha}`);
+      continue;
+    }
+    // The run's view is its LATEST attempt only. An attempt that uploaded and
+    // a later re-run whose guard skipped would read "not built", so every
+    // earlier attempt is judged too, whatever the latest one is doing.
+    const earlier = input.otherAttempts?.[run.databaseId];
+    if (
+      !earlier ||
+      !Number.isSafeInteger(earlier.attempt) ||
+      earlier.attempt < 1
+    ) {
+      stops.push(`${label}'s attempt count was not read`);
+      continue;
+    }
+    const seen = Array.isArray(earlier.views) ? earlier.views : [];
+    for (let n = 1; n < earlier.attempt; n++) {
+      const found = seen.filter((p) => p.attempt === n);
+      if (found.length !== 1) {
+        stops.push(`attempt ${n} of ${label} was not read`);
+        continue;
+      }
+      judge(
+        `attempt ${n} of ${label}`,
+        { ...run, status: "completed" },
+        found[0].view,
+        input.artifacts?.[run.databaseId]
+      );
+    }
+    const view = input.views?.[run.databaseId];
+    if (run.status !== "completed") {
+      const jobs = (view?.jobs ?? []).filter(
+        (j) => typeof j.name === "string" && j.name.startsWith(LANES[lane].job)
+      );
+      if (jobs.length === 0 || jobs.every((j) => NOT_STARTED.has(j.status))) {
+        lines.push(`${label}: waiting for its own upload job`);
+        continue;
+      }
+      if (jobs.some((j) => j.status !== "completed")) {
+        stops.push(`${label}'s upload job is running beside this one`);
+        continue;
+      }
+    }
+    // An open run whose upload job has finished is judged as finished.
+    judge(
+      label,
+      { ...run, status: "completed" },
+      view,
+      input.artifacts?.[run.databaseId]
+    );
+  }
+
+  const prior = Array.isArray(input.priorAttempts) ? input.priorAttempts : [];
+  for (let n = 1; n < attempt; n++) {
+    const found = prior.filter((p) => p.attempt === n);
+    if (found.length !== 1) {
+      stops.push(`attempt ${n} of this run was not read`);
+      continue;
+    }
+    judge(
+      `attempt ${n} of this run`,
+      { databaseId: runId, status: "completed", headSha: sha },
+      found[0].view,
+      input.artifacts?.[runId]
+    );
+  }
+
+  if (stops.length > 0) return { decision: "stop", reason: stops[0], lines };
+  if (built.length > 0) return { decision: "skip", reason: built[0], lines };
+  return {
+    decision: "upload",
+    reason: `no earlier ${lane} upload at ${sha}`,
+    lines,
+  };
+}

@@ -88,3 +88,30 @@ export declare function afterDispatch(input: {
   artifacts: Record<number, ArtifactList | undefined>;
   tip: unknown;
 }): { lines: string[]; state: "started" | "wait" | "stop"; reason: string };
+
+/** The pre-upload guard's input (#1616). */
+export interface GuardInput {
+  lane: Lane;
+  sha: string;
+  runId: number;
+  attempt: number;
+  laneRuns: RunRow[] | unknown;
+  views: Record<number, RunView | undefined>;
+  artifacts: Record<number, ArtifactList | undefined>;
+  priorAttempts: Array<{ attempt: number; view: RunView | undefined }>;
+  /** Each other run's attempt count, and the views of its earlier attempts. */
+  otherAttempts: Record<
+    number,
+    | {
+        attempt: unknown;
+        views: Array<{ attempt: number; view: RunView | undefined }>;
+      }
+    | undefined
+  >;
+}
+
+export declare function guardUpload(input: GuardInput): {
+  decision: "upload" | "skip" | "stop";
+  reason: string;
+  lines: string[];
+};

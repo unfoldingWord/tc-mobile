@@ -120,12 +120,16 @@ describe("parseArgs", () => {
       sha: RC_SHA,
       branch: "staging",
       known: null,
+      runId: null,
+      attempt: null,
     });
     expect(parseArgs([...PRE, "--branch", "main", "--known", "1,2"])).toEqual({
       lane: "apk",
       sha: RC_SHA,
       branch: "main",
       known: [1, 2],
+      runId: null,
+      attempt: null,
     });
   });
 

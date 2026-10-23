@@ -411,6 +411,57 @@ The `tc-release` skill tags each step the same way.
 rc.1 (#1205, #1206) and rc.2 (#1228, #1236) are worked examples. Their PR
 threads hold the red-team summaries and publish records.
 
+## 3b. What the native lanes enforce on their own
+
+Each native lane has one concurrency group, on the job that signs and
+uploads, keyed on the lane alone (#1616): `android-apk` on
+[`android-apk.yml`](../../.github/workflows/android-apk.yml)'s build job,
+`ios-testflight` on
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml)'s
+TestFlight job, and `android-play` on
+[`android-play.yml`](../../.github/workflows/android-play.yml)'s upload job.
+`tests/native-lane-concurrency.test.ts` pins all three. What that gives:
+
+- Two uploads of one lane never run at once, on either branch, so build
+  numbers follow queue order and a second Play edit cannot invalidate the
+  first. An in-flight upload is never cancelled.
+- A run that ends at preflight (not a promotion merge, or the Play lane
+  disabled) never enters the group, so it cannot replace a pending upload.
+- A re-run after a failed run, a different commit and the other lane are not
+  held back: a failed run has left the group, a different commit waits its
+  turn, and each lane has its own group.
+
+The group serializes uploads; it does not refuse one. Refusing is the
+**upload guard**'s job: a step in each upload job, before the upload (#1616).
+It runs the same check as §3a step 7, in the form that reads one run (the
+`guardUpload` rule in `scripts/redispatch-core.mjs`). Because it runs inside
+the group, no other upload of the lane runs while it reads.
+
+- **Already uploaded.** If any attempt of a run of this lane at this commit,
+  or an earlier attempt of this run, already uploaded, the step prints a
+  `SKIP:` notice and
+  the job ends green without uploading. So a second dispatch of a commit, or
+  a re-run of a run that succeeded, cannot upload it twice.
+- **Earlier run failed.** A failed or cancelled earlier run does not count,
+  and neither does a run that ended at preflight. A re-run after a failed run
+  uploads. So does a different commit, and so does the other lane: the guard
+  reads only this lane's runs at this commit.
+- **Read failed.** If a read fails, or returns something the check cannot
+  settle, the step prints `STOP:` and the job fails before any upload. That
+  follows the core's rule: anything the reads cannot settle is a stop, never
+  a guess. Run step 7's script for that lane and commit, and tell the DRI.
+- **Not guarded.** A diagnostic APK and a Play `build_only` run are not
+  checked, because neither is a tester upload.
+
+`tests/upload-guard.test.ts` tests the rule.
+`tests/native-lane-upload-guard.test.ts` runs each lane's guard step against
+a stand-in `gh`. Neither has run on GitHub's runners: the first real
+promotion after this lands is the first real run.
+
+When two runs wait behind one upload, GitHub keeps only the newer one and
+cancels the older (#1308). The guard is a backstop; it does not replace step 7. The DRI still dispatches a lane only after step 7's script prints its OK
+line.
+
 ## 4. Native candidate and durable delivery
 
 The `staging → main` merge starts three lanes on `main` on its own:

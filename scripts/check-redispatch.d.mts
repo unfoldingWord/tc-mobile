@@ -10,6 +10,9 @@ export interface RedispatchArgs {
   sha: string;
   branch: "staging" | "main";
   known: number[] | null;
+  /** The pre-upload guard (#1616): this run's id and attempt. */
+  runId: number | null;
+  attempt: number | null;
 }
 
 export declare function parseArgs(argv: string[]): RedispatchArgs;
