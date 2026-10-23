@@ -11,6 +11,8 @@ its body and empties it.
 
 ## Changed
 
+- A segment marked Finished has its loudness evened out before it is stored, so finished segments play back at a similar level; segments finished before this change are left as they were (#1679).
+
 ## Fixed
 
 ## Removed
