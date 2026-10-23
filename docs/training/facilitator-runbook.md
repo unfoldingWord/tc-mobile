@@ -207,13 +207,16 @@ default, the text there says to keep using it.
 2. **Allow the microphone when asked.** The first time someone taps record,
    the phone will ask for microphone access. Without it, recording will not
    work at all. Read the labels the dialog actually shows and choose by
-   these rules: if **While using the app** is shown, choose it; otherwise
-   choose **Allow**. Do not choose **Only this time** for anyone who will
+   these rules (the labels named here are English): if **While using the
+   app** is shown, choose it; otherwise, if **Allow** is shown, choose it.
+   Do not choose **Only this time** for anyone who will
    record again later, such as over a training day: it may end once the app
    is left, and the phone would ask again at a later recording. **Deny** and
    **Don't allow** both refuse the microphone; do not choose either. Which
-   labels appear depends on the phone and its Android version, so the advice
-   is keyed off the labels, not off a fixed set of three. **The wording above
+   labels appear depends on the phone. If none of these labels is on the
+   dialog, for example because the phone is in another language, stop and
+   do not guess by position: ask someone who reads that language which
+   button allows the microphone. **The wording above
    has not been checked against a real permission dialog on a phone.**
    <!-- inference, not repo evidence: how long an "Only this time" grant lasts
    is Android platform behaviour and has not been tested here; same wording

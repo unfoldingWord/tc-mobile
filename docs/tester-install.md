@@ -100,12 +100,16 @@ phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 2
 5. **The first time you record, your phone will ask to use the microphone.**
    Allow it: the app needs the microphone to record, and without it
    recording will not work. Read the choices your phone shows and pick by
-   these rules. If **While using the app** is shown, choose it; otherwise
-   choose **Allow**. If you will be recording more than once, such as over a
+   these rules (the button names here are English). If **While using the
+   app** is shown, choose it; otherwise, if **Allow** is shown, choose it.
+   If you will be recording more than once, such as over a
    training day, do not choose **Only this time**: it may end once you leave
    the app, and you could be asked to grant the microphone again before a
    later recording. **Deny** and **Don't allow** both refuse the microphone;
-   do not choose either. **This wording has not been checked against a real
+   do not choose either. If none of these names is on the dialog, for
+   example because the phone is in another language, stop and ask the
+   facilitator which button allows the microphone. **This wording has not
+   been checked against a real
    permission dialog on a phone.** <!-- inference, not repo evidence: how
    long an "Only this time" grant lasts is Android platform behaviour, and
    this repo has no record of testing it per OS version; confidence: medium;
