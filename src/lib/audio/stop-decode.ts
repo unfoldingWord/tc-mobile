@@ -41,9 +41,11 @@ export type StopDecodeOutcome =
  * a rename cannot leave a stale second spelling alive — but it is enforced at
  * the assignment, not here.
  *
- * `"unfinished"` is deliberately outside the subset — nothing about a decode
- * can produce it; it is what `stop()`'s own exits report when the engine never
- * handed the capture over.
+ * `"unfinished"` joined the subset for one exit only (#779): a zero-sample
+ * decode after the engine's own stop threw, where the empty audio is the
+ * engine's failure rather than proof of silence. A decode itself never
+ * produces it; `stop()`'s no-bytes exit reports it through
+ * {@link classifyEmptySeal}.
  *
  * Local since #169: it was exported for `use-recorder.ts`'s `stopDecodeMessage`,
  * which turned it into a sentence. That function is gone — the hook passes
@@ -53,7 +55,7 @@ export type StopDecodeOutcome =
  */
 type StopDecodeError = Extract<
   CaptureFailure,
-  "silence" | "undecodable"
+  "silence" | "undecodable" | "unfinished"
 > | null;
 
 export interface StopDecodeVerdict {
@@ -67,16 +69,19 @@ export interface StopDecodeVerdict {
 
 export function classifyStopDecode(
   outcome: StopDecodeOutcome,
-  current: boolean
+  current: boolean,
+  flushThrew = false
 ): StopDecodeVerdict {
   if (outcome.decoded) {
     if (outcome.sampleCount === 0) {
       // Decoded to silence — no usable take, and a retry of the same bytes cannot
       // help, so the bytes are not worth keeping. Only a current stop earns a
-      // message; a superseded one stays silent.
+      // message; a superseded one stays silent. After a thrown flush the empty
+      // audio is the engine's failure, so the empty-seal rule picks the code
+      // (#779); the bytes are dropped either way.
       return {
         emitSamples: false,
-        error: current ? "silence" : null,
+        error: classifyEmptySeal(flushThrew, current),
         keepBlob: false,
       };
     }

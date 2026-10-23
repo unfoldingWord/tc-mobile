@@ -502,7 +502,7 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     // The decode exits re-read the generation as `current2` after their own
     // await, then paint idle on the same gate.
     expect(afterElse).toMatch(
-      /classifyStopDecode\(\s*\{\s*decoded:\s*true,\s*sampleCount:\s*samples\.length,?\s*\},\s*current2,?\s*\)\s*;\s*if\s*\(\s*current2\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*return\s*\{/
+      /classifyStopDecode\(\s*\{\s*decoded:\s*true,\s*sampleCount:\s*samples\.length,?\s*\},\s*current2,\s*flushThrew,?\s*\)\s*;\s*if\s*\(\s*current2\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*return\s*\{/
     );
     expect(afterElse).toMatch(
       /classifyStopDecode\(\s*\{\s*decoded:\s*false,?\s*\},\s*current2,?\s*\)\s*;\s*if\s*\(\s*current2\s*\)\s*setState\(\s*"idle"\s*\)\s*;\s*return\s*\{/

@@ -45,6 +45,30 @@ describe("classifyStopDecode", () => {
     ).toEqual({ emitSamples: false, error: null, keepBlob: false });
   });
 
+  it('reports a zero-sample decode after a thrown flush as "unfinished", never "silence" (#779)', () => {
+    // The engine's stop threw, so an empty-sounding seal is its failure, not
+    // proof the translator was silent. Wording only: the bytes are still
+    // dropped, exactly as for silence.
+    expect(
+      classifyStopDecode({ decoded: true, sampleCount: 0 }, true, true)
+    ).toEqual({ emitSamples: false, error: "unfinished", keepBlob: false });
+    // A superseded stop stays silent whatever the flush did.
+    expect(
+      classifyStopDecode({ decoded: true, sampleCount: 0 }, false, true)
+    ).toEqual({ emitSamples: false, error: null, keepBlob: false });
+  });
+
+  it("leaves the other exits alone when the flush threw (#779)", () => {
+    expect(classifyStopDecode({ decoded: false }, true, true)).toEqual({
+      emitSamples: false,
+      error: "undecodable",
+      keepBlob: true,
+    });
+    expect(
+      classifyStopDecode({ decoded: true, sampleCount: 42 }, true, true)
+    ).toEqual({ emitSamples: true, error: null, keepBlob: false });
+  });
+
   it("emits usable samples — even when superseded — and keeps no blob", () => {
     expect(
       classifyStopDecode({ decoded: true, sampleCount: 42 }, true)
