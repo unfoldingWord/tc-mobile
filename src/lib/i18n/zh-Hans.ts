@@ -47,6 +47,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesTitle: "模板",
   templateLicenceLabel: (licence: string): string => `许可证：${licence}`,
   settingsChapterNumbers: "始终显示章序号",
+  settingsNormalizeOnFinished: "标记完成时均衡音量",
   booksEmpty: "开始你的第一本书",
   booksEmptyTeach: "书里存放你录下的各章。",
   loadingBooks: "正在加载你的书。",

@@ -8,6 +8,7 @@ import {
   readStoredAlwaysChapterNumber,
   readStoredNormalizeOnFinished,
   storeAlwaysChapterNumber,
+  storeNormalizeOnFinished,
 } from "@/lib/settings";
 import { strings } from "@/lib/strings";
 
@@ -107,4 +108,35 @@ export function normalizeOnFinished(): boolean {
     // cannot be read falls back to the default, nothing to act on.
     return readStoredNormalizeOnFinished(null);
   }
+}
+
+/**
+ * The loudness switch and its toggle, for the Settings row (#1433, U6b).
+ * Unlike the chapter-number setting there is no live copy: the sweep reads
+ * storage itself, so the row reads storage too and can never show a value the
+ * sweep will not use. A write that fails leaves the row as it was, and is
+ * reported.
+ */
+export function useNormalizeOnFinishedSetting(): {
+  readonly on: boolean;
+  readonly toggle: () => void;
+} {
+  const on = useSyncExternalStore(
+    subscribe,
+    normalizeOnFinished,
+    normalizeOnFinished
+  );
+  const toggle = useCallback(() => {
+    try {
+      window.localStorage.setItem(
+        NORMALIZE_ON_FINISHED_KEY,
+        storeNormalizeOnFinished(!normalizeOnFinished())
+      );
+    } catch (cause) {
+      reportFailure(cause, "use-settings: persist");
+      return;
+    }
+    for (const listener of listeners) listener();
+  }, []);
+  return { on, toggle };
 }

@@ -34,6 +34,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesTitle: "Modèles",
   templateLicenceLabel: (licence: string): string => `Licence : ${licence}`,
   settingsChapterNumbers: "Toujours afficher le numéro de chapitre",
+  settingsNormalizeOnFinished: "Égaliser le volume une fois terminé",
   booksEmpty: "Commencez votre premier livre",
   booksEmptyTeach: "Un livre contient les chapitres que vous enregistrez.",
   loadingBooks: "Chargement de vos livres.",

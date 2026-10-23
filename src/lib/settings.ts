@@ -42,7 +42,7 @@ export function chapterNameShown(
 
 /**
  * Where "even out the loudness of a finished segment" is kept (#1433, U6b).
- * No Settings row writes it yet; the row that will writes `"0"` for off.
+ * The Settings row writes `"0"` for off and `"1"` for on.
  */
 export const NORMALIZE_ON_FINISHED_KEY = "tc-mobile.normalize-on-finished";
 
@@ -52,4 +52,9 @@ export const NORMALIZE_ON_FINISHED_KEY = "tc-mobile.normalize-on-finished";
  */
 export function readStoredNormalizeOnFinished(raw: string | null): boolean {
   return raw !== "0";
+}
+
+/** The value written for the choice; `readStoredNormalizeOnFinished` reads it back. */
+export function storeNormalizeOnFinished(on: boolean): string {
+  return on ? "1" : "0";
 }
