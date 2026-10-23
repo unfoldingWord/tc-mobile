@@ -411,12 +411,13 @@ describe("what the conditional commit's outcome does to the slot (§4)", () => {
     const c = firstTake(segmentId);
     await heldRow(c);
     const a = app();
-    await a.launch(async (take) => {
+    const d = firstTake(segmentId);
+    await a.launch(async () => {
       // C's row goes with no record, and D's row takes the key.
       const db = await getDb();
       await db.delete("pendingTakes", segmentId);
-      await writePendingTake({ ...firstTake(segmentId), clipId: newClipId() });
-      expect((await rowOf(segmentId))?.clipId).not.toBe(take.clipId);
+      await writePendingTake(d);
+      expect((await rowOf(segmentId))?.clipId).toBe(d.clipId);
     });
 
     expect(a.held()?.state).toBe("failed");
