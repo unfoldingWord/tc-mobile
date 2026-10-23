@@ -282,7 +282,11 @@ export async function renameBook(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const book = await tx.store.get(id);
-  if (!book) throw new Error(`No such book: ${id}`);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${id}`);
+  }
 
   const trimmed = name.trim();
   // Blank keeps the current value — a named book keeps its name, and an
@@ -352,7 +356,11 @@ export async function setBookCoverColour(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const book = await tx.store.get(id);
-  if (!book) throw new Error(`No such book: ${id}`);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${id}`);
+  }
 
   if (key === (book.coverColourKey ?? null)) {
     await tx.done; // idempotent no-op: no write, no recency bump.
@@ -390,7 +398,11 @@ export async function setBookLanguageOnce(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const book = await tx.store.get(id);
-  if (!book) throw new Error(`No such book: ${id}`);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${id}`);
+  }
   if (book.languageCode !== null && book.languageCode.trim() !== "") {
     await tx.done; // already answered: no write.
     return book;
@@ -806,7 +818,11 @@ export async function addChapter(
   const db = await getDb();
   const tx = db.transaction(["books", "chapters"], "readwrite");
   const book = await tx.objectStore("books").get(bookId);
-  if (!book) throw new Error(`No such book: ${bookId}`);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${bookId}`);
+  }
 
   let resolvedNumber = number;
   if (resolvedNumber === undefined) {
@@ -880,7 +896,11 @@ export async function renameChapter(
   const db = await getDb();
   const tx = db.transaction(["chapters", "books"], "readwrite");
   const chapter = await tx.objectStore("chapters").get(id);
-  if (!chapter) throw new Error(`No such chapter: ${id}`);
+  if (!chapter) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such chapter: ${id}`);
+  }
 
   const trimmed = name.trim();
   // Blank clears back to the default "Chapter N" (chapters, unlike books, have
@@ -1089,7 +1109,11 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
   const db = await getDb();
   const tx = db.transaction(["chapters", "segments"], "readwrite");
   const chapter = await tx.objectStore("chapters").get(chapterId);
-  if (!chapter) throw new Error(`No such chapter: ${chapterId}`);
+  if (!chapter) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such chapter: ${chapterId}`);
+  }
 
   const now = Date.now();
   const segment: Segment = {
@@ -1141,7 +1165,11 @@ export async function renameSegment(
   const db = await getDb();
   const tx = db.transaction("segments", "readwrite");
   const segment = await tx.store.get(id);
-  if (!segment) throw new Error(`No such segment: ${id}`);
+  if (!segment) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such segment: ${id}`);
+  }
 
   const trimmed = label.trim();
   const nextLabel = trimmed === "" ? null : trimmed;
