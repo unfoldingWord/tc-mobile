@@ -5,6 +5,13 @@ import { resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Passes through to the real store unless a case holds a Discard's settle
+// back, which is how a request-only Discard is kept open across a replay.
+vi.mock("@/lib/storage/takes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/takes")>();
+  return { ...actual, settlePendingTake: vi.fn(actual.settlePendingTake) };
+});
+
 import { replayPendingTakes } from "@/hooks/replay-pending-takes";
 import {
   subscribeToFailures,
@@ -489,6 +496,38 @@ describe("what the conditional commit's outcome does to the slot (§4)", () => {
 
     expect(await rowOf(segmentId)).toBeUndefined();
     expect(await recordOf(c.clipId)).toBe("discarded");
+    expect(a.held()).toBeNull();
+  });
+});
+
+describe("a Discard requested in this copy outlives a replayed `discarded` (George on #1652)", () => {
+  it("while the Discard's settle has not committed, every later replay of the take reports discarded and never saves it", async () => {
+    const segmentId = await freshSegment();
+    const c = firstTake(segmentId);
+    await heldRow(c);
+    const a = app();
+    // The first attempt fails, so the take is held on the recovery screen.
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementationOnce(() => {
+      throw new Error("injected fault");
+    });
+    await a.launch();
+    expect(a.held()?.state).toBe("failed");
+    // The person discards it, and the settle that records it is held back:
+    // the request is the only thing that says so, and the row is unmarked.
+    vi.mocked(settlePendingTake).mockImplementationOnce(
+      () => new Promise(() => {})
+    );
+    void performDiscardTake(a.held(), a.effects.update);
+    expect(a.held()).toBeNull();
+
+    // Two more replay passes in this page (a remount): each installs C from
+    // its row, and the conditional commit reads the request.
+    await a.launch();
+    await a.launch();
+
+    expect(await activeClip(segmentId)).toBeNull();
+    expect(await recordOf(c.clipId)).toBeUndefined();
+    expect((await rowOf(segmentId))?.clipId).toBe(c.clipId);
     expect(a.held()).toBeNull();
   });
 });
