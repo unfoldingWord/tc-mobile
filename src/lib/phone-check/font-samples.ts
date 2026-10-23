@@ -10,9 +10,10 @@
  * run itself is a person's, on real phones, and its record belongs in
  * `docs/progress_tracker.md`.
  *
- * Data only: no DOM, no clock. The labels are tester-only English, the same
- * line `report.ts` draws (S11, `lib/i18n/english-only.ts`), so they live here
- * and not in `lib/strings.ts`.
+ * Data only: no DOM, no clock. A label belongs to its sample, beside the
+ * text and the `lang` it names, so it lives here as part of that data and not
+ * in `lib/strings.ts`. The section's own heading and intro are table keys,
+ * registered English-only (S11, `lib/i18n/english-only.ts`).
  *
  * The digit samples are fixed strings and not `formatNumber` output: the
  * shared formatter (PR #1650) was not on develop when this was built, and the
@@ -108,8 +109,8 @@ export const SCRIPT_SAMPLES: readonly FontSample[] = [
     text: "การแปลพระคัมภีร์ด้วยวาจา",
   },
   {
-    id: "nastaliq",
-    label: "Arabic, Nastaliq style (Urdu)",
+    id: "urdu",
+    label: "Urdu (Arabic script)",
     lang: "ur",
     dir: "rtl",
     text: "بائبل کا زبانی ترجمہ",

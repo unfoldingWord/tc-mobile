@@ -117,6 +117,7 @@ const NON_UI_PROPS: ReadonlyMap<string, string> = new Map([
     "type",
     "role",
     "dir",
+    "translate",
     "scope",
     "target",
     "rel",
