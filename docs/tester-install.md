@@ -98,19 +98,23 @@ phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 2
 4. **Tap Install**, then **Open** when it finishes. These are usually the
    single large button on the screen at each step.
 5. **The first time you record, your phone will ask to use the microphone.**
-   Allow it — the app needs the microphone to record, and without it
-   recording will not work. In English the choice that allows it may say
-   **Allow**, **While using the app** or **Only this time**; do not choose
-   **Don't allow**. On some older Android versions the button that refuses
-   may instead say **Deny** — it means the same thing as **Don't allow**. If
-   you will be recording more than once, such as over a training day,
-   choose **Allow** or **While using the app** rather than **Only this
-   time** if you can: **Only this time** may end once you leave the app, and
-   you could be asked to grant the microphone again before a later
-   recording. <!-- inference, not repo evidence: how long an "Only this
-   time" grant lasts is Android platform behaviour, and this repo has no
-   record of testing it per OS version; confidence: medium; gh issue #248,
-   PR #870 George round 2 --> The choices may be a list, one under another,
+   Allow it: the app needs the microphone to record, and without it
+   recording will not work. Read the choices your phone shows and pick by
+   these rules (the button names here are English). If **While using the
+   app** is shown, choose it; otherwise, if **Allow** is shown, choose it.
+   If you will be recording more than once, such as over a
+   training day, do not choose **Only this time**: it may end once you leave
+   the app, and you could be asked to grant the microphone again before a
+   later recording. **Deny** and **Don't allow** both refuse the microphone;
+   do not choose either. If none of these names is on the dialog, for
+   example because the phone is in another language, stop and ask the
+   facilitator which button allows the microphone. **This wording has not
+   been checked against a real
+   permission dialog on a phone.** <!-- inference, not repo evidence: how
+   long an "Only this time" grant lasts is Android platform behaviour, and
+   this repo has no record of testing it per OS version; confidence: medium;
+   gh issue #248, PR #870 George round 2 and the 2026-10-12 follow-up -->
+   The choices may be a list, one under another,
    and the side a button sits on changes with the phone's language, so ask
    the facilitator rather than guessing by position.
 
