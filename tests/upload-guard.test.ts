@@ -74,7 +74,7 @@ function input(
     views[o.id] = o.read.view;
     artifacts[o.id] = o.read.artifacts;
   }
-  return {
+  const base: GuardInput = {
     lane,
     sha: SHA,
     runId: ME,
@@ -83,8 +83,17 @@ function input(
     views,
     artifacts,
     priorAttempts: [],
+    otherAttempts: {},
     ...over,
   };
+  // Unless a case says otherwise, every other run is on its first attempt.
+  if (!over.otherAttempts && Array.isArray(base.laneRuns)) {
+    for (const r of base.laneRuns as RunRow[]) {
+      if (r.databaseId !== ME)
+        base.otherAttempts[r.databaseId] = { attempt: 1, views: [] };
+    }
+  }
+  return base;
 }
 
 const LANES: Lane[] = ["apk", "play", "testflight"];
@@ -128,6 +137,48 @@ describe.each(LANES)("guardUpload, %s lane", (lane) => {
       decision: "skip",
       reason: `attempt 1 of this run already uploaded ${SHA}`,
     });
+  });
+
+  it("upload, then a re-run that skipped, then a new dispatch: still skips (#1658 Frank r2)", () => {
+    // Run 1's latest attempt skipped its upload, so its latest view reads
+    // "not built"; its first attempt is the one that uploaded.
+    const r = guardUpload(
+      input(lane, [{ id: 1, read: FAILED[lane] }], {
+        artifacts: { 1: BUILT[lane].artifacts },
+        otherAttempts: {
+          1: { attempt: 2, views: [{ attempt: 1, view: BUILT[lane].view }] },
+        },
+      })
+    );
+    expect(r).toMatchObject({
+      decision: "skip",
+      reason: `attempt 1 of run 1 already uploaded ${SHA}`,
+    });
+  });
+
+  it("another run's earlier FAILED attempt and its latest not built: upload", () => {
+    const r = guardUpload(
+      input(lane, [{ id: 1, read: FAILED[lane] }], {
+        otherAttempts: {
+          1: { attempt: 2, views: [{ attempt: 1, view: FAILED[lane].view }] },
+        },
+      })
+    );
+    expect(r.decision).toBe("upload");
+  });
+
+  it("an open re-run of a run that uploaded, still waiting for its upload job: skip", () => {
+    const r = guardUpload(
+      input(lane, [], {
+        laneRuns: [MINE, row(2, "queued")],
+        views: { 2: { jobs: [] } },
+        artifacts: { 2: BUILT[lane].artifacts },
+        otherAttempts: {
+          2: { attempt: 2, views: [{ attempt: 1, view: BUILT[lane].view }] },
+        },
+      })
+    );
+    expect(r.decision).toBe("skip");
   });
 
   it("an open run at this commit that has not reached its upload job does not block", () => {
@@ -189,6 +240,20 @@ describe("guardUpload: anything the reads cannot settle stops (redispatch-core's
     expect(r).toMatchObject({ decision: "stop" });
   });
 
+  it("stops when another run's attempt count, or one of its earlier attempts, was not read", () => {
+    const missing = guardUpload(
+      input("play", [{ id: 1, read: FAILED.play }], { otherAttempts: {} })
+    );
+    expect(missing.reason).toBe("run 1's attempt count was not read");
+    const gap = guardUpload(
+      input("play", [{ id: 1, read: FAILED.play }], {
+        otherAttempts: { 1: { attempt: 3, views: [] } },
+      })
+    );
+    expect(gap.decision).toBe("stop");
+    expect(gap.reason).toBe("attempt 1 of run 1 was not read");
+  });
+
   it("stops when another run's upload job is running beside this one", () => {
     const running = structuredClone(view("play-internal-built"));
     for (const j of running.jobs ?? []) j.status = "in_progress";
@@ -225,6 +290,7 @@ function fakeGh(w: {
   runs: unknown;
   views: Record<string, unknown>;
   attempts?: Record<string, unknown>;
+  runAttempts?: Record<string, number>;
   artifacts?: Record<string, unknown>;
   fail?: boolean;
 }) {
@@ -236,6 +302,8 @@ function fakeGh(w: {
     if (args[0] === "run" && args[1] === "list") return JSON.stringify(w.runs);
     if (args[0] === "run" && args[1] === "view") {
       const id = args[2] ?? "";
+      if (flag("--json") === "attempt")
+        return JSON.stringify({ attempt: w.runAttempts?.[id] ?? 1 });
       if (args.includes("--attempt"))
         return JSON.stringify(w.attempts?.[`${id}#${flag("--attempt")}`]);
       return JSON.stringify(w.views[id]);
@@ -305,6 +373,31 @@ describe("check:redispatch --run-id: the CLI the upload job runs", () => {
     expect(calls).toContainEqual(
       expect.arrayContaining(["view", String(ME), "--attempt", "1"])
     );
+  });
+
+  it("reads each earlier attempt of another run, and skips for one that uploaded", () => {
+    const { gh, calls } = fakeGh({
+      runs: [row(ME, "in_progress"), row(1)],
+      views: { [ME]: { jobs: [] }, 1: view("play-failed-before-upload") },
+      runAttempts: { 1: 2 },
+      attempts: { "1#1": view("play-internal-built") },
+    });
+    const log: string[] = [];
+    expect(main(GUARD_ARGS("play"), { gh, log: (l) => log.push(l) })).toBe(3);
+    expect(log.at(-1)).toBe(
+      `SKIP: attempt 1 of run 1 already uploaded ${SHA}`
+    );
+    expect(calls).toContainEqual(
+      expect.arrayContaining(["view", "1", "--attempt", "1"])
+    );
+  });
+
+  it("refuses a --run-id that is not a safe integer", () => {
+    const log: string[] = [];
+    const args = GUARD_ARGS("apk");
+    args[args.indexOf("--run-id") + 1] = "99999999999999999999";
+    expect(main(args, { log: (l) => log.push(l) })).toBe(2);
+    expect(log.at(-1)).toBe("STOP: usage: --run-id must be a run id");
   });
 
   it("prints STOP and exits 1 when a read fails", () => {

@@ -81,6 +81,8 @@ export function parseArgs(argv) {
     throw new Error("--run-id and --attempt go together");
   if (out.runId !== null && out.known)
     throw new Error("--run-id and --known are different checks");
+  if (out.runId !== null && !Number.isSafeInteger(out.runId))
+    throw new Error("--run-id must be a run id");
   if (
     out.attempt !== null &&
     !(out.attempt >= 1 && Number.isSafeInteger(out.attempt))
@@ -195,27 +197,48 @@ export function gather({ lane, sha, branch, known }, ghText = defaultGh) {
   };
 }
 
-/** The guard's reads: the lane's runs at the commit, and this run's earlier attempts. */
+/**
+ * The guard's reads: the lane's runs at the commit, this run's earlier
+ * attempts, and every other run's earlier attempts. `gh run view --json jobs`
+ * shows a run's latest attempt only, so an upload in an earlier attempt of
+ * another run is read by attempt (#1658 Frank r2).
+ */
 function gatherGuard(opts, ghText = defaultGh) {
   const base = gather({ ...opts, known: [] }, ghText);
+  const attemptView = (id, n) =>
+    JSON.parse(
+      ghText([
+        "run",
+        "view",
+        String(id),
+        "--repo",
+        REPO,
+        "--attempt",
+        String(n),
+        "--json",
+        "jobs",
+      ])
+    );
   const priorAttempts = [];
   for (let n = 1; n < opts.attempt; n++) {
-    priorAttempts.push({
-      attempt: n,
-      view: JSON.parse(
-        ghText([
-          "run",
-          "view",
-          String(opts.runId),
-          "--repo",
-          REPO,
-          "--attempt",
-          String(n),
-          "--json",
-          "jobs",
-        ])
-      ),
-    });
+    priorAttempts.push({ attempt: n, view: attemptView(opts.runId, n) });
+  }
+  // Read after the latest view, so a re-run that starts between the two
+  // reads moves the attempt the view saw into the by-attempt reads.
+  const otherAttempts = {};
+  for (const run of listed(base.laneRuns)) {
+    const id = run.databaseId;
+    if (id === opts.runId) continue;
+    const { attempt } = JSON.parse(
+      ghText(["run", "view", String(id), "--repo", REPO, "--json", "attempt"])
+    );
+    const views = [];
+    if (Number.isSafeInteger(attempt)) {
+      for (let n = 1; n < attempt; n++) {
+        views.push({ attempt: n, view: attemptView(id, n) });
+      }
+    }
+    otherAttempts[id] = { attempt, views };
   }
   return {
     lane: opts.lane,
@@ -226,6 +249,7 @@ function gatherGuard(opts, ghText = defaultGh) {
     views: base.views,
     artifacts: base.artifacts,
     priorAttempts,
+    otherAttempts,
   };
 }
 

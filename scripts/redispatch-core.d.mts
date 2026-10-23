@@ -99,6 +99,15 @@ export interface GuardInput {
   views: Record<number, RunView | undefined>;
   artifacts: Record<number, ArtifactList | undefined>;
   priorAttempts: Array<{ attempt: number; view: RunView | undefined }>;
+  /** Each other run's attempt count, and the views of its earlier attempts. */
+  otherAttempts: Record<
+    number,
+    | {
+        attempt: unknown;
+        views: Array<{ attempt: number; view: RunView | undefined }>;
+      }
+    | undefined
+  >;
 }
 
 export declare function guardUpload(input: GuardInput): {

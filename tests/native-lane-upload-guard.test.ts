@@ -136,6 +136,8 @@ interface Row {
   headSha: string;
   view: unknown;
   artifacts?: unknown;
+  /** The run's latest attempt number, as `gh run view --json attempt` reads it. */
+  attempt?: number;
 }
 
 const dir = mkdtempSync(path.join(tmpdir(), "upload-guard-"));
@@ -158,7 +160,8 @@ if (a[0] === "run" && a[1] === "list") {
     .map(({ databaseId, status, headSha }) => ({ databaseId, status, headSha, headBranch: "staging" }));
 } else if (a[0] === "run" && a[1] === "view") {
   const r = w.rows.find((x) => String(x.databaseId) === a[2]);
-  out = a.includes("--attempt") ? w.attempts[a[2] + "#" + flag("--attempt")] : r.view;
+  out = flag("--json") === "attempt" ? { attempt: r.attempt ?? 1 }
+    : a.includes("--attempt") ? w.attempts[a[2] + "#" + flag("--attempt")] : r.view;
 } else if (a[0] === "api" && a[1].includes("/artifacts")) {
   out = w.rows.find((x) => String(x.databaseId) === a[1].split("/")[5]).artifacts;
 } else if (a[0] === "api" && a[1].includes("/git/ref/heads/")) {
@@ -288,6 +291,20 @@ describe.each(LANES)("$file: the guard in both states", (l) => {
     expect(r.output).toBe("upload=false\n");
     expect(r.stdout).toContain(
       `::notice::SKIP: run 1 already uploaded ${SHA}. This run uploads nothing and ends green.`
+    );
+  });
+
+  it("an earlier run uploaded on attempt 1 and skipped on its re-run: skip (#1658 Frank r2)", () => {
+    const a = rowOf(l, 1, l.failed);
+    const r = runGuard(
+      l,
+      [{ ...a, attempt: 2, artifacts: rowOf(l, 1, l.built).artifacts }],
+      { attempts: { "1#1": fixture(l.built.view) } }
+    );
+    expect(r.status).toBe(0);
+    expect(r.output).toBe("upload=false\n");
+    expect(r.stdout).toContain(
+      `SKIP: attempt 1 of run 1 already uploaded ${SHA}`
     );
   });
 

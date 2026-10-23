@@ -385,12 +385,15 @@ const NOT_STARTED = new Set(["queued", "waiting", "pending", "requested"]);
  * The pre-upload guard (#1616), run inside a lane's upload job. That job
  * holds the lane's concurrency group, so no other upload of the lane runs
  * beside it. `input`: `{ lane, sha, runId, attempt, laneRuns, views,
- * artifacts, priorAttempts: [{ attempt, view }] }`: `laneRuns` is the lane's
+ * artifacts, priorAttempts: [{ attempt, view }], otherAttempts: { [id]:
+ * { attempt, views: [{ attempt, view }] } } }`: `laneRuns` is the lane's
  * runs at `sha`, this run among them; `priorAttempts` is this run's earlier
- * attempts.
+ * attempts; `otherAttempts` is every other run's attempt count and the views
+ * of its attempts before that count.
  *
- * Returns `{ decision, reason, lines }`. `upload`, or `skip` when a run of
- * this lane at this commit, or an earlier attempt of this run, is `built` by
+ * Returns `{ decision, reason, lines }`. `upload`, or `skip` when any attempt
+ * of a run of this lane at this commit, or an earlier attempt of this run, is
+ * `built` by
  * `classifyRun`, the same token `check:redispatch` reads. `stop` when the
  * reads cannot settle it: the header's rule, never a guess. A stop outranks
  * a skip. An open run whose upload job has not started is left to its own
@@ -431,6 +434,32 @@ export function guardUpload(input) {
     if (run.headSha !== sha) {
       stops.push(`${label} is at ${run.headSha}, not ${sha}`);
       continue;
+    }
+    // The run's view is its LATEST attempt only. An attempt that uploaded and
+    // a later re-run whose guard skipped would read "not built", so every
+    // earlier attempt is judged too, whatever the latest one is doing.
+    const earlier = input.otherAttempts?.[run.databaseId];
+    if (
+      !earlier ||
+      !Number.isSafeInteger(earlier.attempt) ||
+      earlier.attempt < 1
+    ) {
+      stops.push(`${label}'s attempt count was not read`);
+      continue;
+    }
+    const seen = Array.isArray(earlier.views) ? earlier.views : [];
+    for (let n = 1; n < earlier.attempt; n++) {
+      const found = seen.filter((p) => p.attempt === n);
+      if (found.length !== 1) {
+        stops.push(`attempt ${n} of ${label} was not read`);
+        continue;
+      }
+      judge(
+        `attempt ${n} of ${label}`,
+        { ...run, status: "completed" },
+        found[0].view,
+        input.artifacts?.[run.databaseId]
+      );
     }
     const view = input.views?.[run.databaseId];
     if (run.status !== "completed") {

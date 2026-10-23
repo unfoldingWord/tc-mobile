@@ -437,8 +437,9 @@ It runs the same check as §3a step 7, in the form that reads one run (the
 `guardUpload` rule in `scripts/redispatch-core.mjs`). Because it runs inside
 the group, no other upload of the lane runs while it reads.
 
-- **Already uploaded.** If a run of this lane at this commit, or an earlier
-  attempt of this run, already uploaded, the step prints a `SKIP:` notice and
+- **Already uploaded.** If any attempt of a run of this lane at this commit,
+  or an earlier attempt of this run, already uploaded, the step prints a
+  `SKIP:` notice and
   the job ends green without uploading. So a second dispatch of a commit, or
   a re-run of a run that succeeded, cannot upload it twice.
 - **Earlier run failed.** A failed or cancelled earlier run does not count,
