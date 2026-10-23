@@ -411,6 +411,33 @@ The `tc-release` skill tags each step the same way.
 rc.1 (#1205, #1206) and rc.2 (#1228, #1236) are worked examples. Their PR
 threads hold the red-team summaries and publish records.
 
+## 3b. What the native lanes enforce on their own
+
+Each native lane has one concurrency group, on the job that signs and
+uploads, keyed on the lane alone (#1616): `android-apk` on
+[`android-apk.yml`](../../.github/workflows/android-apk.yml)'s build job,
+`ios-testflight` on
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml)'s
+TestFlight job, and `android-play` on
+[`android-play.yml`](../../.github/workflows/android-play.yml)'s upload job.
+`tests/native-lane-concurrency.test.ts` pins all three. What that gives:
+
+- Two uploads of one lane never run at once, on either branch, so build
+  numbers follow queue order and a second Play edit cannot invalidate the
+  first. An in-flight upload is never cancelled.
+- A run that ends at preflight (not a promotion merge, or the Play lane
+  disabled) never enters the group, so it cannot replace a pending upload.
+- A re-run after a failed run, a different commit and the other lane are not
+  held back: a failed run has left the group, a different commit waits its
+  turn, and each lane has its own group.
+
+What it does not give: a second run of the same commit waits for the first
+and then builds and uploads again. The group serializes; it does not refuse.
+And when two runs wait behind one upload, GitHub keeps only the newer one and
+cancels the older (#1308). So §3a step 7's script is still the only check on
+whether a lane built a commit and whether it may be dispatched again, and its
+answer is what the DRI acts on.
+
 ## 4. Native candidate and durable delivery
 
 The `staging → main` merge starts three lanes on `main` on its own:

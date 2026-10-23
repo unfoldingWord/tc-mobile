@@ -41,17 +41,6 @@ on:
 
 permissions: {}
 
-concurrency:
-  # One run for this Play app at a time, across BOTH branches: staging and main
-  # share one package and one service account, a second Play edit invalidates
-  # the first, and versionCode (date +%s) must increase per app, not per track.
-  # Never cancel an in-flight upload. This group is on the whole run, so
-  # GitHub keeps one pending run and replaces it with a newer one: a push or
-  # dispatch queued behind an in-flight upload can be replaced by a later one
-  # and never build. Read a `cancelled` run against the branch tip (#1308).
-  group: android-play
-  cancel-in-progress: false
-
 jobs:
   preflight:
     name: Preflight (branch → track)
@@ -118,6 +107,23 @@ jobs:
     if: needs.preflight.outputs.enabled == 'true'
     # Branch-restricted environment, no required reviewers (see header).
     environment: play-upload
+    # One upload for this Play app at a time, across BOTH branches: staging
+    # and main share one package and one service account, a second Play edit
+    # invalidates the first, and versionCode (date +%s) must increase per
+    # app, not per track. So the group carries the lane alone, no ref and no
+    # commit. Never cancel an in-flight upload. The group is on THIS job, not
+    # the workflow (#1616), the same as android-apk.yml and
+    # ios-testflight.yml: a run whose preflight decided not to upload (the
+    # lane disabled) never enters it, so it cannot replace a pending upload
+    # (GitHub keeps one pending run per group and replaces it with a newer
+    # one). Two uploads queued behind an in-flight one still leave only the
+    # newer pending: read a `cancelled` run against the branch tip (#1308).
+    # A second run of the same commit waits here and then uploads again; the
+    # group serializes, it does not refuse. Whether a lane may be dispatched
+    # again is `npm run check:redispatch`'s answer (#1636).
+    concurrency:
+      group: android-play
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

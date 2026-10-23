@@ -153,6 +153,9 @@ jobs:
     # one build still queue and the older pending one is replaced: the
     # release checklist reads a `cancelled` run against the branch tip before
     # deciding.
+    # A second run of the same commit waits here and then builds again; the
+    # group serializes, it does not refuse. Whether a lane may be dispatched
+    # again is `npm run check:redispatch`'s answer (#1636, #1616).
     concurrency:
       group: android-apk
       cancel-in-progress: false
