@@ -37,6 +37,7 @@ import { judgePending } from "@/lib/takes/judge-pending";
 import type { NewTake } from "@/lib/takes/pending-take";
 import type {
   ClipId,
+  PendingRefusal,
   RecordingStatus,
   SegmentId,
   StoredPendingTake,
@@ -645,6 +646,35 @@ export async function settlePendingTake(
       await tx.done.catch(() => {});
       throw cause;
     }
+  } catch (cause) {
+    return { ok: false, cause };
+  }
+}
+
+/**
+ * Mark a take's own row refused and keep it, in the owning transaction (the
+ * note's §3 table, "Refuse or park"): the launch replay's classification, for
+ * a row it will not install (`legacy`, `sample-rate`, `base-missing`,
+ * `base-changed`). Writes nothing when the row is gone, is another clip's, or
+ * is already marked, so a mark never overwrites another take's row or an
+ * earlier reason. Never rejects: a failure comes back as a value for the hook
+ * to report, and the row is then left as it was.
+ */
+export async function markPendingRefused(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  refusal: PendingRefusal
+): Promise<{ readonly ok: true } | { readonly ok: false; cause: unknown }> {
+  try {
+    const db = await getDb();
+    const tx = openTakeTx(db);
+    const rows = tx.objectStore("pendingTakes");
+    const row = await rows.get(segmentId);
+    if (row?.clipId === clipId && row.refusal === undefined) {
+      await rows.put({ ...row, refusal });
+    }
+    await tx.done;
+    return { ok: true };
   } catch (cause) {
     return { ok: false, cause };
   }

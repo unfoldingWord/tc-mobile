@@ -4,8 +4,10 @@ import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   clearSegmentTake,
+  saveReplayedTake,
   saveTake,
   settlePendingTake,
+  type ReplayResult,
 } from "@/lib/storage/takes";
 import { isMissingSegmentFailure } from "@/lib/storage/stale-target";
 import { newClipId } from "@/lib/storage/clips";
@@ -20,6 +22,11 @@ import {
 } from "@/lib/takes/pending-take";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { withObservedRevision } from "./observed-revision";
+import {
+  notSaved,
+  replayPendingTakes,
+  type ReplayTake,
+} from "./replay-pending-takes";
 import { reportFailure } from "./report-failure";
 import { saveFailureKind } from "./save-failure";
 import type { ClipId, SegmentId } from "@/types/domain";
@@ -38,6 +45,17 @@ const NO_SAMPLES = new Int16Array(0);
 const discardRequested = new Set<ClipId>();
 const isDiscardRequested = (clipId: ClipId): boolean =>
   discardRequested.has(clipId);
+
+/**
+ * Takes the launch replay installed in the slot, by `clipId` (#38 rebuild PR
+ * 3). Every attempt at one, its Retries included, is the conditional commit
+ * (`saveReplayedTake`), never the ordinary `saveTake`, and none of them
+ * holds: its row is already on disk, or was ended on purpose, and a hold
+ * could put back a row another copy removed, which the verdict would then
+ * read as this take's own and save. An entry goes when the slot lets go of
+ * the take.
+ */
+const replayed = new Set<ClipId>();
 
 /**
  * Report a pending-take store result that came back as a failure (#38).
@@ -98,7 +116,7 @@ function holdPendingTake(take: PendingTake): void {
  */
 interface SaveEffects {
   /**
-   * Apply a transition to the held slot — the hook's `setPending`. An updater,
+   * Apply a transition to the held slot — the hook's `writeSlot`. An updater,
    * not a value, because two attempts can be in flight against one slot and
    * every transition in `lib/takes/pending-take.ts` decides from what is held.
    */
@@ -135,6 +153,7 @@ export async function performSaveTake(
   take: PendingTake,
   effects: SaveEffects
 ): Promise<boolean> {
+  if (replayed.has(take.clipId)) return commitReplayed(take, effects);
   // First, before the merge and the commit, and not awaited (see
   // `holdPendingTake`): the row is the only copy that outlives this page.
   holdPendingTake(take);
@@ -194,13 +213,22 @@ export async function performSaveTake(
     effects.update((held) => succeedSave(held, take.clipId));
     return true;
   }
-  // The write has committed: only `mergeTake`/`saveTake` above are the save
-  // itself. Everything below is post-commit notification, so it is guarded
-  // separately and always returns success — a throwing `update`, `onSaved`
-  // or `requestSweep` must not be folded back into a false "save-take"
-  // failure report, nor re-arm the recovery screen over a take that is
-  // already durably on disk (Frank P2, PR #509 round 2 — the mirror of
-  // `performErase`'s `onErased` guard).
+  // `already-saved` lands here too: another copy saved this very take.
+  return landed(take, effects);
+}
+
+/**
+ * After a commit that landed: free the slot, reload, ask for the sweep.
+ *
+ * The write has committed: only the merge and the commit before this are the
+ * save itself. Everything here is post-commit notification, so it is guarded
+ * separately and always returns success — a throwing `update`, `onSaved`
+ * or `requestSweep` must not be folded back into a false "save-take"
+ * failure report, nor re-arm the recovery screen over a take that is
+ * already durably on disk (Frank P2, PR #509 round 2 — the mirror of
+ * `performErase`'s `onErased` guard).
+ */
+function landed(take: PendingTake, effects: SaveEffects): true {
   //
   // Each effect gets its OWN try, not one shared try around all three
   // (Frank round 2 on the same finding): a shared try means one throwing
@@ -210,7 +238,6 @@ export async function performSaveTake(
   //
   // Cleared only here, and only for this attempt. A `finally` would drop
   // the samples on the failure path, which is the one path they exist for.
-  // `already-saved` lands here too: another copy saved this very take.
   try {
     effects.update((held) => succeedSave(held, take.clipId));
   } catch (cause) {
@@ -236,6 +263,95 @@ export async function performSaveTake(
 }
 
 /**
+ * One attempt at a take the launch replay installed: the conditional commit,
+ * and what its outcome does to the slot (docs/design/pending-take-lifecycle.md
+ * §4, "What each verdict does"). Never rejects.
+ *
+ *   - `saved`, `already-saved`: landed, as an ordinary save (#1557: a take
+ *     another copy finished frees the slot with nothing written);
+ *   - `discarded`, `kept`, and `gone` on the first attempt: nothing saved
+ *     over the segment, the take is ended or on disk as a marked row, so the
+ *     slot lets it go; logged once under `"pending-take-refused"`;
+ *   - `held`: still only in the slot, failed `unknown` (the recovery screen;
+ *     Retry runs the verdict again and never falls through to a save);
+ *   - `gone` on a Retry: failed `stale`, as a missing segment is elsewhere.
+ *
+ * A failed write keeps the take held and its row on disk: a replayed take
+ * gives nothing up on quota until PR 4 adds the screen that needs (§3).
+ */
+async function commitReplayed(
+  take: PendingTake,
+  effects: SaveEffects
+): Promise<boolean> {
+  let result: ReplayResult;
+  try {
+    const { baseRevision } = take;
+    if (baseRevision === null) throw notSaved("legacy");
+    const merged = mergeTake(take.existing, take.recorded, take.offset);
+    result = await saveReplayedTake(
+      { ...take, baseRevision },
+      merged,
+      CANONICAL_SAMPLE_RATE,
+      { isDiscardRequested }
+    );
+  } catch (cause) {
+    console.error("Saving a take failed", cause);
+    reportFailure(cause, "save-take");
+    effects.update((held) =>
+      failSave(held, take.clipId, saveFailureKind(cause))
+    );
+    return false;
+  }
+  const { outcome } = result;
+  if (outcome === "saved" || outcome === "already-saved") {
+    replayed.delete(take.clipId);
+    return landed(take, effects);
+  }
+  const cause = notSaved("verdict" in result ? result.verdict : outcome);
+  console.error("Saving a take was refused", cause);
+  reportFailure(cause, "pending-take-refused");
+  if (outcome === "held" || (outcome === "gone" && take.attempts > 0)) {
+    const kind = outcome === "gone" ? "stale" : "unknown";
+    effects.update((held) => failSave(held, take.clipId, kind));
+    return false;
+  }
+  replayed.delete(take.clipId);
+  effects.update((held) => succeedSave(held, take.clipId));
+  return true;
+}
+
+/**
+ * Install a take the launch replay read back, and run its first attempt
+ * (#38 rebuild PR 3). Quiet: a first attempt shows nothing, and only a
+ * failure reaches the recovery screen (`App` shows it once `attempts > 0`).
+ *
+ * `"busy"` when the slot is held, and nothing is written: the replay stops
+ * and leaves its row for the next launch rather than displace a recording.
+ * The check is made twice, against `held` and inside the slot write itself,
+ * so a take that reached the slot after `held` was read keeps it; `update`
+ * is the hook's `writeSlot`, applied synchronously, so `installed` is known
+ * before anything is saved. Otherwise resolves whether the slot is free
+ * again, which is whether the replay may go on to the next row.
+ */
+export async function performResumeTake(
+  held: PendingTake | null,
+  take: ReplayTake,
+  effects: SaveEffects
+): Promise<boolean | "busy"> {
+  const next = startSave(held, take);
+  if (next === held) return "busy";
+  let installed = false;
+  effects.update((h) => {
+    if (h) return h;
+    installed = true;
+    return next;
+  });
+  if (!installed) return "busy";
+  replayed.add(next.clipId);
+  return performSaveTake(next, effects);
+}
+
+/**
  * Give up the held recording, and delete what a failed attempt left behind.
  *
  * The other half of the orchestration, extracted for the same reason:
@@ -254,6 +370,7 @@ export async function performDiscardTake(
   const { next, orphan } = discardSave(held);
   update(() => next);
   if (!held || !orphan) return;
+  replayed.delete(held.clipId);
   // The translator chose to lose this take, so a relaunch must not offer it:
   // the row goes with a `discarded` record, in one transaction, and the clip
   // a failed attempt may have written goes too unless something uses it.
@@ -351,24 +468,66 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     onSavedRef.current = onSaved;
   }, [onSaved]);
 
-  const commit = useCallback(async (take: PendingTake): Promise<boolean> => {
-    // Synchronous, before the first await: this is what a second tap in the
-    // same frame reads. `performSaveTake` runs synchronously up to its own first
-    // await too, so the slot transitions keep their ordering.
-    savingRef.current = true;
-    try {
-      return await performSaveTake(take, {
-        update: setPending,
-        onSaved: () => onSavedRef.current?.(),
-        requestSweep: () => void requestTranscodeSweep(),
-      });
-    } finally {
-      // Safe in a `finally` where `setPending(null)` is not: this releases a
-      // guard rather than dropping the samples, and a guard left set would lock
-      // out the retry the failure path exists to offer.
-      savingRef.current = false;
-    }
-  }, []);
+  // The live slot (#38 rebuild PR 3). Every slot write goes through
+  // `writeSlot`, which applies the transition to this ref and hands React the
+  // result in the same synchronous turn, so a reader between a write and its
+  // render (the launch replay, a tap in the same frame) never sees a stale
+  // slot, and a transition is never applied to two different snapshots.
+  const slotRef = useRef(pending);
+  const writeSlot = useCallback(
+    (transition: (held: PendingTake | null) => PendingTake | null) => {
+      const next = transition(slotRef.current);
+      slotRef.current = next;
+      setPending(next);
+    },
+    []
+  );
+  const effects = useCallback(
+    (): SaveEffects => ({
+      update: writeSlot,
+      onSaved: () => onSavedRef.current?.(),
+      requestSweep: () => void requestTranscodeSweep(),
+    }),
+    [writeSlot]
+  );
+
+  const commit = useCallback(
+    async (take: PendingTake): Promise<boolean> => {
+      // Synchronous, before the first await: this is what a second tap in the
+      // same frame reads. `performSaveTake` runs synchronously up to its own first
+      // await too, so the slot transitions keep their ordering.
+      savingRef.current = true;
+      try {
+        return await performSaveTake(take, effects());
+      } finally {
+        // Safe in a `finally` where `setPending(null)` is not: this releases a
+        // guard rather than dropping the samples, and a guard left set would lock
+        // out the retry the failure path exists to offer.
+        savingRef.current = false;
+      }
+    },
+    [effects]
+  );
+
+  // Launch: finish any save the app was closed in the middle of
+  // (`replay-pending-takes.ts`). After the first render, and once per mount:
+  // the ref holds across React's development double-run. Each row takes the
+  // same live guard Retry does, then the slot; a held slot stops the run.
+  const replayStartedRef = useRef(false);
+  useEffect(() => {
+    if (replayStartedRef.current) return;
+    replayStartedRef.current = true;
+    void replayPendingTakes(async (take) => {
+      if (savingRef.current) return false;
+      savingRef.current = true;
+      try {
+        const freed = await performResumeTake(slotRef.current, take, effects());
+        return freed === true;
+      } finally {
+        savingRef.current = false;
+      }
+    });
+  }, [effects]);
 
   /**
    * Persist a recording as an insert/append into the segment's existing audio.
@@ -402,8 +561,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     ): Promise<boolean> => {
       // The revision `existing` was read at, not one read now: the hold stamps
       // it, so a replay sees a move since (cell HM).
+      const held = slotRef.current;
       const take = startSave(
-        pending,
+        held,
         withObservedRevision({
           segmentId,
           ordinal,
@@ -421,19 +581,19 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // Identity means refused: a recording is already held, and displacing it
       // is the silent loss all of this exists to prevent. The screens disable
       // recording while a take is held, so reaching this is an invariant break.
-      if (take === pending) {
+      if (take === held) {
         console.error(
           "A finished take was refused: one is already held",
-          pending.clipId
+          held.clipId
         );
         return Promise.resolve(false);
       }
       // Before any await AND before the fallible merge, so the only reference to
       // the recording is never a local in a function that can throw.
-      setPending(take);
+      writeSlot(() => take);
       return commit(take);
     },
-    [commit, pending]
+    [commit, writeSlot]
   );
 
   /**
@@ -486,15 +646,16 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   );
 
   const retryPendingTake = useCallback(() => {
-    // The live guard, ahead of the pure one: `pending` here is last render's
-    // slot, and `SaveFailed` only hides Retry once the saving re-render lands.
+    // The live guard, ahead of the pure one: `SaveFailed` only hides Retry
+    // once the saving re-render lands.
     if (savingRef.current) return;
-    const next = retrySave(pending);
+    const held = slotRef.current;
+    const next = retrySave(held);
     // Identity means refused: nothing held, or a save already in flight.
-    if (!next || next === pending) return;
-    setPending(next);
+    if (!next || next === held) return;
+    writeSlot(() => next);
     void commit(next);
-  }, [commit, pending]);
+  }, [commit, writeSlot]);
 
   /** Deliberate, confirmed loss of the held recording. */
   const discardPendingTake = useCallback(() => {
@@ -505,8 +666,8 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     // landing after the discard so a recording the translator confirmed
     // deleting comes back. Both are the silent loss this slot exists to prevent.
     if (savingRef.current) return;
-    void performDiscardTake(pending, setPending);
-  }, [pending]);
+    void performDiscardTake(slotRef.current, writeSlot);
+  }, [writeSlot]);
 
   return {
     pendingTake: pending,

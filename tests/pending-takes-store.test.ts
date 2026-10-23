@@ -327,12 +327,12 @@ describe("loadPendingRecipe — reading a row back", () => {
     expect((await loadPendingRecipe(row, RATE)).kind).toBe("base-missing");
   });
 
-  it("reads as saved when the segment's take is already this clip", async () => {
+  it("reads a recipe even when the segment's take is already this clip: the commit's verdict decides (#1557)", async () => {
     const segmentId = await freshSegment();
     const t = take(segmentId);
     const row = await writeAndRead(t);
     await saveTake(segmentId, t.clipId, ramp(50), RATE);
-    expect((await loadPendingRecipe(row, RATE)).kind).toBe("saved");
+    expect((await loadPendingRecipe(row, RATE)).kind).toBe("recipe");
   });
 
   it("refuses a row whose segment is gone", async () => {
