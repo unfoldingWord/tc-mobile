@@ -911,7 +911,7 @@ So a device that has opened the newer build cannot run older code against its
 own data again, whether the older code arrives by a Worker rollback, by a
 stale service worker, or by an older native build if one ever runs. The
 recordings are not deleted: the older code's `getDb()` rejects with
-`DatabaseDowngradeError` before any read or write through it. They are
+`DatabaseDowngradeError` before any read or write through the database. They are
 unreachable until a build at that schema or later is served or installed
 again. A refused open calls `coordinator?.onYielded()`,
 `use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
