@@ -381,10 +381,14 @@ describe("no table sentence is built from another entry's words (#1483)", () => 
  */
 const I18N_DIR = path.resolve(import.meta.dirname, "../src/lib/i18n");
 
-/** Locale tables known to embed beyond English today, by code: none. A code
- * listed here runs as `it.fails`, so fixing it turns the test red until the
- * entry is deleted. */
-const KNOWN_VIOLATIONS: Readonly<Record<string, readonly string[]>> = {};
+/** Locale tables known to embed beyond English today, by code, each with the
+ * exact extra embeds it carries (entry -> names): none today. The test compares
+ * a locale's real extras to this entry under a plain `it`, so a wrong or stale
+ * listing fails, and so does a walker throw (a missing file, a parse error),
+ * which `it.fails` would have accepted as the expected failure. */
+const KNOWN_VIOLATIONS: Readonly<
+  Record<string, Readonly<Record<string, readonly string[]>>>
+> = {};
 
 /** Entries (and what each embeds) of `locale` that English does not embed. */
 function extraEmbeds(
@@ -408,8 +412,11 @@ describe("no complete locale table embeds beyond the English set (#169)", () => 
     .sort();
 
   it("walks every language that has translated something", () => {
-    // Floor, and a drift guard: a pinned list would go stale silently.
-    expect(complete.length).toBeGreaterThanOrEqual(7);
+    // The seven languages complete today must all be walked; a new complete
+    // language only adds to the list, so this needs no edit for it.
+    expect(complete).toEqual(
+      expect.arrayContaining(["es", "fr", "hi", "id", "pt", "ru", "sw"])
+    );
     for (const code of complete) {
       const source = readFileSync(path.join(I18N_DIR, `${code}.ts`), "utf8");
       const { entries } = outwardReferences(source, "table");
@@ -420,11 +427,12 @@ describe("no complete locale table embeds beyond the English set (#169)", () => 
   });
 
   for (const code of complete) {
-    const run = KNOWN_VIOLATIONS[code] ? it.fails : it;
-    run(`${code} embeds a subset of the English set`, () => {
+    it(`${code} embeds a subset of the English set`, () => {
       const source = readFileSync(path.join(I18N_DIR, `${code}.ts`), "utf8");
       const { embeds } = outwardReferences(source, "table");
-      expect(extraEmbeds(embeds, english)).toEqual({});
+      expect(extraEmbeds(embeds, english)).toEqual(
+        KNOWN_VIOLATIONS[code] ?? {}
+      );
     });
   }
 

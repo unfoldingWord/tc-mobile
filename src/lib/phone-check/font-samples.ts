@@ -16,7 +16,6 @@
  * registered English-only (S11, `lib/i18n/english-only.ts`).
  *
  * The digit samples are fixed strings and not `formatNumber` output: the
- * shared formatter (PR #1650) was not on develop when this was built, and the
  * point of these lines is which digit SHAPES the phone can draw, whatever the
  * app later chooses to print.
  */
