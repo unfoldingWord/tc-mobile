@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
 import { expect, test, type Page } from "@playwright/test";
+import { unzipSync } from "fflate";
 
+import { validateBundleMetadata } from "../tests/support/scripture-bundle-schema";
 import { editRecordingButton } from "./recorder-fixtures";
 
 /**
@@ -36,7 +39,43 @@ const SPOOL_DIR = "tc-mobile-share-spool";
 interface SharedFile {
   readonly name: string;
   readonly head: number[];
+  /** The whole shared file, base64. */
+  readonly base64: string;
   readonly spoolFiles: string[];
+}
+
+interface Ingredient {
+  checksum: { md5: string };
+  size: number;
+}
+
+/** Unzip the shared file and hold it to its own `metadata.json`. */
+function expectBundleContent(file: Uint8Array): void {
+  const entries = unzipSync(file);
+  const names = Object.keys(entries);
+  expect(names).toContain("metadata.json");
+  const metadata = JSON.parse(
+    new TextDecoder().decode(entries["metadata.json"])
+  ) as { ingredients: Record<string, Ingredient> };
+  expect(validateBundleMetadata(metadata)).toEqual([]);
+
+  const listed = Object.keys(metadata.ingredients);
+  // One recorded segment: its MP3 and project.json, no more.
+  expect(listed.filter((n) => n.endsWith(".mp3"))).toHaveLength(1);
+  expect(listed).toContain("ingredients/tc-mobile/project.json");
+  // Every listed file is in the zip with its stated size and MD5, and the zip
+  // holds nothing the metadata does not list (metadata.json describes the rest).
+  expect([...names].sort()).toEqual([...listed, "metadata.json"].sort());
+  for (const name of listed) {
+    const bytes = entries[name];
+    expect(bytes, name).toBeDefined();
+    const entry = metadata.ingredients[name]!;
+    expect(bytes!.length, `${name} size`).toBe(entry.size);
+    expect(bytes!.length, `${name} is not empty`).toBeGreaterThan(0);
+    expect(createHash("md5").update(bytes!).digest("hex"), `${name} md5`).toBe(
+      entry.checksum.md5
+    );
+  }
 }
 
 async function newBook(page: Page): Promise<void> {
@@ -99,6 +138,9 @@ test("Export project sits right after Share book and shares the project zip from
         w.__shared = {
           name: file.name,
           head: [...bytes.slice(0, 4)],
+          base64: btoa(
+            Array.from(bytes, (b) => String.fromCharCode(b)).join("")
+          ),
           spoolFiles,
         };
       },
@@ -147,6 +189,51 @@ test("Export project sits right after Share book and shares the project zip from
     });
   }
 
+  // The bundle's audio is the stored MP3 once a segment is Finished, so mark
+  // it done and wait for the app's own transcode (the real worker encoder)
+  // to land before exporting.
+  await page.goto("/");
+  await page.getByRole("button", { name: "Book 001, 1 chapter" }).click();
+  await page.getByRole("button", { name: "Open Chapter 1" }).click();
+  await page
+    .getByRole("button", { name: "More actions for segment 1" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "More" })
+    .getByRole("button", { name: "Mark segment 1 done", exact: true })
+    .click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            new Promise<string[]>((resolve, reject) => {
+              const open = indexedDB.open("tc-mobile");
+              open.onerror = () => reject(open.error);
+              open.onsuccess = () => {
+                const all = open.result
+                  .transaction("clipMeta")
+                  .objectStore("clipMeta")
+                  .getAll();
+                all.onsuccess = () => {
+                  open.result.close();
+                  resolve(
+                    (all.result as { encoding: string }[]).map(
+                      (c) => c.encoding
+                    )
+                  );
+                };
+                all.onerror = () => reject(all.error);
+              };
+            })
+        ),
+      { timeout: 20_000 }
+    )
+    .toEqual(["mp3"]);
+
+  await page.goto("/");
+  await expect(page.locator("#launch-intro")).toBeHidden({ timeout: 10_000 });
+  await page.getByRole("button", { name: "More actions for Book 001" }).click();
   await page.getByRole("button", { name: "Export project" }).click();
   await pickLanguage(page);
   await page.getByRole("button", { name: "Share now" }).click();
@@ -160,6 +247,7 @@ test("Export project sits right after Share book and shares the project zip from
   expect(shared.name).toBe("Book 001 - project.zip");
   expect(shared.head).toEqual([0x50, 0x4b, 0x03, 0x04]);
   expect(shared.spoolFiles).toHaveLength(1);
+  expectBundleContent(Buffer.from(shared.base64, "base64"));
 
   await expect
     .poll(() =>
