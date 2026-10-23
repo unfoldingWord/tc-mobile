@@ -22,6 +22,7 @@ import { idleChapterAudio } from "./chapter-audio";
 const mocks = vi.hoisted(() => ({
   books: [] as BookCard[],
   setBookLicence: vi.fn(),
+  reload: vi.fn(),
   prepare: vi.fn<
     (
       bookId: string,
@@ -42,7 +43,7 @@ vi.mock("@/hooks/use-books", () => ({
     loaded: true,
     error: null,
     deleteFailed: false,
-    reload: vi.fn(),
+    reload: mocks.reload,
     createBook: vi.fn(),
     addChapter: vi.fn(),
     renameBook: vi.fn(),
@@ -84,6 +85,7 @@ let root: Root;
 beforeEach(() => {
   mocks.prepare.mockClear();
   mocks.setBookLicence.mockReset();
+  mocks.reload.mockReset();
   document.body.innerHTML = "<div id='root'></div>";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   root = createRoot(document.getElementById("root")!);
@@ -271,5 +273,53 @@ describe("the shelf's Share Book names its files with the licence (#1579)", () =
     expect(menu().busy()).toBe(false);
     await act(async () => menu().dismiss());
     expect(document.querySelector("[role='dialog']")).toBeNull();
+  });
+
+  it("keeps the chosen licence when the shelf reload fails, so a second Share does not ask again", async () => {
+    mocks.reload.mockImplementation(() => {
+      throw new Error("reload failed");
+    });
+    mocks.setBookLicence.mockImplementation(
+      async (_id: string, chosen: string) => ({ id: mark, licence: chosen })
+    );
+    // The shelf keeps handing back a card whose licence is still null.
+    mocks.books = [
+      { bookId: mark, name: "Mark", number: 1, licence: null, chapters: [] },
+    ];
+    await act(async () => {
+      root.render(
+        createElement(BooksScreen, {
+          audio: idleChapterAudio(),
+          onOpenChapter: vi.fn(),
+          pushLayer: vi.fn<(layer: Layer) => void>(),
+          popLayer: vi.fn<(id: string) => void>(),
+        })
+      );
+    });
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (b) => b.getAttribute("aria-label") === label
+      )!;
+    const click = async (el: HTMLElement) =>
+      act(async () => {
+        el.focus();
+        el.click();
+      });
+    await click(byLabel(strings.bookMenuOpen("Mark")));
+    await click(byLabel(strings.shareBook));
+    await click(
+      document.querySelector<HTMLElement>(
+        '[role="radio"][data-licence="CC0-1.0"]'
+      )!
+    );
+    await click(byLabel(strings.licenceAskContinue));
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+
+    await click(byLabel(strings.shareBook));
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+    expect(mocks.prepare).toHaveBeenCalledTimes(2);
+    expect(mocks.prepare.mock.calls[1]![1]).toBe("Mark (CC0 1.0).zip");
   });
 });

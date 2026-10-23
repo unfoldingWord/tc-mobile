@@ -48,7 +48,10 @@ describe("Share Book's licence ask", () => {
   });
 
   it("reloads on any commit, even one whose share was dropped", () => {
-    expect(source).toContain("useLicenceAsk(reload)");
+    expect(source).toContain("useLicenceAsk(onLicenceCommitted)");
+    const body = callbackBody("onLicenceCommitted");
+    expect(body).toContain("setChosenLicences(");
+    expect(body).toContain("reload();");
   });
 
   it("refuses to close the sheet while the licence write is in flight", () => {

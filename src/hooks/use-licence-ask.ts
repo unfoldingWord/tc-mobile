@@ -69,10 +69,11 @@ function failedSave(cause: unknown): { ok: false; key: FailureKey } {
  *
  * While a write is in flight the ask cannot be left or restarted: `cancel` and
  * `ask` are no-ops and `isSaving` says so for the sheet that hosts it. A write
- * that commits is reported to `onCommitted` even if its result is dropped, so
- * the shelf never keeps showing "not chosen" for a licence that was stored.
+ * that commits is reported to `onCommitted` with the stored book even if its
+ * result is dropped, so the shelf never keeps showing "not chosen" for a
+ * licence that was stored.
  */
-export function useLicenceAsk(onCommitted?: () => void) {
+export function useLicenceAsk(onCommitted?: (book: Book) => void) {
   const committed = useRef(onCommitted);
   useEffect(() => {
     committed.current = onCommitted;
@@ -113,7 +114,7 @@ export function useLicenceAsk(onCommitted?: () => void) {
         }
         if (result.ok) {
           try {
-            committed.current?.();
+            committed.current?.(result.book);
           } catch (cause) {
             // The reload is best effort; the write itself committed.
             console.error("After a licence commit, the callback failed", cause);

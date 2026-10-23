@@ -77,7 +77,7 @@ import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import { reorderShift } from "@/lib/view/reorder-gesture";
-import type { BookId, ChapterId } from "@/types/domain";
+import type { Book, BookId, ChapterId } from "@/types/domain";
 import type { LicenceId } from "@/types/template";
 import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
 
@@ -381,6 +381,19 @@ export function BooksScreen({
   const languageList = useLanguageList(askingLanguageFor !== null);
   // #1455: Share Book's licence ask for a book with none chosen; reset
   // whenever the sheet closes, as the language ask is.
+  // Licences the ask has stored, kept locally so the share gate does not
+  // depend on the shelf reload succeeding (#1455).
+  const [chosenLicences, setChosenLicences] = useState<
+    Readonly<Record<string, LicenceId>>
+  >({});
+  const onLicenceCommitted = useCallback(
+    (book: Book) => {
+      const { licence } = book;
+      if (licence) setChosenLicences((m) => ({ ...m, [book.id]: licence }));
+      reload();
+    },
+    [reload]
+  );
   const {
     askingFor: askingLicenceFor,
     saving: savingLicence,
@@ -389,7 +402,7 @@ export function BooksScreen({
     cancel: cancelLicenceAsk,
     choose: chooseLicence,
     isSaving: licenceSaving,
-  } = useLicenceAsk(reload);
+  } = useLicenceAsk(onLicenceCommitted);
   // A failed cover write, scoped to the picker: the screen's Notice sits
   // behind the sheet's scrim, as rename's does.
   const [coverFailed, setCoverFailed] = useState<FailureKey | null>(null);
@@ -1216,7 +1229,13 @@ export function BooksScreen({
 
   // The book whose ⋮ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
-  const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  const shelfBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // The stored licence wins over a card the reload has not refreshed (or could
+  // not): without it a second Share would ask again and could overwrite.
+  const shareMenuBook = useMemo(() => {
+    const chosen = shelfBook ? chosenLicences[shelfBook.bookId] : undefined;
+    return shelfBook && chosen ? { ...shelfBook, licence: chosen } : shelfBook;
+  }, [shelfBook, chosenLicences]);
   // The open book's cover colour: its stored key, or #957's id-derived
   // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
   // swatch and the delete ask all read this one value.
