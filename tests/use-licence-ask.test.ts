@@ -183,3 +183,95 @@ it("lets a template book that reads null share untagged instead of trapping it i
   expect(reportFailure).not.toHaveBeenCalled();
   expect(latest.current!.askingFor).toBeNull();
 });
+
+const locked = () =>
+  Object.assign(new Error("locked"), { name: "TemplateLicenceLockedError" });
+
+it("a template-lock whose fallback read rejects shows the failure, clears busy, and can retry or dismiss", async () => {
+  await act(async () => latest.current!.ask(id));
+  setBookLicence.mockRejectedValue(locked());
+  getBook.mockRejectedValue(new Error("read failed"));
+  let book: Book | null | undefined;
+  await act(async () => {
+    book = await latest.current!.choose("CC-BY-SA-4.0");
+  });
+  expect(book).toBeNull();
+  expect(latest.current!.isSaving()).toBe(false);
+  expect(latest.current!.saving).toBe(false);
+  expect(latest.current!.failed).not.toBeNull();
+  expect(reportFailure).toHaveBeenCalledWith(expect.any(Error), "book-licence");
+
+  // Retry works.
+  setBookLicence.mockReset();
+  setBookLicence.mockResolvedValue({ id, licence: "CC-BY-SA-4.0" } as Book);
+  await act(async () => {
+    book = await latest.current!.choose("CC-BY-SA-4.0");
+  });
+  expect(book?.licence).toBe("CC-BY-SA-4.0");
+
+  // Dismiss works after a failure too.
+  await act(async () => latest.current!.ask(id));
+  setBookLicence.mockRejectedValue(locked());
+  getBook.mockRejectedValue(new Error("read failed"));
+  await act(async () => void (await latest.current!.choose("CC0-1.0")));
+  await act(async () => latest.current!.cancel());
+  expect(latest.current!.askingFor).toBeNull();
+});
+
+// The class guard: a throw at each await inside choose() leaves nothing busy.
+const injections: [string, () => void][] = [
+  ["the write rejects", () => setBookLicence.mockRejectedValue(new Error("w"))],
+  [
+    "the write throws before returning a promise",
+    () =>
+      setBookLicence.mockImplementation(() => {
+        throw new Error("sync");
+      }),
+  ],
+  [
+    "the template-lock fallback read rejects",
+    () => {
+      setBookLicence.mockRejectedValue(locked());
+      getBook.mockRejectedValue(new Error("r"));
+    },
+  ],
+  [
+    "the template-lock fallback read throws synchronously",
+    () => {
+      setBookLicence.mockRejectedValue(locked());
+      getBook.mockImplementation(() => {
+        throw new Error("sync read");
+      });
+    },
+  ],
+  [
+    "the funnel report itself throws",
+    () => {
+      setBookLicence.mockRejectedValue(new Error("w"));
+      reportFailure.mockImplementation(() => {
+        throw new Error("funnel");
+      });
+    },
+  ],
+  [
+    "the commit callback throws",
+    () => {
+      setBookLicence.mockResolvedValue({ id, licence: "CC0-1.0" } as Book);
+      committedSpy.mockImplementation(() => {
+        throw new Error("reload");
+      });
+    },
+  ],
+];
+it.each(injections)("leaves nothing busy when %s", async (_name, inject) => {
+  await act(async () => latest.current!.ask(id));
+  inject();
+  await act(async () => {
+    await latest.current!.choose("CC0-1.0").catch(() => null);
+  });
+  expect(latest.current!.isSaving()).toBe(false);
+  expect(latest.current!.saving).toBe(false);
+  // And the ask can still be left.
+  await act(async () => latest.current!.cancel());
+  expect(latest.current!.askingFor).toBeNull();
+});

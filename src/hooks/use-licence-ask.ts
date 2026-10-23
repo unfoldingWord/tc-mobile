@@ -20,7 +20,7 @@ export function needsLicenceAsk(book: {
   return (book.licence ?? null) === null;
 }
 
-/** Store the ask's pick (#1455). Never throws: reports "book-licence". */
+/** Store the ask's pick (#1455). Reports "book-licence"; `choose` also guards a throw. */
 async function performSetBookLicence(
   bookId: BookId,
   licence: LicenceId
@@ -36,20 +36,36 @@ async function performSetBookLicence(
       (cause as { name?: unknown } | null)?.name ===
       "TemplateLicenceLockedError"
     ) {
-      const book = await getBook(bookId);
-      if (book) return { ok: true, book };
+      try {
+        const book = await getBook(bookId);
+        if (book) return { ok: true, book };
+      } catch (readCause) {
+        // The fallback read failing is a failed save like any other: the
+        // original refusal is what is reported, and the ask stays open.
+        console.error("Reading a template book back failed", readCause);
+      }
     }
-    console.error("Saving a book's licence failed", cause);
-    reportFailure(cause, "book-licence");
-    return { ok: false, key: failureKey(cause, "saveFailed") };
+    return failedSave(cause);
   }
+}
+
+/** The one failure result: console, funnel (which may itself throw), key. */
+function failedSave(cause: unknown): { ok: false; key: FailureKey } {
+  console.error("Saving a book's licence failed", cause);
+  try {
+    reportFailure(cause, "book-licence");
+  } catch (reportCause) {
+    console.error("Reporting a licence failure failed", reportCause);
+  }
+  return { ok: false, key: failureKey(cause, "saveFailed") };
 }
 
 /**
  * The ask's book, its in-flight write and a failed write's key, shaped like
- * `useLanguageAsk`. `choose` goes busy before its first await; a run a
- * `cancel`, a newer `ask` or an unmount overtook resolves `null`, so a closed
- * ask never continues a share.
+ * `useLanguageAsk`. `choose` goes busy before its first await and clears it in
+ * a `finally`, so no exit (success, a failed write, a failed fallback read, a
+ * throwing callback, an unmount) leaves the ask busy. A run an unmount
+ * overtook resolves `null`, so a closed ask never continues a share.
  *
  * While a write is in flight the ask cannot be left or restarted: `cancel` and
  * `ask` are no-ops and `isSaving` says so for the sheet that hosts it. A write
@@ -86,17 +102,34 @@ export function useLicenceAsk(onCommitted?: () => void) {
       savingRef.current = true;
       setSaving(true);
       setFailed(null);
-      const result = await performSetBookLicence(askingFor, licence);
-      if (result.ok) committed.current?.();
-      if (session.current !== mine) return null;
-      savingRef.current = false;
-      setSaving(false);
-      if (!result.ok) {
-        setFailed(result.key);
-        return null;
+      try {
+        let result: Awaited<ReturnType<typeof performSetBookLicence>>;
+        try {
+          result = await performSetBookLicence(askingFor, licence);
+        } catch (cause) {
+          // Defensive: perform reports its own failures, so this is a throw
+          // from somewhere it did not expect. Still a failed save.
+          result = failedSave(cause);
+        }
+        if (result.ok) {
+          try {
+            committed.current?.();
+          } catch (cause) {
+            // The reload is best effort; the write itself committed.
+            console.error("After a licence commit, the callback failed", cause);
+          }
+        }
+        if (session.current !== mine) return null;
+        if (!result.ok) {
+          setFailed(result.key);
+          return null;
+        }
+        setAskingFor(null);
+        return result.book;
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
       }
-      setAskingFor(null);
-      return result.book;
     },
     [askingFor]
   );
