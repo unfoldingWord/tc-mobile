@@ -225,4 +225,51 @@ describe("the shelf's Share Book names its files with the licence (#1579)", () =
     expect(mocks.prepare).toHaveBeenCalledTimes(1);
     expect(mocks.prepare.mock.calls[0]![1]).toBe("Mark (CC BY-SA 4.0).zip");
   });
+
+  it("keeps the book-menu layer busy while the write is in flight, so Back cannot drop it", async () => {
+    let release: (book: unknown) => void = () => {};
+    mocks.setBookLicence.mockImplementation(
+      () => new Promise((resolve) => (release = resolve))
+    );
+    mocks.books = [
+      { bookId: mark, name: "Mark", number: 1, licence: null, chapters: [] },
+    ];
+    const layers: Layer[] = [];
+    await act(async () => {
+      root.render(
+        createElement(BooksScreen, {
+          audio: idleChapterAudio(),
+          onOpenChapter: vi.fn(),
+          pushLayer: (layer: Layer) => layers.push(layer),
+          popLayer: vi.fn<(id: string) => void>(),
+        })
+      );
+    });
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (b) => b.getAttribute("aria-label") === label
+      )!;
+    const click = async (el: HTMLElement) =>
+      act(async () => {
+        el.focus();
+        el.click();
+      });
+    await click(byLabel(strings.bookMenuOpen("Mark")));
+    await click(byLabel(strings.shareBook));
+    const menu = () => layers.filter((l) => l.id === "books:book-menu").at(-1)!;
+    // Asking, not yet saving: Back may close the sheet.
+    expect(menu().busy()).toBe(false);
+    await click(byLabel(strings.licenceAskContinue));
+
+    // Saving: the adapter reads busy() and, when true, neither dismisses nor
+    // unregisters the layer, however many Backs arrive.
+    for (let back = 0; back < 3; back++) expect(menu().busy()).toBe(true);
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+
+    // Settled: busy lifts, and a normal dismissal closes the sheet.
+    await act(async () => release({ id: mark, licence: "CC-BY-SA-4.0" }));
+    expect(menu().busy()).toBe(false);
+    await act(async () => menu().dismiss());
+    expect(document.querySelector("[role='dialog']")).toBeNull();
+  });
 });

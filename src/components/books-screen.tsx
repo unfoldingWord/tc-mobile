@@ -695,7 +695,12 @@ export function BooksScreen({
       // the screen for its whole timeline (Amendment D, widened from
       // `status === "preparing"` because #491's modal outlives it — see
       // `UseShareFlow.ownsScreen`).
-      busy: () => savingBookNameRef.current || bookShare.ownsScreen(),
+      // A licence write in flight (#1455) cannot be cancelled and
+      // `closeBookMenuState` refuses while it runs, so Back must see it as
+      // busy: otherwise the adapter unregisters the layer and a second Back
+      // leaves the app mid-share.
+      busy: () =>
+        savingBookNameRef.current || bookShare.ownsScreen() || licenceSaving(),
       dismiss: () => {
         closeBookMenuState();
       },
