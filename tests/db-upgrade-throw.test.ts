@@ -310,3 +310,49 @@ describe.each([
     });
   });
 });
+
+/**
+ * Make the Nth `books` write fail only AFTER the `versionchange` transaction
+ * has committed: the write returns a promise (not a request) that rejects on
+ * the transaction's `complete`, so nothing keeps the transaction open while
+ * the step waits on it. No current step can do this (each awaits IDB requests
+ * only); it stands in for a step that awaits something that is not IndexedDB.
+ */
+function failBooksPutAfterCommitAt(nth: number) {
+  const realPut = IDBObjectStore.prototype.put;
+  let calls = 0;
+  return vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+    this: IDBObjectStore,
+    ...args
+  ) {
+    if (this.name === "books" && ++calls === nth) {
+      const tx = this.transaction;
+      return new Promise((_, reject) => {
+        tx.addEventListener("complete", () => {
+          reject(new Error("simulated fault after the upgrade committed"));
+        });
+      }) as unknown as IDBRequest<IDBValidKey>;
+    }
+    return realPut.apply(this, args);
+  });
+}
+
+describe("a fault that surfaces after the upgrade transaction committed", () => {
+  it("closes the connection and rejects the open with the fault, rather than opening a half-migrated database", async () => {
+    await seed(9);
+    failBooksPutAfterCommitAt(4);
+    const close = vi.spyOn(IDBDatabase.prototype, "close");
+
+    await expect(getDb()).rejects.toThrow(
+      "simulated fault after the upgrade committed"
+    );
+    // The connection the open produced is closed, not left holding the
+    // database with nothing referring to it.
+    expect(close).toHaveBeenCalledTimes(1);
+
+    vi.restoreAllMocks();
+    // The commit itself cannot be undone from the open: the version moved.
+    // That is what the rejection reports.
+    expect((await readRaw()).version).toBe(APP_VERSION);
+  });
+});

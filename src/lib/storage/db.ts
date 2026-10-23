@@ -977,6 +977,8 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
      * produces, which names nothing.
      */
     let upgradeFault: unknown;
+    /** Whether an `upgrade` step failed; a step could throw `undefined`. */
+    let upgradeFailed = false;
 
     const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
       ...callbacks,
@@ -994,6 +996,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           callbacks.upgrade?.(db, oldVersion, newVersion, tx, event)
         ).catch((cause: unknown) => {
           upgradeFault = cause;
+          upgradeFailed = true;
           try {
             tx.abort();
           } catch {
@@ -1003,10 +1006,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             // ran: the open still REJECTS, and `upgradeFault` is what it
             // rejects with. Observed on fake-indexeddb with `idb` 8, not on a
             // real engine. (2) It committed before the error surfaced: the
-            // open SUCCEEDS and the error is not reported, because
-            // `upgradeFault` is read only when the open rejects. Case (2) is
-            // not reachable from the current steps, which await IDB requests
-            // only, and no test reaches it.
+            // upgrade cannot be rolled back then, and the open would SUCCEED
+            // on a half-migrated database, so the open's fulfilment below
+            // closes the connection and rejects with `upgradeFault` instead.
+            // Case (2) is not reachable from the current steps, which await
+            // IDB requests only; `tests/db-upgrade-throw.test.ts` simulates it.
           }
         });
         // The abort also rejects the transaction's own `done` promise, which
@@ -1022,6 +1026,22 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
     void opening.then(
       (db) => {
         if (pendingOpen === opening) pendingOpen = null;
+        // An upgrade step failed after its transaction had already committed
+        // (case (2) above): the database is at the new version with the steps
+        // after the fault never run, and nothing can roll that back from here.
+        // Do not hand that connection to the app as if the upgrade had worked.
+        // Close it and fail the open with the fault, so the failure is
+        // reported through the same rejection as every other upgrade fault.
+        if (upgradeFailed) {
+          // Like the rejection path: a blocked open that ends in a failure
+          // leaves the database no more reachable than it was.
+          wasBlocked = false;
+          db.close();
+          if (settled) return;
+          settled = true;
+          reject(upgradeFault);
+          return;
+        }
         // This open was told it was blocked and has now come through, so the
         // other copy has closed and the database is reachable again. Said
         // whichever branch below takes the connection: in both of them the
