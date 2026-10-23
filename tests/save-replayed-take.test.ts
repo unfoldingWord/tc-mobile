@@ -296,6 +296,40 @@ describe("saveReplayedTake: discarded writes nothing", () => {
     expect(await activeClip(segmentId)).toBe(kept.clipId);
     expect(await recordOf(c.clipId)).toBeUndefined();
   });
+
+  it.each(["clipData", "takes"])(
+    "a Discard tapped while a free commit writes %s is not sealed as saved (George r1 on #1652)",
+    async (store) => {
+      const { segmentId, kept, append } = await keptSegment();
+      const c = await holdAndLoad(append);
+      const rowBefore = await rowsNow();
+      const revision = (await getSegment(segmentId))?.audioRevision;
+      // The tap lands inside the commit: the flag flips when the commit
+      // reaches `store`, after the verdict has been read.
+      let tapped = false;
+      const realPut = IDBObjectStore.prototype.put;
+      vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+        this: IDBObjectStore,
+        ...args
+      ) {
+        if (this.name === store) tapped = true;
+        return realPut.apply(this, args);
+      });
+
+      const result = await replay(c, {
+        isDiscardRequested: (id) => tapped && id === c.clipId,
+      });
+      vi.restoreAllMocks();
+
+      expect(tapped).toBe(true);
+      expect(result).toEqual({ outcome: "discarded" });
+      expect(await activeClip(segmentId)).toBe(kept.clipId);
+      expect((await getSegment(segmentId))?.audioRevision).toBe(revision);
+      expect(await recordOf(c.clipId)).toBeUndefined();
+      expect(await rowsNow()).toEqual(rowBefore);
+      expect(await getClipMeta(c.clipId)).toBeUndefined();
+    }
+  );
 });
 
 describe("saveReplayedTake: moved and unexplained keep, and never save", () => {

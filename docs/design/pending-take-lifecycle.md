@@ -697,14 +697,29 @@ and its in-memory `rowGivenUp`, which could see only this copy.
 
 What each verdict does in a conditional commit:
 
-| Verdict       | Writes (same transaction)                                         | Slot                                                                                                     | Failure log                    |
-| ------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `free`        | clip, take, revision + 1, delete own row if present, `saved`      | freed (`succeedSave`), `onSaved`                                                                         | none                           |
-| `done`        | delete own row if present, `saved` (idempotent); no clip, no take | freed, `onSaved`                                                                                         | none                           |
-| `discarded`   | delete own row if present; no clip, no take                       | freed                                                                                                    | once, `"pending-take-refused"` |
-| `moved`       | keep (below)                                                      | freed once the audio is on disk; held if not (below)                                                     | once, `"pending-take-refused"` |
-| `unexplained` | keep (below)                                                      | freed once the audio is on disk; held if not (below)                                                     | once, `"pending-take-refused"` |
-| `gone`        | delete own row if present                                         | first attempt: freed (the coordinator's #38 reading: delete on `segment-gone`). A Retry: failed, `stale` | once, `"pending-take-refused"` |
+| Verdict       | Writes (same transaction)                                                                        | Slot                                                                                                     | Failure log                    |
+| ------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `free`        | clip, take, revision + 1, delete own row if present, `saved`                                     | freed (`succeedSave`), `onSaved`                                                                         | none                           |
+| `done`        | delete own row if present, `saved` (idempotent); no clip, no take                                | freed, `onSaved`                                                                                         | none                           |
+| `discarded`   | nothing: a recorded Discard already deleted the row; a request leaves it for its own settle (I2) | freed                                                                                                    | once, `"pending-take-refused"` |
+| `moved`       | keep (below)                                                                                     | freed once the audio is on disk; held if not (below)                                                     | once, `"pending-take-refused"` |
+| `unexplained` | keep (below)                                                                                     | freed once the audio is on disk; held if not (below)                                                     | once, `"pending-take-refused"` |
+| `gone`        | delete own row if present                                                                        | first attempt: freed (the coordinator's #38 reading: delete on `segment-gone`). A Retry: failed, `stale` | once, `"pending-take-refused"` |
+
+**`discarded` writes nothing, the row included.** A recorded Discard has
+already deleted the row with its record. A Discard only requested in this
+copy leaves the row for its own settle, which deletes it together with the
+record. Deleting it here would let a kill before that settle leave neither
+the row nor a record (the harness's I2).
+
+**`free` asks for a Discard request again before it commits** (George r1 on
+#1652), in the turn of its last write, the way hold step 7 does. A tap
+during the clip and take writes would otherwise be sealed as `saved`, which
+is final. If the request is there, the transaction aborts: the row, the
+active take and the revision are unchanged, the outcome is `discarded`, and
+the Discard's own settle records it. `done` does not re-check. Its take is
+already active or already recorded `saved`, and aborting there would leave a
+later `discarded` record on an active take (C1).
 
 **Keep, exactly.** Nothing is saved over the segment, and no copy of the
 audio is let go before another is on disk:
