@@ -977,8 +977,24 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
      * produces, which names nothing.
      */
     let upgradeFault: unknown;
+    /** Whether an `upgrade` step failed; a step could throw `undefined`. */
+    let upgradeFailed = false;
+    /**
+     * Settles once the `upgrade` callback has finished, either way (it never
+     * rejects: its fault is recorded above). Already settled when no upgrade
+     * runs. The open waits for it, because a step can fail after the native
+     * open has already succeeded, and the fulfilment check below must see
+     * that fault.
+     *
+     * A step that never settled would hang the open here. No current step
+     * can: each awaits only requests on the `versionchange` transaction, and
+     * those settle when it commits or aborts, and a request made on it after
+     * it has finished throws at once. So there is no bound on this wait; a
+     * step that awaits anything else must bring its own.
+     */
+    let upgradeSettled: Promise<void> = Promise.resolve();
 
-    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+    const native = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
       ...callbacks,
       // `idb` calls the upgrade callback and does not await what it returns, so
       // an error thrown after the first `await` (every backfill) used to leave
@@ -990,10 +1006,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       // IndexedDB request already aborts the transaction by itself; this covers
       // the thrown error that does not.
       upgrade(db, oldVersion, newVersion, tx, event) {
-        void Promise.resolve(
+        upgradeSettled = Promise.resolve(
           callbacks.upgrade?.(db, oldVersion, newVersion, tx, event)
         ).catch((cause: unknown) => {
           upgradeFault = cause;
+          upgradeFailed = true;
           try {
             tx.abort();
           } catch {
@@ -1003,10 +1020,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             // ran: the open still REJECTS, and `upgradeFault` is what it
             // rejects with. Observed on fake-indexeddb with `idb` 8, not on a
             // real engine. (2) It committed before the error surfaced: the
-            // open SUCCEEDS and the error is not reported, because
-            // `upgradeFault` is read only when the open rejects. Case (2) is
-            // not reachable from the current steps, which await IDB requests
-            // only, and no test reaches it.
+            // upgrade cannot be rolled back then, and the open would SUCCEED
+            // on a half-migrated database, so the open's fulfilment below
+            // closes the connection and rejects with `upgradeFault` instead.
+            // Case (2) is not reachable from the current steps, which await
+            // IDB requests only; `tests/db-upgrade-throw.test.ts` simulates it.
           }
         });
         // The abort also rejects the transaction's own `done` promise, which
@@ -1017,11 +1035,28 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       },
     });
 
+    const opening = native.then((db) => upgradeSettled.then(() => db));
     pendingOpen = opening;
 
     void opening.then(
       (db) => {
         if (pendingOpen === opening) pendingOpen = null;
+        // An upgrade step failed after its transaction had already committed
+        // (case (2) above): the database is at the new version with the steps
+        // after the fault never run, and nothing can roll that back from here.
+        // Do not hand that connection to the app as if the upgrade had worked.
+        // Close it and fail the open with the fault, so the failure is
+        // reported through the same rejection as every other upgrade fault.
+        if (upgradeFailed) {
+          // Like the rejection path: a blocked open that ends in a failure
+          // leaves the database no more reachable than it was.
+          wasBlocked = false;
+          db.close();
+          if (settled) return;
+          settled = true;
+          reject(upgradeFault);
+          return;
+        }
         // This open was told it was blocked and has now come through, so the
         // other copy has closed and the database is reachable again. Said
         // whichever branch below takes the connection: in both of them the
