@@ -23,6 +23,7 @@
     flex: 1;
   }
   :root .o4-tile {
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 76px auto;
     row-gap: 8px;
     width: 76px;
@@ -46,7 +47,17 @@
     color: var(--s-ink-muted);
     font-size: 14px; /* #939 token */
     font-weight: 400;
-    white-space: nowrap;
+    /* #1665: a caption wraps to a second line rather than run into its
+       neighbour (es, fr, pt, ru at 360px). It may be as wide as its tile plus
+       the row's gap, so two captions never share a pixel; a word longer than
+       that is hyphenated, and only then broken, rather than overlap. */
+    white-space: normal;
+    justify-self: center;
+    width: max-content;
+    max-width: calc(100% + 10px);
+    text-wrap: balance;
+    hyphens: auto;
+    overflow-wrap: break-word;
   }
 
   /* #1119 round 5, George Medium 1: four REAL tiles (Done, Edit, Clear,
@@ -77,6 +88,9 @@
   :root .o4-tiles--compact .o4-tile {
     grid-template-rows: 64px auto;
     width: 64px;
+  }
+  :root .o4-tiles--compact .o4-tile > .control-caption {
+    max-width: calc(100% + 6px);
   }
   :root .o4-tiles--compact .o4-tile::before {
     width: 64px;
