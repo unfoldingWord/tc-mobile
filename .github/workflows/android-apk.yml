@@ -232,15 +232,29 @@ jobs:
       # "pass" against it forever regardless of vite.config.ts's globPatterns
       # — silently stop being a real gate. The OBS thumbnails must not be in
       # the service-worker precache (ADR 0006 / #177) — ~598 files stalling
-      # the first native launch. iOS checks emitted thumbnails against the
-      # reader-gated jpg policy; Android still rejects them unconditionally.
+      # the first native launch. Both native lanes check emitted thumbnails
+      # against the reader-gated jpg policy (#783): a reader landed with the
+      # Template Library (#246), so `jpg` is configured and the thumbnails
+      # must be emitted; either one without the other fails.
       - name: OBS thumbnails stay out of the precache (web build; ADR 0006 / #177)
         run: |
           set -euo pipefail
-          if grep -q "obs/thumbs" dist/sw.js; then
-            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
-            exit 1
-          fi
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const config = readFileSync('vite.config.ts', 'utf8');
+          const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
+          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
+          if (patterns.length === 0) {
+            console.error('::error::No globPatterns found in vite.config.ts');
+            process.exit(1);
+          }
+          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
+          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
+          if (thumbnailsEmitted !== jpgConfigured) {
+            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            process.exit(1);
+          }
+          NODE
 
       # #923: the web build above validates the PWA's own artifacts, but what
       # actually ships inside the native shell must be the NATIVE-mode build —

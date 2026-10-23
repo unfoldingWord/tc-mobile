@@ -41,6 +41,7 @@ import { shelfNoticeText } from "./shelf-notice-text";
 import { activeLocale } from "@/lib/locale";
 import { strings } from "@/lib/strings";
 import { SettingsPanel } from "./settings-panel";
+import { TemplatePicker } from "./template-picker";
 import { useChapterHeading } from "@/hooks/use-settings";
 import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
@@ -133,7 +134,8 @@ type BooksLayerId =
   | "books:delete-confirm"
   | "books:about"
   | "books:about-text"
-  | "books:settings";
+  | "books:settings"
+  | "books:templates";
 
 interface BooksScreenProps {
   /** Chapter play (#1469): the row controls' view of the audio session. */
@@ -246,6 +248,8 @@ export function BooksScreen({
   // Settings (#1575), opened by the gear in the header. Its own flag and its
   // own Back layer, like About's, so the two never share a close path.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The Template Library (#246): its own panel, opened from a ≡ tile.
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
   // shelf read included, which is precisely when a facilitator needs the report.
@@ -716,6 +720,15 @@ export function BooksScreen({
         setSettingsOpen(false);
       },
     },
+    // The Template Library (#246): a create in flight is not recalled by Back,
+    // and the picker's own `close` refuses while it runs, so Back is refused
+    // the same way through the picker's own latch (`templatesBusy`).
+    "books:templates": {
+      busy: () => templatesBusy.current,
+      dismiss: () => {
+        setTemplatesOpen(false);
+      },
+    },
   });
 
   // The ≡ that opened the global menu, handed focus back when it closes
@@ -851,6 +864,25 @@ export function BooksScreen({
     if (settingsOpen) return;
     settingsFocusRestore.restore({ suppressed: false, fallback: null });
   }, [settingsOpen, settingsFocusRestore]);
+  // The Template Library's ONE open and ONE close, like About: it replaces the
+  // global menu, so the menu's layer goes with it.
+  const templatesBusy = useRef(false);
+  const onTemplatesBusy = useCallback((busy: boolean) => {
+    templatesBusy.current = busy;
+  }, []);
+  const openTemplates = useCallback(() => {
+    layers.open("books:templates");
+    closeGlobalMenu();
+    setTemplatesOpen(true);
+  }, [closeGlobalMenu, layers]);
+  const closeTemplates = useCallback(() => {
+    setTemplatesOpen(false);
+    layers.close("books:templates");
+  }, [layers]);
+  const onTemplateCreated = useCallback(() => {
+    closeTemplates();
+    reload();
+  }, [closeTemplates, reload]);
   const closeLicenseText = useCallback(() => {
     setAboutViewing(null);
     layers.close("books:about-text");
@@ -1844,6 +1876,7 @@ export function BooksScreen({
     menuOpen ||
     aboutOpen ||
     settingsOpen ||
+    templatesOpen ||
     shareMenuBook !== null ||
     deleteTargetId !== null ||
     newBookSeed !== null ||
@@ -2266,10 +2299,24 @@ export function BooksScreen({
             caption={strings.tileAbout}
             onClick={openAbout}
           />
+          <Tile
+            tone="plain"
+            icon="book-open"
+            label={strings.templatesOpen}
+            caption={strings.templatesOpen}
+            onClick={openTemplates}
+          />
         </TileGrid>
       </Menu>
 
       <SettingsPanel open={settingsOpen} onClose={closeSettings} />
+
+      <TemplatePicker
+        open={templatesOpen}
+        onClose={closeTemplates}
+        onCreated={onTemplateCreated}
+        onBusyChange={onTemplatesBusy}
+      />
 
       <AboutPanel
         open={aboutOpen}

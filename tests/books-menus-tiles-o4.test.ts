@@ -350,7 +350,7 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
 });
 
 describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
-  it("holds About as its one tile, and the theme tile has moved to Settings (#1575)", async () => {
+  it("holds About and Templates as its tiles, and the theme tile has moved to Settings (#1575)", async () => {
     await mount();
     await openFrom(strings.menuOpen);
     const menu = appMenu();
@@ -358,8 +358,10 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     const grid = menu!.querySelector(".o4-tiles");
     expect(grid).not.toBeNull();
     const tiles = tilesIn(menu!);
-    expect(tiles).toHaveLength(1);
-    const [about] = tiles as [HTMLButtonElement];
+    expect(tiles).toHaveLength(2);
+    const [about, templates] = tiles as [HTMLButtonElement, HTMLButtonElement];
+    // The Template Library tile (#246), after About.
+    expect(templates.getAttribute("aria-label")).toBe(strings.templatesOpen);
     expect(about.getAttribute("aria-label")).toBe(strings.aboutOpen);
     expect(about.classList).toContain("o4-tile--plain");
     const caption = about.querySelector(".control-caption")?.textContent;

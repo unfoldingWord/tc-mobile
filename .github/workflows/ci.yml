@@ -252,23 +252,31 @@ jobs:
         # truth for what a field install fetches. See ADR 0006 / #177 for why
         # the thumbnails are reader-gated out of the precache today.
         #
-        # This check is an UNCONDITIONAL ban on the substring, not a two-state
-        # reader-gated check like tests/precache-manifest.test.ts — bash has
-        # no cheap equivalent of that test's source scan for a reader. That is
-        # deliberate, not an oversight (#232 round-1 review, finding C2): it
-        # is a hard stop that WILL fail once a real reader lands (Template
-        # Library, #33) and `jpg` is legitimately restored to the precache.
-        # At that point this step itself is the third place to update or
-        # remove — alongside `tests/precache-manifest.test.ts`'s `INTENDED`
-        # and `vite.config.ts`'s `globPatterns` — not a bug to silently work
-        # around by loosening or deleting the grep without also updating the
-        # other two.
+        # Reader-gated, as ios-testflight.yml's and android-apk.yml's twins
+        # are (#783): the thumbnails must be in dist/sw.js exactly when `jpg`
+        # is in `globPatterns`. The Template Library (#246) is the reader that
+        # restored `jpg`, so a build that emits no thumbnails, or one that
+        # emits them with `jpg` configured out, fails here. The step keeps its
+        # name: the release tooling reads step names.
         run: |
-          if grep -q "obs/thumbs" dist/sw.js; then
-            echo "::error::dist/sw.js precaches obs/thumbs — the thumbnails are reader-gated out of the precache (ADR 0006 / #177) until a screen reads them. If a reader has legitimately landed (e.g. the Template Library, #33), this is expected: update INTENDED in tests/precache-manifest.test.ts, globPatterns in vite.config.ts, AND this grep step in ci.yml together — this step is an unconditional ban and must change too, or every build after the restore fails here."
-            exit 1
-          fi
-          echo "obs/thumbs absent from dist/sw.js."
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const config = readFileSync('vite.config.ts', 'utf8');
+          const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
+          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
+          if (patterns.length === 0) {
+            console.error('::error::No globPatterns found in vite.config.ts');
+            process.exit(1);
+          }
+          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
+          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
+          if (thumbnailsEmitted !== jpgConfigured) {
+            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            process.exit(1);
+          }
+          NODE
+          echo "OBS thumbnails in dist/sw.js agree with the jpg policy."
 
       # tests/dist-css.test.ts and tests/precache-manifest.test.ts's
       # `dist/sw.js`-reading block both read the actual build output, so they

@@ -112,6 +112,9 @@ export const stringsEn = {
   // `backToBooks`. Theme rows reuse `useLightTheme` and `useDarkTheme`.
   settingsOpen: "Settings",
   settingsTitle: "Settings",
+  templatesOpen: "Templates",
+  templatesTitle: "Templates",
+  templateLicenceLabel: (licence: string): string => `Licence: ${licence}`,
   // S12: the requirements owner's option. Off, a chapter shows its name when
   // it has one and its number when it does not. On, always the number.
   settingsChapterNumbers: "Always show chapter numbers",
