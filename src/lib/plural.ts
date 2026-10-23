@@ -21,6 +21,7 @@
  * have the same counts in them.
  */
 import { activeLocale } from "./locale";
+import { formatNumber } from "./number-format";
 
 /**
  * CLDR's plural categories — the keys a forms table may carry.
@@ -87,13 +88,9 @@ function rulesFor(locale: string): Intl.PluralRules {
 /**
  * The phrase for `n`, with `{n}` replaced by the count.
  *
- * The count is interpolated as plain ASCII digits (`String(n)`), NOT
- * `toLocaleString`. Digit shaping is a separate decision this repo has already
- * made in the other direction — `formatDuration`'s clock is ASCII "because
- * digits read across scripts" (`lib/utils.ts`) — and changing it here would
- * quietly restyle every count in the app under cover of a plural fix. When a
- * locale that wants Arabic-Indic digits arrives, that is its own change, made
- * for both surfaces at once.
+ * The count is interpolated through `formatNumber` (`lib/number-format.ts`),
+ * which forces Latin digits (R19, ADR 0015 (h)) and no grouping, the same entry
+ * `formatDuration`'s clock uses. A locale cannot restyle the digits here.
  *
  * Every `{n}` is replaced, not just the first: a form is free to name the count
  * twice.
@@ -122,5 +119,5 @@ export function plural(
   // function form makes the patterns inert for whatever the count becomes
   // later: a grouped or locale-formatted number, or a second placeholder
   // carrying something a translator typed (#713, George r1 Low 1).
-  return form.replaceAll("{n}", () => String(n));
+  return form.replaceAll("{n}", () => formatNumber(n));
 }
