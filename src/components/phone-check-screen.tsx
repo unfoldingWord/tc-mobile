@@ -7,6 +7,11 @@ import {
   type PhoneCheckActivity,
   type PhoneCheckState,
 } from "@/hooks/use-phone-check";
+import {
+  DIGIT_SAMPLES,
+  SCRIPT_SAMPLES,
+  type FontSample,
+} from "@/lib/phone-check/font-samples";
 import { formatPhoneCheckReport } from "@/lib/phone-check/report";
 
 /**
@@ -71,6 +76,28 @@ export interface PhoneCheckViewProps {
   onStart: () => void;
   onStartMemory: () => void;
   onClose: () => void;
+}
+
+function SampleList({ samples }: { samples: readonly FontSample[] }) {
+  return (
+    <ul className="flex flex-col gap-2">
+      {samples.map((s) => (
+        <li key={s.id} className="flex flex-col">
+          <span className="text-ink-muted text-[13px]">{s.label}</span>
+          {/* `lang` and `dir` are the point: they are what makes the phone
+              choose this script's own font (#1486). */}
+          <span
+            lang={s.lang}
+            dir={s.dir}
+            className="text-ink text-[20px]"
+            data-phone-check-sample={s.id}
+          >
+            {s.text}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** A copy's outcome, keyed to the report text that copy wrote. */
@@ -188,6 +215,28 @@ export function PhoneCheckView({
         >
           {strings.phoneCheckMemoryStart}
         </button>
+      </div>
+
+      <div
+        className="border-edge flex flex-col gap-2 rounded-2xl border p-3"
+        data-phone-check="fonts"
+      >
+        <h2 className="text-ink">{strings.phoneCheckFontTitle}</h2>
+        <p
+          className="text-ink-muted text-[13px]"
+          data-phone-check="fonts-intro"
+        >
+          {strings.phoneCheckFontIntro}
+        </p>
+        <SampleList samples={SCRIPT_SAMPLES} />
+        <h3 className="text-ink">{strings.phoneCheckDigitsTitle}</h3>
+        <p
+          className="text-ink-muted text-[13px]"
+          data-phone-check="digits-note"
+        >
+          {strings.phoneCheckDigitsNote}
+        </p>
+        <SampleList samples={DIGIT_SAMPLES} />
       </div>
 
       <label className="flex flex-col gap-2">

@@ -56,8 +56,34 @@ function isDeviceInfo(v: unknown): v is DeviceInfo {
     isNumberOrNull(v.cores) &&
     isNumberOrNull(v.quotaBytes) &&
     isNumberOrNull(v.usageBytes) &&
-    (v.persisted === null || typeof v.persisted === "boolean")
+    (v.persisted === null || typeof v.persisted === "boolean") &&
+    // `language` and `languages` came later (#1486): absent in an older
+    // payload, which `withLanguageDefaults` reads as not reported; present
+    // but the wrong shape is dropped like any other bad field.
+    (v.language === undefined ||
+      v.language === null ||
+      typeof v.language === "string") &&
+    (v.languages === undefined ||
+      v.languages === null ||
+      (Array.isArray(v.languages) &&
+        v.languages.every((l) => typeof l === "string")))
   );
+}
+
+/** An older saved device section has no language fields: they read as `null`. */
+function withLanguageDefaults(
+  outcome: ProbeOutcome<DeviceInfo> | null
+): ProbeOutcome<DeviceInfo> | null {
+  if (outcome === null || outcome.status !== "ok") return outcome;
+  const v = outcome.value;
+  return {
+    status: "ok",
+    value: {
+      ...v,
+      language: v.language ?? null,
+      languages: v.languages ?? null,
+    },
+  };
 }
 
 function isEncodeResult(v: unknown): v is EncodeResult {
@@ -136,7 +162,7 @@ export function parseSavedChecks(raw: string | null): SavedChecks | null {
   }
   if (!isFields(value)) return null;
   return {
-    device: parseOutcome(value.device, isDeviceInfo),
+    device: withLanguageDefaults(parseOutcome(value.device, isDeviceInfo)),
     encode: parseOutcome(value.encode, isEncodeResult),
     dsp: parseOutcome(value.dsp, isDspResult),
     storage: parseOutcome(value.storage, isStorageResult),

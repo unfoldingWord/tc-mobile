@@ -1543,6 +1543,12 @@ export const stringsEn = {
   phoneCheckCopied: "Copied.",
   phoneCheckSelected: "Selected. Use your phone's Copy.",
   phoneCheckClose: "Close",
+  phoneCheckFontTitle: "Script samples",
+  phoneCheckFontIntro:
+    "Each line is one script, tagged with its language so this phone picks its own font. Boxes, blanks or question marks mean this phone has no font for it. After each line in the report, write rendered or tofu.",
+  phoneCheckDigitsTitle: "Digits",
+  phoneCheckDigitsNote:
+    "The same ten digits in three forms. These are fixed strings: they show which digit shapes this phone can draw, not what the app prints.",
 
   // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
   // The picker's group name, and one name per palette key
