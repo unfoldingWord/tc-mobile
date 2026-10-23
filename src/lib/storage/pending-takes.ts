@@ -279,12 +279,26 @@ async function checkedSource(
   if (!source) return null;
   const meta = await tx.objectStore("clipMeta").get(source.id);
   const data = await tx.objectStore("clipData").get(source.id);
-  const intact =
+  return baseClipIntact(meta, data, source) ? source : null;
+}
+
+/**
+ * Whether a base clip is on disk exactly as a row or a source names it: PCM,
+ * at that `generation` and `frameCount`, with that many frames of bytes. The
+ * one check the hold (before it writes a `stored` base), the recipe read and
+ * a replay's keep (before it frees the slot) all make.
+ */
+export function baseClipIntact(
+  meta: ClipMeta | undefined,
+  data: ArrayBuffer | undefined,
+  want: { readonly generation: number; readonly frameCount: number }
+): boolean {
+  return (
     meta?.encoding === "pcm" &&
-    meta.generation === source.generation &&
-    meta.frameCount === source.frameCount &&
-    data?.byteLength === source.frameCount * 2;
-  return intact ? source : null;
+    meta.generation === want.generation &&
+    meta.frameCount === want.frameCount &&
+    data?.byteLength === want.frameCount * 2
+  );
 }
 
 /** Every pending row, for the launch replay. Never rejects. */
@@ -357,14 +371,7 @@ async function readRecipe(
     const meta = await tx.objectStore("clipMeta").get(base.sourceClipId);
     const data = await tx.objectStore("clipData").get(base.sourceClipId);
     if (!meta || !data) return { kind: "base-missing" };
-    if (
-      meta.encoding !== "pcm" ||
-      meta.generation !== base.generation ||
-      meta.frameCount !== base.frameCount ||
-      data.byteLength !== base.frameCount * 2
-    ) {
-      return { kind: "base-changed" };
-    }
+    if (!baseClipIntact(meta, data, base)) return { kind: "base-changed" };
     existing = new Int16Array(data);
   }
 

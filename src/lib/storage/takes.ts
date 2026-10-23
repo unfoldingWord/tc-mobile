@@ -32,10 +32,14 @@ import type { IDBPDatabase } from "idb";
 
 import { buildClipMeta, deleteClipIfUnreferenced } from "./clips";
 import { getDb, type TcMobileDb } from "./db";
+import { baseClipIntact, encodePendingBase } from "./pending-takes";
+import { judgePending } from "@/lib/takes/judge-pending";
+import type { NewTake } from "@/lib/takes/pending-take";
 import type {
   ClipId,
   RecordingStatus,
   SegmentId,
+  StoredPendingTake,
   Take,
   TakeDisposition,
   TakeId,
@@ -215,6 +219,32 @@ async function endOwnRow(
 }
 
 /**
+ * Abort a transaction that has not committed yet. `false` when it already
+ * settled, so whatever it staged did land and the caller reports that.
+ */
+function abortNow(tx: TakeTx): boolean {
+  try {
+    tx.abort();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether every dependency of a row's recipe is on disk in this transaction. */
+async function recipeWhole(
+  tx: TakeTx,
+  row: StoredPendingTake
+): Promise<boolean> {
+  if (row.base.kind === "inline") return true;
+  return baseClipIntact(
+    await tx.objectStore("clipMeta").get(row.base.sourceClipId),
+    await tx.objectStore("clipData").get(row.base.sourceClipId),
+    row.base
+  );
+}
+
+/**
  * Record why a take stopped being pending. Monotone: `saved` and `discarded`
  * are final, and `given-up` may only be replaced by one of them, so a late or
  * repeated settle never weakens what is stored.
@@ -355,6 +385,166 @@ export async function saveTake(
 }
 
 /**
+ * What a replay's conditional commit did, one outcome per verdict of
+ * `judgePending` (docs/design/pending-take-lifecycle.md §4):
+ *
+ *   - `saved` (`free`): the take is the active take now;
+ *   - `already-saved` (`done`): it already was, or another copy saved it; no
+ *     second clip or take; a missing `saved` record is backfilled and this
+ *     take's own row is dropped;
+ *   - `discarded`: it was discarded here or in another copy, or this copy
+ *     asked to discard it during the commit's writes; nothing written;
+ *   - `gone`: its segment was deleted; only a row left behind was dropped;
+ *   - `kept` (`moved`, `unexplained`): nothing was saved over the segment, and
+ *     the take is on disk as a marked row, so the slot may let it go;
+ *   - `held` (the same two): the segment's row key holds another clip's row,
+ *     so nothing was written and the take is still only in the slot.
+ */
+export type ReplayResult =
+  | { readonly outcome: "saved"; readonly take: Take }
+  | { readonly outcome: "already-saved" | "discarded" | "gone" }
+  | {
+      readonly outcome: "kept" | "held";
+      readonly verdict: "moved" | "unexplained";
+    };
+
+/**
+ * The launch replay's conditional commit (#38 rebuild PR 3; #1557), also the
+ * commit of every Retry of a replayed take. One owning transaction reads the
+ * segment, its active take, the segment's row and the take's record, asks
+ * `judgePending` once, and writes only what that verdict allows. Nothing is
+ * written before the verdict.
+ *
+ * `merged` is the take's audio as the slot merged it; `take` is the recipe
+ * itself, which `kept` writes back as an `inline` row when the take has no
+ * whole row of its own. Rejects on a failed write (a quota failure included),
+ * with nothing written: the caller keeps the take in the slot.
+ */
+export async function saveReplayedTake(
+  take: NewTake & { readonly baseRevision: number },
+  merged: Int16Array,
+  sampleRate: number,
+  opts: {
+    now?: number;
+    isDiscardRequested?: (clipId: ClipId) => boolean;
+  } = {}
+): Promise<ReplayResult> {
+  const now = opts.now ?? Date.now();
+  const base = buildClipMeta(take.clipId, merged, sampleRate, now);
+  const bytes = new Int16Array(merged);
+
+  const db = await getDb();
+  const tx = openTakeTx(db);
+  try {
+    const { segmentId, clipId } = take;
+    const segment = await tx.objectStore("segments").get(segmentId);
+    const active = segment?.activeTakeId
+      ? await tx.objectStore("takes").get(segment.activeTakeId)
+      : undefined;
+    const rows = tx.objectStore("pendingTakes");
+    const row = await rows.get(segmentId);
+    const record = await tx.objectStore("takeDispositions").get(clipId);
+    const verdict = judgePending(
+      segment,
+      active?.clipId ?? null,
+      row,
+      record,
+      take,
+      opts.isDiscardRequested?.(clipId) === true
+    );
+
+    let result: ReplayResult;
+    switch (verdict) {
+      case "gone":
+        await endOwnRow(tx, segmentId, clipId);
+        result = { outcome: "gone" };
+        break;
+      case "done":
+        await endOwnRow(tx, segmentId, clipId);
+        await recordDisposition(tx, segmentId, clipId, "saved");
+        result = { outcome: "already-saved" };
+        break;
+      case "discarded":
+        // Nothing, the row included: a recorded Discard already deleted it,
+        // and a Discard only requested here deletes it in its own settle,
+        // with the record, so a kill before that leaves the row, not a gap.
+        result = { outcome: "discarded" };
+        break;
+      case "free": {
+        const generation = await priorClipGeneration(tx, segmentId);
+        await tx.objectStore("clipMeta").put({ ...base, generation });
+        await tx.objectStore("clipData").put(bytes.buffer, clipId);
+        await endOwnRow(tx, segmentId, clipId);
+        const saved = await writeTakeInTx(
+          tx,
+          segmentId,
+          clipId,
+          base.durationMs,
+          { finished: take.finished, now }
+        );
+        await recordDisposition(tx, segmentId, clipId, "saved");
+        // The request again, in the last write's own turn (the hold's step 7,
+        // George r1 on #1652): a tap during the writes above must not be
+        // sealed as `saved`, which is final. Abort, so the row, the active
+        // take and the revision stay as they were and the Discard's own
+        // settle records it; otherwise commit here, so no window reopens.
+        if (opts.isDiscardRequested?.(clipId) === true && abortNow(tx)) {
+          await tx.done.catch(() => {});
+          return { outcome: "discarded" };
+        }
+        tx.commit();
+        result = { outcome: "saved", take: saved };
+        break;
+      }
+      default: {
+        const refusal = verdict === "moved" ? "superseded" : "unexplained";
+        if (row && row.clipId !== clipId) {
+          result = { outcome: "held", verdict };
+          break;
+        }
+        // Keep, exactly: the row the slot lets go of must be whole on disk.
+        // The take's own row is marked if its recipe is whole; otherwise (no
+        // row, or a `stored` base that is gone or changed) the slot's recipe
+        // is written as an `inline` row and marked.
+        if (row && (await recipeWhole(tx, row))) {
+          await rows.put({ ...row, refusal });
+        } else {
+          await rows.put({
+            segmentId,
+            ordinal: take.ordinal,
+            clipId,
+            base: encodePendingBase(take.existing, take.editOnly, null),
+            recorded: new Int16Array(take.recorded).buffer,
+            sampleRate,
+            offset: take.offset,
+            finished: take.finished,
+            editOnly: take.editOnly,
+            createdAt: row?.createdAt ?? now,
+            baseRevision: take.baseRevision,
+            refusal,
+          });
+          if (row?.base.kind === "stored") {
+            await deleteClipIfUnreferenced(tx, row.base.sourceClipId);
+          }
+        }
+        result = { outcome: "kept", verdict };
+      }
+    }
+    await tx.done;
+    return result;
+  } catch (cause) {
+    try {
+      tx.abort();
+    } catch {
+      // Already settled (aborted by a failed request, or committed); the
+      // original cause is what the caller acts on.
+    }
+    await tx.done.catch(() => {});
+    throw cause;
+  }
+}
+
+/**
  * Clear a segment's audio, returning it to never-recorded.
  *
  * B5's cut-to-nothing lands here: a selection over the whole clip, cut, then
@@ -419,6 +609,11 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
  * if it is this take's and records why, together. A Discard also deletes the
  * take's own clip a failed attempt may have written, unless something uses it.
  * Never rejects: a failure comes back as a value for the hook to report.
+ *
+ * A settle that finds its segment deleted writes no record. Records go only
+ * with their segment, so one written after the delete would never go; and
+ * none is needed, because a deleted segment never comes back and every
+ * writer refuses a take whose segment is gone.
  */
 export async function settlePendingTake(
   segmentId: SegmentId,
@@ -430,10 +625,13 @@ export async function settlePendingTake(
     const tx = openTakeTx(db);
     try {
       await endOwnRow(tx, segmentId, clipId);
+      const present = (await tx.objectStore("segments").count(segmentId)) > 0;
       if (kind === "discard") {
-        await recordDisposition(tx, segmentId, clipId, "discarded");
+        if (present) {
+          await recordDisposition(tx, segmentId, clipId, "discarded");
+        }
         await deleteClipIfUnreferenced(tx, clipId);
-      } else {
+      } else if (present) {
         await recordDisposition(tx, segmentId, clipId, "given-up");
       }
       await tx.done;
