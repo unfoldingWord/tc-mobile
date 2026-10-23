@@ -538,7 +538,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // render state (Frank F3 / George G3): two taps in one frame both read
     // `heldRetrying === false` and each mint a fresh clip through `saveRecording`,
     // orphaning one. A ref answers for the current moment — the same shape as
-    // `closing.current` and `use-save-take`'s `savingRef`, which exist for this race.
+    // `closing.current` and `use-save-take`'s slot `saving` guard, which exist for this race.
     const heldRetryingRef = useRef(false);
     // The synchronous in-flight latch for Share (George R2 B-6): a same-gesture
     // double-tap before the OS sheet paints could fire a second `navigator.share`,
