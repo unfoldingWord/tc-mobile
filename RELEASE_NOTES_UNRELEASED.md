@@ -13,6 +13,8 @@ its body and empties it.
 
 ## Fixed
 
+- A recording that was being saved when the app closed is saved on the next launch, and one another copy already saved is not saved twice (#38, #1557).
+
 ## Removed
 
 ## Security

@@ -1207,6 +1207,24 @@ first attempt, conditional Retry in the hook, the failure-log contexts and
 the runbook. Neither slice changes the five rules of the compatibility
 boundary.
 
+What the replay slice built, and where it differs from the text above:
+
+- `hooks/replay-pending-takes.ts` is the loop and the classification.
+  `performResumeTake` and the slot guard (`writeSlot`, `installed`) are in
+  `hooks/use-save-take.ts`, and `useSaveTake` starts the replay once from a
+  mount effect. Every attempt at a replayed take is the conditional commit,
+  Retry included. None of them holds, and a quota failure gives nothing up.
+- The mark is `markPendingRefused` in `takes.ts`, not a `{ keep }` arm of
+  `settlePendingTake`. `refusal` gains the classification's reasons:
+  `legacy`, `sample-rate`, `base-missing` and `base-changed`. It is still an
+  optional value field. A row whose segment is gone is ended by the give-up
+  settle, which writes no record after a delete (§3).
+- `loadPendingRecipe` no longer has a `saved` arm. A row whose take is
+  already active is installed, and the verdict ends it as `done`. This is
+  #1557's one predicate in place of a second check at the read.
+- The failure-log list in `AGENTS.md` and the runbook's §5 are not changed
+  by this slice. They are left to a docs change.
+
 ### Interleaving harness (PR 1's first deliverable)
 
 The DRI's pick at this note's review cap (verbatim): "Fix r4, merge, test
