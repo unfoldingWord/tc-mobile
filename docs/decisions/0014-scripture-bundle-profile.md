@@ -431,7 +431,13 @@ This is the document the validation run called `custom-x-tcMobileAudio`.
    is recorded here, and a "no" is an amendment with the reason.
 2. **Answered by the requirements owner on 2026-10-19:**
    - **2a, `confidential`.** S8-confidential, `no`: "Not confidential".
-     `confidential: false` (point 5) stands as decided.
+     `confidential: false` (point 5) stands as decided. This answer is about
+     the exported project's metadata. The separate R17 decision that recordings
+     on the card are plaintext files is recorded in
+     [ADR 0011](0011-v2-storage-and-export.md) (point 3, "The mode this
+     records"). Whether `confidential` also governs how backup copies are
+     protected is still open: [#1580](https://github.com/unfoldingWord/tc-mobile/issues/1580),
+     a technical question to the DRI.
    - **2b, the licence mapping, in part.** S19-arr-filename, `no-tag`: "Leave
      the tag off". Note: "Note: the only license options to be included are
      CC0, CC BY, and CC BY-SA. If the user selects "Other" the filename should
