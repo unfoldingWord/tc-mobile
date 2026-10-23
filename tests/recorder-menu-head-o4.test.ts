@@ -141,3 +141,37 @@ describe("the recorder menu's sheet head (G3)", () => {
     expect(el.querySelector(".books-cover")).toBeNull();
   });
 });
+
+describe("the recorder menu shows the full chapter name at its top (#1284, U3)", () => {
+  const NAME60 = "abcdefghij".repeat(6);
+
+  it("draws a 60-letter name whole as the wrapping heading, and no heading without the prop", () => {
+    const el = show({ chapterName: NAME60, chapterHeading: "Chapter 2" });
+    const heading = el.querySelector(".o4-sheet-name");
+    expect(heading?.textContent).toBe(NAME60);
+    expect(heading?.textContent).toHaveLength(60);
+    expect(show().querySelector(".o4-sheet-name")).toBeNull();
+  });
+
+  it("with the number-only setting on, the name is still exposed to a screen reader", () => {
+    const el = show({ chapterName: NAME60, chapterHeading: "Chapter 2" });
+    const heading = el.querySelector(".o4-sheet-name")!;
+    expect(heading.getAttribute("aria-hidden")).toBeNull();
+    expect(el.querySelector(".o4-sheet-place")?.textContent).toContain(
+      "Chapter 2"
+    );
+  });
+
+  it("with the setting off, the place line carries the name and the heading is hidden", () => {
+    const el = show({ chapterName: NAME60, chapterHeading: NAME60 });
+    expect(el.querySelector(".o4-sheet-place")?.textContent).toContain(NAME60);
+    expect(
+      el.querySelector(".o4-sheet-name")?.getAttribute("aria-hidden")
+    ).toBe("true");
+  });
+
+  it("an unnamed chapter's heading is the default name", () => {
+    const el = show({ chapterName: null, chapterHeading: "Chapter 2" });
+    expect(el.querySelector(".o4-sheet-name")?.textContent).toBe("Chapter 2");
+  });
+});

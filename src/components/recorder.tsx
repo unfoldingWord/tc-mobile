@@ -4231,6 +4231,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}
+          // The typed name, drawn whole at the top of the menu (#1284).
+          chapterName={view?.chapterName}
           // The header's own chapter chip text (#1230), so the ⋮ menu's
           // sheet head always matches the header it was opened from.
           chapterHeading={view ? chapterHeading : undefined}
