@@ -14,6 +14,7 @@
 
 import type { Book, BookId } from "@/types/domain";
 import type { LicenceId } from "@/types/template";
+import { abortQuietly } from "./books";
 import { getDb } from "./db";
 
 /**
@@ -51,8 +52,11 @@ export async function setBookLicence(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const book = await tx.store.get(id);
-  if (!book) throw new Error(`No such book: ${id}`);
-  if (book.provenance.kind === "template") {
+  if (!book || book.provenance.kind === "template") {
+    // A thrown error does not roll the transaction back; left alone it
+    // autocommits with `done` never observed. Abort it and own the rejection.
+    await abortQuietly(() => tx.abort(), tx.done);
+    if (!book) throw new Error(`No such book: ${id}`);
     throw new TemplateLicenceLockedError(id);
   }
   if (book.licence === licence) {

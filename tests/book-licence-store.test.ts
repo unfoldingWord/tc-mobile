@@ -132,4 +132,50 @@ describe("setBookLicence", () => {
       setBookLicence("nope" as BookId, "CC0-1.0", 500)
     ).rejects.toThrow("No such book: nope");
   });
+
+  describe("refusals write nothing and leave no live transaction", () => {
+    /** Every `put` on any object store, and every transaction abort. */
+    function spyWrites() {
+      return {
+        put: vi.spyOn(IDBObjectStore.prototype, "put"),
+        abort: vi.spyOn(IDBTransaction.prototype, "abort"),
+      };
+    }
+
+    it("the no-op puts nothing and aborts nothing", async () => {
+      const book = await createBook("Mark", null, 100);
+      await setBookLicence(book.id, "CC0-1.0", 200);
+      const spies = spyWrites();
+
+      await setBookLicence(book.id, "CC0-1.0", 900);
+      await setBookLicence(book.id, "CC0-1.0", 901);
+
+      expect(spies.put).not.toHaveBeenCalled();
+      expect(spies.abort).not.toHaveBeenCalled();
+    });
+
+    it("the template refusal puts nothing and aborts its transaction", async () => {
+      const book = await templateBook();
+      const spies = spyWrites();
+
+      await expect(
+        setBookLicence(book.id, "CC0-1.0", 500)
+      ).rejects.toBeInstanceOf(TemplateLicenceLockedError);
+
+      expect(spies.put).not.toHaveBeenCalled();
+      expect(spies.abort).toHaveBeenCalledTimes(1);
+      expect(await getBook(book.id)).toEqual(book);
+    });
+
+    it("the missing-book throw puts nothing and aborts its transaction", async () => {
+      const spies = spyWrites();
+
+      await expect(
+        setBookLicence("nope" as BookId, "CC0-1.0", 500)
+      ).rejects.toThrow("No such book: nope");
+
+      expect(spies.put).not.toHaveBeenCalled();
+      expect(spies.abort).toHaveBeenCalledTimes(1);
+    });
+  });
 });
