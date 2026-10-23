@@ -17,8 +17,8 @@ const CHAPTER =
   "A very long chapter name that goes on past the end of the row and then some";
 const SEGMENT = "Verses three to nine, the sower and the four kinds of soil";
 
-async function seed(page: Page, theme: "light" | "dark") {
-  await page.setViewportSize({ width: 360, height: 780 });
+async function seed(page: Page, theme: "light" | "dark", width = 360) {
+  await page.setViewportSize({ width, height: 780 });
   await page.addInitScript((t) => {
     try {
       window.localStorage.setItem("tc-mobile.theme", t);
@@ -46,7 +46,7 @@ async function shot(page: Page, name: string) {
 }
 
 /** The line wraps (more than one line tall) and none of it is clipped. */
-async function expectWholeAndWrapped(line: Locator, text: string) {
+async function expectWholeAndWrapped(line: Locator, text: string, width = 360) {
   await expect(line).toHaveText(text);
   const m = await line.evaluate((el) => {
     const box = el.getBoundingClientRect();
@@ -65,7 +65,7 @@ async function expectWholeAndWrapped(line: Locator, text: string) {
   expect(m.ellipsis).toBe(false);
   expect(m.lines).toBeGreaterThan(1);
   expect(m.left).toBeGreaterThanOrEqual(0);
-  expect(m.right).toBeLessThanOrEqual(360);
+  expect(m.right).toBeLessThanOrEqual(width);
 }
 
 for (const theme of ["light", "dark"] as const) {
@@ -114,3 +114,27 @@ test("the segment menu shows the whole segment name, wrapped", async ({
   await expectWholeAndWrapped(dialog.locator(".o4-menu-title"), SEGMENT);
   await shot(page, "segment-menu");
 });
+
+for (const width of [320, 360]) {
+  test(`the recorder menu opens with the whole chapter name at its top, wrapped, at ${width} px (#1284)`, async ({
+    page,
+  }) => {
+    await seed(page, "dark", width);
+    await page.getByRole("button", { name: `Open ${CHAPTER}` }).click();
+    await page.getByRole("button", { name: "Add segment" }).click();
+    await page
+      .getByRole("button", { name: "Open recorder for segment 1" })
+      .click();
+    await page
+      .getByRole("button", { name: "More actions", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "More" });
+    await expect(dialog).toBeVisible();
+    await expectWholeAndWrapped(
+      dialog.locator(".o4-sheet-name"),
+      CHAPTER,
+      width
+    );
+    await shot(page, `recorder-menu-${width}`);
+  });
+}
