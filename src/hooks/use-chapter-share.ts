@@ -61,38 +61,44 @@ export function useChapterShare(): UseChapterShare {
       chapterId: ChapterId,
       nameFile: (highestChapterNumber: number) => string
     ): Promise<ShareOutcome | null> =>
-      run((isCurrent, signal, onStep) =>
+      run((isCurrent, signal, onStep, onRead) =>
         // `withEncodeSteps` (#996) hands the export a codec and an `onStep`
         // that put the encode on the same count as the segments: the count
         // reads its total only once the MP3 exists. The inner `onStep` is that
-        // wrapped reporter, deliberately shadowing the flow's own.
+        // wrapped reporter, deliberately shadowing the flow's own. `onRead`
+        // (#1078) carries the joined path's clip reads, never a step.
         withEncoder(
           signal,
-          withEncodeSteps(onStep, isCurrent, async (codec, onStep) => {
-            const result = await exportChapterMp3(
-              chapterId,
-              codec,
-              isCurrent,
-              onStep
-            );
-            // exportChapterMp3 returns null both for an empty chapter and for a run
-            // cancelled during the gather (its shouldEncode check). `isCurrent`
-            // distinguishes them: still live means genuinely nothing to share.
-            if (result === null) return isCurrent() ? "nothing" : null;
-            // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
-            // which `File` accepts directly.
-            // The width of the chapter's number comes from its whole book
-            // (#1233), so this file is named as Share Book would name it.
-            const highest = await highestChapterNumber(chapterId);
-            // The ID3 tag (#252) and the MP3 go into the File as two parts,
-            // so the MP3 is not copied.
-            const parts = await chapterFileParts(chapterId, result.mp3);
-            if (!isCurrent()) return null;
-            const file = new File(parts, nameFile(highest), {
-              type: "audio/mpeg",
-            });
-            return { file, missing: result.missing };
-          })
+          withEncodeSteps(
+            onStep,
+            isCurrent,
+            async (codec, onStep) => {
+              const result = await exportChapterMp3(
+                chapterId,
+                codec,
+                isCurrent,
+                onStep
+              );
+              // exportChapterMp3 returns null both for an empty chapter and for a run
+              // cancelled during the gather (its shouldEncode check). `isCurrent`
+              // distinguishes them: still live means genuinely nothing to share.
+              if (result === null) return isCurrent() ? "nothing" : null;
+              // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
+              // which `File` accepts directly.
+              // The width of the chapter's number comes from its whole book
+              // (#1233), so this file is named as Share Book would name it.
+              const highest = await highestChapterNumber(chapterId);
+              // The ID3 tag (#252) and the MP3 go into the File as two parts,
+              // so the MP3 is not copied.
+              const parts = await chapterFileParts(chapterId, result.mp3);
+              if (!isCurrent()) return null;
+              const file = new File(parts, nameFile(highest), {
+                type: "audio/mpeg",
+              });
+              return { file, missing: result.missing };
+            },
+            onRead
+          )
         )
       ),
     [run]

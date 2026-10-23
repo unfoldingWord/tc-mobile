@@ -148,6 +148,20 @@ interface ShareSteps {
 }
 
 /**
+ * How far an all-Finished chapter's clip READ has got (#1078): `done` of
+ * `total` stored clips read, on the joined-MP3 path (#1004), before the
+ * join is known to succeed. Its own phase, never part of {@link ShareSteps}:
+ * whether a clip's step is true depends on the whole chapter joining, which
+ * is not known until every clip is read and `joinMp3` has run (#1068's bench
+ * rounds). So a read claims no step, and a decode-and-encode fallback that
+ * follows starts its own count with nothing to take back.
+ */
+interface ShareReading {
+  readonly done: number;
+  readonly total: number;
+}
+
+/**
  * The prepare's per-item result, carried into the send (#1023): which items
  * the prepare finished with no audio (`hollow`, the same positions
  * {@link ShareSteps} holds), which items the count walked (`keys`, #1044)
@@ -185,6 +199,12 @@ export type ShareProgress =
        * {@link ShareSteps}; only a `step` event sets it, and only forward.
        */
       readonly steps?: ShareSteps;
+      /**
+       * The read phase's count (#1078), on a prepare only, and only before
+       * its first `step`. See {@link ShareReading}; only a `read` event sets
+       * it, and only forward. A `step` leaves it as it was.
+       */
+      readonly reading?: ShareReading;
       /**
        * The prepare's per-item result, on a send only, and only once a
        * `carry` event has put it here (#1023). See {@link ShareCarry}.
@@ -226,6 +246,14 @@ export type ShareProgressEvent =
       readonly keys?: readonly string[];
     }
   | {
+      /**
+       * One more stored clip read on the joined path (#1078). Never a step.
+       */
+      readonly type: "read";
+      readonly done: number;
+      readonly total: number;
+    }
+  | {
       /** The prepare's per-item result, handed to a send (#1023). */
       readonly type: "carry";
       readonly carried: ShareCarry;
@@ -264,7 +292,9 @@ export const HIDDEN: ShareProgress = { phase: "hidden" };
  * `pending` for the tick; a second settle while one is held is ignored — the
  * first word stands. `tick` releases a held settle once the hold has elapsed,
  * and clears an outcome once its hold has. `dismiss` goes hidden from
- * anywhere. `step` records a prepare's count (see {@link withStep}); `carry`
+ * anywhere. `step` records a prepare's count (see {@link withStep}); `read`
+ * records the joined path's clip reads apart from it (see {@link withRead});
+ * `carry`
  * hands a send the prepare's per-item result (see {@link withCarry}). From
  * hidden, `settle`, `tick` and `step` are stale and change nothing —
  * that is what keeps a superseded run's late sheet from flashing an outcome
@@ -334,6 +364,8 @@ export function reduceShareProgress(
       return state;
     case "step":
       return withStep(state, event);
+    case "read":
+      return withRead(state, event);
     case "carry":
       return withCarry(state, event.carried);
     case "dismiss":
@@ -415,6 +447,30 @@ function withStep(
   );
   if (hollow === null) return state;
   return { ...state, steps: { ...base, skipped: nextSkipped, hollow } };
+}
+
+/**
+ * A `read` event (#1078), applied only to a busy PREPARE whose build is still
+ * running and whose step count has not begun: once a `step` has landed, the
+ * join has either succeeded or been given up, so the read phase is over and a
+ * late read changes nothing. Whole numbers, `0 <= done <= total` with
+ * `total >= 1`, forward only within one total — the same rules a step's count
+ * keeps. It never reads or writes `steps`, so nothing a read reports can be
+ * a step a later fallback has to take back.
+ */
+function withRead(
+  state: ShareProgress,
+  event: Extract<ShareProgressEvent, { type: "read" }>
+): ShareProgress {
+  const { done, total } = event;
+  if (state.phase !== "busy" || state.work !== "prepare") return state;
+  if (state.pending !== null || state.steps !== undefined) return state;
+  if (!Number.isInteger(done) || !Number.isInteger(total)) return state;
+  if (total < 1 || done < 0 || done > total) return state;
+  const prev = state.reading;
+  if (prev !== undefined && (prev.total !== total || done <= prev.done))
+    return state;
+  return { ...state, reading: { done, total } };
 }
 
 /** Whether `a` and `b` are the same key list, element for element. */
