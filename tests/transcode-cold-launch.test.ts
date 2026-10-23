@@ -86,6 +86,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
       byteLength: samples.byteLength,
       transcodeStallCount: 0,
       peaks: null,
+      processing: null,
     });
     await tx.objectStore("clipData").put(samples.buffer, clipId);
   }

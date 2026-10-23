@@ -919,7 +919,7 @@ shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
 "Restart to use the new version."); Restart leads back to the same screen
 (inference). All of this was read from the code, not seen on a device.
 v1.1.0 moved the schema from 9 to 11 (v10 and v11 in #1346 and #1367), and
-v1.2.0 moves it from 11 to 13 (v12 and v13 in #1462 and #38). **Roll forward with a fix rather than
+v1.2.0 moves it from 11 to 14 (v12, v13 and v14 in #1462, #38 and #1433). **Roll forward with a fix rather than
 back when the build to undo raised the schema, and never uninstall to clear the
 screen: uninstalling deletes the recordings.**
 This paragraph is the one statement of the condition; `docs/release/promotion-v1.0.0.md`

@@ -25,6 +25,7 @@ import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { BookId, ChapterId, ClipId } from "@/types/domain";
 import { audioAfterId3v2, clearAllStores, testCodec } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 beforeEach(clearAllStores);
 
@@ -89,7 +90,8 @@ async function finishAll(bookId: BookId): Promise<void> {
         segmentId,
         audio.clip.id,
         encodeMp3(clip.samples),
-        computePeaks(clip.samples, 4)
+        computePeaks(clip.samples, 4),
+        NO_STAGES_RUN
       );
     }
   }

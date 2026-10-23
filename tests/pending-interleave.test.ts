@@ -13,6 +13,7 @@ import type {
   SegmentId,
   TakeDisposition,
 } from "@/types/domain";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * The interleaving harness for the pending-take lifecycle (#38,
@@ -375,7 +376,8 @@ function transcodeKept(copy: Copy["name"]): Step {
         world.segmentId,
         world.kept.id,
         encodeMp3(world.pcm),
-        computePeaks(world.pcm, 4)
+        computePeaks(world.pcm, 4),
+        NO_STAGES_RUN
       );
     },
   };
@@ -789,10 +791,10 @@ describe("every interleaving of the pending-take writers keeps every take's last
   it("runs two connections to one database", async () => {
     const a = await copies.A.db.getDb();
     const b = await copies.B.db.getDb();
-    // Two module instances, so two connections, both on the v13 database.
+    // Two module instances, so two connections, both on the v14 database.
     expect(Object.is(copies.A.db, copies.B.db)).toBe(false);
     expect(Object.is(a, b)).toBe(false);
-    expect([a.version, b.version]).toEqual([13, 13]);
+    expect([a.version, b.version]).toEqual([14, 14]);
   });
 
   it.each(SCENARIOS)("$name", async (scenario) => {

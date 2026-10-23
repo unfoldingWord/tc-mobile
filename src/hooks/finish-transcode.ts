@@ -42,6 +42,7 @@
  */
 
 import { reportFailure } from "./report-failure";
+import { normalizeOnFinished } from "./use-settings";
 import { isQuotaExceeded } from "./save-failure";
 import {
   readStorageEstimate,
@@ -57,6 +58,7 @@ import {
   DEFAULT_BITRATE_KBPS,
   expectedMp3ByteLength,
 } from "@/lib/audio/mp3-size";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 import { computePeaks } from "@/lib/audio/peaks";
 import { freeByteCount } from "@/lib/storage/pressure";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
@@ -66,7 +68,28 @@ import {
   recordTranscodeStall,
 } from "@/lib/storage/transcode";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
+import type { AudioCodec, ClipMeta, NormalizedPcm } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
+
+/**
+ * The PCM to encode and the record to commit with it (#1433 step 3). The
+ * chain runs in the worker when the preference is on (the default, U6b) and
+ * the clip has no record yet. A PCM clip that already carries one was
+ * decided before its encode: the v14 step gives a segment Finished before
+ * v14 `stages: []` (U6c), and a record that names stages is not run twice. Off, the stored samples go to the encoder untouched, as before v14.
+ * A codec with no chain (a test fake; the browser codec always has one)
+ * encodes untouched too.
+ */
+async function samplesToEncode(
+  codec: AudioCodec,
+  meta: ClipMeta,
+  samples: Int16Array
+): Promise<NormalizedPcm> {
+  if (meta.processing) return { samples, processing: meta.processing };
+  if (!normalizeOnFinished() || !codec.normalizePcm)
+    return { samples, processing: NO_STAGES_RUN };
+  return codec.normalizePcm(samples, meta.sampleRate);
+}
 
 let running: Promise<void> | null = null;
 let requestedDuringRun = false;
@@ -561,11 +584,16 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
         )
           return;
         clipDurationMs = audio.clip.meta.durationMs;
-        const { samples } = audio.clip;
-        // Before the encode: it transfers `samples` away.
+        const { samples, processing } = await samplesToEncode(
+          codec,
+          audio.clip.meta,
+          audio.clip.samples
+        );
+        // From the samples encoded, so the row draws the stored audio; and
+        // before the encode, which transfers `samples` away.
         const peaks = computePeaks(samples, ROW_PEAK_BUCKETS);
         const mp3 = await codec.encodeMp3(samples);
-        await commitTranscode(segmentId, clipId, mp3, peaks);
+        await commitTranscode(segmentId, clipId, mp3, peaks, processing);
       });
       // This clip is no longer the one that wedged the worker, so it stops being
       // deprioritised. Cleared on ANY completed turn: a skip proves nothing

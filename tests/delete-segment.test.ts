@@ -22,6 +22,7 @@ import { getDb } from "@/lib/storage/db";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { clearAllStores, throwWhenStoreRequested } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * Delete a Segment (#590) — T1.
@@ -182,7 +183,9 @@ describe("deleteSegment", () => {
 
     await deleteSegment(s1);
 
-    expect(await commitTranscode(s1, clipId, mp3, peaks)).toBe("stale");
+    expect(await commitTranscode(s1, clipId, mp3, peaks, NO_STAGES_RUN)).toBe(
+      "stale"
+    );
     expect(await getSegment(s1)).toBeUndefined();
     expect(await getClipMeta(clipId)).toBeUndefined();
     expect(await getClip(clipId)).toBeUndefined();

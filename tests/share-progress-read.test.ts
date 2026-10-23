@@ -23,6 +23,7 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId } from "@/types/domain";
 import { render } from "./render";
 import { clearAllStores, noTrimDecode, ramp, testCodec } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * #1078: an all-Finished chapter's clip reads (the joined-MP3 path, #1004)
@@ -145,7 +146,8 @@ async function refusedChapter(): Promise<{
         seg.id,
         clipId,
         encodeMp3(stored[i]!),
-        computePeaks(pcm, 4)
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
       )
     ).toBe("committed");
   }
@@ -167,7 +169,8 @@ async function joinableChapter(): Promise<ChapterId> {
         seg.id,
         clipId,
         encodeMp3(pcm),
-        computePeaks(pcm, 4)
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
       )
     ).toBe("committed");
   }

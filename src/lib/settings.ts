@@ -39,3 +39,17 @@ export function chapterNameShown(
 ): string | null {
   return alwaysNumber ? null : name;
 }
+
+/**
+ * Where "even out the loudness of a finished segment" is kept (#1433, U6b).
+ * No Settings row writes it yet; the row that will writes `"0"` for off.
+ */
+export const NORMALIZE_ON_FINISHED_KEY = "tc-mobile.normalize-on-finished";
+
+/**
+ * The stored choice, ON unless this app wrote an explicit off: the
+ * requirements owner's "switch-on" default (U6b).
+ */
+export function readStoredNormalizeOnFinished(raw: string | null): boolean {
+  return raw !== "0";
+}

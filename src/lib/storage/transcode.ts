@@ -27,7 +27,7 @@
 
 import { isFinished } from "./takes";
 import { getDb } from "./db";
-import type { Peaks } from "@/types/audio";
+import type { ClipProcessing, Peaks } from "@/types/audio";
 import type { ClipId, SegmentId } from "@/types/domain";
 
 /** The stores the commit touches — the clip's two halves, the pointers to it. */
@@ -144,6 +144,9 @@ export async function recordTranscodeStall(clipId: ClipId): Promise<void> {
  * is gone — computed by the caller from the samples it encoded, before it let
  * go of them.
  *
+ * `processing` is the record of what the chain did to the audio on its way
+ * here (#1433), written with the bytes it describes.
+ *
  * An empty MP3 is refused up front: an encoder that produced nothing must not
  * be allowed to take the only copy of the audio with it.
  */
@@ -151,7 +154,8 @@ export async function commitTranscode(
   segmentId: SegmentId,
   clipId: ClipId,
   mp3: Uint8Array,
-  peaks: Peaks
+  peaks: Peaks,
+  processing: ClipProcessing
 ): Promise<TranscodeOutcome> {
   if (mp3.byteLength === 0) {
     throw new Error("Refusing to replace a clip's audio with an empty MP3");
@@ -206,6 +210,7 @@ export async function commitTranscode(
       generation: meta.generation + 1,
       byteLength: bytes.byteLength,
       peaks,
+      processing,
     });
     await tx.done;
     return "committed";

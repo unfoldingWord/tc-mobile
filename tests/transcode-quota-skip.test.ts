@@ -93,6 +93,7 @@ function pcmClip(id: ClipId, samples: Int16Array, durationMs = 1): Clip {
       byteLength: samples.length * 2,
       transcodeStallCount: 0,
       peaks: null,
+      processing: null,
     },
     samples,
   };

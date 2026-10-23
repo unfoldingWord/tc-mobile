@@ -11,6 +11,8 @@ its body and empties it.
 
 ## Changed
 
+- A segment marked Finished has its loudness evened out before it is stored, so finished segments play back at a similar level; segments finished before this change are left as they were (#1679).
+
 ## Fixed
 
 - A recording that was being saved when the app closed is saved on the next launch, and one another copy already saved is not saved twice (#38, #1557).

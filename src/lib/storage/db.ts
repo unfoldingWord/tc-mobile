@@ -139,6 +139,17 @@
  * Takes, clips and pending rows are not read. It is a version step, not an
  * optional field, so that no build without the rules in that note's
  * "compatibility boundary" can write the same database.
+ *
+ * ── v14 (#1433): the clip's processing record — append-only ──
+ *
+ * `ClipMeta` gained `processing`: which stages of the Finished chain ran and
+ * at which version, the measured loudness and true peak, and the applied
+ * gain. The v14 step classifies every clip row from any earlier version,
+ * keeps a record that is already decided, and touches nothing else. It
+ * reads no clock, and a re-run writes nothing. A Finished
+ * segment's active clip that is still PCM (its transcode was owed at the
+ * upgrade) gets `stages: []`, so it is encoded as it was; every other clip
+ * gets `null`. A clip finished before v14 is never normalized (U6c).
  */
 
 import {
@@ -166,7 +177,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 13;
+const DB_VERSION = 14;
 
 /**
  * What the v12 step adds to a row that lacks it, per store. Plain data and no
@@ -687,6 +698,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 byteLength: legacy.frameCount * 2,
                 transcodeStallCount: 0,
                 peaks: null,
+                processing: null,
               };
               await cursor.update(stamped);
             }
@@ -866,6 +878,52 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             const row: Omit<Segment, "audioRevision"> = cursor.value;
             if (!("audioRevision" in row)) {
               await cursor.update({ ...row, audioRevision: 0 });
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v14 (#1433): every clip row is classified here, whatever version
+        // it came from. The active PCM clip of a Finished segment is a
+        // transcode still owed from before v14 (a stall, a full phone): it
+        // gets an explicit "no stage ran", so the sweep encodes it as it was
+        // (U6c, Frank R1 P2 on #1679). Every other clip gets null, eligible
+        // for the chain once Finished. A null already on the row is not a
+        // decision: before v14 only the v4 stamp in this same upgrade writes
+        // one (Frank R2 P2), so it is classified like an absent field. A
+        // record with stages or `stages: []` is kept, which is what makes a
+        // re-run write nothing. "affirmed" is the Finished status as v13
+        // stores it, frozen here rather than read from `takes.ts`, which
+        // imports this.
+        if (oldVersion < 14) {
+          const owedClips = new Set<string>();
+          let segment = await tx.objectStore("segments").openCursor();
+          while (segment) {
+            const { status, activeTakeId } = segment.value;
+            if (status === "affirmed" && activeTakeId !== null) {
+              const take = await tx.objectStore("takes").get(activeTakeId);
+              if (take) owedClips.add(take.clipId);
+            }
+            segment = await segment.continue();
+          }
+          let cursor = await tx.objectStore("clipMeta").openCursor();
+          while (cursor) {
+            const row: Omit<ClipMeta, "processing"> &
+              Partial<Pick<ClipMeta, "processing">> = cursor.value;
+            const owed = row.encoding === "pcm" && owedClips.has(row.id);
+            const undecided = row.processing === undefined;
+            if (undecided || (row.processing === null && owed)) {
+              await cursor.update({
+                ...row,
+                processing: owed
+                  ? {
+                      stages: [],
+                      measuredLufs: null,
+                      measuredTruePeakDbtp: null,
+                      appliedGainDb: 0,
+                    }
+                  : null,
+              });
             }
             cursor = await cursor.continue();
           }

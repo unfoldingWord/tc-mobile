@@ -19,6 +19,7 @@ import type { BookId, SegmentId } from "@/types/domain";
 import { fakeOpfs } from "./fake-opfs";
 import { clearAllStores } from "./support";
 import { readBundle } from "./support/scripture-bundle-reader";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * Gathering a book from storage into the Scripture Bundle zip (#1457, ADR
@@ -68,7 +69,8 @@ async function finish(segmentId: SegmentId): Promise<Uint8Array> {
     segmentId,
     audio.clip.id,
     mp3,
-    computePeaks(clip.samples, 4)
+    computePeaks(clip.samples, 4),
+    NO_STAGES_RUN
   );
   expect(outcome).toBe("committed");
   return mp3;
