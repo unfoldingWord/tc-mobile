@@ -979,8 +979,22 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
     let upgradeFault: unknown;
     /** Whether an `upgrade` step failed; a step could throw `undefined`. */
     let upgradeFailed = false;
+    /**
+     * Settles once the `upgrade` callback has finished, either way (it never
+     * rejects: its fault is recorded above). Already settled when no upgrade
+     * runs. The open waits for it, because a step can fail after the native
+     * open has already succeeded, and the fulfilment check below must see
+     * that fault.
+     *
+     * A step that never settled would hang the open here. No current step
+     * can: each awaits only requests on the `versionchange` transaction, and
+     * those settle when it commits or aborts, and a request made on it after
+     * it has finished throws at once. So there is no bound on this wait; a
+     * step that awaits anything else must bring its own.
+     */
+    let upgradeSettled: Promise<void> = Promise.resolve();
 
-    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+    const native = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
       ...callbacks,
       // `idb` calls the upgrade callback and does not await what it returns, so
       // an error thrown after the first `await` (every backfill) used to leave
@@ -992,7 +1006,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       // IndexedDB request already aborts the transaction by itself; this covers
       // the thrown error that does not.
       upgrade(db, oldVersion, newVersion, tx, event) {
-        void Promise.resolve(
+        upgradeSettled = Promise.resolve(
           callbacks.upgrade?.(db, oldVersion, newVersion, tx, event)
         ).catch((cause: unknown) => {
           upgradeFault = cause;
@@ -1021,6 +1035,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       },
     });
 
+    const opening = native.then((db) => upgradeSettled.then(() => db));
     pendingOpen = opening;
 
     void opening.then(

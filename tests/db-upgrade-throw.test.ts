@@ -313,12 +313,14 @@ describe.each([
 
 /**
  * Make the Nth `books` write fail only AFTER the `versionchange` transaction
- * has committed: the write returns a promise (not a request) that rejects on
- * the transaction's `complete`, so nothing keeps the transaction open while
- * the step waits on it. No current step can do this (each awaits IDB requests
- * only); it stands in for a step that awaits something that is not IndexedDB.
+ * has committed: the write returns a promise (not a request) that rejects
+ * `delayMs` after the transaction's `complete` (at once when 0), so nothing
+ * keeps the transaction open while the step waits on it. With a delay, the
+ * native open has already succeeded by the time the step fails. No current
+ * step can do this (each awaits IDB requests only); it stands in for a step
+ * that awaits something that is not IndexedDB.
  */
-function failBooksPutAfterCommitAt(nth: number) {
+function failBooksPutAfterCommitAt(nth: number, delayMs: number) {
   const realPut = IDBObjectStore.prototype.put;
   let calls = 0;
   return vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
@@ -328,8 +330,11 @@ function failBooksPutAfterCommitAt(nth: number) {
     if (this.name === "books" && ++calls === nth) {
       const tx = this.transaction;
       return new Promise((_, reject) => {
-        tx.addEventListener("complete", () => {
+        const fail = () =>
           reject(new Error("simulated fault after the upgrade committed"));
+        tx.addEventListener("complete", () => {
+          if (delayMs === 0) fail();
+          else setTimeout(fail, delayMs);
         });
       }) as unknown as IDBRequest<IDBValidKey>;
     }
@@ -337,10 +342,13 @@ function failBooksPutAfterCommitAt(nth: number) {
   });
 }
 
-describe("a fault that surfaces after the upgrade transaction committed", () => {
+describe.each([
+  { delayMs: 0, when: "on the transaction's complete" },
+  { delayMs: 25, when: "after the native open succeeded" },
+])("a fault that surfaces $when", ({ delayMs }) => {
   it("closes the connection and rejects the open with the fault, rather than opening a half-migrated database", async () => {
     await seed(9);
-    failBooksPutAfterCommitAt(4);
+    failBooksPutAfterCommitAt(4, delayMs);
     const close = vi.spyOn(IDBDatabase.prototype, "close");
 
     await expect(getDb()).rejects.toThrow(
