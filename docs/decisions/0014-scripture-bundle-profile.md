@@ -299,12 +299,24 @@ observed), optional.
 
 ### 8. The export's file name
 
-A strings-table entry in the shape `<book> - project.zip`, built from the
+A strings-table entry in the shape `<book> - <word>.zip`, built from the
 sanitised book name (`filenameSafe`, `src/lib/utils.ts:46`, label capped at
 `FILENAME_LABEL_MAX_BYTES` = 120, `src/lib/utils.ts:70`). It differs from Share
 Book's `<book>.zip` (`src/lib/strings.ts:972`) so a person can tell the two files
 apart. The word "project" is copy and follows the string rules (#169). The
 file name is not an ingredient path, so the space is fine.
+
+**Amendment, 2026-10-22 (#1627).** The suffix was fixed English (`- project.zip`)
+on every phone language. The requirements owner decided, on the project site
+Review page (card V1-export-name), choice `phone-language`: "Follow the phone's
+language: `Mark - proyecto.zip` on a Spanish phone, the same way Share Book
+names its chapter files", with the note: "When we have the Bible Passages
+dataset, we will use the book name for the phone's OS language (if it is
+available in the dataset)". So `<word>` is the strings key `exportProjectSuffix`
+(English `project`), drafted by AI in each complete locale, and still passes
+through `filenameSafe` with its bytes reserved from the book label. The
+book-name half of the note is not built; it waits for the dataset and stays open
+on #1627.
 
 ## Worked examples
 

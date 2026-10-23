@@ -309,6 +309,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Hamisha mradi",
   tileExport: "Hamisha",
   exportProjectPreparing: "Inaandaa mradi ili uhamishwe.",
+  exportProjectSuffix: "mradi",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>
