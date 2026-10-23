@@ -143,17 +143,18 @@ default, the text there says to keep using it.
    -->
 
    **Once a phone has updated to a new build, do not put an older build back
-   on it.** Builds 1.1.0 and 1.2.0 each change how recordings are stored, and
-   an older build cannot read them again: they stay on the phone, but out of
-   reach, until a build at least as new as the one the phone last opened is
-   installed over it. If the app says "This copy is
-   out of date" and restarting does not clear it, do not uninstall, because
+   on it.** When the newer build changed how recordings are stored (1.1.0 and
+   1.2.0 each did), the recordings stay on the phone but out of reach until a
+   build at least as new as the one it last opened is installed over it
+   (AGENTS.md, "A rollback is not free once a phone has opened a build with a newer database
+   schema"). If the app says "This copy is out of date" and restarting does
+   not clear it, do not uninstall, because
    that deletes every recording. Write down the stamp and what you saw, as in
    section 5, and report it. (On Android, the phone itself refuses to install
    an older build over a newer one; see
    [docs/native/README.md](../native/README.md) §5a.) <!-- source: AGENTS.md
-   "What rollback does not do"; src/lib/storage/db.ts DB_VERSION 12 (1.1.0 raised it to 11, #1462 to 12); screen
-   text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
+   "A rollback is not free once a phone has opened a build with a newer
+   database schema"; screen text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
 
    **The same rules apply to testers and to participants.** On an iPhone,
    open TestFlight, choose the newest build of tC Mobile and tap **Update**
