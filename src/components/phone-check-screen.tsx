@@ -85,10 +85,13 @@ function SampleList({ samples }: { samples: readonly FontSample[] }) {
         <li key={s.id} className="flex flex-col">
           <span className="text-ink-muted text-[13px]">{s.label}</span>
           {/* `lang` and `dir` are the point: they are what makes the phone
-              choose this script's own font (#1486). */}
+              choose this script's own font (#1486). `translate="no"` keeps
+              a browser's page translation from rewriting the sample, so the
+              tester judges the phone's font, not a translation. */}
           <span
             lang={s.lang}
             dir={s.dir}
+            translate="no"
             className="text-ink text-[20px]"
             data-phone-check-sample={s.id}
           >

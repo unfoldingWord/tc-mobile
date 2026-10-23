@@ -66,6 +66,7 @@ describe("the font section of the phone check", () => {
       const el = one(root, `[data-phone-check-sample="${s.id}"]`);
       expect(el.getAttribute("lang")).toBe(s.lang);
       expect(el.getAttribute("dir")).toBe(s.dir);
+      expect(el.getAttribute("translate")).toBe("no");
       expect(el.textContent).toBe(s.text);
     }
   });
@@ -84,7 +85,11 @@ describe("the font section of the phone check", () => {
   it("shows the three digit forms as three different strings", () => {
     const texts = DIGIT_SAMPLES.map((s) => s.text);
     expect(new Set(texts).size).toBe(3);
-    expect(texts[0]).toBe("0123456789");
+    // Pinned by code point, not by the constants the component renders, so a
+    // lookalike run (Persian U+06F0 block for Arabic-Indic) fails here.
+    const run = (start: number) =>
+      String.fromCodePoint(...Array.from({ length: 10 }, (_, i) => start + i));
+    expect(texts).toEqual([run(0x30), run(0x660), run(0x966)]);
   });
 
   it("has a heading and an intro from the table", () => {
