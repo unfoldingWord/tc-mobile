@@ -16,9 +16,9 @@
  * of the same take gives byte-identical output. The phone check's benchmark
  * (`lib/phone-check/dsp-bench.ts`) times these classes, not a copy of them.
  *
- * Not wired into transcode yet: that is the next #1433 step. The target and
- * the ceiling are parameters whose defaults are the plan's proposals
- * (-19 LUFS, -1.5 dBTP), still open for the requirements owner.
+ * The Finished transcode runs it through {@link normalizePcm} (#1433 step 3),
+ * in the MP3 worker, before the encode. The target and the ceiling are
+ * {@link LOUDNESS_TARGET}, one constant.
  *
  * Written fresh from published specifications; no file is ported from
  * anywhere, so this file carries no separate licence notice:
@@ -56,6 +56,9 @@
  * Pure arithmetic: no DOM, Web Audio or Worker globals, and no clock.
  */
 
+import { INT16_MAX, int16ToFloatInto } from "./format";
+import type { ClipProcessing, ProcessingStage } from "@/types/audio";
+
 /** BS.1770's loudness offset, in dB. */
 const LOUDNESS_OFFSET_DB = -0.691;
 /** The rumble high-pass corner from the #1433 plan ("about 80 Hz"). */
@@ -70,9 +73,14 @@ const SUB_BLOCKS_PER_BLOCK = 4;
 const BIN_LU = 0.01;
 const HISTOGRAM_TOP_LUFS = 10;
 
-/** The plan's proposed defaults, open for the requirements owner. */
-const DEFAULT_TARGET_LUFS = -19;
-const DEFAULT_CEILING_DBTP = -1.5;
+/**
+ * The loudness target and the limiter's ceiling, one constant: the DRI's pick
+ * on #1433 (2026-10-23), "Use -19 / -1.5 for now (Recommended)". A device
+ * listening test decides whether they change.
+ */
+export const LOUDNESS_TARGET = { lufs: -19, ceilingDbtp: -1.5 } as const;
+const DEFAULT_TARGET_LUFS: number = LOUDNESS_TARGET.lufs;
+const DEFAULT_CEILING_DBTP: number = LOUDNESS_TARGET.ceilingDbtp;
 /** The most a quiet take is raised, so near-silence is not amplified into hiss. */
 const DEFAULT_MAX_GAIN_DB = 20;
 
@@ -621,4 +629,91 @@ export class LoudnessNormalizer {
     if (skip > 0 && skip < n) x.copyWithin(0, skip, n);
     return n - skip;
   }
+}
+
+/**
+ * The stages {@link normalizePcm} runs, in order, as each clip records them
+ * (#1433). Bump a stage's `version` whenever its output changes, so a clip's
+ * record still says exactly what processed it. Not a registry yet: the chain
+ * is these three, always together.
+ */
+export const NORMALIZE_STAGES: readonly ProcessingStage[] = [
+  { id: "hpf", version: 1 },
+  { id: "loudness", version: 1 },
+  { id: "limiter", version: 1 },
+];
+
+/** The record of a clip finished with no stage run: the preference off, or Finished before v14. */
+export const NO_STAGES_RUN: ClipProcessing = {
+  stages: [],
+  measuredLufs: null,
+  measuredTruePeakDbtp: null,
+  appliedGainDb: 0,
+};
+
+/** About one second at the canonical rate: the plan's chunk size. */
+const NORMALIZE_CHUNK = 44_100;
+
+/**
+ * Run the whole chain over `samples` IN PLACE (#1433 step 3): measure the take
+ * (pass 1), then high-pass, gain and limit it (pass 2), writing the result
+ * back over the input. Safe in place because pass 2 copies each chunk out
+ * before writing, and its output never runs ahead of its input. Working
+ * memory is one chunk plus the meter's and limiter's fixed buffers, whatever
+ * the take's length.
+ *
+ * `onChunk` hears the fraction done after each chunk of either pass, so the
+ * worker can keep its heartbeat going through a long take.
+ */
+export function normalizePcm(
+  samples: Int16Array,
+  sampleRate: number,
+  onChunk?: (fraction: number) => void
+): ClipProcessing {
+  const total = samples.length;
+  const work = new Float32Array(Math.min(NORMALIZE_CHUNK, Math.max(1, total)));
+  const chunks = Math.ceil(total / work.length);
+  const beat = (pass: number, chunk: number) =>
+    onChunk?.((pass * chunks + chunk + 1) / (2 * chunks));
+
+  const meter = new LoudnessMeter(sampleRate, work.length);
+  for (let c = 0; c < chunks; c++) {
+    meter.push(work, int16ToFloatInto(samples, work, c * work.length));
+    beat(0, c);
+  }
+  const { integratedLufs, truePeakDbtp } = meter.finish();
+  const gainDb = normalizationGainDb(integratedLufs);
+
+  const normalizer = new LoudnessNormalizer({ sampleRate, gainDb });
+  let written = 0;
+  const emit = (n: number) => {
+    for (let i = 0; i < n; i++) {
+      const scaled = Math.round(work[i]! * INT16_MAX);
+      samples[written++] = Math.max(
+        -INT16_MAX - 1,
+        Math.min(INT16_MAX, scaled)
+      );
+    }
+  };
+  for (let c = 0; c < chunks; c++) {
+    const n = int16ToFloatInto(samples, work, c * work.length);
+    emit(normalizer.process(work, n));
+    beat(1, c);
+  }
+  for (let n = normalizer.flush(work); n > 0; n = normalizer.flush(work))
+    emit(n);
+  // The output must be exactly as long as the input: a short one would leave
+  // the take's tail as unprocessed samples, which are then encoded and the
+  // PCM dropped. Refuse it, so the sweep keeps the PCM instead.
+  if (written !== total)
+    throw new Error(
+      `normalizePcm: wrote ${written} samples for a ${total}-sample take`
+    );
+
+  return {
+    stages: NORMALIZE_STAGES,
+    measuredLufs: integratedLufs,
+    measuredTruePeakDbtp: truePeakDbtp,
+    appliedGainDb: gainDb,
+  };
 }

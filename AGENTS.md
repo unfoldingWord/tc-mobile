@@ -479,7 +479,7 @@ back to one caller), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 the Export project language ask's failed write and failed list load
-(`hooks/use-language-ask.ts`, `"book-language"` and `"language-list"`, #1492),
+(`hooks/use-language-ask.ts`, `"book-language"` and `"language-list"`, #1492), a failed licence write from Share Book's ask (`hooks/use-licence-ask.ts`, `"book-licence"`, #1455),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
@@ -911,7 +911,7 @@ So a device that has opened the newer build cannot run older code against its
 own data again, whether the older code arrives by a Worker rollback, by a
 stale service worker, or by an older native build if one ever runs. The
 recordings are not deleted: the older code's `getDb()` rejects with
-`DatabaseDowngradeError` before any read or write through it. They are
+`DatabaseDowngradeError` before any read or write through the database. They are
 unreachable until a build at that schema or later is served or installed
 again. A refused open calls `coordinator?.onYielded()`,
 `use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
@@ -919,7 +919,7 @@ shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
 "Restart to use the new version."); Restart leads back to the same screen
 (inference). All of this was read from the code, not seen on a device.
 v1.1.0 moved the schema from 9 to 11 (v10 and v11 in #1346 and #1367), and
-v1.2.0 moves it from 11 to 13 (v12 and v13 in #1462 and #38). **Roll forward with a fix rather than
+v1.2.0 moves it from 11 to 14 (v12, v13 and v14 in #1462, #38 and #1433). **Roll forward with a fix rather than
 back when the build to undo raised the schema, and never uninstall to clear the
 screen: uninstalling deletes the recordings.**
 This paragraph is the one statement of the condition; `docs/release/promotion-v1.0.0.md`

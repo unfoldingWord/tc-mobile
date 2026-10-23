@@ -112,6 +112,9 @@ export const stringsEn = {
   // `backToBooks`. Theme rows reuse `useLightTheme` and `useDarkTheme`.
   settingsOpen: "Settings",
   settingsTitle: "Settings",
+  templatesOpen: "Templates",
+  templatesTitle: "Templates",
+  templateLicenceLabel: (licence: string): string => `Licence: ${licence}`,
   // S12: the requirements owner's option. Off, a chapter shows its name when
   // it has one and its number when it does not. On, always the number.
   settingsChapterNumbers: "Always show chapter numbers",
@@ -929,6 +932,13 @@ export const stringsEn = {
   languageNarrow: "Type more to see other languages.",
   languageSaving: "Saving the language.",
   languageAskCancel: "Cancel",
+  licenceAskTitle: "Licence of this book",
+  licenceAskLead:
+    "Who may share these recordings? You choose once for this book.",
+  licenceAllRightsReserved: "All rights reserved",
+  licenceSaving: "Saving the licence.",
+  licenceAskContinue: "Share",
+  licenceAskCancel: "Cancel",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome
@@ -1401,6 +1411,9 @@ export const stringsEn = {
   aboutVisitPrivacy: "Open the privacy policy",
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
+  // The Android build's store QR (#1250): the visible caption under it, and the
+  // image's accessible name.
+  aboutQrCaption: "Scan to get the app",
   aboutContent: "Bundled content",
   // The ISO 639-3 terms of use ask that "attribution is given to
   // iso639-3.sil.org as the source of the codes" (ADR 0017).
@@ -1543,6 +1556,12 @@ export const stringsEn = {
   phoneCheckCopied: "Copied.",
   phoneCheckSelected: "Selected. Use your phone's Copy.",
   phoneCheckClose: "Close",
+  phoneCheckFontTitle: "Script samples",
+  phoneCheckFontIntro:
+    "Each line is one script, tagged with its language so this phone picks its own font. Boxes, blanks or question marks mean this phone has no font for it. After each line in the report, write rendered or tofu.",
+  phoneCheckDigitsTitle: "Digits",
+  phoneCheckDigitsNote:
+    "The same ten digits in three forms. These are fixed strings: they show which digit shapes this phone can draw, not what the app prints.",
 
   // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
   // The picker's group name, and one name per palette key

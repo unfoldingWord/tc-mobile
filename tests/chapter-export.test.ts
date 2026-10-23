@@ -22,6 +22,7 @@ import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { clearAllStores, noTrimDecode, ramp, testCodec } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 const samples = (n: number, value: number): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -87,7 +88,8 @@ async function transcoded(
     segmentId,
     audio.clip.id,
     mp3,
-    computePeaks(pcm, 4)
+    computePeaks(pcm, 4),
+    NO_STAGES_RUN
   );
   expect(outcome).toBe("committed");
   return mp3;
@@ -679,7 +681,8 @@ describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded
         segmentIds[0]!,
         audio.clip.id,
         stray,
-        computePeaks(pcm, 4)
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
       )
     ).toBe("committed");
     const steps: Array<[number, number, number | undefined]> = [];

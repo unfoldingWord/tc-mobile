@@ -13,6 +13,7 @@ import * as segmentAudio from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import { clearAllStores, ramp } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * The Segments row's audio read (B8), and the interleaving round 3 found: the
@@ -46,7 +47,13 @@ describe("rowAudio", () => {
     const { segmentId, clipId } = await recorded(pcm);
     await setSegmentFinished(segmentId, true);
     const peaks = computePeaks(pcm, ROW_PEAK_BUCKETS);
-    await commitTranscode(segmentId, clipId, encodeMp3(pcm), peaks);
+    await commitTranscode(
+      segmentId,
+      clipId,
+      encodeMp3(pcm),
+      peaks,
+      NO_STAGES_RUN
+    );
     const load = vi.spyOn(segmentAudio, "loadSegmentClip");
 
     const row = await rowAudio(segmentId);
@@ -65,7 +72,13 @@ describe("rowAudio", () => {
     const { segmentId, clipId } = await recorded(pcm);
     await setSegmentFinished(segmentId, true);
     const peaks = computePeaks(pcm, ROW_PEAK_BUCKETS);
-    await commitTranscode(segmentId, clipId, encodeMp3(pcm), peaks);
+    await commitTranscode(
+      segmentId,
+      clipId,
+      encodeMp3(pcm),
+      peaks,
+      NO_STAGES_RUN
+    );
     const real = segmentAudio.resolveSegmentAudio;
     const stale = vi
       .spyOn(segmentAudio, "resolveSegmentAudio")

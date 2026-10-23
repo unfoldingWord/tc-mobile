@@ -30,6 +30,7 @@ import type {
   Tombstone,
 } from "@/types/domain";
 import { clearAllStores, recordTake, throwWhenStoreRequested } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * The v12 write paths (#1463, `docs/design/v12-schema.md` J6 and "A tombstone
@@ -284,7 +285,8 @@ const CASES: readonly Case[] = [
         s.ids.s1,
         s.clipId,
         encodeMp3(pcm),
-        computePeaks(pcm, 4)
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
       );
       expect(outcome).toBe("committed");
     },

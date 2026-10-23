@@ -64,7 +64,13 @@ import { errorMessage } from "@/lib/failure-text";
 // is emitted and lamejs is not duplicated
 // (round-1 George G2).
 import encoderChunkUrl from "./mp3.worker.ts?worker&url";
-import type { AudioCodec, DspBenchResult, Mp3Stream } from "@/types/audio";
+import type {
+  AudioCodec,
+  ClipProcessing,
+  DspBenchResult,
+  Mp3Stream,
+  NormalizedPcm,
+} from "@/types/audio";
 
 /**
  * What the client posts. The original request — a view onto canonical PCM,
@@ -73,7 +79,8 @@ import type { AudioCodec, DspBenchResult, Mp3Stream } from "@/types/audio";
  * always did. {@link StreamRequest} is the additive, versioned half (#1003
  * part b).
  */
-export type EncodeRequest = WholeEncodeRequest | StreamRequest | BenchRequest;
+export type EncodeRequest =
+  WholeEncodeRequest | StreamRequest | BenchRequest | NormalizeRequest;
 
 interface WholeEncodeRequest {
   readonly buffer: ArrayBuffer;
@@ -119,6 +126,17 @@ interface BenchRequest {
 }
 
 /**
+ * The Finished chain (#1433 step 3): a clip's PCM, transferred, processed in
+ * place and sent back with `normalized`. Not an encode: the client encodes
+ * the result with a whole encode in the same lane turn.
+ */
+interface NormalizeRequest extends WholeEncodeRequest {
+  readonly v: StreamProtocolVersion;
+  readonly kind: "normalize";
+  readonly sampleRate: number;
+}
+
+/**
  * The messages the worker sends back.
  *
  * `ready` is posted once, when the worker script has run (#192): it settles
@@ -138,6 +156,10 @@ export type EncodeResponse =
   | { readonly kind: "stream-ack" }
   | { readonly kind: "bench-result"; readonly result: DspBenchResult }
   | { readonly kind: "bench-error"; readonly message: string }
+  | ({
+      readonly kind: "normalized";
+      readonly processing: ClipProcessing;
+    } & WholeEncodeRequest)
   | { readonly kind: "error"; readonly message: string };
 
 /**
@@ -402,6 +424,8 @@ export async function withEncoder<T>(
       decodeMp3: decodeMp3ToCanonical,
       openMp3Stream: () => openStreamInWorker(signal),
       benchDsp: (seconds) => benchInWorker(seconds, signal),
+      normalizePcm: (samples, sampleRate, onProgress) =>
+        normalizeInWorker(samples, sampleRate, signal, onProgress),
     });
   } finally {
     // Release only once the job ahead has finished too: an abort while still
@@ -873,6 +897,29 @@ async function benchInWorker(
   return result.bench;
 }
 
+/**
+ * Run the Finished chain over `samples` in the shared worker (#1433), under
+ * the same deadline and abort an encode has. CONSUMES `samples`.
+ */
+async function normalizeInWorker(
+  samples: Int16Array,
+  sampleRate: number,
+  signal?: AbortSignal,
+  onProgress?: (fraction: number) => void
+): Promise<NormalizedPcm> {
+  const { result } = await requestOnWorker(
+    { v: 1, kind: "normalize", sampleRate, ...pcmRequest(samples) },
+    [samples.buffer as ArrayBuffer],
+    signal,
+    onProgress
+  );
+  if (result === null || !("normalized" in result))
+    throw new EncoderFailedError(
+      "The MP3 encoder answered the loudness chain with something else"
+    );
+  return result.normalized;
+}
+
 /** A view onto canonical PCM, as the worker is sent it (transferred). */
 function pcmRequest(samples: Int16Array): WholeEncodeRequest {
   return {
@@ -887,11 +934,15 @@ function pcmRequest(samples: Int16Array): WholeEncodeRequest {
  * `stream-ack`, or the benchmark's figures (#1433), wrapped so an MP3 is never
  * mistaken for one.
  */
-type WorkerResult = ArrayBuffer | null | { readonly bench: DspBenchResult };
+type WorkerResult =
+  | ArrayBuffer
+  | null
+  | { readonly bench: DspBenchResult }
+  | { readonly normalized: NormalizedPcm };
 
 /** The MP3 a `done` carried; a request answered with an ack had none. */
 function mp3From(result: WorkerResult): Uint8Array<ArrayBuffer> {
-  if (result === null || "bench" in result)
+  if (result === null || "bench" in result || "normalized" in result)
     throw new EncoderFailedError(
       "The MP3 encoder acknowledged a request that should have returned an MP3"
     );
@@ -1473,6 +1524,16 @@ function runEncodeOnWorker(
       if (response.kind === "done") {
         noteEncodeSucceeded();
         resolve(response.mp3);
+      } else if (response.kind === "normalized") {
+        // The chain ran. Not a finished encode either: health is left to the
+        // encode that follows it.
+        const { buffer, byteOffset, length, processing } = response;
+        resolve({
+          normalized: {
+            samples: new Int16Array(buffer, byteOffset, length),
+            processing,
+          },
+        });
       } else if (response.kind === "stream-ack") {
         // A stream step landed. Not a finished encode, so health is left to
         // the `done` that ends the stream.

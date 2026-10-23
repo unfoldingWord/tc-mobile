@@ -128,7 +128,7 @@
  * and `Book.languageCode` are kept as stored. Takes and clips are not read.
  *
  * Roll forward only: a phone that has opened v12 cannot be opened by an older
- * build (`DatabaseDowngradeError`, nothing written).
+ * build (`DatabaseDowngradeError`).
  *
  * ── v13 (#38): the audio revision and take dispositions — append-only ──
  *
@@ -139,6 +139,17 @@
  * Takes, clips and pending rows are not read. It is a version step, not an
  * optional field, so that no build without the rules in that note's
  * "compatibility boundary" can write the same database.
+ *
+ * ── v14 (#1433): the clip's processing record — append-only ──
+ *
+ * `ClipMeta` gained `processing`: which stages of the Finished chain ran and
+ * at which version, the measured loudness and true peak, and the applied
+ * gain. The v14 step classifies every clip row from any earlier version,
+ * keeps a record that is already decided, and touches nothing else. It
+ * reads no clock, and a re-run writes nothing. A Finished
+ * segment's active clip that is still PCM (its transcode was owed at the
+ * upgrade) gets `stages: []`, so it is encoded as it was; every other clip
+ * gets `null`. A clip finished before v14 is never normalized (U6c).
  */
 
 import {
@@ -166,7 +177,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 13;
+const DB_VERSION = 14;
 
 /**
  * What the v12 step adds to a row that lacks it, per store. Plain data and no
@@ -687,6 +698,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 byteLength: legacy.frameCount * 2,
                 transcodeStallCount: 0,
                 peaks: null,
+                processing: null,
               };
               await cursor.update(stamped);
             }
@@ -870,6 +882,52 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             cursor = await cursor.continue();
           }
         }
+
+        // v14 (#1433): every clip row is classified here, whatever version
+        // it came from. The active PCM clip of a Finished segment is a
+        // transcode still owed from before v14 (a stall, a full phone): it
+        // gets an explicit "no stage ran", so the sweep encodes it as it was
+        // (U6c, Frank R1 P2 on #1679). Every other clip gets null, eligible
+        // for the chain once Finished. A null already on the row is not a
+        // decision: before v14 only the v4 stamp in this same upgrade writes
+        // one (Frank R2 P2), so it is classified like an absent field. A
+        // record with stages or `stages: []` is kept, which is what makes a
+        // re-run write nothing. "affirmed" is the Finished status as v13
+        // stores it, frozen here rather than read from `takes.ts`, which
+        // imports this.
+        if (oldVersion < 14) {
+          const owedClips = new Set<string>();
+          let segment = await tx.objectStore("segments").openCursor();
+          while (segment) {
+            const { status, activeTakeId } = segment.value;
+            if (status === "affirmed" && activeTakeId !== null) {
+              const take = await tx.objectStore("takes").get(activeTakeId);
+              if (take) owedClips.add(take.clipId);
+            }
+            segment = await segment.continue();
+          }
+          let cursor = await tx.objectStore("clipMeta").openCursor();
+          while (cursor) {
+            const row: Omit<ClipMeta, "processing"> &
+              Partial<Pick<ClipMeta, "processing">> = cursor.value;
+            const owed = row.encoding === "pcm" && owedClips.has(row.id);
+            const undecided = row.processing === undefined;
+            if (undecided || (row.processing === null && owed)) {
+              await cursor.update({
+                ...row,
+                processing: owed
+                  ? {
+                      stages: [],
+                      measuredLufs: null,
+                      measuredTruePeakDbtp: null,
+                      appliedGainDb: 0,
+                    }
+                  : null,
+              });
+            }
+            cursor = await cursor.continue();
+          }
+        }
       },
       blocked() {
         if (settled) return;
@@ -977,8 +1035,24 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
      * produces, which names nothing.
      */
     let upgradeFault: unknown;
+    /** Whether an `upgrade` step failed; a step could throw `undefined`. */
+    let upgradeFailed = false;
+    /**
+     * Settles once the `upgrade` callback has finished, either way (it never
+     * rejects: its fault is recorded above). Already settled when no upgrade
+     * runs. The open waits for it, because a step can fail after the native
+     * open has already succeeded, and the fulfilment check below must see
+     * that fault.
+     *
+     * A step that never settled would hang the open here. No current step
+     * can: each awaits only requests on the `versionchange` transaction, and
+     * those settle when it commits or aborts, and a request made on it after
+     * it has finished throws at once. So there is no bound on this wait; a
+     * step that awaits anything else must bring its own.
+     */
+    let upgradeSettled: Promise<void> = Promise.resolve();
 
-    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+    const native = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
       ...callbacks,
       // `idb` calls the upgrade callback and does not await what it returns, so
       // an error thrown after the first `await` (every backfill) used to leave
@@ -990,10 +1064,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       // IndexedDB request already aborts the transaction by itself; this covers
       // the thrown error that does not.
       upgrade(db, oldVersion, newVersion, tx, event) {
-        void Promise.resolve(
+        upgradeSettled = Promise.resolve(
           callbacks.upgrade?.(db, oldVersion, newVersion, tx, event)
         ).catch((cause: unknown) => {
           upgradeFault = cause;
+          upgradeFailed = true;
           try {
             tx.abort();
           } catch {
@@ -1003,10 +1078,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             // ran: the open still REJECTS, and `upgradeFault` is what it
             // rejects with. Observed on fake-indexeddb with `idb` 8, not on a
             // real engine. (2) It committed before the error surfaced: the
-            // open SUCCEEDS and the error is not reported, because
-            // `upgradeFault` is read only when the open rejects. Case (2) is
-            // not reachable from the current steps, which await IDB requests
-            // only, and no test reaches it.
+            // upgrade cannot be rolled back then, and the open would SUCCEED
+            // on a half-migrated database, so the open's fulfilment below
+            // closes the connection and rejects with `upgradeFault` instead.
+            // Case (2) is not reachable from the current steps, which await
+            // IDB requests only; `tests/db-upgrade-throw.test.ts` simulates it.
           }
         });
         // The abort also rejects the transaction's own `done` promise, which
@@ -1017,11 +1093,28 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
       },
     });
 
+    const opening = native.then((db) => upgradeSettled.then(() => db));
     pendingOpen = opening;
 
     void opening.then(
       (db) => {
         if (pendingOpen === opening) pendingOpen = null;
+        // An upgrade step failed after its transaction had already committed
+        // (case (2) above): the database is at the new version with the steps
+        // after the fault never run, and nothing can roll that back from here.
+        // Do not hand that connection to the app as if the upgrade had worked.
+        // Close it and fail the open with the fault, so the failure is
+        // reported through the same rejection as every other upgrade fault.
+        if (upgradeFailed) {
+          // Like the rejection path: a blocked open that ends in a failure
+          // leaves the database no more reachable than it was.
+          wasBlocked = false;
+          db.close();
+          if (settled) return;
+          settled = true;
+          reject(upgradeFault);
+          return;
+        }
         // This open was told it was blocked and has now come through, so the
         // other copy has closed and the database is reachable again. Said
         // whichever branch below takes the connection: in both of them the

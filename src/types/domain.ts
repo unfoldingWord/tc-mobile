@@ -319,7 +319,28 @@ export interface StoredPendingTake {
    * v13, which the step does not guess, and on a take that did not know it.
    */
   readonly baseRevision?: number;
+  /**
+   * Set when a replay refused to save this row and kept it instead (#38, the
+   * note's §4 "Keep, exactly"): `superseded` when the segment's audio moved
+   * since the base was read, `unexplained` when nothing says who owns it. The
+   * launch replay's classification marks the rest before any audio is read
+   * (the note's §3, "The replay's own reads"): `legacy` (no `baseRevision`),
+   * `sample-rate`, and a `stored` base that is `base-missing` or
+   * `base-changed`. A marked row is never saved by a replay; it keeps its
+   * audio until #1562 item 2 decides when refused audio may go. Absent on
+   * every other row.
+   */
+  readonly refusal?: PendingRefusal;
 }
+
+/** Why a replay kept a row instead of saving it (see `refusal` above). */
+export type PendingRefusal =
+  | "superseded"
+  | "unexplained"
+  | "legacy"
+  | "sample-rate"
+  | "base-missing"
+  | "base-changed";
 
 /**
  * Why a take stopped being pending (v13, #38), keyed by its `clipId`, written

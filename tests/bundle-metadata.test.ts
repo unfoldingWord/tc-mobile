@@ -74,6 +74,7 @@ function clip(
     byteLength,
     transcodeStallCount: 0,
     peaks: null,
+    processing: null,
   };
 }
 

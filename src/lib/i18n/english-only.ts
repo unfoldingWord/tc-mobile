@@ -38,4 +38,8 @@ export const ENGLISH_ONLY: ReadonlySet<string> = new Set([
   "phoneCheckCopied",
   "phoneCheckSelected",
   "phoneCheckClose",
+  "phoneCheckFontTitle",
+  "phoneCheckFontIntro",
+  "phoneCheckDigitsTitle",
+  "phoneCheckDigitsNote",
 ]);

@@ -112,9 +112,12 @@ describe("Play upload lane triggers", () => {
   it("never builds a diagnostic bundle", () => {
     expect(workflow).toContain('TC_ANDROID_DIAGNOSTIC: "false"');
   });
-  it("serializes every run for this Play app across both branches", () => {
+  it("serializes every upload for this Play app across both branches", () => {
+    // On the upload job, not the run (#1616); tests/native-lane-concurrency
+    // .test.ts runs the group in both states for all three lanes.
+    expect(workflow).not.toMatch(/^concurrency:/m);
     expect(workflow).toMatch(
-      /^ {2}group: android-play\n {2}cancel-in-progress: false\n/m
+      /^ {4}concurrency:\n {6}group: android-play\n {6}cancel-in-progress: false\n/m
     );
   });
   it("keeps the security shape the header relies on", () => {

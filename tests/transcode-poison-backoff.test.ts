@@ -100,6 +100,7 @@ function resolvedPcm(
         byteLength: 2,
         transcodeStallCount: 0,
         peaks: null,
+        processing: null,
       },
       samples,
     },

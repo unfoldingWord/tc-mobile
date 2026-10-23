@@ -19,6 +19,7 @@ import {
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { SegmentId } from "@/types/domain";
 import { clearAllStores, recordTake } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * `Segment.audioRevision` (v13, #38): every write that changes the active take
@@ -95,7 +96,8 @@ describe("what leaves the audio revision", () => {
         segmentId,
         clipId,
         encodeMp3(pcm),
-        computePeaks(pcm, 4)
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
       )
     ).toBe("committed");
     expect(await revision(segmentId)).toBe(1);

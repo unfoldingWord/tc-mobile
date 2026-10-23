@@ -554,4 +554,59 @@
     padding: 0 var(--p-space-3);
     color: var(--s-ink);
   }
+
+  /* The licence ask (#1455): four rows in the language ask's shape, the
+     chosen one marked by a border and a check, not by colour alone. */
+  :root .licence-ask {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--p-space-3);
+    min-width: 0;
+  }
+  :root .licence-ask-title {
+    font-size: var(--p-text-20);
+    font-weight: var(--p-weight-bold);
+  }
+  :root .licence-ask-lead {
+    color: var(--s-ink-muted);
+    font-size: var(--p-text-15);
+  }
+  :root .licence-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p-space-1);
+  }
+  :root .licence-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--p-space-2);
+    width: 100%;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    border: 2px solid transparent;
+    border-radius: var(--p-radius-12);
+    background: var(--s-well);
+    color: var(--s-ink);
+    text-align: start;
+  }
+  :root .licence-row[aria-checked="true"] {
+    border-color: var(--s-select);
+  }
+  :root .licence-row-name,
+  :root .licence-ask-quiet {
+    font-size: var(--p-text-17);
+    font-weight: var(--p-weight-strong);
+  }
+  :root .licence-ask-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-3);
+  }
+  :root .licence-ask-quiet {
+    min-height: var(--c-control-md);
+    padding: 0 var(--p-space-3);
+    color: var(--s-ink);
+  }
 }

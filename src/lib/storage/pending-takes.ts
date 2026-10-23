@@ -74,15 +74,16 @@ type PendingListResult =
   | { readonly ok: false; readonly cause: unknown };
 
 /**
- * A row read back: the recipe to offer again, or why not.
+ * A row read back: the recipe to offer again, or why not. A recipe only
+ * advises: whether its take is already saved, discarded or moved is the
+ * conditional commit's verdict (`saveReplayedTake`), decided inside its own
+ * transaction, so this read has no `saved` arm of its own (#1557).
  *
- *   - `saved`: the segment's take already uses this row's clip, so the save
- *     landed and the row is stale. Drop it; never offer it.
  *   - `segment-gone`: another copy deleted the segment.
  *   - `base-missing`, `base-changed`: a `stored` base whose clip is gone, or
  *     is not the PCM clip the row was written against (a transcode since).
- *     Never spliced: splicing an MP3 as PCM corrupts the audio. What the
- *     recovery screen offers instead is slice 3's call.
+ *     Never spliced: splicing an MP3 as PCM corrupts the audio. The launch
+ *     replay marks the row refused and keeps it.
  *   - `sample-rate`: written under another rate than the caller saves at.
  *   - `failed`: the read itself failed.
  */
@@ -90,11 +91,7 @@ type PendingRecipeResult =
   | { readonly kind: "recipe"; readonly take: NewTake }
   | {
       readonly kind:
-        | "saved"
-        | "segment-gone"
-        | "base-missing"
-        | "base-changed"
-        | "sample-rate";
+        "segment-gone" | "base-missing" | "base-changed" | "sample-rate";
     }
   | { readonly kind: "failed"; readonly cause: unknown };
 
@@ -279,12 +276,26 @@ async function checkedSource(
   if (!source) return null;
   const meta = await tx.objectStore("clipMeta").get(source.id);
   const data = await tx.objectStore("clipData").get(source.id);
-  const intact =
+  return baseClipIntact(meta, data, source) ? source : null;
+}
+
+/**
+ * Whether a base clip is on disk exactly as a row or a source names it: PCM,
+ * at that `generation` and `frameCount`, with that many frames of bytes. The
+ * one check the hold (before it writes a `stored` base), the recipe read and
+ * a replay's keep (before it frees the slot) all make.
+ */
+export function baseClipIntact(
+  meta: ClipMeta | undefined,
+  data: ArrayBuffer | undefined,
+  want: { readonly generation: number; readonly frameCount: number }
+): boolean {
+  return (
     meta?.encoding === "pcm" &&
-    meta.generation === source.generation &&
-    meta.frameCount === source.frameCount &&
-    data?.byteLength === source.frameCount * 2;
-  return intact ? source : null;
+    meta.generation === want.generation &&
+    meta.frameCount === want.frameCount &&
+    data?.byteLength === want.frameCount * 2
+  );
 }
 
 /** Every pending row, for the launch replay. Never rejects. */
@@ -344,10 +355,6 @@ async function readRecipe(
 ): Promise<PendingRecipeResult> {
   const segment = await tx.objectStore("segments").get(row.segmentId);
   if (!segment) return { kind: "segment-gone" };
-  if (segment.activeTakeId) {
-    const active = await tx.objectStore("takes").get(segment.activeTakeId);
-    if (active?.clipId === row.clipId) return { kind: "saved" };
-  }
 
   let existing: Int16Array;
   if (row.base.kind === "inline") {
@@ -357,14 +364,7 @@ async function readRecipe(
     const meta = await tx.objectStore("clipMeta").get(base.sourceClipId);
     const data = await tx.objectStore("clipData").get(base.sourceClipId);
     if (!meta || !data) return { kind: "base-missing" };
-    if (
-      meta.encoding !== "pcm" ||
-      meta.generation !== base.generation ||
-      meta.frameCount !== base.frameCount ||
-      data.byteLength !== base.frameCount * 2
-    ) {
-      return { kind: "base-changed" };
-    }
+    if (!baseClipIntact(meta, data, base)) return { kind: "base-changed" };
     existing = new Int16Array(data);
   }
 

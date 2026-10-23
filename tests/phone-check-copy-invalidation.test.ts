@@ -42,6 +42,8 @@ const OK_DEVICE: PhoneCheckState["device"] = {
     quotaBytes: null,
     usageBytes: null,
     persisted: null,
+    language: null,
+    languages: null,
   },
 };
 

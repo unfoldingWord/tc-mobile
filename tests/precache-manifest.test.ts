@@ -46,9 +46,10 @@ const PRODUCERS = [
 const READER_SYMBOLS = new Set(["thumbUrl", "loadObsTemplate"]);
 
 // The exact allowlist the app shell needs, and nothing more. `jpg` is absent
-// by #177; restoring it is a deliberate edit here plus in vite.config.ts.
+// by #177; #246's Template Library picker is the reader that restored it, a
+// deliberate edit here plus in vite.config.ts.
 // `txt` is present for the offline licence texts under public/licenses/ (#36).
-const INTENDED = ["**/*.{js,css,html,svg,png,woff2,txt}"];
+const INTENDED = ["**/*.{js,css,html,svg,png,jpg,woff2,txt}"];
 
 // Both readers take the config with its comments removed (#822): each returns
 // the FIRST match, so a commented-out copy of the good entry above the live one

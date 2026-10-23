@@ -17,7 +17,7 @@ import {
 // the name and the version the app requests. Kept in sync by hand — there is
 // nothing else to key them off. (Mirrors tests/db-migration.test.ts.)
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 
 /**
  * Delete the database outright so each case starts from a true fresh install,
@@ -346,10 +346,10 @@ async function writeShelf(): Promise<void> {
 }
 
 describe("roll forward only: the current database and an older build (#1462, #38)", () => {
-  it("a v13 database holding a real shelf refuses a v12 open and keeps every row, clip byte and its version", async () => {
-    // State 1. A v12 build cannot be loaded here (`DB_VERSION` is a module
-    // constant), so the v12 build's open is a raw `openDB` at 12 — the request
-    // that build makes — and the app's own mapping of that refusal is pinned
+  it("a database at the current version holding a real shelf refuses an open at APP_VERSION - 1 and keeps every row, clip byte and its version", async () => {
+    // State 1. The previous build cannot be loaded here (`DB_VERSION` is a
+    // module constant), so its open is a raw `openDB` at APP_VERSION - 1 — the
+    // request that build makes — and the app's own mapping of that refusal is pinned
     // just below, by a newer database meeting this build.
     await writeShelf();
     await closeDb();
@@ -380,7 +380,7 @@ describe("roll forward only: the current database and an older build (#1462, #38
     expect(await readEverything()).toEqual(before);
   });
 
-  it("a v11 database opens cleanly at 13", async () => {
+  it("a v11 database opens cleanly at the current version", async () => {
     // State 2: the harness above, the other way round.
     const v11 = await openDB(DB_NAME, 11, {
       upgrade(db) {

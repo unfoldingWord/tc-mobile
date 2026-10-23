@@ -1163,7 +1163,8 @@ export function useRecorder(): UseRecorder {
       const current2 = generation === generationRef.current;
       const verdict = classifyStopDecode(
         { decoded: true, sampleCount: samples.length },
-        current2
+        current2,
+        flushThrew
       );
       if (current2) setState("idle");
       return {

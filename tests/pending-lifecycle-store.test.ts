@@ -41,6 +41,7 @@ import {
   storeOrphanClip,
   throwWhenStoreRequested,
 } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * The v13 pending-take lifecycle at the store (#38,
@@ -241,7 +242,8 @@ describe("the hold (§3, seven steps)", () => {
         segmentId,
         meta.id,
         encodeMp3(pcm),
-        computePeaks(pcm, 4)
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
       )
     ).toBe("committed");
 
@@ -459,7 +461,13 @@ describe("a pending row's stored base clip is a use (RC-S)", () => {
   it("a transcode leaves a clip a row's stored base names as PCM", async () => {
     const { segmentId, x, pcm } = await heldOverKept({ finished: true });
     expect(
-      await commitTranscode(segmentId, x, encodeMp3(pcm), computePeaks(pcm, 4))
+      await commitTranscode(
+        segmentId,
+        x,
+        encodeMp3(pcm),
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
+      )
     ).toBe("stale");
     expect((await getClipMeta(x))?.encoding).toBe("pcm");
   });

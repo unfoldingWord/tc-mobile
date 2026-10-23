@@ -2,9 +2,10 @@ import "fake-indexeddb/auto";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { mergeTake } from "@/lib/audio/edit";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
-import type { NewTake } from "@/lib/takes/pending-take";
+import type { NewTake, PendingTake } from "@/lib/takes/pending-take";
 import type { ClipMeta } from "@/types/audio";
 import type {
   BookId,
@@ -12,6 +13,7 @@ import type {
   SegmentId,
   TakeDisposition,
 } from "@/types/domain";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * The interleaving harness for the pending-take lifecycle (#38,
@@ -55,7 +57,10 @@ import type {
  *   L1  every clip on disk is named by a take or by a pending row's `stored`
  *       base, so a delete that drops a row also lets its base clip go.
  *
- * The scenario list is a floor. PR 3 adds the replay as one more step kind.
+ * The scenario list is a floor. Rebuild PR 3 added the replay as one more
+ * step kind (`replay`, the conditional commit `saveReplayedTake`), and its
+ * replay slice the relaunch through the hook layer, split at the slot install
+ * (`launchRead`, `launchCommit`), with a check that it leaves its slot clear.
  */
 
 type Copy = {
@@ -65,6 +70,9 @@ type Copy = {
   readonly books: typeof import("@/lib/storage/books");
   readonly transcode: typeof import("@/lib/storage/transcode");
   readonly db: typeof import("@/lib/storage/db");
+  /** The hook layer's launch replay, wired as `useSaveTake` runs it. */
+  readonly replay: typeof import("@/hooks/replay-pending-takes");
+  readonly save: typeof import("@/hooks/use-save-take");
 };
 
 async function loadCopy(name: Copy["name"]): Promise<Copy> {
@@ -76,6 +84,8 @@ async function loadCopy(name: Copy["name"]): Promise<Copy> {
     books: await import("@/lib/storage/books"),
     transcode: await import("@/lib/storage/transcode"),
     db: await import("@/lib/storage/db"),
+    replay: await import("@/hooks/replay-pending-takes"),
+    save: await import("@/hooks/use-save-take"),
   };
 }
 
@@ -95,6 +105,17 @@ type World = {
   readonly kept: ClipMeta;
   readonly pcm: Int16Array;
   readonly takes: Record<string, NewTake>;
+  /**
+   * A relaunched copy's replay, paused between its recipe read and its
+   * commit (`launchRead` / `launchCommit`), and the hook slot it ends with.
+   */
+  readonly launches: Partial<
+    Record<
+      Copy["name"],
+      { readonly release: () => void; readonly finished: Promise<void> }
+    >
+  >;
+  readonly launchSlots: Partial<Record<Copy["name"], PendingTake | null>>;
 };
 
 type Step = {
@@ -263,6 +284,89 @@ function deleteBook(copy: Copy["name"]): Step {
   };
 }
 
+/**
+ * The launch replay's conditional commit of a take this copy holds (rebuild
+ * PR 3). Every outcome but `held` lets the slot go, as the replay does: the
+ * take is then saved, recorded as ended, on disk as a marked row, or its
+ * segment is gone. A rejection keeps it held.
+ */
+function replay(copy: Copy["name"], letter: string): Step {
+  return {
+    copy,
+    label: `${copy}:replay ${letter}`,
+    run: async (world) => {
+      const t = takeOf(world, letter);
+      const live = world.live[copy];
+      try {
+        const result = await world.copies[copy].takes.saveReplayedTake(
+          { ...t, baseRevision: t.baseRevision ?? 0 },
+          mergeTake(t.existing, t.recorded, t.offset),
+          RATE,
+          { isDiscardRequested: (id) => live.flags.has(id) }
+        );
+        if (result.outcome !== "held") live.slot.delete(t.clipId);
+      } catch {
+        // The slot stays held, as the hook keeps it.
+      }
+    },
+  };
+}
+
+/**
+ * A relaunch of this copy, through the hook layer (the replay slice of PR 3):
+ * `replayPendingTakes` lists, classifies and reads the recipe, then pauses
+ * where it hands the take to `performResumeTake`, so the other copy's steps
+ * can land between this read and the commit. The take is then in this
+ * copy's memory. A launch that finds nothing to install just finishes.
+ */
+function launchRead(copy: Copy["name"]): Step {
+  return {
+    copy,
+    label: `${copy}:launch, read`,
+    run: async (world) => {
+      const { replay, save } = world.copies[copy];
+      const live = world.live[copy];
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      let reached!: () => void;
+      const atResume = new Promise<void>((r) => (reached = r));
+      world.launchSlots[copy] = null;
+      const finished = replay.replayPendingTakes(async (take) => {
+        live.slot.add(take.clipId);
+        reached();
+        await gate;
+        const freed = await save.performResumeTake(
+          world.launchSlots[copy] ?? null,
+          take,
+          {
+            update: (t) => {
+              world.launchSlots[copy] = t(world.launchSlots[copy] ?? null);
+              if (!world.launchSlots[copy]) live.slot.delete(take.clipId);
+            },
+            requestSweep: () => {},
+          }
+        );
+        return freed === true;
+      });
+      world.launches[copy] = { release, finished };
+      await Promise.race([atResume, finished]);
+    },
+  };
+}
+
+/** The paused launch's conditional commit, and the rest of its run. */
+function launchCommit(copy: Copy["name"]): Step {
+  return {
+    copy,
+    label: `${copy}:launch, commit`,
+    run: async (world) => {
+      const launch = world.launches[copy]!;
+      launch.release();
+      await launch.finished;
+    },
+  };
+}
+
 function transcodeKept(copy: Copy["name"]): Step {
   return {
     copy,
@@ -272,7 +376,8 @@ function transcodeKept(copy: Copy["name"]): Step {
         world.segmentId,
         world.kept.id,
         encodeMp3(world.pcm),
-        computePeaks(world.pcm, 4)
+        computePeaks(world.pcm, 4),
+        NO_STAGES_RUN
       );
     },
   };
@@ -429,7 +534,17 @@ type Scenario = {
   readonly slots: Record<Copy["name"], string[]>;
   readonly A: Step[];
   readonly B: Step[];
+  /** Checked once every step of an order has run. */
+  readonly settled?: (world: World) => string[];
 };
+
+/** #1557's check, in the app: a relaunch leaves its hook slot clear. */
+const slotLeftClear =
+  (copy: Copy["name"]) =>
+  (world: World): string[] =>
+    world.launchSlots[copy]
+      ? [`${copy}'s launch left its slot ${world.launchSlots[copy]!.state}`]
+      : [];
 
 let copies: Record<Copy["name"], Copy>;
 
@@ -479,6 +594,8 @@ async function seed(scenario: Scenario): Promise<World> {
     kept,
     pcm,
     takes,
+    launches: {},
+    launchSlots: {},
   };
 }
 
@@ -490,6 +607,7 @@ async function runScenario(scenario: Scenario): Promise<{
   const failures: string[] = [];
   for (const order of orders) {
     const world = await seed(scenario);
+    const failedBefore = failures.length;
     let before = await readDisk(world);
     for (const [i, step] of order.entries()) {
       const liveBefore = {
@@ -508,6 +626,11 @@ async function runScenario(scenario: Scenario): Promise<{
         break;
       }
       before = after;
+    }
+    const unsettled = scenario.settled?.(world) ?? [];
+    if (failures.length === failedBefore && unsettled.length > 0) {
+      const path = order.map((s) => s.label).join(" → ");
+      failures.push(`${path}: ${unsettled.join("; ")}`);
     }
   }
   return { orders: orders.length, failures };
@@ -570,9 +693,92 @@ const SCENARIOS: readonly Scenario[] = [
     ],
     B: [deleteBook("B")],
   },
+  // Rebuild PR 3: the replay as one more step kind. B's hold of C stands for
+  // the row an earlier, killed life of B left; its replay then runs against
+  // every order of A's writes.
+  {
+    // Frank r2 (a) on the note: a cross-copy quota give-up.
+    name: "B replays C from its row; A, also holding C, gives it up for quota",
+    takes: { C: { stored: true } },
+    slots: { A: ["C"], B: ["C"] },
+    A: [commitQuota("A", "C"), commit("A", "C")],
+    B: [hold("B", "C", { stored: true }), replay("B", "C")],
+  },
+  {
+    // Frank r2 (b) on the note: a cross-copy Discard.
+    name: "B replays C from its row; A, also holding C, discards it",
+    takes: { C: { stored: false } },
+    slots: { A: ["C"], B: ["C"] },
+    A: [tap("A", "C"), settleDiscard("A", "C")],
+    B: [hold("B", "C"), replay("B", "C")],
+  },
+  {
+    // RP-S and the mixed-build case: another take on the same segment.
+    name: "B replays C from its row; A records D on the same segment",
+    takes: { C: { stored: true }, D: { stored: true } },
+    slots: { A: ["D"], B: ["C"] },
+    A: [hold("A", "D", { stored: true }), commit("A", "D")],
+    B: [hold("B", "C", { stored: true }), replay("B", "C")],
+  },
+  {
+    // RP-E and RP-D: the segment erased, then deleted, around the replay.
+    name: "B replays C from its row; A erases and then deletes the segment",
+    takes: { C: { stored: true } },
+    slots: { A: [], B: ["C"] },
+    A: [erase("A"), deleteSegment("A")],
+    B: [hold("B", "C", { stored: true }), replay("B", "C")],
+  },
+  // The replay slice of PR 3: the same cases through the hook layer. B's
+  // hold of C is the row an earlier, killed life of B left, so B starts with
+  // nothing in memory; B then relaunches, and A's steps land before B's
+  // read, between B's read and its commit, and after.
+  {
+    // #1557: A finishes C's row; B's relaunch must leave its slot clear.
+    name: "B relaunches and replays C; A, also holding C, saves it (#1557)",
+    takes: { C: { stored: true } },
+    slots: { A: ["C"], B: [] },
+    A: [commit("A", "C")],
+    B: [hold("B", "C", { stored: true }), launchRead("B"), launchCommit("B")],
+    settled: slotLeftClear("B"),
+  },
+  {
+    name: "B relaunches and replays C; A, also holding C, gives it up for quota and saves it",
+    takes: { C: { stored: true } },
+    slots: { A: ["C"], B: [] },
+    A: [commitQuota("A", "C"), commit("A", "C")],
+    B: [hold("B", "C", { stored: true }), launchRead("B"), launchCommit("B")],
+    settled: slotLeftClear("B"),
+  },
+  {
+    name: "B relaunches and replays C; A, also holding C, discards it",
+    takes: { C: { stored: false } },
+    slots: { A: ["C"], B: [] },
+    A: [tap("A", "C"), settleDiscard("A", "C")],
+    B: [hold("B", "C"), launchRead("B"), launchCommit("B")],
+    settled: slotLeftClear("B"),
+  },
+  {
+    name: "B relaunches and replays C; A records D on the same segment",
+    takes: { C: { stored: true }, D: { stored: true } },
+    slots: { A: ["D"], B: [] },
+    A: [hold("A", "D", { stored: true }), commit("A", "D")],
+    B: [hold("B", "C", { stored: true }), launchRead("B"), launchCommit("B")],
+    settled: slotLeftClear("B"),
+  },
+  {
+    name: "B relaunches and replays C; A erases and then deletes the segment",
+    takes: { C: { stored: true } },
+    slots: { A: [], B: [] },
+    A: [erase("A"), deleteSegment("A")],
+    B: [hold("B", "C", { stored: true }), launchRead("B"), launchCommit("B")],
+    settled: slotLeftClear("B"),
+  },
 ];
 
 beforeAll(async () => {
+  // The launch replay logs each refusal; the invariant, not the log, is
+  // what these runs check.
+  vi.spyOn(console, "error").mockImplementation(() => {});
   copies = { A: await loadCopy("A"), B: await loadCopy("B") };
 });
 
@@ -585,10 +791,10 @@ describe("every interleaving of the pending-take writers keeps every take's last
   it("runs two connections to one database", async () => {
     const a = await copies.A.db.getDb();
     const b = await copies.B.db.getDb();
-    // Two module instances, so two connections, both on the v13 database.
+    // Two module instances, so two connections, both on the v14 database.
     expect(Object.is(copies.A.db, copies.B.db)).toBe(false);
     expect(Object.is(a, b)).toBe(false);
-    expect([a.version, b.version]).toEqual([13, 13]);
+    expect([a.version, b.version]).toEqual([14, 14]);
   });
 
   it.each(SCENARIOS)("$name", async (scenario) => {

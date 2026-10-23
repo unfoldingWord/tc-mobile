@@ -45,6 +45,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuClose: "Закрыть меню",
   settingsOpen: "Настройки",
   settingsTitle: "Настройки",
+  templatesOpen: "Шаблоны",
+  templatesTitle: "Шаблоны",
+  templateLicenceLabel: (licence: string): string => `Лицензия: ${licence}`,
   settingsChapterNumbers: "Всегда показывать номера глав",
   booksEmpty: "Начните свою первую книгу",
   booksEmptyTeach: "В книге хранятся главы, которые вы записываете.",
@@ -389,6 +392,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNarrow: "Введите больше, чтобы увидеть другие языки.",
   languageSaving: "Сохраняем язык.",
   languageAskCancel: "Отмена",
+  licenceAskTitle: "Лицензия этой книги",
+  licenceAskLead:
+    "Кто может делиться этими записями? Вы выбираете один раз для этой книги.",
+  licenceAllRightsReserved: "Все права защищены",
+  licenceSaving: "Сохраняем лицензию.",
+  licenceAskContinue: "Поделиться",
+  licenceAskCancel: "Отмена",
   shareNameFallback: "Книга",
 
   // Save and recovery
@@ -541,6 +551,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "Открыть политику конфиденциальности",
   aboutThirdParty: "Компоненты с открытым кодом",
   aboutTexts: "Тексты лицензий",
+  aboutQrCaption: "Отсканируйте, чтобы получить приложение",
   aboutContent: "Встроенные материалы",
   aboutReadText: (name: string): string => `Прочитать: ${name}`,
   aboutBack: "Назад к списку",

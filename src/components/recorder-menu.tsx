@@ -97,6 +97,15 @@ export interface RecorderMenuProps {
    * view has loaded.
    */
   chapterHeading?: string;
+  /**
+   * The chapter's name as typed, `null` when it has none (#1284, U3). Given
+   * with `chapterNumber`, the sheet head also draws the name whole as a
+   * wrapping heading, the pattern the chapter menu already uses; the crumbs
+   * above it still elide a long name. It is the typed name, not the Settings
+   * label `chapterHeading` may carry ("always show the number"). Absent, no
+   * heading is drawn.
+   */
+  chapterName?: string | null;
 }
 
 export function RecorderMenu({
@@ -115,6 +124,7 @@ export function RecorderMenu({
   bookCoverHex,
   chapterNumber,
   chapterHeading,
+  chapterName,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
   // paint. They were two expressions that disagreed: the label also required a
@@ -153,6 +163,11 @@ export function RecorderMenu({
         book={bookName}
         bookCoverHex={bookCoverHex}
         chapter={chapterHeading ?? chapterNumber}
+        fullName={
+          chapterName === undefined || chapterNumber === undefined
+            ? undefined
+            : strings.chapterHeading(chapterName, chapterNumber)
+        }
         segment={
           ordinal === null
             ? undefined

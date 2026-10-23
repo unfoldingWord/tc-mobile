@@ -22,21 +22,23 @@ Quoted as recorded; nothing is paraphrased into a wider rule.
 - **R18-ui-words**, two wording calls from #1233. Note: "Use "Reset recording"; Use the number and name". The first is the one word for clearing a recording (section 4). The second is what a shared file name carries (section 7).
 - **R19-digits**. Note: "Use Arabic numerals; default to simplified text on Chinese phones." The first sentence fixes the digits (section 6). The second means a phone set to Traditional-script Chinese gets the one Simplified Mandarin text.
 
-**What the R19 note does not say.** R19 also asked whether the tester-only
-screens are translated. The recorded note does not answer that part. The
-phone-check strings (`src/lib/strings.ts`, `phoneCheck*`) are therefore
-undecided here: a drafting lane leaves the keys out, so they fall back to
-English, and lists them as pending (section 9, item 6) until the requirements
-owner answers. This is an open item, not a
-default this file invents.
+**Tester-only screens (S11).** R19 left open whether the tester-only screens
+are translated; the requirements owner then settled it as **S11-tester-screens**
+(`docs/design/v2-plan.md`): decided `english`, "English only". Note: "We will
+revisit if this is needed." The phone-check strings (`src/lib/strings.ts`,
+`phoneCheck*`) therefore stay English in every language, and a drafting lane
+leaves those keys out. They are not pending: `src/lib/i18n/english-only.ts`
+names them, and `docs/i18n/english-only.md` records the decision and how to
+revisit it.
 
 ## 2. The languages this epic ships
 
 Ten columns, matching the epic's list of what a translator can do when it
 ships: Arabic, English, French, Hindi, Indonesian, Mandarin (Simplified),
 Portuguese, Russian, Spanish and Swahili. English is the source and the
-reference column. The 16 level-3 languages follow later and are not in this
-file.
+reference column. The 16 level-3 languages follow later; section 5 carries
+empty columns for the seven Latin-script ones (below), and the other level-3
+languages are not in this file.
 
 | Code      | Language              | Script     | Direction     |
 | --------- | --------------------- | ---------- | ------------- |
@@ -55,6 +57,35 @@ file.
 reference site below tags its Portuguese as Brazilian and its Spanish as
 Latin-American. This file follows that, and it is not a decision anyone has
 recorded for the app.
+
+**Level-3 Latin-script languages (columns awaiting a draft).** The plan's
+language list (`docs/design/v2-plan.md`, columns "Level, Language, BCP 47,
+Script") has exactly seven level-3 rows with a Latin script, quoted from it as
+"| 3 | Hausa | ha | Latin" (and likewise Lingala `ln`, Malay `ms`,
+Tagalog `tl`, Tok Pisin `tpi`, Turkish `tr`, Vietnamese `vi`). The requirements
+owner's R8-level3 decision (#1458) is "After 2.0.0", with the note "the 16
+level-3 languages are v2-desired (will become v3-required if they miss the v2
+launch)". Their cells in section 5 are left empty and marked "to draft": no
+proposal has been written for them, no human has reviewed any, and no native
+reader has been asked.
+
+The two level-3 tables carry an `English` column beside `#`, copied from the
+English table in this section. Join a drafted cell to its English term on that
+column, not on the row number, so a reorder of the table cannot pair a cell with
+the wrong word.
+
+| Code  | Language   | Script | Direction     |
+| ----- | ---------- | ------ | ------------- |
+| `ha`  | Hausa      | Latin  | left to right |
+| `ln`  | Lingala    | Latin  | left to right |
+| `ms`  | Malay      | Latin  | left to right |
+| `tl`  | Tagalog    | Latin  | left to right |
+| `tpi` | Tok Pisin  | Latin  | left to right |
+| `tr`  | Turkish    | Latin  | left to right |
+| `vi`  | Vietnamese | Latin  | left to right |
+
+The direction column is an assumption read from the script; the plan marks
+only Arabic, Farsi and Urdu as right to left.
 
 ## 3. Wording reference: churchbased.bible
 
@@ -236,9 +267,78 @@ the site uses (section 3).
 | 26  | licença            | лицензия          | leseni           | 许可证    | AI proposal                                                                                                                           |
 | 27  | Sobre o aplicativo | О приложении      | Kuhusu programu  | 关于      | AI proposal. The site's nav label "About us" is a different thing (the organisation).                                                 |
 
+**Hausa, Lingala, Malay, Tagalog (level 3, Latin script, to draft)**
+
+| #   | English              | `ha`     | `ln`     | `ms`     | `tl`     | Source   |
+| --- | -------------------- | -------- | -------- | -------- | -------- | -------- |
+| 1   | Book                 | to draft | to draft | to draft | to draft | none yet |
+| 2   | Chapter              | to draft | to draft | to draft | to draft | none yet |
+| 3   | Segment              | to draft | to draft | to draft | to draft | none yet |
+| 4   | Recording (noun)     | to draft | to draft | to draft | to draft | none yet |
+| 5   | Record               | to draft | to draft | to draft | to draft | none yet |
+| 6   | Stop recording       | to draft | to draft | to draft | to draft | none yet |
+| 7   | Play                 | to draft | to draft | to draft | to draft | none yet |
+| 8   | Pause                | to draft | to draft | to draft | to draft | none yet |
+| 9   | Share                | to draft | to draft | to draft | to draft | none yet |
+| 10  | Done                 | to draft | to draft | to draft | to draft | none yet |
+| 11  | Reset recording      | to draft | to draft | to draft | to draft | none yet |
+| 12  | Delete               | to draft | to draft | to draft | to draft | none yet |
+| 13  | Rename               | to draft | to draft | to draft | to draft | none yet |
+| 14  | Cancel               | to draft | to draft | to draft | to draft | none yet |
+| 15  | Edit                 | to draft | to draft | to draft | to draft | none yet |
+| 16  | Undo                 | to draft | to draft | to draft | to draft | none yet |
+| 17  | Menu                 | to draft | to draft | to draft | to draft | none yet |
+| 18  | Close                | to draft | to draft | to draft | to draft | none yet |
+| 19  | Back / Go back       | to draft | to draft | to draft | to draft | none yet |
+| 20  | Try again            | to draft | to draft | to draft | to draft | none yet |
+| 21  | Save                 | to draft | to draft | to draft | to draft | none yet |
+| 22  | Name                 | to draft | to draft | to draft | to draft | none yet |
+| 23  | Microphone           | to draft | to draft | to draft | to draft | none yet |
+| 24  | Phone                | to draft | to draft | to draft | to draft | none yet |
+| 25  | Space (on the phone) | to draft | to draft | to draft | to draft | none yet |
+| 26  | Licence              | to draft | to draft | to draft | to draft | none yet |
+| 27  | About                | to draft | to draft | to draft | to draft | none yet |
+
+**Tok Pisin, Turkish, Vietnamese (level 3, Latin script, to draft)**
+
+| #   | English              | `tpi`    | `tr`     | `vi`     | Source   |
+| --- | -------------------- | -------- | -------- | -------- | -------- |
+| 1   | Book                 | to draft | to draft | to draft | none yet |
+| 2   | Chapter              | to draft | to draft | to draft | none yet |
+| 3   | Segment              | to draft | to draft | to draft | none yet |
+| 4   | Recording (noun)     | to draft | to draft | to draft | none yet |
+| 5   | Record               | to draft | to draft | to draft | none yet |
+| 6   | Stop recording       | to draft | to draft | to draft | none yet |
+| 7   | Play                 | to draft | to draft | to draft | none yet |
+| 8   | Pause                | to draft | to draft | to draft | none yet |
+| 9   | Share                | to draft | to draft | to draft | none yet |
+| 10  | Done                 | to draft | to draft | to draft | none yet |
+| 11  | Reset recording      | to draft | to draft | to draft | none yet |
+| 12  | Delete               | to draft | to draft | to draft | none yet |
+| 13  | Rename               | to draft | to draft | to draft | none yet |
+| 14  | Cancel               | to draft | to draft | to draft | none yet |
+| 15  | Edit                 | to draft | to draft | to draft | none yet |
+| 16  | Undo                 | to draft | to draft | to draft | none yet |
+| 17  | Menu                 | to draft | to draft | to draft | none yet |
+| 18  | Close                | to draft | to draft | to draft | none yet |
+| 19  | Back / Go back       | to draft | to draft | to draft | none yet |
+| 20  | Try again            | to draft | to draft | to draft | none yet |
+| 21  | Save                 | to draft | to draft | to draft | none yet |
+| 22  | Name                 | to draft | to draft | to draft | none yet |
+| 23  | Microphone           | to draft | to draft | to draft | none yet |
+| 24  | Phone                | to draft | to draft | to draft | none yet |
+| 25  | Space (on the phone) | to draft | to draft | to draft | none yet |
+| 26  | Licence              | to draft | to draft | to draft | none yet |
+| 27  | About                | to draft | to draft | to draft | none yet |
+
+Every cell in these two tables is empty on purpose: "to draft" is a placeholder,
+not a proposal. A drafting lane fills a cell from the row's English and its Note
+in the first table, and returns it as an AI proposal like the others; nothing
+here has been read by a native speaker.
+
 Rows 5 to 8 and 10 to 16 are button and menu captions, so a lane may shorten
 the cell to a single word where the language allows it, and must then use that
-word everywhere the English word recurs. The Source column's "Verify" notes are
+word everywhere the English word recurs. The first table's Source column "Verify" notes are
 the questions to put to a reader when one is found; none blocks a draft.
 A cell that is the same as another row's cell in that language (`zh-Hans` 录音
 in rows 4 and 5), or the same as the English, is a Verify question too; the
@@ -384,7 +484,9 @@ What a lane must have in hand, and where each piece comes from.
 6. **The pending list.** A development build may carry a time-limited list of
    keys still falling back to English; the release gate requires it to be
    empty (#357, 2026-10-19). A lane that leaves a key out puts it on that list
-   rather than copying English in.
+   rather than copying English in. The English-only keys of section 1
+   (`phoneCheck*`, named in `src/lib/i18n/english-only.ts`) are the
+   exception: a lane leaves them out and does not put them on the list.
 7. **What a lane returns.** The draft values; a list of every term where it
    departed from section 5, with the reason; its Verify questions, each cell
    that matches another row or the English, naming that row or the English

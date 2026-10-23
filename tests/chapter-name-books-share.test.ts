@@ -28,6 +28,7 @@ const shelf = (): BookCard[] => [
     bookId,
     name: "Mark",
     number: 1,
+    licence: "all-rights-reserved",
     chapters: [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,

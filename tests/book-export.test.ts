@@ -22,6 +22,7 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import { getDb } from "@/lib/storage/db";
 import type { BookId } from "@/types/domain";
 import { audioAfterId3v2, clearAllStores, testCodec } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 const samples = (n: number, value: number): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -450,7 +451,8 @@ describe("exportBookZip — Finished chapters are joined, not re-encoded (#1004)
             segmentId,
             audio.clip.id,
             encodeMp3(clip.samples),
-            computePeaks(clip.samples, 4)
+            computePeaks(clip.samples, 4),
+            NO_STAGES_RUN
           )
         ).toBe("committed");
       }

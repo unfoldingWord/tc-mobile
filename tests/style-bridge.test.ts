@@ -295,3 +295,84 @@ describe("the batch-two pixel bridge stays mapped (#460)", () => {
     expect(primitiveValue(primitives, "--p-text-md")).toBe("13px");
   });
 });
+
+/**
+ * The pixel half of the arbitrary-value bridge, batch three (#460).
+ *
+ * Batch three covers `segments-screen.tsx`, `phone-check-screen.tsx` and
+ * `send-log-control.tsx`. Exact matches swapped: `gap-[14px]` to
+ * `--c-gap-items` in the segments screen, `text-[13px]` to `--p-text-md` and
+ * `text-[12px]` to `--p-text-sm` in the phone check, and `text-[12px]` to
+ * `--p-text-sm` in the send-log control. Equality is asserted below from the
+ * token declarations, not judged by eye. A follow-up swapped the four that
+ * first review found had exact primitives: `px-[4px]` and `gap-[4px]` to
+ * `--p-space-1`, `gap-[8px]` to `--p-space-3` and `text-[20px]` to
+ * `--p-text-20`. One utility stays as it is: `py-[2px]` has no token.
+ */
+describe("the batch-three pixel bridge stays mapped (#460)", () => {
+  const SWEPT = [
+    {
+      name: "segments-screen.tsx",
+      literals: [/gap-\[14px\]/, /px-\[4px\]/, /gap-\[8px\]/],
+    },
+    {
+      name: "phone-check-screen.tsx",
+      literals: [/text-\[13px\]/, /text-\[12px\]/, /text-\[20px\]/],
+    },
+    {
+      name: "send-log-control.tsx",
+      literals: [/text-\[12px\]/, /gap-\[4px\]/],
+    },
+  ].map((f) => ({
+    ...f,
+    // None of the three holds `//` or `/*` inside a string.
+    code: stripComments(readFileSync(path.join(COMPONENTS, f.name), "utf8")),
+  }));
+
+  it("sees all three swept files", () => {
+    expect(SWEPT.length).toBe(3);
+    for (const { code } of SWEPT) expect(code.length).toBeGreaterThan(0);
+  });
+
+  for (const { name, code, literals } of SWEPT) {
+    for (const literal of literals) {
+      it(`${name} does not carry the bare ${literal.source} this batch replaced`, () => {
+        expect(code).not.toMatch(literal);
+      });
+    }
+  }
+
+  const USES = [
+    ["segments-screen.tsx", /gap-\[var\(--c-gap-items\)\]/],
+    ["phone-check-screen.tsx", /text-\[length:var\(--p-text-md\)\]/],
+    ["phone-check-screen.tsx", /text-\[length:var\(--p-text-sm\)\]/],
+    ["send-log-control.tsx", /text-\[length:var\(--p-text-sm\)\]/],
+    ["segments-screen.tsx", /px-\[var\(--p-space-1\)\]/],
+    ["segments-screen.tsx", /gap-\[var\(--p-space-3\)\]/],
+    ["send-log-control.tsx", /gap-\[var\(--p-space-1\)\]/],
+    ["phone-check-screen.tsx", /text-\[length:var\(--p-text-20\)\]/],
+  ] as const;
+  for (const [file, pattern] of USES) {
+    it(`${file} still uses ${pattern.source}`, () => {
+      const hit = SWEPT.find((f) => f.name === file);
+      expect(hit?.code).toMatch(pattern);
+    });
+  }
+
+  it("--c-gap-items still resolves to 14px", () => {
+    const body = cssRule(componentTokens, ":root");
+    expect(declarationValue(body, "--c-gap-items")).toBe("var(--p-space-4)");
+    expect(primitiveValue(primitives, "--p-space-4")).toBe("14px");
+  });
+
+  it("--p-text-md and --p-text-sm still resolve to 13px and 12px", () => {
+    expect(primitiveValue(primitives, "--p-text-md")).toBe("13px");
+    expect(primitiveValue(primitives, "--p-text-sm")).toBe("12px");
+  });
+
+  it("--p-space-1, --p-space-3 and --p-text-20 still resolve to 4px, 8px and 20px", () => {
+    expect(primitiveValue(primitives, "--p-space-1")).toBe("4px");
+    expect(primitiveValue(primitives, "--p-space-3")).toBe("8px");
+    expect(primitiveValue(primitives, "--p-text-20")).toBe("20px");
+  });
+});

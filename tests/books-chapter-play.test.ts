@@ -98,6 +98,7 @@ const mark: BookCard = {
   name: "Mark",
   number: 1,
   coverColourKey: null,
+  licence: "CC-BY-SA-4.0",
   chapters: [chapter(1, 1), chapter(1, 2, { totalCount: 0, recordedCount: 0 })],
 };
 const ruth: BookCard = {

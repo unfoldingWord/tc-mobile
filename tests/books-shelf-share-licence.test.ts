@@ -21,6 +21,8 @@ import { idleChapterAudio } from "./chapter-audio";
 
 const mocks = vi.hoisted(() => ({
   books: [] as BookCard[],
+  setBookLicence: vi.fn(),
+  reload: vi.fn(),
   prepare: vi.fn<
     (
       bookId: string,
@@ -41,7 +43,7 @@ vi.mock("@/hooks/use-books", () => ({
     loaded: true,
     error: null,
     deleteFailed: false,
-    reload: vi.fn(),
+    reload: mocks.reload,
     createBook: vi.fn(),
     addChapter: vi.fn(),
     renameBook: vi.fn(),
@@ -65,6 +67,9 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
+vi.mock("@/lib/storage/licence", () => ({
+  setBookLicence: mocks.setBookLicence,
+}));
 vi.mock("@/hooks/failure-log", () => ({
   useFailureCount: () => 0,
   useMarkedFailureCount: () => 0,
@@ -79,6 +84,8 @@ let root: Root;
 
 beforeEach(() => {
   mocks.prepare.mockClear();
+  mocks.setBookLicence.mockReset();
+  mocks.reload.mockReset();
   document.body.innerHTML = "<div id='root'></div>";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   root = createRoot(document.getElementById("root")!);
@@ -88,7 +95,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function shelfShare(licence: BookCard["licence"]) {
+async function shelfShare(licence: BookCard["licence"], pick?: string) {
   mocks.books = [
     { bookId: mark, name: "Mark", number: 1, licence, chapters: [] },
   ];
@@ -114,6 +121,20 @@ async function shelfShare(licence: BookCard["licence"]) {
   };
   await tap(strings.bookMenuOpen("Mark"));
   await tap(strings.shareBook);
+  if (pick) {
+    // A book with no licence asks first and prepares nothing from the tap
+    // (#1455); the pick is stored, and only then does the share run.
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    mocks.setBookLicence.mockImplementation(
+      async (_id: string, chosen: string) => ({ id: mark, licence: chosen })
+    );
+    const row = document.querySelector<HTMLElement>(
+      `[role="radio"][data-licence="${pick}"]`
+    )!;
+    await act(async () => row.click());
+    await tap(strings.licenceAskContinue);
+    expect(mocks.setBookLicence).toHaveBeenCalledWith(mark, pick);
+  }
   expect(mocks.prepare).toHaveBeenCalledTimes(1);
   const [, zip, nameChapter] = mocks.prepare.mock.calls[0]!;
   return { zip, chapter: nameChapter(4, null, 4) };
@@ -127,10 +148,178 @@ describe("the shelf's Share Book names its files with the licence (#1579)", () =
     });
   });
 
-  it("tags nothing for a book with no licence", async () => {
-    expect(await shelfShare(null)).toEqual({
-      zip: "Mark.zip",
-      chapter: "Mark - 04 Chapter 4.mp3",
+  it("asks a book with no licence first, writes the pick, then tags the files with it (#1455)", async () => {
+    expect(await shelfShare(null, "CC-BY-4.0")).toEqual({
+      zip: "Mark (CC BY 4.0).zip",
+      chapter: "Mark - 04 Chapter 4 (CC BY 4.0).mp3",
     });
+  });
+
+  it("shares and writes nothing when the ask is cancelled (#1455)", async () => {
+    await expect(
+      shelfShare(null, undefined).catch(() => "no-prepare")
+    ).resolves.toBe("no-prepare");
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+    const cancel = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === strings.licenceAskCancel
+    )!;
+    await act(async () => cancel.click());
+    expect(mocks.setBookLicence).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+  });
+
+  it("never asks a book that already has a licence, a template book included (D5)", async () => {
+    await shelfShare("all-rights-reserved");
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(mocks.setBookLicence).not.toHaveBeenCalled();
+  });
+
+  it("keeps the ask up while the write is in flight, then shares with the pick", async () => {
+    let release: (book: unknown) => void = () => {};
+    mocks.setBookLicence.mockImplementation(
+      () => new Promise((resolve) => (release = resolve))
+    );
+    mocks.books = [
+      { bookId: mark, name: "Mark", number: 1, licence: null, chapters: [] },
+    ];
+    await act(async () => {
+      root.render(
+        createElement(BooksScreen, {
+          audio: idleChapterAudio(),
+          onOpenChapter: vi.fn(),
+          pushLayer: vi.fn<(layer: Layer) => void>(),
+          popLayer: vi.fn<(id: string) => void>(),
+        })
+      );
+    });
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (b) => b.getAttribute("aria-label") === label
+      )!;
+    const click = async (el: HTMLElement) =>
+      act(async () => {
+        el.focus();
+        el.click();
+      });
+    await click(byLabel(strings.bookMenuOpen("Mark")));
+    await click(byLabel(strings.shareBook));
+    await click(byLabel(strings.licenceAskContinue));
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+
+    // Cancel, a second pick and the sheet's own Close are all inert mid-write.
+    const cancel = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === strings.licenceAskCancel
+    )!;
+    await click(cancel);
+    await click(
+      document.querySelector<HTMLElement>(
+        '[role="radio"][data-licence="CC0-1.0"]'
+      )!
+    );
+    await click(byLabel(strings.menuClose));
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+
+    await act(async () => release({ id: mark, licence: "CC-BY-SA-4.0" }));
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+    expect(mocks.setBookLicence).toHaveBeenCalledWith(mark, "CC-BY-SA-4.0");
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    expect(mocks.prepare.mock.calls[0]![1]).toBe("Mark (CC BY-SA 4.0).zip");
+  });
+
+  it("keeps the book-menu layer busy while the write is in flight, so Back cannot drop it", async () => {
+    let release: (book: unknown) => void = () => {};
+    mocks.setBookLicence.mockImplementation(
+      () => new Promise((resolve) => (release = resolve))
+    );
+    mocks.books = [
+      { bookId: mark, name: "Mark", number: 1, licence: null, chapters: [] },
+    ];
+    const layers: Layer[] = [];
+    await act(async () => {
+      root.render(
+        createElement(BooksScreen, {
+          audio: idleChapterAudio(),
+          onOpenChapter: vi.fn(),
+          pushLayer: (layer: Layer) => layers.push(layer),
+          popLayer: vi.fn<(id: string) => void>(),
+        })
+      );
+    });
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (b) => b.getAttribute("aria-label") === label
+      )!;
+    const click = async (el: HTMLElement) =>
+      act(async () => {
+        el.focus();
+        el.click();
+      });
+    await click(byLabel(strings.bookMenuOpen("Mark")));
+    await click(byLabel(strings.shareBook));
+    const menu = () => layers.filter((l) => l.id === "books:book-menu").at(-1)!;
+    // Asking, not yet saving: Back may close the sheet.
+    expect(menu().busy()).toBe(false);
+    await click(byLabel(strings.licenceAskContinue));
+
+    // Saving: the adapter reads busy() and, when true, neither dismisses nor
+    // unregisters the layer, however many Backs arrive.
+    for (let back = 0; back < 3; back++) expect(menu().busy()).toBe(true);
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+
+    // Settled: busy lifts, and a normal dismissal closes the sheet.
+    await act(async () => release({ id: mark, licence: "CC-BY-SA-4.0" }));
+    expect(menu().busy()).toBe(false);
+    await act(async () => menu().dismiss());
+    expect(document.querySelector("[role='dialog']")).toBeNull();
+  });
+
+  it("keeps the chosen licence when the shelf reload fails, so a second Share does not ask again", async () => {
+    mocks.reload.mockImplementation(() => {
+      throw new Error("reload failed");
+    });
+    mocks.setBookLicence.mockImplementation(
+      async (_id: string, chosen: string) => ({ id: mark, licence: chosen })
+    );
+    // The shelf keeps handing back a card whose licence is still null.
+    mocks.books = [
+      { bookId: mark, name: "Mark", number: 1, licence: null, chapters: [] },
+    ];
+    await act(async () => {
+      root.render(
+        createElement(BooksScreen, {
+          audio: idleChapterAudio(),
+          onOpenChapter: vi.fn(),
+          pushLayer: vi.fn<(layer: Layer) => void>(),
+          popLayer: vi.fn<(id: string) => void>(),
+        })
+      );
+    });
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (b) => b.getAttribute("aria-label") === label
+      )!;
+    const click = async (el: HTMLElement) =>
+      act(async () => {
+        el.focus();
+        el.click();
+      });
+    await click(byLabel(strings.bookMenuOpen("Mark")));
+    await click(byLabel(strings.shareBook));
+    await click(
+      document.querySelector<HTMLElement>(
+        '[role="radio"][data-licence="CC0-1.0"]'
+      )!
+    );
+    await click(byLabel(strings.licenceAskContinue));
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+
+    await click(byLabel(strings.shareBook));
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+    expect(mocks.prepare).toHaveBeenCalledTimes(2);
+    expect(mocks.prepare.mock.calls[1]![1]).toBe("Mark (CC0 1.0).zip");
   });
 });

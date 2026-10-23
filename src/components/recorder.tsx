@@ -538,7 +538,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // render state (Frank F3 / George G3): two taps in one frame both read
     // `heldRetrying === false` and each mint a fresh clip through `saveRecording`,
     // orphaning one. A ref answers for the current moment — the same shape as
-    // `closing.current` and `use-save-take`'s `savingRef`, which exist for this race.
+    // `closing.current` and `use-save-take`'s slot `saving` guard, which exist for this race.
     const heldRetryingRef = useRef(false);
     // The synchronous in-flight latch for Share (George R2 B-6): a same-gesture
     // double-tap before the OS sheet paints could fire a second `navigator.share`,
@@ -4231,6 +4231,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}
+          // The typed name, drawn whole at the top of the menu (#1284).
+          chapterName={view?.chapterName}
           // The header's own chapter chip text (#1230), so the ⋮ menu's
           // sheet head always matches the header it was opened from.
           chapterHeading={view ? chapterHeading : undefined}

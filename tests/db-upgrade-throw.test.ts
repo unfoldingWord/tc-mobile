@@ -22,7 +22,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
  */
 
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 
 async function wipe(): Promise<void> {
   await closeDb();
@@ -308,5 +308,132 @@ describe.each([
       clipKeys: [CLIP_KEY],
       clipBytes: Array.from(CLIP_BYTES),
     });
+  });
+});
+
+/**
+ * Make the Nth `books` write fail only AFTER the `versionchange` transaction
+ * has committed: the write returns a promise (not a request) that rejects
+ * `delayMs` after the transaction's `complete` (at once when 0), so nothing
+ * keeps the transaction open while the step waits on it. With a delay, the
+ * native open has already succeeded by the time the step fails. No current
+ * step can do this (each awaits IDB requests only); it stands in for a step
+ * that awaits something that is not IndexedDB.
+ */
+function failBooksPutAfterCommitAt(nth: number, delayMs: number) {
+  const realPut = IDBObjectStore.prototype.put;
+  let calls = 0;
+  return vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+    this: IDBObjectStore,
+    ...args
+  ) {
+    if (this.name === "books" && ++calls === nth) {
+      const tx = this.transaction;
+      return new Promise((_, reject) => {
+        const fail = () =>
+          reject(new Error("simulated fault after the upgrade committed"));
+        tx.addEventListener("complete", () => {
+          if (delayMs === 0) fail();
+          else setTimeout(fail, delayMs);
+        });
+      }) as unknown as IDBRequest<IDBValidKey>;
+    }
+    return realPut.apply(this, args);
+  });
+}
+
+describe.each([
+  { delayMs: 0, when: "on the transaction's complete" },
+  { delayMs: 25, when: "after the native open succeeded" },
+])("a fault that surfaces $when", ({ delayMs }) => {
+  it("closes the connection and rejects the open with the fault, rather than opening a half-migrated database", async () => {
+    await seed(9);
+    failBooksPutAfterCommitAt(4, delayMs);
+    const close = vi.spyOn(IDBDatabase.prototype, "close");
+
+    await expect(getDb()).rejects.toThrow(
+      "simulated fault after the upgrade committed"
+    );
+    // The connection the open produced is closed, not left holding the
+    // database with nothing referring to it.
+    expect(close).toHaveBeenCalledTimes(1);
+
+    vi.restoreAllMocks();
+    // The commit itself cannot be undone from the open: the version moved.
+    // That is what the rejection reports.
+    expect((await readRaw()).version).toBe(APP_VERSION);
+  });
+});
+
+describe("a throw inside the v14 upgrade (#1433)", () => {
+  /** A v13 database holding five clip rows without `processing`. */
+  async function seedV13Clips() {
+    const db = await openDB(DB_NAME, 13, {
+      upgrade(upgrading) {
+        createStores(upgrading);
+        createV12Stores(upgrading);
+        upgrading
+          .createObjectStore("takeDispositions", { keyPath: "clipId" })
+          .createIndex("bySegment", "segmentId");
+      },
+    });
+    for (let i = 1; i <= 5; i++) {
+      await db.put("clipMeta", {
+        id: `c${i}`,
+        sampleRate: 44100,
+        frameCount: 4,
+        durationMs: 1,
+        createdAt: i,
+        encoding: "mp3",
+        generation: 1,
+        byteLength: 8,
+        transcodeStallCount: 0,
+        peaks: null,
+      });
+    }
+    await db.put("clipData", CLIP_BYTES.slice().buffer, CLIP_KEY);
+    const clips = await db.getAll("clipMeta");
+    db.close();
+    return clips;
+  }
+
+  /** The Nth `clipMeta` cursor update throws, after a stray clip write. */
+  function failClipMetaUpdateAt(nth: number) {
+    const realUpdate = IDBCursor.prototype.update;
+    let calls = 0;
+    return vi.spyOn(IDBCursor.prototype, "update").mockImplementation(function (
+      this: IDBCursor,
+      ...args
+    ) {
+      const store = this.source as IDBObjectStore;
+      if (store.name === "clipMeta" && ++calls === nth) {
+        store.transaction
+          .objectStore("clipData")
+          .put(new Uint8Array([9, 9, 9]).buffer, PARTIAL_CLIP_KEY);
+        throw new Error("simulated fault inside the upgrade");
+      }
+      return realUpdate.apply(this, args);
+    });
+  }
+
+  it("rejects the open, keeps version 13 and every clip row as it was, then migrates cleanly on the retry", async () => {
+    const before = await seedV13Clips();
+    failClipMetaUpdateAt(4);
+
+    await expect(getDb()).rejects.toThrow("simulated fault inside the upgrade");
+    vi.restoreAllMocks();
+
+    const raw = await openDB(DB_NAME);
+    expect(raw.version).toBe(13);
+    expect(await raw.getAll("clipMeta")).toEqual(before);
+    expect((await raw.getAllKeys("clipData")).map(String)).toEqual([CLIP_KEY]);
+    raw.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await db.getAll("clipMeta")).toEqual(
+      before.map((c) => ({ ...c, processing: null }))
+    );
+    expect((await db.getAllKeys("clipData")).map(String)).toEqual([CLIP_KEY]);
   });
 });

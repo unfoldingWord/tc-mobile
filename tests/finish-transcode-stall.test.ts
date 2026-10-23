@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 import type { SegmentAudio } from "@/lib/storage/segment-audio";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
@@ -69,6 +70,7 @@ function pcmClip(id: ClipId, samples: Int16Array): Clip {
       byteLength: samples.length * 2,
       transcodeStallCount: 0,
       peaks: null,
+      processing: null,
     },
     samples,
   };
@@ -250,7 +252,8 @@ describe("requestTranscodeSweep — a stalled encoder", () => {
         sid("s2"),
         cid("c2"),
         expect.any(Uint8Array),
-        expect.anything()
+        expect.anything(),
+        NO_STAGES_RUN
       );
       expect(errorSpy).toHaveBeenCalledTimes(1);
     } finally {

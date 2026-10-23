@@ -3,8 +3,10 @@ import { useCallback, useSyncExternalStore } from "react";
 import { reportFailure } from "./report-failure";
 import {
   ALWAYS_CHAPTER_NUMBER_KEY,
+  NORMALIZE_ON_FINISHED_KEY,
   chapterNameShown,
   readStoredAlwaysChapterNumber,
+  readStoredNormalizeOnFinished,
   storeAlwaysChapterNumber,
 } from "@/lib/settings";
 import { strings } from "@/lib/strings";
@@ -88,4 +90,21 @@ export function useAlwaysChapterNumberSetting(): {
     }
   }, []);
   return { on, toggle };
+}
+
+/**
+ * Whether the Finished transcode evens out a segment's loudness (#1433, U6b).
+ * Read per segment by the sweep, outside React, so a change applies from the
+ * next segment on and never to one already finished.
+ */
+export function normalizeOnFinished(): boolean {
+  try {
+    return readStoredNormalizeOnFinished(
+      window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)
+    );
+  } catch {
+    // Not reported, for `readAlwaysChapterNumber`'s reason: storage that
+    // cannot be read falls back to the default, nothing to act on.
+    return readStoredNormalizeOnFinished(null);
+  }
 }
