@@ -111,4 +111,14 @@ describe("completeLocales and the English-only keys", () => {
     expect(resolveLocale(["ru-RU"], completeLocales()).tag).toBe("ru");
     expect(resolveLocale(["ru", "es"], completeLocales()).tag).toBe("ru");
   });
+
+  it("counts zh-Hans complete, and resolves every Chinese phone to it (#1458, R19)", () => {
+    expect(tags()).toContain("zh-Hans");
+    const zh = LOCALE_OVERRIDES["zh-Hans"] as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(zh, key)).toBe(false);
+    for (const phone of ["zh-CN", "zh-Hans", "zh-TW", "zh-Hant-HK"]) {
+      expect(resolveLocale([phone], completeLocales()).tag).toBe("zh-Hans");
+    }
+    expect(resolveLocale(["zh", "es"], completeLocales()).tag).toBe("zh-Hans");
+  });
 });

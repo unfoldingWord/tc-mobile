@@ -123,7 +123,7 @@ describe("applyPhoneLocale, at launch", () => {
   it("ships English for a language whose real table is incomplete", () => {
     empty(tables.fr);
     empty(tables.ar);
-    applyPhoneLocale(["fr", "ar", "zh-TW"]);
+    applyPhoneLocale(["fr", "ar"]);
     expect(activeLocale()).toBe(SHIPPED_LOCALE);
     expect(word()).toBe("Menu");
   });
