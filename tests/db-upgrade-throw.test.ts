@@ -22,7 +22,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
  */
 
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 
 async function wipe(): Promise<void> {
   await closeDb();

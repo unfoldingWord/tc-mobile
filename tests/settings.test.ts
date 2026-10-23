@@ -7,6 +7,7 @@ import { one, render } from "./render";
 import {
   chapterNameShown,
   readStoredAlwaysChapterNumber,
+  readStoredNormalizeOnFinished,
   storeAlwaysChapterNumber,
 } from "@/lib/settings";
 import { strings } from "@/lib/strings";
@@ -44,6 +45,15 @@ describe("the always-chapter-number setting (S12, #1575)", () => {
     expect(strings.chapterHeading(chapterNameShown(null, true), 3)).toBe(
       strings.chapterName(3)
     );
+  });
+});
+
+describe("the normalize-on-Finished preference (#1433, U6b)", () => {
+  it("is on when nothing is stored, and on anything but an explicit off", () => {
+    expect(readStoredNormalizeOnFinished(null)).toBe(true);
+    expect(readStoredNormalizeOnFinished("1")).toBe(true);
+    expect(readStoredNormalizeOnFinished("")).toBe(true);
+    expect(readStoredNormalizeOnFinished("0")).toBe(false);
   });
 });
 

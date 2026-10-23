@@ -62,6 +62,7 @@ function pcmClip(id: ClipId, samples: Int16Array): Clip {
       byteLength: samples.length * 2,
       transcodeStallCount: 0,
       peaks: null,
+      processing: null,
     },
     samples,
   };
@@ -151,6 +152,7 @@ describe("transcode sweep restart on encoder health recovery (#404)", () => {
         sid("p06"),
         cid("c06"),
         expect.any(Uint8Array),
+        expect.anything(),
         expect.anything()
       );
       expect(healthListener).not.toBeNull();
@@ -163,6 +165,7 @@ describe("transcode sweep restart on encoder health recovery (#404)", () => {
           sid("p06"),
           cid("c06"),
           expect.any(Uint8Array),
+          expect.anything(),
           expect.anything()
         );
       });

@@ -13,7 +13,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 
 /**
  * What the v12 step (#1462, docs/design/v12-schema.md) adds to a row that had
@@ -31,6 +31,8 @@ const V12_ROW = { createdAt: null, modifiedAt: null, templateKey: null };
  * docs/design/pending-take-lifecycle.md §2): the v12 fields plus that one.
  */
 const V13_SEGMENT = { ...V12_ROW, audioRevision: 0 };
+/** A clip row climbing to v14 gains `processing: null` (#1433), and only that. */
+const V14_CLIP = { processing: null };
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -361,7 +363,10 @@ describe("v9 book cover-colour backfill (append-only)", () => {
       ...V13_SEGMENT,
     });
     expect(await v9.get("takes", "t1" as never)).toEqual(priorTake);
-    expect(await v9.get("clipMeta", "c1" as never)).toEqual(priorMeta);
+    expect(await v9.get("clipMeta", "c1" as never)).toEqual({
+      ...priorMeta,
+      ...V14_CLIP,
+    });
     const data = await v9.get("clipData", "c1" as never);
     expect(data).toBeInstanceOf(ArrayBuffer);
     expect(Array.from(new Int16Array(data as ArrayBuffer))).toEqual([
@@ -455,6 +460,7 @@ describe("v8 segment-label backfill (append-only)", () => {
       expect(await v8.get("clipMeta", "c1" as never)).toEqual({
         ...priorMeta,
         transcodeStallCount: version === 7 ? 3 : 0,
+        ...V14_CLIP,
       });
       expect(await v8.get("takes", "t1" as never)).toEqual(priorTake);
       // The audio behind the segment is untouched.
@@ -797,6 +803,7 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
       byteLength: 20,
       peaks: null,
       transcodeStallCount: 0,
+      ...V14_CLIP,
     });
   });
 
@@ -1471,7 +1478,9 @@ function expectNarrowedToBefore(
 ): void {
   expect(after.data).toEqual(before.data);
   expect(after.rows.takes).toEqual(before.rows.takes);
-  expect(after.rows.clipMeta).toEqual(before.rows.clipMeta);
+  expect(after.rows.clipMeta).toEqual(
+    (before.rows.clipMeta as object[]).map((row) => ({ ...row, ...V14_CLIP }))
+  );
   for (const store of ["chapters", "segments"] as const) {
     const added = store === "segments" ? V13_SEGMENT : V12_ROW;
     const addedKeys = Object.keys(added);
@@ -2029,7 +2038,7 @@ describe("the v12 → v13 schema (#38)", () => {
     for (const store of Object.keys(before.rows) as Array<
       keyof typeof before.rows
     >) {
-      if (store === "segments") continue;
+      if (store === "segments" || store === "clipMeta") continue;
       expect(after.rows[store]).toEqual(before.rows[store]);
     }
     expect(after.rows.segments).toEqual(
@@ -2037,6 +2046,9 @@ describe("the v12 → v13 schema (#38)", () => {
         ...s,
         audioRevision: 0,
       }))
+    );
+    expect(after.rows.clipMeta).toEqual(
+      (before.rows.clipMeta as object[]).map((c) => ({ ...c, ...V14_CLIP }))
     );
     await expectEveryRecordingResolves(clips);
     expect(await db.count("takeDispositions")).toBe(0);
@@ -2117,9 +2129,9 @@ describe("the v12 → v13 schema (#38)", () => {
     ).toEqual(["c1", "c2"]);
   });
 
-  it("a fresh install opens at 13 with an empty takeDispositions, and addSegment writes audioRevision 0", async () => {
+  it("a fresh install opens at the current version with an empty takeDispositions, and addSegment writes audioRevision 0", async () => {
     const db = await getDb();
-    expect(db.version).toBe(13);
+    expect(db.version).toBe(APP_VERSION);
     expect(await db.count("takeDispositions")).toBe(0);
     const { addChapter, addSegment, createBook } =
       await import("@/lib/storage/books");
@@ -2128,7 +2140,7 @@ describe("the v12 → v13 schema (#38)", () => {
     expect((await addSegment(chapter.id)).audioRevision).toBe(0);
   });
 
-  it("a database at 13 refuses an open at 12, and every row and clip byte is unchanged", async () => {
+  it("a database at the current version refuses an open at 12, and every row and clip byte is unchanged", async () => {
     // What a build at 12 meets: IndexedDB's VersionError, which that build's
     // `getDb` maps to DatabaseDowngradeError (tests/db-open.test.ts pins the
     // mapping). Nothing is written.
@@ -2143,10 +2155,110 @@ describe("the v12 → v13 schema (#38)", () => {
       name: "VersionError",
     });
     const raw = await openDB(DB_NAME);
-    expect(raw.version).toBe(13);
+    expect(raw.version).toBe(APP_VERSION);
     expect(
       await snapshotAll(raw as unknown as IDBPDatabase<TcMobileDb>)
     ).toEqual(before);
     raw.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v14 (#1433): the clip's processing record
+// ---------------------------------------------------------------------------
+
+/** Stand up the v13 schema: v12's stores plus `takeDispositions` and the base index. */
+async function openLegacyV13() {
+  const legacy = await openLegacyV12();
+  legacy.close();
+  return openDB(DB_NAME, 13, {
+    upgrade(_db, _old, _new, tx) {
+      _db
+        .createObjectStore("takeDispositions", { keyPath: "clipId" })
+        .createIndex("bySegment", "segmentId");
+      tx.objectStore("pendingTakes").createIndex(
+        "bySourceClip",
+        "base.sourceClipId"
+      );
+    },
+  });
+}
+
+/** A clip row as a v13 build wrote it: no `processing`. */
+const v13ClipMeta = (id: string, encoding: "pcm" | "mp3") => ({
+  id,
+  sampleRate: 44100,
+  frameCount: 10,
+  durationMs: 1,
+  createdAt: 7,
+  encoding,
+  generation: encoding === "mp3" ? 1 : 0,
+  byteLength: encoding === "mp3" ? 4 : 20,
+  transcodeStallCount: 0,
+  peaks: null,
+});
+
+describe("the v13 → v14 schema (#1433)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("gives every clip row processing null and changes nothing else, reading no clock", async () => {
+    const v13 = await openLegacyV13();
+    await v13.put("clipMeta", v13ClipMeta("pcm-1", "pcm"));
+    await v13.put("clipMeta", v13ClipMeta("mp3-1", "mp3"));
+    await v13.put("clipData", Int16Array.from([1, 2]).buffer, "pcm-1");
+    await v13.put("segments", { ...v12Segment("s1"), audioRevision: 3 });
+    const before = await snapshotAll(
+      v13 as unknown as IDBPDatabase<TcMobileDb>
+    );
+    v13.close();
+
+    vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+    const db = await getDb();
+    expect(db.version).toBe(14);
+    const after = await snapshotAll(db);
+    // U6c: an already-finished clip is not back-filled with a record, only null.
+    expect(after.rows.clipMeta).toEqual([
+      { ...v13ClipMeta("mp3-1", "mp3"), processing: null },
+      { ...v13ClipMeta("pcm-1", "pcm"), processing: null },
+    ]);
+    expect(after.data).toEqual(before.data);
+    for (const store of Object.keys(before.rows) as Array<
+      keyof typeof before.rows
+    >) {
+      if (store === "clipMeta") continue;
+      expect(after.rows[store]).toEqual(before.rows[store]);
+    }
+  });
+
+  it("leaves a clip row that already carries processing alone, and writes nothing", async () => {
+    const record = {
+      stages: [{ id: "hpf", version: 1 }],
+      measuredLufs: -20,
+      measuredTruePeakDbtp: -3,
+      appliedGainDb: 1,
+    };
+    const v13 = await openLegacyV13();
+    await v13.put("clipMeta", {
+      ...v13ClipMeta("c1", "mp3"),
+      processing: record,
+    });
+    v13.close();
+
+    const writes = countWrites();
+    const db = await getDb();
+    expect(writes).toEqual({});
+    vi.restoreAllMocks();
+    expect((await db.get("clipMeta", "c1" as never))?.processing).toEqual(
+      record
+    );
+  });
+
+  it("a fresh clip is written with processing null", async () => {
+    const { buildClipMeta } = await import("@/lib/storage/clips");
+    expect(
+      buildClipMeta("c" as never, Int16Array.of(1), 44100, 0).processing
+    ).toBeNull();
   });
 });

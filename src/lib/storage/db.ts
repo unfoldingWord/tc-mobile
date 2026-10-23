@@ -139,6 +139,14 @@
  * Takes, clips and pending rows are not read. It is a version step, not an
  * optional field, so that no build without the rules in that note's
  * "compatibility boundary" can write the same database.
+ *
+ * ── v14 (#1433): the clip's processing record — append-only ──
+ *
+ * `ClipMeta` gained `processing`: which stages of the Finished chain ran and
+ * at which version, the measured loudness and true peak, and the applied
+ * gain. The v14 step stamps `processing: null` on every clip row that lacks
+ * the field, keyed on absence, and touches nothing else. It reads no clock.
+ * A clip finished before v14 keeps `null` and is never back-filled (U6c).
  */
 
 import {
@@ -166,7 +174,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 13;
+const DB_VERSION = 14;
 
 /**
  * What the v12 step adds to a row that lacks it, per store. Plain data and no
@@ -687,6 +695,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 byteLength: legacy.frameCount * 2,
                 transcodeStallCount: 0,
                 peaks: null,
+                processing: null,
               };
               await cursor.update(stamped);
             }
@@ -866,6 +875,19 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             const row: Omit<Segment, "audioRevision"> = cursor.value;
             if (!("audioRevision" in row)) {
               await cursor.update({ ...row, audioRevision: 0 });
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v14 (#1433): every clip row without a processing record gets null.
+        // Keyed on absence, so a record a newer build wrote is left alone.
+        if (oldVersion < 14) {
+          let cursor = await tx.objectStore("clipMeta").openCursor();
+          while (cursor) {
+            const row: Omit<ClipMeta, "processing"> = cursor.value;
+            if (!("processing" in row)) {
+              await cursor.update({ ...row, processing: null });
             }
             cursor = await cursor.continue();
           }

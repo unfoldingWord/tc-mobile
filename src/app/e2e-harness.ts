@@ -48,6 +48,7 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import { exportChapterMp3, SEGMENT_GAP_SECONDS } from "@/lib/export/chapter";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { IDBPDatabase } from "idb";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 export interface EncodeDecodeResult {
   /** Bytes of the MP3 the worker returned. */
@@ -718,7 +719,13 @@ async function buildAndDecodeJoinedChapter(
     );
     // The real storage write a Finished segment's transcode sweep makes
     // (`hooks/finish-transcode.ts`), not a hand-rolled IndexedDB seed.
-    const outcome = await commitTranscode(segment.id, clipId, mp3, peaks);
+    const outcome = await commitTranscode(
+      segment.id,
+      clipId,
+      mp3,
+      peaks,
+      NO_STAGES_RUN
+    );
     if (outcome !== "committed") {
       throw new Error(`commitTranscode did not commit: ${outcome}`);
     }

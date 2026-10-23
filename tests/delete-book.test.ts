@@ -29,6 +29,7 @@ import {
   storeOrphanClip,
   throwWhenStoreRequested,
 } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * Delete a Book (#337) — T1.
@@ -356,7 +357,9 @@ describe("deleteBook", () => {
 
     await deleteBook(book.id);
 
-    expect(await commitTranscode(segment.id, clipId, mp3, peaks)).toBe("stale");
+    expect(
+      await commitTranscode(segment.id, clipId, mp3, peaks, NO_STAGES_RUN)
+    ).toBe("stale");
     expect(await getSegment(segment.id)).toBeUndefined();
     expect(await getClipMeta(clipId)).toBeUndefined();
     expect(await getClip(clipId)).toBeUndefined();

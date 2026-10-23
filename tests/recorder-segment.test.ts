@@ -27,6 +27,7 @@ import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
 import * as peaksModule from "@/lib/audio/peaks";
 import type { SegmentId } from "@/types/domain";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * `loadRecorderSegmentView` is the React-free core of `useRecorderSegment` —
@@ -149,7 +150,8 @@ describe("loadRecorderSegmentView", () => {
       segmentId,
       clipId,
       encodeMp3(pcm),
-      computePeaks(pcm, 4)
+      computePeaks(pcm, 4),
+      NO_STAGES_RUN
     );
     expect(outcome).toBe("committed");
 
