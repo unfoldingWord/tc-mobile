@@ -29,9 +29,10 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  *   - or the box itself leaves the viewport sideways.
  * And for the page: `scrollWidth` over the viewport width.
  *
- * A locale that really overflows today is a `test.fail` entry in `KNOWN`, with
- * the overflow named, so the sweep stays green and goes red the day it is
- * fixed.
+ * A locale that really overflows today is an entry in `KNOWN` holding the
+ * exact findings it returns (#1665). Every case is a plain test that must get
+ * exactly that list, sorted, or `[]` when it has no entry: a new overflow, a
+ * fix, or a broken walk all turn it red.
  */
 test.use({ viewport: { width: 360, height: 740 } });
 
@@ -47,13 +48,37 @@ const SCREENS = [
 ] as const;
 type Screen = (typeof SCREENS)[number];
 
-/** Locale/screen pairs that overflow today. Empty means every pair fits. */
-const KNOWN: Partial<Record<`${Tag}/${Screen}`, string>> = {
-  "es/book-menu": '"Color de la portada" runs into "Eliminar"',
-  "fr/book-menu": '"Couleur de la couverture" runs into "Supprimer"',
-  "pt/book-menu": '"Compartilhar" runs into "Exportar"',
-  "ru/book-menu": '"Поделиться" runs into "Экспорт"',
+/**
+ * Locale/screen pairs that overflow today, with the exact findings (tracked in
+ * #1665). The detail must match `measure()`, not a paraphrase.
+ */
+const KNOWN: Partial<Record<`${Tag}/${Screen}`, Finding[]>> = {
+  "es/book-menu": [collision("Color de la portada", "Eliminar")],
+  "fr/book-menu": [collision("Couleur de la couverture", "Supprimer")],
+  "pt/book-menu": [collision("Compartilhar", "Exportar")],
+  "ru/book-menu": [collision("Поделиться", "Экспорт")],
 };
+
+function collision(a: string, b: string): Finding {
+  return {
+    what: "tile captions run into each other",
+    detail: `"${a}" and "${b}"`,
+  };
+}
+
+/**
+ * The nodes that show a name the translator typed. The design cuts these with
+ * an ellipsis on purpose; they are data, not translated labels. Every selector
+ * here sets `text-overflow: ellipsis` in `src/app/styles/o4/`.
+ */
+const NAME_NODES = [
+  ".segments-title",
+  ".row-title",
+  ".menu-panel:has(.name-edit) .t-title",
+  ".o4-crumb > span",
+  ".books-name",
+  ".books-chapter-title",
+].join(", ");
 
 async function switchLanguage(page: Page, tag: string) {
   await page.evaluate((t) => {
@@ -87,10 +112,16 @@ async function measure(
   page: Page,
   rootSelector: string | null
 ): Promise<Finding[]> {
+  if (rootSelector !== null) {
+    await expect(
+      page.locator(rootSelector).first(),
+      `${rootSelector} is not on the screen to measure`
+    ).toBeVisible();
+  }
   // The launch overlay covers the app for its first moments.
   await page.locator("#launch-intro").waitFor({ state: "hidden" });
   return page.evaluate(
-    ({ rootSelector }) => {
+    ({ rootSelector, nameNodes }) => {
       const viewportWidth = window.innerWidth;
       const out: { what: string; detail: string }[] = [];
       const doc = document.documentElement;
@@ -101,8 +132,9 @@ async function measure(
         });
       }
       const root: ParentNode = rootSelector
-        ? (document.querySelector(rootSelector) ?? document)
+        ? (document.querySelector(rootSelector) as ParentNode)
         : document;
+      if (root === null) throw new Error(`${rootSelector} is missing`);
       const controls = Array.from(
         root.querySelectorAll<HTMLElement>(
           'button, a[href], [role="button"], [role="switch"], [role="tab"], [role="menuitem"], label, summary, input, select, textarea'
@@ -131,9 +163,9 @@ async function measure(
           seen.add(el);
           if (el instanceof SVGElement) continue;
           const label = `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 40)} "${name(el)}"`;
-          // A name is cut with an ellipsis by design (crumbs, book, chapter
-          // and segment names); that is data, not a translated label.
-          if (getComputedStyle(el).textOverflow === "ellipsis") continue;
+          // A typed name is cut with an ellipsis by design; only those nodes
+          // are exempt, so a translated label cut the same way is a finding.
+          if (el.matches(nameNodes)) continue;
           // A tile's caption is deliberately wider than its 64 or 76 px
           // tile and centred under it; its fit is the caption-collision check
           // below, not this one.
@@ -207,7 +239,7 @@ async function measure(
       }
       return out;
     },
-    { rootSelector }
+    { rootSelector, nameNodes: NAME_NODES }
   );
 }
 
@@ -282,38 +314,38 @@ export async function sweep(
   }
 }
 
+const byDetail = (x: Finding, y: Finding) =>
+  `${x.what}|${x.detail}`.localeCompare(`${y.what}|${y.detail}`);
+
 for (const tag of LOCALES) {
   for (const screen of SCREENS) {
-    const known = KNOWN[`${tag}/${screen}`];
-    const run = known ? test.fail : test;
-    run(
-      `${tag} ${screen}: nothing overflows at 360px (#1458)${known ? ` [overflows today: ${known}]` : ""}`,
-      async ({ page }) => {
-        const findings = await sweep(page, tag, screen);
-        if (process.env.LOCALE_FIT_SHOT) {
-          await page.screenshot({
-            path: `${process.env.LOCALE_FIT_SHOT}/${tag}-${screen}.png`,
-          });
-        }
-        expect(
-          findings,
-          `${tag} ${screen}:\n${findings.map((f) => `${f.what}: ${f.detail}`).join("\n")}`
-        ).toEqual([]);
+    const known = KNOWN[`${tag}/${screen}`] ?? [];
+    test(`${tag} ${screen}: findings are ${known.length === 0 ? "none" : "exactly the known overflow (#1665)"} at 360px (#1458)`, async ({
+      page,
+    }) => {
+      const findings = await sweep(page, tag, screen);
+      if (process.env.LOCALE_FIT_SHOT) {
+        await page.screenshot({
+          path: `${process.env.LOCALE_FIT_SHOT}/${tag}-${screen}.png`,
+        });
       }
-    );
+      expect(
+        [...findings].sort(byDetail),
+        `${tag} ${screen}:\n${findings.map((f) => `${f.what}: ${f.detail}`).join("\n")}`
+      ).toEqual([...known].sort(byDetail));
+    });
   }
 }
 
 /**
- * The sweep has to be able to die. A viewport narrower than the controls need
- * must produce findings, and a label longer than its box must too; if either
- * returned nothing, the whole sweep above would be a green that measures
- * nothing.
+ * The sweep has to be able to die. Two guards: a label that cannot fit its box
+ * must be a finding, and so must a translated label saved only by an
+ * ellipsis; if either returned nothing the sweep above would measure nothing.
+ * A typed name cut by an ellipsis must stay exempt.
  */
 test("the sweep reports a control that cannot fit (mutation guard)", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 360, height: 740 });
   await seedToSegments(page);
   await page
     .getByRole("button", { name: "Back to books", exact: true })
@@ -321,8 +353,29 @@ test("the sweep reports a control that cannot fit (mutation guard)", async ({
   await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
   await page.addStyleTag({
     content:
-      ".books-shelf button, main button { white-space: nowrap !important; overflow: hidden !important; } button { padding-inline: 90px !important; }",
+      "main button { white-space: nowrap !important; overflow: hidden !important; } button { padding-inline: 90px !important; }",
   });
   const findings = await measure(page, null);
-  expect(findings.length).toBeGreaterThan(0);
+  expect(findings.map((f) => f.what)).toContain("label wider than its box");
+});
+
+test("the sweep still reports a translated label cut with an ellipsis, and exempts a typed name (mutation guard)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  await expect(dialog).toBeVisible();
+  await settled(page, '[role="dialog"]');
+  const label = dialog.getByRole("button", { name: /light screen/i }).first();
+  await expect(label).toBeVisible();
+  await label.evaluate((el) => {
+    const css = document.createElement("style");
+    css.textContent =
+      '[role="dialog"] button { width: 60px !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }';
+    document.head.append(css);
+    el.setAttribute("data-mutated", "1");
+  });
+  const findings = await measure(page, '[role="dialog"]');
+  expect(findings.map((f) => f.what)).toContain("label wider than its box");
 });
