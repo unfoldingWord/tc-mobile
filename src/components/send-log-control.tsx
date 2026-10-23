@@ -159,7 +159,7 @@ export function SendLogControl() {
           already IS the accessible name; this span repeats it on screen
           rather than saying it twice to a screen reader. */}
       <span
-        className="send-log-label text-ink-muted text-[12px]"
+        className="send-log-label text-ink-muted text-[length:var(--p-text-sm)]"
         aria-hidden="true"
       >
         {sendLogLabel(share.status === "ready", share.sendUnconfirmed)}
