@@ -135,7 +135,7 @@ export function SendLogControl() {
   const handoffView = handoff ? sendLogHandoffView(handoff) : null;
 
   return (
-    <div className="flex flex-col items-center gap-[4px]">
+    <div className="flex flex-col items-center gap-[var(--p-space-1)]">
       {share.status === "ready" ? (
         <Control icon={glyph} label={strings.shareSend} onClick={onSend} />
       ) : (

@@ -94,7 +94,7 @@ function SampleList({ samples }: { samples: readonly FontSample[] }) {
             lang={s.lang}
             dir={s.dir}
             translate="no"
-            className="text-ink text-[20px]"
+            className="text-ink text-[length:var(--p-text-20)]"
             data-phone-check-sample={s.id}
           >
             {s.text}
