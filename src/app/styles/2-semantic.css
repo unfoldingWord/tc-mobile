@@ -120,6 +120,11 @@
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
     --s-cover-plum: var(--p-plum-700);
+
+    /* The QR code (#1250). Fixed in BOTH themes: a scanner reads dark modules
+       on a light quiet zone, so the dark theme must not invert it. */
+    --s-qr-light: var(--p-cool-000);
+    --s-qr-dark: var(--p-cool-950);
   }
 
   :root[data-theme="light"] {
@@ -197,5 +202,10 @@
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
     --s-cover-plum: var(--p-plum-700);
+
+    /* The QR code (#1250). Fixed in BOTH themes: a scanner reads dark modules
+       on a light quiet zone, so the dark theme must not invert it. */
+    --s-qr-light: var(--p-cool-000);
+    --s-qr-dark: var(--p-cool-950);
   }
 }

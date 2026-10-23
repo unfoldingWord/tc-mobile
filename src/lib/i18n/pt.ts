@@ -520,6 +520,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "Abrir a política de privacidade",
   aboutThirdParty: "Componentes de código aberto",
   aboutTexts: "Textos das licenças",
+  aboutQrCaption: "Escaneie para obter o aplicativo",
   aboutContent: "Conteúdo incluído",
   aboutLanguageCodes: "Códigos de idioma: ISO 639-3, de iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Ler ${name}`,

@@ -63,9 +63,6 @@ const N4 = 10;
  * penalty score is lowest (ties go to the lower mask number). `options.mask`
  * forces a mask instead, which is how the standard's worked examples, given
  * with a stated mask, are reproduced.
- *
- * @pivotpending #1250 part 2: the About screen draws this matrix. Until that
- *   lane lands, the only reader is tests/qr.test.ts.
  */
 export function encodeQr(
   text: string,

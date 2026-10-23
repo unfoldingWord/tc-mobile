@@ -515,6 +515,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "गोपनीयता नीति खोलें",
   aboutThirdParty: "ओपन-सोर्स घटक",
   aboutTexts: "लाइसेंस के पाठ",
+  aboutQrCaption: "ऐप पाने के लिए स्कैन करें",
   aboutContent: "शामिल सामग्री",
   aboutLanguageCodes: "भाषा कोड: ISO 639-3, iso639-3.sil.org से।",
   aboutReadText: (name: string): string => `${name} पढ़ें`,
