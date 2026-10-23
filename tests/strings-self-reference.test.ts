@@ -412,7 +412,10 @@ describe("no complete locale table embeds beyond the English set (#169)", () => 
     expect(complete.length).toBeGreaterThanOrEqual(7);
     for (const code of complete) {
       const source = readFileSync(path.join(I18N_DIR, `${code}.ts`), "utf8");
-      expect(outwardReferences(source, "table").entries).toBeGreaterThan(100);
+      const { entries } = outwardReferences(source, "table");
+      // A partial table (first keys translated) is walked too; only a
+      // language with nothing pending must carry a full table.
+      expect(entries).toBeGreaterThan(PENDING[code]?.length === 0 ? 100 : 0);
     }
   });
 
@@ -450,6 +453,13 @@ describe("no complete locale table embeds beyond the English set (#169)", () => 
     ).toEqual({ c: ["this.z"] });
     expect(
       extraEmbeds(probe("a(n: number): string { return this.b(n); },"), base)
+    ).toEqual({});
+    // A proper subset: English embeds this.d and plural, the locale only this.d.
+    expect(
+      extraEmbeds(
+        probe("c(n: number): string { return `${this.d(n)} x`; },"),
+        base
+      )
     ).toEqual({});
   });
 });
