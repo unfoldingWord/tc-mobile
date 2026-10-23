@@ -144,8 +144,9 @@
  *
  * `ClipMeta` gained `processing`: which stages of the Finished chain ran and
  * at which version, the measured loudness and true peak, and the applied
- * gain. The v14 step gives every clip row that lacks the field a record,
- * keyed on absence, and touches nothing else. It reads no clock. A Finished
+ * gain. The v14 step classifies every clip row from any earlier version,
+ * keeps a record that is already decided, and touches nothing else. It
+ * reads no clock, and a re-run writes nothing. A Finished
  * segment's active clip that is still PCM (its transcode was owed at the
  * upgrade) gets `stages: []`, so it is encoded as it was; every other clip
  * gets `null`. A clip finished before v14 is never normalized (U6c).
@@ -882,14 +883,18 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           }
         }
 
-        // v14 (#1433): every clip row without a processing record gets one.
-        // Keyed on absence, so a record a newer build wrote is left alone.
-        // The active PCM clip of a Finished segment is a transcode still
-        // owed from before v14 (a stall, a full phone): it gets an explicit
-        // "no stage ran", so the sweep encodes it as it was (U6c, Frank R1
-        // P2 on #1679). Every other clip gets null, eligible for the chain
-        // once Finished. "affirmed" is the Finished status as v13 stores it,
-        // frozen here rather than read from `takes.ts`, which imports this.
+        // v14 (#1433): every clip row is classified here, whatever version
+        // it came from. The active PCM clip of a Finished segment is a
+        // transcode still owed from before v14 (a stall, a full phone): it
+        // gets an explicit "no stage ran", so the sweep encodes it as it was
+        // (U6c, Frank R1 P2 on #1679). Every other clip gets null, eligible
+        // for the chain once Finished. A null already on the row is not a
+        // decision: before v14 only the v4 stamp in this same upgrade writes
+        // one (Frank R2 P2), so it is classified like an absent field. A
+        // record with stages or `stages: []` is kept, which is what makes a
+        // re-run write nothing. "affirmed" is the Finished status as v13
+        // stores it, frozen here rather than read from `takes.ts`, which
+        // imports this.
         if (oldVersion < 14) {
           const owedClips = new Set<string>();
           let segment = await tx.objectStore("segments").openCursor();
@@ -903,9 +908,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           }
           let cursor = await tx.objectStore("clipMeta").openCursor();
           while (cursor) {
-            const row: Omit<ClipMeta, "processing"> = cursor.value;
-            if (!("processing" in row)) {
-              const owed = row.encoding === "pcm" && owedClips.has(row.id);
+            const row: Omit<ClipMeta, "processing"> &
+              Partial<Pick<ClipMeta, "processing">> = cursor.value;
+            const owed = row.encoding === "pcm" && owedClips.has(row.id);
+            const undecided = row.processing === undefined;
+            if (undecided || (row.processing === null && owed)) {
               await cursor.update({
                 ...row,
                 processing: owed

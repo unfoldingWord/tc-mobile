@@ -121,6 +121,86 @@ async function seedV13FinishedPcm(clipId: string): Promise<void> {
   db.close();
 }
 
+/** The pivot stores, as v3 created them (`tests/db-migration.test.ts`'s `openLegacyV3`). */
+function createV3Stores(
+  db: Parameters<
+    NonNullable<Parameters<typeof openDB>[2]>["upgrade"] & object
+  >[0]
+): void {
+  db.createObjectStore("books", { keyPath: "id" });
+  db.createObjectStore("chapters", { keyPath: "id" }).createIndex(
+    "bookId",
+    "bookId"
+  );
+  db.createObjectStore("segments", { keyPath: "id" }).createIndex(
+    "chapterId",
+    "chapterId"
+  );
+  db.createObjectStore("takes", { keyPath: "id" }).createIndex(
+    "segmentId",
+    "segmentId"
+  );
+  db.createObjectStore("clipMeta", { keyPath: "id" });
+  db.createObjectStore("clipData");
+}
+
+/**
+ * The same Finished, still-PCM segment on an older shelf: v3 (the clip row
+ * has none of v4's fields, so the v4 step stamps it on the way up) or v7
+ * (v4's and v7's fields, the failure log, no segment label yet).
+ */
+async function seedOlderFinishedPcm(
+  version: 3 | 7,
+  clipId: string
+): Promise<void> {
+  const db = await openDB(DB_NAME, version, {
+    upgrade(db) {
+      createV3Stores(db);
+      if (version === 7)
+        db.createObjectStore("failures", { autoIncrement: true });
+    },
+  });
+  await db.put("segments", {
+    id: "old-seg",
+    chapterId: "ch",
+    index: 1,
+    reference: null,
+    activeTakeId: "old-take",
+    status: "affirmed",
+  });
+  await db.put("takes", {
+    id: "old-take",
+    segmentId: "old-seg",
+    clipId,
+    createdAt: 1,
+    durationMs: 1,
+  });
+  await db.put("clipMeta", {
+    id: clipId,
+    sampleRate: RATE,
+    frameCount: ORIGINAL.length,
+    durationMs: 1,
+    createdAt: 1,
+    ...(version === 7
+      ? {
+          encoding: "pcm",
+          generation: 0,
+          byteLength: ORIGINAL.length * 2,
+          transcodeStallCount: 0,
+          peaks: null,
+        }
+      : {}),
+  });
+  await db.put("clipData", Int16Array.from(ORIGINAL).buffer, clipId);
+  db.close();
+}
+
+const SEEDS = [
+  { from: 3, seed: (id: string) => seedOlderFinishedPcm(3, id) },
+  { from: 7, seed: (id: string) => seedOlderFinishedPcm(7, id) },
+  { from: 13, seed: seedV13FinishedPcm },
+];
+
 beforeEach(async () => {
   await wipe();
   encoded.length = 0;
@@ -139,41 +219,44 @@ beforeEach(async () => {
 
 afterEach(wipe);
 
-describe("normalize on Finished across the v14 upgrade (#1433, U6c)", () => {
-  it("encodes a segment Finished before v14 as it was, and records that no stage ran", async () => {
-    const clipId = "old-clip";
-    await seedV13FinishedPcm(clipId);
+describe.each(SEEDS)(
+  "normalize on Finished across the upgrade from v$from (#1433, U6c)",
+  ({ seed }) => {
+    it("encodes a segment Finished before v14 as it was, and records that no stage ran", async () => {
+      const clipId = "old-clip";
+      await seed(clipId);
 
-    // The preference is unset (no window here): normalization is on.
-    await requestTranscodeSweep();
+      // The preference is unset (no window here): normalization is on.
+      await requestTranscodeSweep();
 
-    expect(normalizePcm).not.toHaveBeenCalled();
-    expect(encoded).toEqual([ORIGINAL]);
-    const meta = await getClipMeta(clipId as ClipId);
-    expect(meta?.encoding).toBe("mp3");
-    expect(meta?.processing).toEqual(NO_STAGES_RUN);
-  });
-
-  it("still normalizes a segment Finished after the upgrade", async () => {
-    await seedV13FinishedPcm("old-clip");
-    const book = await createBook("b");
-    const chapter = await addChapter(book.id);
-    const segment = await addSegment(chapter.id);
-    const clipId = newClipId();
-    await saveTake(segment.id, clipId, Int16Array.of(5, 6, 7), RATE, {
-      finished: true,
+      expect(normalizePcm).not.toHaveBeenCalled();
+      expect(encoded).toEqual([ORIGINAL]);
+      const meta = await getClipMeta(clipId as ClipId);
+      expect(meta?.encoding).toBe("mp3");
+      expect(meta?.processing).toEqual(NO_STAGES_RUN);
     });
 
-    await requestTranscodeSweep();
+    it("still normalizes a segment Finished after the upgrade", async () => {
+      await seed("old-clip");
+      const book = await createBook("b");
+      const chapter = await addChapter(book.id);
+      const segment = await addSegment(chapter.id);
+      const clipId = newClipId();
+      await saveTake(segment.id, clipId, Int16Array.of(5, 6, 7), RATE, {
+        finished: true,
+      });
 
-    expect(normalizePcm).toHaveBeenCalledTimes(1);
-    expect(Array.from(normalizePcm.mock.calls[0]![0])).toEqual([5, 6, 7]);
-    expect(encoded).toContainEqual([10, 12, 14]);
-    expect((await getClipMeta(clipId))?.processing).toEqual(RECORD);
-    // The pre-v14 clip in the same sweep still went through untouched.
-    expect(encoded).toContainEqual(ORIGINAL);
-    expect((await getClipMeta("old-clip" as ClipId))?.processing).toEqual(
-      NO_STAGES_RUN
-    );
-  });
-});
+      await requestTranscodeSweep();
+
+      expect(normalizePcm).toHaveBeenCalledTimes(1);
+      expect(Array.from(normalizePcm.mock.calls[0]![0])).toEqual([5, 6, 7]);
+      expect(encoded).toContainEqual([10, 12, 14]);
+      expect((await getClipMeta(clipId))?.processing).toEqual(RECORD);
+      // The pre-v14 clip in the same sweep still went through untouched.
+      expect(encoded).toContainEqual(ORIGINAL);
+      expect((await getClipMeta("old-clip" as ClipId))?.processing).toEqual(
+        NO_STAGES_RUN
+      );
+    });
+  }
+);

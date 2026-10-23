@@ -2251,6 +2251,11 @@ describe("the v13 → v14 schema (#1433)", () => {
       ...v13ClipMeta("c1", "mp3"),
       processing: record,
     });
+    // Already null and not owed: what a re-run of the step meets.
+    await v13.put("clipMeta", {
+      ...v13ClipMeta("c2", "pcm"),
+      processing: null,
+    });
     v13.close();
 
     const writes = countWrites();
@@ -2260,6 +2265,7 @@ describe("the v13 → v14 schema (#1433)", () => {
     expect((await db.get("clipMeta", "c1" as never))?.processing).toEqual(
       record
     );
+    expect((await db.get("clipMeta", "c2" as never))?.processing).toBeNull();
   });
 
   it("records no stage on a Finished segment's PCM clip, so its owed transcode encodes it as it was (U6c)", async () => {
