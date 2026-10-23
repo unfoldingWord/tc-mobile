@@ -18,6 +18,8 @@
  */
 import type { DspBenchResult } from "@/types/audio";
 
+import { fontReportLines } from "./font-samples";
+
 /** One mebibyte. Every "MB" this check prints is this unit. */
 export const MB = 1024 * 1024;
 
@@ -38,6 +40,10 @@ export interface DeviceInfo {
   readonly usageBytes: number | null;
   /** `navigator.storage.persisted()`. */
   readonly persisted: boolean | null;
+  /** `navigator.language` (#1486): feeds the native-language question. */
+  readonly language: string | null;
+  /** `navigator.languages`, most preferred first (#1486). */
+  readonly languages: readonly string[] | null;
 }
 
 /** One encode of synthetic speech through the real MP3 worker. */
@@ -150,6 +156,8 @@ function deviceLines(device: ProbeOutcome<DeviceInfo> | null): string[] {
     `- CPU cores: ${orUnknown(d.cores, String)}`,
     `- Storage: ${storage}`,
     `- Persisted: ${orUnknown(d.persisted, (p) => (p ? "yes" : "no"))}`,
+    `- Language: ${orUnknown(d.language, (l) => l || UNKNOWN)}`,
+    `- Languages: ${orUnknown(d.languages, (ls) => (ls.length > 0 ? ls.join(", ") : UNKNOWN))}`,
   ];
 }
 
@@ -293,6 +301,10 @@ export function formatPhoneCheckReport(input: PhoneCheckReportInput): string {
     "",
     "Memory ceiling",
     ...allocationLines(input.allocation),
+    "",
+    // Filled in by the tester from the Script samples section on screen.
+    "Script samples (write rendered or tofu after each)",
+    ...fontReportLines(),
   ];
   return lines.join("\n");
 }

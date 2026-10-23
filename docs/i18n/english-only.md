@@ -8,7 +8,7 @@ translation, through `src/lib/strings.ts` and `src/lib/i18n/`.
 The requirements owner's decision, verbatim: choice `english`, note "We will
 revisit if this is needed."
 
-- **Scope today:** the phone check, 19 `phoneCheck*` keys in `lib/strings.ts`.
+- **Scope today:** the phone check, 23 `phoneCheck*` keys in `lib/strings.ts`.
 - **Mechanism:** `src/lib/i18n/english-only.ts` names the keys. The coverage
   check (`tests/strings-locale-coverage.test.ts`) treats them as neither
   missing nor pending in any language, fails a language file that carries one,

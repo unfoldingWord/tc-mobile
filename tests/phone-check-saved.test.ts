@@ -48,6 +48,8 @@ const FULL: SavedChecks = {
       quotaBytes: 1_000_000,
       usageBytes: null,
       persisted: false,
+      language: null,
+      languages: null,
     },
   },
   encode: {

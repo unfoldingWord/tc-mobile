@@ -109,6 +109,8 @@ export interface DeviceSource {
   readonly userAgent?: string;
   readonly deviceMemory?: number;
   readonly hardwareConcurrency?: number;
+  readonly language?: string;
+  readonly languages?: readonly string[];
   readonly storage?: {
     readonly estimate?: () => Promise<{ quota?: number; usage?: number }>;
     readonly persisted?: () => Promise<boolean>;
@@ -117,6 +119,11 @@ export interface DeviceSource {
 
 function finiteOrNull(n: unknown): number | null {
   return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+
+function stringListOrNull(list: unknown): readonly string[] | null {
+  if (!Array.isArray(list)) return null;
+  return list.filter((l): l is string => typeof l === "string");
 }
 
 /**
@@ -177,6 +184,8 @@ export async function readDeviceInfo(
     quotaBytes: finiteOrNull(estimate?.quota),
     usageBytes: finiteOrNull(estimate?.usage),
     persisted: typeof persisted === "boolean" ? persisted : null,
+    language: typeof source.language === "string" ? source.language : null,
+    languages: stringListOrNull(source.languages),
   };
 }
 
