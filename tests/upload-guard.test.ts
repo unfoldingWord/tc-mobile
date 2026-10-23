@@ -384,9 +384,7 @@ describe("check:redispatch --run-id: the CLI the upload job runs", () => {
     });
     const log: string[] = [];
     expect(main(GUARD_ARGS("play"), { gh, log: (l) => log.push(l) })).toBe(3);
-    expect(log.at(-1)).toBe(
-      `SKIP: attempt 1 of run 1 already uploaded ${SHA}`
-    );
+    expect(log.at(-1)).toBe(`SKIP: attempt 1 of run 1 already uploaded ${SHA}`);
     expect(calls).toContainEqual(
       expect.arrayContaining(["view", "1", "--attempt", "1"])
     );
