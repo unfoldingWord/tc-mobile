@@ -4,6 +4,8 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+import { PENDING } from "../src/lib/i18n/pending";
+
 /**
  * Which table entries reach outside their own arguments for wording (#169).
  *
@@ -165,7 +167,10 @@ function isInsideText(node: ts.Node, fn: ts.Node): boolean {
  * argument is a plain name, so `this.frame(plural(...))` is an embed: the
  * entry fills another entry's frame with a phrase of its own.
  */
-function outwardReferences(source: string): {
+function outwardReferences(
+  source: string,
+  tableName = "stringsEn"
+): {
   entries: number;
   refs: Record<string, string[]>;
   embeds: Record<string, string[]>;
@@ -182,8 +187,7 @@ function outwardReferences(source: string): {
   file.forEachChild((node) => {
     if (!ts.isVariableStatement(node)) return;
     for (const decl of node.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || decl.name.text !== "stringsEn")
-        continue;
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== tableName) continue;
       let init = decl.initializer;
       while (
         init &&
@@ -193,7 +197,8 @@ function outwardReferences(source: string): {
       if (init && ts.isObjectLiteralExpression(init)) table = init;
     }
   });
-  if (!table) throw new Error("no `stringsEn` object literal in strings.ts");
+  if (!table)
+    throw new Error(`no \`${tableName}\` object literal in the source`);
 
   const refs: Record<string, string[]> = {};
   const embeds: Record<string, string[]> = {};
@@ -356,6 +361,96 @@ describe("no table sentence is built from another entry's words (#1483)", () => 
       shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareFilename: ["this.chapterName"],
     });
+  });
+});
+
+/**
+ * #169 — the same walk over every complete locale table.
+ *
+ * The English set above is the only thing the walk used to read. A locale
+ * table that spliced another entry's output into running text (a count phrase
+ * inside a sentence, a name inside a frame) would have been invisible, because
+ * the walker never opened `src/lib/i18n/*.ts`. A locale may embed FEWER of the
+ * English entries (it may write a whole sentence where English joins), never a
+ * different or an extra one: each locale's `embeds` must be a subset of the
+ * set #1483 kept on purpose.
+ *
+ * "Complete" is `PENDING[code] !== "all"`: a language with no translated entry
+ * has an empty `table` and nothing to walk. The set of locales is read from
+ * `PENDING`, so a new language is walked without an edit.
+ */
+const I18N_DIR = path.resolve(import.meta.dirname, "../src/lib/i18n");
+
+/** Locale tables known to embed beyond English today, by code: none. A code
+ * listed here runs as `it.fails`, so fixing it turns the test red until the
+ * entry is deleted. */
+const KNOWN_VIOLATIONS: Readonly<Record<string, readonly string[]>> = {};
+
+/** Entries (and what each embeds) of `locale` that English does not embed. */
+function extraEmbeds(
+  locale: Record<string, string[]>,
+  english: Record<string, string[]>
+): Record<string, string[]> {
+  const extra: Record<string, string[]> = {};
+  for (const [entry, names] of Object.entries(locale)) {
+    const allowed = new Set(english[entry] ?? []);
+    const beyond = names.filter((name) => !allowed.has(name));
+    if (beyond.length > 0) extra[entry] = beyond;
+  }
+  return extra;
+}
+
+describe("no complete locale table embeds beyond the English set (#169)", () => {
+  const english = outwardReferences(readFileSync(FILE, "utf8")).embeds;
+  const complete = Object.entries(PENDING)
+    .filter(([, pending]) => pending !== "all")
+    .map(([code]) => code)
+    .sort();
+
+  it("walks every language that has translated something", () => {
+    // Floor, and a drift guard: a pinned list would go stale silently.
+    expect(complete.length).toBeGreaterThanOrEqual(7);
+    for (const code of complete) {
+      const source = readFileSync(path.join(I18N_DIR, `${code}.ts`), "utf8");
+      expect(outwardReferences(source, "table").entries).toBeGreaterThan(100);
+    }
+  });
+
+  for (const code of complete) {
+    const run = KNOWN_VIOLATIONS[code] ? it.fails : it;
+    run(`${code} embeds a subset of the English set`, () => {
+      const source = readFileSync(path.join(I18N_DIR, `${code}.ts`), "utf8");
+      const { embeds } = outwardReferences(source, "table");
+      expect(extraEmbeds(embeds, english)).toEqual({});
+    });
+  }
+
+  it("names a violation: an extra entry, an extra name, and a fewer-is-fine locale", () => {
+    // The comparison's own both-states check, on probe tables.
+    const probe = (body: string) =>
+      outwardReferences(`export const table = {\n${body}\n};`, "table").embeds;
+    const base = { a: ["this.b"], c: ["this.d", "plural"] };
+    expect(
+      extraEmbeds(
+        probe(
+          [
+            "a(n: number): string { return `${this.b(n)} x`; },",
+            "e(n: number): string { return `${this.b(n)} x`; },",
+            "c(n: number): string { return `${this.d(n)} x ${plural(n, {})}`; },",
+          ].join("\n")
+        ),
+        base
+      )
+    ).toEqual({ e: ["this.b"] });
+    expect(
+      extraEmbeds(
+        probe("c(n: number): string { return `${this.z(n)} x`; },"),
+        base
+      )
+    ).toEqual({ c: ["this.z"] });
+    expect(
+      extraEmbeds(probe("a(n: number): string { return this.b(n); },"), base)
+    ).toEqual({});
   });
 });
 
