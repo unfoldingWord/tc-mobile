@@ -222,7 +222,8 @@ describe("Share Chapter, all Finished: the export reports its reads on their own
     expect(result?.segments).toBe(3);
     expect(codec.decodeMp3).toHaveBeenCalledTimes(3);
     const reads = dispatched.filter((e) => e.type === "read");
-    expect(reads.length).toBeGreaterThan(0);
+    // The exact prefix the refused join reported, not merely "some reads".
+    expect(reads).toEqual([read(0, 3), read(1, 3), read(2, 3), read(3, 3)]);
     // Every read came before the first step: the read is its own phase.
     const firstStep = dispatched.findIndex((e) => e.type === "step");
     expect(dispatched.slice(firstStep).some((e) => e.type === "read")).toBe(
@@ -236,12 +237,17 @@ describe("Share Chapter, all Finished: the export reports its reads on their own
   it("a cancelled run reports no read", async () => {
     const chapterId = await joinableChapter();
     const reads: number[] = [];
-    await withEncodeSteps(
+    // The join's OWN cancel flag is the one armed (`shouldEncode`); the
+    // wrapper's `shouldContinue` stays true, so an empty `reads` cannot be the
+    // wrapper dropping the callback.
+    const result = await withEncodeSteps(
       () => {},
-      () => false,
-      (codec, onStep) => exportChapterMp3(chapterId, codec, undefined, onStep),
+      () => true,
+      (codec, onStep) =>
+        exportChapterMp3(chapterId, codec, () => false, onStep),
       (done) => reads.push(done)
     )(testCodec());
+    expect(result).toBeNull();
     expect(reads).toEqual([]);
   });
 
