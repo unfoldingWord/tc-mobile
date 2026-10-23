@@ -18,6 +18,7 @@ import {
   retrySave,
   startSave,
   succeedSave,
+  type NewTake,
   type PendingTake,
 } from "@/lib/takes/pending-take";
 import { requestTranscodeSweep } from "./finish-transcode";
@@ -427,6 +428,163 @@ export async function performClearEditedSegment(
 }
 
 /**
+ * The one slot, its in-flight guard, and the recordings waiting for it.
+ *
+ * Everything `useSaveTake` does minus React, so it runs in Node against
+ * `fake-indexeddb` (`tests/take-slot.test.ts`). `publish` is React's
+ * `setPending`; the slot itself lives here, so a reader between a write and
+ * its render (the launch replay, a tap in the same frame) never sees a stale
+ * slot, and a transition is never applied to two different snapshots.
+ */
+export interface TakeSlot {
+  /** The live slot. */
+  readonly held: () => PendingTake | null;
+  /** Whether an attempt is in flight, readable synchronously. */
+  readonly saving: () => boolean;
+  /**
+   * The launch replay's install and first attempt (`performResumeTake`).
+   * Resolves whether the slot is free again; `false` while an attempt is in
+   * flight or the slot is held, which stops the replay's run.
+   */
+  readonly resume: (take: ReplayTake) => Promise<boolean>;
+  /**
+   * Hand the slot a finished recording. Never rejects.
+   *
+   * While the slot is held or an attempt is in flight, the recording waits
+   * here instead of being refused (#1549): the launch replay's quiet first
+   * attempt holds the slot with nothing on screen, and a recording finished
+   * in that window used to be dropped with only a console line. It is
+   * installed and saved the moment the slot is free, in the same turn, so
+   * the slot is never seen empty while it waits. The promise resolves with
+   * that save's result; or `false` as soon as the held take has failed, so
+   * the sheet exits to the recovery screen that now owns the body, while the
+   * recording keeps waiting behind the take on that screen.
+   */
+  readonly save: (take: NewTake) => Promise<boolean>;
+  /** Another attempt at a failed held take; ignored while one is in flight. */
+  readonly retry: () => void;
+  /** Deliberate, confirmed loss of the held take; ignored while saving. */
+  readonly discard: () => void;
+  /**
+   * The callback a landed save fires, so the screen behind can reload. Set
+   * from an effect, so a caller's new callback each render is not read
+   * during render.
+   */
+  readonly setOnSaved: (onSaved: (() => void) | undefined) => void;
+}
+
+export function createTakeSlot(
+  publish: (held: PendingTake | null) => void,
+  notify: Omit<SaveEffects, "update">
+): TakeSlot {
+  let held: PendingTake | null = null;
+  // Set before the first await of every attempt and released in its
+  // `finally`: this is what a second tap in the same frame reads. Releasing
+  // it is safe in a `finally` where emptying the slot is not: it is a guard,
+  // not the samples, and a guard left set would lock out the Retry the
+  // failure path exists to offer.
+  let saving = false;
+  // Recordings handed over while the slot was busy, oldest first. Held in
+  // memory only, as the sheet held them until the hand-over: a kill before
+  // the slot frees still loses them (#1549's residual, in the PR).
+  const waiting: {
+    readonly take: PendingTake;
+    readonly settle: (saved: boolean) => void;
+  }[] = [];
+
+  const write = (
+    transition: (current: PendingTake | null) => PendingTake | null
+  ): void => {
+    held = transition(held);
+    publish(held);
+    drain();
+  };
+  let onSaved = notify.onSaved;
+  const effects: SaveEffects = {
+    update: write,
+    onSaved: () => onSaved?.(),
+    requestSweep: notify.requestSweep,
+  };
+
+  const attempt = async <T>(
+    run: (e: SaveEffects) => Promise<T>
+  ): Promise<T> => {
+    saving = true;
+    try {
+      return await run(effects);
+    } finally {
+      saving = false;
+      drain();
+    }
+  };
+
+  // Called after every slot write and every attempt's end: the only two
+  // moments the slot can come free or a held take can fail.
+  function drain(): void {
+    if (saving) return;
+    if (held === null) {
+      const next = waiting.shift();
+      if (!next) return;
+      held = next.take;
+      publish(held);
+      void attempt((e) => performSaveTake(next.take, e)).then(next.settle);
+      return;
+    }
+    // The held take failed, and its recovery screen takes the body over:
+    // let every waiting sheet go, but keep the recordings queued. A promise
+    // settles once, so the result of a later save is then ignored.
+    if (held.state === "failed") for (const w of waiting) w.settle(false);
+  }
+
+  return {
+    held: () => held,
+    saving: () => saving,
+    resume: async (take) => {
+      if (saving) return false;
+      return (await attempt((e) => performResumeTake(held, take, e))) === true;
+    },
+    save: (newTake) => {
+      const take = startSave(null, newTake);
+      if (held === null && !saving) {
+        // Before any await AND before the fallible merge, so the only
+        // reference to the recording is never a local in a function that
+        // can throw.
+        write(() => take);
+        return attempt((e) => performSaveTake(take, e));
+      }
+      return new Promise<boolean>((settle) => {
+        waiting.push({ take, settle });
+        drain();
+      });
+    },
+    retry: () => {
+      // The live guard, ahead of the pure one: `SaveFailed` only hides Retry
+      // once the saving re-render lands.
+      if (saving) return;
+      const current = held;
+      const next = retrySave(current);
+      // Identity means refused: nothing held, or a save already in flight.
+      if (!next || next === current) return;
+      write(() => next);
+      void attempt((e) => performSaveTake(next, e));
+    },
+    discard: () => {
+      // The same live guard Retry takes, and for the same window: between a
+      // Retry tap and its re-render the armed Delete is still on screen and
+      // still live. Discarding there races the write Retry just started:
+      // the clip deleted out from under a take `saveTake` has already made
+      // active, or the write landing after the discard so a recording the
+      // translator confirmed deleting comes back.
+      if (saving) return;
+      void performDiscardTake(held, write);
+    },
+    setOnSaved: (next) => {
+      onSaved = next;
+    },
+  };
+}
+
+/**
  * The one unsaved recording the app is holding, and its save/retry/discard.
  *
  * Lifted verbatim out of the deleted `useObsChapter`: the machinery never
@@ -448,86 +606,37 @@ export async function performClearEditedSegment(
 export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const { onSaved } = options;
   const [pending, setPending] = useState<PendingTake | null>(null);
-  /**
-   * Whether a write is in flight, readable synchronously.
-   *
-   * `retrySave` refuses a second concurrent attempt, but it can only judge the
-   * slot it is handed, and the hook reads that from the render closure. Two
-   * taps on Retry in one frame both saw `failed`, both produced a fresh
-   * `saving`, and both committed. A ref answers for the current moment rather
-   * than the last render.
-   */
-  const savingRef = useRef(false);
-  // The latest `onSaved`, read from the commit closure without making `commit`
-  // depend on a callback identity the caller re-creates each render. Kept
-  // current in an effect, not written during render (`react-hooks/refs`). The
-  // `useRef` initialiser already holds the first render's callback, and effects
-  // flush before the next tap, so no commit can read a stale one.
+  // The live slot, its in-flight guard and its waiting recordings (#38
+  // rebuild PR 3, #1549), made once per mount. `setPending` is stable, so the
+  // slot hands React every write in the same synchronous turn.
+  const [slot] = useState(() =>
+    createTakeSlot(setPending, {
+      requestSweep: () => void requestTranscodeSweep(),
+    })
+  );
+  // The latest `onSaved`, for the slot and the cut-to-empty clear, without
+  // making either depend on a callback identity the caller re-creates each
+  // render. Kept current in an effect, not written during render
+  // (`react-hooks/refs`). The `useRef` initialiser already holds the first
+  // render's callback, and effects flush before the next tap and before the
+  // replay's effect below, so no commit can read a stale one.
   const onSavedRef = useRef(onSaved);
   useEffect(() => {
     onSavedRef.current = onSaved;
-  }, [onSaved]);
-
-  // The live slot (#38 rebuild PR 3). Every slot write goes through
-  // `writeSlot`, which applies the transition to this ref and hands React the
-  // result in the same synchronous turn, so a reader between a write and its
-  // render (the launch replay, a tap in the same frame) never sees a stale
-  // slot, and a transition is never applied to two different snapshots.
-  const slotRef = useRef(pending);
-  const writeSlot = useCallback(
-    (transition: (held: PendingTake | null) => PendingTake | null) => {
-      const next = transition(slotRef.current);
-      slotRef.current = next;
-      setPending(next);
-    },
-    []
-  );
-  const effects = useCallback(
-    (): SaveEffects => ({
-      update: writeSlot,
-      onSaved: () => onSavedRef.current?.(),
-      requestSweep: () => void requestTranscodeSweep(),
-    }),
-    [writeSlot]
-  );
-
-  const commit = useCallback(
-    async (take: PendingTake): Promise<boolean> => {
-      // Synchronous, before the first await: this is what a second tap in the
-      // same frame reads. `performSaveTake` runs synchronously up to its own first
-      // await too, so the slot transitions keep their ordering.
-      savingRef.current = true;
-      try {
-        return await performSaveTake(take, effects());
-      } finally {
-        // Safe in a `finally` where `setPending(null)` is not: this releases a
-        // guard rather than dropping the samples, and a guard left set would lock
-        // out the retry the failure path exists to offer.
-        savingRef.current = false;
-      }
-    },
-    [effects]
-  );
+    slot.setOnSaved(onSaved);
+  }, [slot, onSaved]);
 
   // Launch: finish any save the app was closed in the middle of
   // (`replay-pending-takes.ts`). After the first render, and once per mount:
   // the ref holds across React's development double-run. Each row takes the
-  // same live guard Retry does, then the slot; a held slot stops the run.
+  // same live guard Retry does, then the slot (`slot.resume`, which installs
+  // through `performResumeTake`); a held slot stops the run.
   const replayStartedRef = useRef(false);
   useEffect(() => {
     if (replayStartedRef.current) return;
     replayStartedRef.current = true;
-    void replayPendingTakes(async (take) => {
-      if (savingRef.current) return false;
-      savingRef.current = true;
-      try {
-        const freed = await performResumeTake(slotRef.current, take, effects());
-        return freed === true;
-      } finally {
-        savingRef.current = false;
-      }
-    });
-  }, [effects]);
+    void replayPendingTakes((take) => slot.resume(take));
+  }, [slot]);
 
   /**
    * Persist a recording as an insert/append into the segment's existing audio.
@@ -539,11 +648,13 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
    * The recipe is owned in the slot BEFORE anything fallible: `existing` (the
    * segment's current audio, read by the recorder at mount — never read here,
    * where a rejected read after the recording exists would drop it), `recorded`,
-   * and the splice `offset`. `commit` does the merge and the write; `saveTake`
-   * REPLACES the segment's take (1:1) in one transaction, so the merged buffer is
-   * the whole segment's audio. A merge or write failure lands in the recovery
-   * screen, and retry re-runs `commit` — never a save of the raw fragment, which
-   * under 1:1 would delete the original clip.
+   * and the splice `offset`. The slot's attempt (`performSaveTake`) does the
+   * merge and the write; `saveTake` REPLACES the segment's take (1:1) in one
+   * transaction, so the merged buffer is the whole segment's audio. A merge or
+   * write failure lands in the recovery screen, and retry re-runs the attempt —
+   * never a save of the raw fragment, which under 1:1 would delete the original
+   * clip. While the slot is busy the recipe waits in it instead (#1549,
+   * `TakeSlot.save`).
    */
   const saveRecording = useCallback(
     (
@@ -561,9 +672,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     ): Promise<boolean> => {
       // The revision `existing` was read at, not one read now: the hold stamps
       // it, so a replay sees a move since (cell HM).
-      const held = slotRef.current;
-      const take = startSave(
-        held,
+      return slot.save(
         withObservedRevision({
           segmentId,
           ordinal,
@@ -578,22 +687,8 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
           editOnly,
         })
       );
-      // Identity means refused: a recording is already held, and displacing it
-      // is the silent loss all of this exists to prevent. The screens disable
-      // recording while a take is held, so reaching this is an invariant break.
-      if (take === held) {
-        console.error(
-          "A finished take was refused: one is already held",
-          held.clipId
-        );
-        return Promise.resolve(false);
-      }
-      // Before any await AND before the fallible merge, so the only reference to
-      // the recording is never a local in a function that can throw.
-      writeSlot(() => take);
-      return commit(take);
     },
-    [commit, writeSlot]
+    [slot]
   );
 
   /**
@@ -601,7 +696,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
    *
    * A cut/paste session produces the whole new segment audio in memory; there is
    * no fresh recording to splice. So this reuses the exact record path with an
-   * empty `recorded` and offset 0 — `commit` skips the merge and `saveTake`s the
+   * empty `recorded` and offset 0 — the attempt skips the merge and `saveTake`s the
    * buffer as-is — which means the never-lose recovery machinery (the owned slot,
    * the retry, the recovery screen on a failed write) is shared verbatim rather
    * than reimplemented. `saveTake`'s 1:1 replace makes this buffer the segment's
@@ -645,29 +740,10 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     [saveRecording]
   );
 
-  const retryPendingTake = useCallback(() => {
-    // The live guard, ahead of the pure one: `SaveFailed` only hides Retry
-    // once the saving re-render lands.
-    if (savingRef.current) return;
-    const held = slotRef.current;
-    const next = retrySave(held);
-    // Identity means refused: nothing held, or a save already in flight.
-    if (!next || next === held) return;
-    writeSlot(() => next);
-    void commit(next);
-  }, [commit, writeSlot]);
+  const retryPendingTake = useCallback(() => slot.retry(), [slot]);
 
   /** Deliberate, confirmed loss of the held recording. */
-  const discardPendingTake = useCallback(() => {
-    // The same live guard Retry takes, and for the same window: between a Retry
-    // tap and its re-render the armed Delete is still on screen and still live.
-    // Discarding there races the write Retry just started — the clip deleted
-    // out from under a take `saveTake` has already made active, or the write
-    // landing after the discard so a recording the translator confirmed
-    // deleting comes back. Both are the silent loss this slot exists to prevent.
-    if (savingRef.current) return;
-    void performDiscardTake(slotRef.current, writeSlot);
-  }, [writeSlot]);
+  const discardPendingTake = useCallback(() => slot.discard(), [slot]);
 
   return {
     pendingTake: pending,

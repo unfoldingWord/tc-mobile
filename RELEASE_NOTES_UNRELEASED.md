@@ -14,6 +14,7 @@ its body and empties it.
 ## Fixed
 
 - A recording that was being saved when the app closed is saved on the next launch, and one another copy already saved is not saved twice (#38, #1557).
+- A recording finished in the first moments after the app opens, while that save is still running, is saved once it is done instead of being lost (#1549, #1683).
 
 ## Removed
 

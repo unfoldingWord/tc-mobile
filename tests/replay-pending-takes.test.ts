@@ -585,13 +585,22 @@ describe("the slot guard", () => {
 });
 
 describe("useSaveTake runs the replay once, from a mount effect", () => {
-  it("the hook's effect calls replayPendingTakes through performResumeTake", () => {
+  it("the hook's effect calls replayPendingTakes through the slot's resume, which installs through performResumeTake", () => {
     const code = stripComments(
       readFileSync(resolve(__dirname, "../src/hooks/use-save-take.ts"), "utf8")
     );
-    const effect = code.slice(code.indexOf("export function useSaveTake"));
-    expect(effect).toMatch(
-      /useEffect\(\(\) => \{[^]*?replayPendingTakes\([^]*?performResumeTake\(/
+    // Since #1549 the slot is `createTakeSlot`, made once per mount; its
+    // `resume` is behaviour-tested in `tests/take-slot.test.ts`.
+    const hook = code.slice(code.indexOf("export function useSaveTake"));
+    expect(hook).toMatch(
+      /useEffect\(\(\) => \{[^}]*?replayPendingTakes\(\(take\) => slot\.resume\(take\)\)/
+    );
+    const factory = code.slice(
+      code.indexOf("export function createTakeSlot"),
+      code.indexOf("export function useSaveTake")
+    );
+    expect(factory).toMatch(
+      /resume: async \(take\) => \{[^]*?performResumeTake\(held, take, e\)/
     );
   });
 });

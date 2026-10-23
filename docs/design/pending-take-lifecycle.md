@@ -391,8 +391,8 @@ opens. A tap after that point lands after the row is committed, and its own
 Discard transaction then deletes the row (residual 1).
 
 The ordinary commit needs the flag only once, at its start: in this copy,
-Discard is refused while a save is in flight (`discardPendingTake` returns
-when `savingRef` is set, `use-save-take.ts:503`), so no same-copy Discard can
+Discard is refused while a save is in flight (`TakeSlot.discard` returns
+while the slot's `saving` guard is set, `hooks/use-save-take.ts`), so no same-copy Discard can
 start during it. A Discard from another copy is a transaction, serialized
 with this one (both name `takeDispositions`): whichever runs second sees the
 other's write. So across copies the durable record alone carries the
@@ -1239,6 +1239,19 @@ What the replay slice built, and where it differs from the text above:
   #1557's one predicate in place of a second check at the read.
 - The failure-log list in `AGENTS.md` and the runbook's §5 are not changed
   by this slice. They are left to a docs change.
+
+After the replay slice, #1549: a recording finished while the slot is held
+(the replay's quiet first attempt, with nothing on screen) used to be refused
+and lost with only a console line. The slot, its guard and the hand-over are
+now `createTakeSlot` in `hooks/use-save-take.ts`. A recording handed over
+while the slot is held or an attempt is in flight waits there, in memory, and
+is installed and saved in the turn the slot frees. If the held take fails
+instead, the sheet is let go (`false`) so the recovery screen can own the
+body, and the recording keeps waiting until that take is retried or
+discarded. It is not held on disk while it waits, so a kill in that window
+still loses it. Its base is the one the recorder read: a replayed take saved
+into the same segment in the meantime is overwritten, which is #1551's
+question (should an ordinary Save check its target), not a new one.
 
 ### Interleaving harness (PR 1's first deliverable)
 
