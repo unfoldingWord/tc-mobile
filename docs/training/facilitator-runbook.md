@@ -143,9 +143,10 @@ default, the text there says to keep using it.
    -->
 
    **Once a phone has updated to a new build, do not put an older build back
-   on it.** The recordings stay on the phone but out of reach until a build at
-   least as new as the one it last opened is installed over it (AGENTS.md, "A
-   rollback is not free once a phone has opened a build with a newer database
+   on it.** When the newer build changed how recordings are stored (1.1.0 and
+   1.2.0 each did), the recordings stay on the phone but out of reach until a
+   build at least as new as the one it last opened is installed over it
+   (AGENTS.md, "A rollback is not free once a phone has opened a build with a newer database
    schema"). If the app says "This copy is out of date" and restarting does
    not clear it, do not uninstall, because
    that deletes every recording. Write down the stamp and what you saw, as in
