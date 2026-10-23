@@ -1292,4 +1292,15 @@
   .cover-swatch[aria-pressed="true"] {
     border-color: var(--s-focus);
   }
+
+  /* The store QR (#1250): light ground, dark modules, in every theme. */
+  .qr-light {
+    fill: var(--s-qr-light);
+    shape-rendering: crispEdges;
+  }
+
+  .qr-dark {
+    fill: var(--s-qr-dark);
+    shape-rendering: crispEdges;
+  }
 }

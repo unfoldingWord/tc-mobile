@@ -1404,6 +1404,9 @@ export const stringsEn = {
   aboutVisitPrivacy: "Open the privacy policy",
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
+  // The Android build's store QR (#1250): the visible caption under it, and the
+  // image's accessible name.
+  aboutQrCaption: "Scan to get the app",
   aboutContent: "Bundled content",
   // The ISO 639-3 terms of use ask that "attribution is given to
   // iso639-3.sil.org as the source of the codes" (ADR 0017).

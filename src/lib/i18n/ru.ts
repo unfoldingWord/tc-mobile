@@ -544,6 +544,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "Открыть политику конфиденциальности",
   aboutThirdParty: "Компоненты с открытым кодом",
   aboutTexts: "Тексты лицензий",
+  aboutQrCaption: "Отсканируйте, чтобы получить приложение",
   aboutContent: "Встроенные материалы",
   aboutReadText: (name: string): string => `Прочитать: ${name}`,
   aboutBack: "Назад к списку",
