@@ -333,7 +333,7 @@ here has been read by a native speaker.
 
 Rows 5 to 8 and 10 to 16 are button and menu captions, so a lane may shorten
 the cell to a single word where the language allows it, and must then use that
-word everywhere the English word recurs. The Source column's "Verify" notes are
+word everywhere the English word recurs. The first table's Source column "Verify" notes are
 the questions to put to a reader when one is found; none blocks a draft.
 A cell that is the same as another row's cell in that language (`zh-Hans` 录音
 in rows 4 and 5), or the same as the English, is a Verify question too; the
@@ -479,7 +479,9 @@ What a lane must have in hand, and where each piece comes from.
 6. **The pending list.** A development build may carry a time-limited list of
    keys still falling back to English; the release gate requires it to be
    empty (#357, 2026-10-19). A lane that leaves a key out puts it on that list
-   rather than copying English in.
+   rather than copying English in. The English-only keys of section 1
+   (`phoneCheck*`, named in `src/lib/i18n/english-only.ts`) are the
+   exception: a lane leaves them out and does not put them on the list.
 7. **What a lane returns.** The draft values; a list of every term where it
    departed from section 5, with the reason; its Verify questions, each cell
    that matches another row or the English, naming that row or the English
