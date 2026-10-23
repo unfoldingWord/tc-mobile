@@ -431,12 +431,35 @@ TestFlight job, and `android-play` on
   held back: a failed run has left the group, a different commit waits its
   turn, and each lane has its own group.
 
-What it does not give: a second run of the same commit waits for the first
-and then builds and uploads again. The group serializes; it does not refuse.
-And when two runs wait behind one upload, GitHub keeps only the newer one and
-cancels the older (#1308). So §3a step 7's script is still the only check on
-whether a lane built a commit and whether it may be dispatched again, and its
-answer is what the DRI acts on.
+The group serializes uploads; it does not refuse one. Refusing is the
+**upload guard**'s job: a step in each upload job, before the upload (#1616).
+It runs the same check as §3a step 7, in the form that reads one run (the
+`guardUpload` rule in `scripts/redispatch-core.mjs`). Because it runs inside
+the group, no other upload of the lane runs while it reads.
+
+- **Already uploaded.** If a run of this lane at this commit, or an earlier
+  attempt of this run, already uploaded, the step prints a `SKIP:` notice and
+  the job ends green without uploading. So a second dispatch of a commit, or
+  a re-run of a run that succeeded, cannot upload it twice.
+- **Earlier run failed.** A failed or cancelled earlier run does not count,
+  and neither does a run that ended at preflight. A re-run after a failed run
+  uploads. So does a different commit, and so does the other lane: the guard
+  reads only this lane's runs at this commit.
+- **Read failed.** If a read fails, or returns something the check cannot
+  settle, the step prints `STOP:` and the job fails before any upload. That
+  follows the core's rule: anything the reads cannot settle is a stop, never
+  a guess. Run step 7's script for that lane and commit, and tell the DRI.
+- **Not guarded.** A diagnostic APK and a Play `build_only` run are not
+  checked, because neither is a tester upload.
+
+`tests/upload-guard.test.ts` tests the rule.
+`tests/native-lane-upload-guard.test.ts` runs each lane's guard step against
+a stand-in `gh`. Neither has run on GitHub's runners: the first real
+promotion after this lands is the first real run.
+
+When two runs wait behind one upload, GitHub keeps only the newer one and
+cancels the older (#1308). The guard is a backstop; it does not replace step 7. The DRI still dispatches a lane only after step 7's script prints its OK
+line.
 
 ## 4. Native candidate and durable delivery
 

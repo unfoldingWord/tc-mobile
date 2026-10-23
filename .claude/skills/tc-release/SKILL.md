@@ -181,7 +181,10 @@ from.
 - [ ] Human-only: a dispatch, only after that script prints
       `OK to dispatch <lane>`. The DRI dispatches it from `staging` via `!`
       as runbook §3a step 7 gives it. Record why the lane did not start on
-      its own.
+      its own. The lane's upload job also checks before it uploads (runbook
+      §3b): a commit this lane already uploaded ends green with a notice and
+      no second upload. That is a backstop, not a reason to dispatch
+      without the script's OK.
 - [ ] Agent-allowed: every channel (web, Play, APK, TestFlight) comes from
       `PROMO_SHA`. If not, stop and re-promote. Do not mix refs.
 

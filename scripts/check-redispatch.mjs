@@ -16,6 +16,13 @@
  * those ids; `--known=` when the OK line lists none) prints `STARTED`,
  * `WAIT` or `STOP` for a NEW run. The rules
  * live in `redispatch-core.mjs`; this file only reads.
+ *
+ *   node scripts/check-redispatch.mjs --lane apk --sha <oid> --branch <b> --run-id <id> --attempt <n>
+ *
+ * The third form is the pre-upload guard each native lane's upload job runs
+ * (#1616): it reads the lane's runs at the commit and this run's earlier
+ * attempts, and prints `UPLOAD` (exit 0), `SKIP` (exit 3: an earlier run or
+ * attempt already uploaded this commit) or `STOP` (exit 1).
  */
 
 import { execFileSync } from "node:child_process";
@@ -25,6 +32,7 @@ import {
   afterDispatch,
   ANDROID_LANES,
   decide,
+  guardUpload,
   LANES,
   LIST_LIMIT,
   OPEN_STATUSES,
@@ -37,7 +45,11 @@ export const REPO = "unfoldingWord/tc-mobile";
 const SHA = /^[0-9a-f]{40}$/;
 
 export function parseArgs(argv) {
-  const out = { branch: "staging", known: null };
+  const out = { branch: "staging", known: null, runId: null, attempt: null };
+  const count = (flag, value) => {
+    if (!/^[0-9]+$/.test(value)) throw new Error(`${flag} must be a number`);
+    return Number(value);
+  };
   for (let i = 0; i < argv.length; i++) {
     const [flag, inline] = argv[i].split(/=(.*)/s, 2);
     const value = inline ?? argv[++i];
@@ -45,6 +57,8 @@ export function parseArgs(argv) {
     if (flag === "--lane") out.lane = value;
     else if (flag === "--sha") out.sha = value;
     else if (flag === "--branch") out.branch = value;
+    else if (flag === "--run-id") out.runId = count(flag, value);
+    else if (flag === "--attempt") out.attempt = count(flag, value);
     else if (flag === "--known") {
       // Digits only: Number() would read "1e2", "1.0" or "1," as other ids
       // (#1641 George r1).
@@ -63,6 +77,15 @@ export function parseArgs(argv) {
     throw new Error("--branch must be staging or main");
   if (out.known && !out.known.every(Number.isSafeInteger))
     throw new Error("--known must be run ids");
+  if ((out.runId === null) !== (out.attempt === null))
+    throw new Error("--run-id and --attempt go together");
+  if (out.runId !== null && out.known)
+    throw new Error("--run-id and --known are different checks");
+  if (
+    out.attempt !== null &&
+    !(out.attempt >= 1 && Number.isSafeInteger(out.attempt))
+  )
+    throw new Error("--attempt must be 1 or more");
   return out;
 }
 
@@ -172,7 +195,44 @@ export function gather({ lane, sha, branch, known }, ghText = defaultGh) {
   };
 }
 
-/** Prints the lines and the verdict; returns the exit status (0 only for OK or STARTED). */
+/** The guard's reads: the lane's runs at the commit, and this run's earlier attempts. */
+function gatherGuard(opts, ghText = defaultGh) {
+  const base = gather({ ...opts, known: [] }, ghText);
+  const priorAttempts = [];
+  for (let n = 1; n < opts.attempt; n++) {
+    priorAttempts.push({
+      attempt: n,
+      view: JSON.parse(
+        ghText([
+          "run",
+          "view",
+          String(opts.runId),
+          "--repo",
+          REPO,
+          "--attempt",
+          String(n),
+          "--json",
+          "jobs",
+        ])
+      ),
+    });
+  }
+  return {
+    lane: opts.lane,
+    sha: opts.sha,
+    runId: opts.runId,
+    attempt: opts.attempt,
+    laneRuns: base.laneRuns,
+    views: base.views,
+    artifacts: base.artifacts,
+    priorAttempts,
+  };
+}
+
+/** Exit status for the guard's SKIP verdict; 0 is UPLOAD, 1 STOP. */
+const GUARD_SKIP = 3;
+
+/** Prints the lines and the verdict; returns the exit status (0 only for OK, STARTED or UPLOAD). */
 export function main(argv, { gh = defaultGh, log = console.log } = {}) {
   let opts;
   try {
@@ -182,6 +242,16 @@ export function main(argv, { gh = defaultGh, log = console.log } = {}) {
     return 2;
   }
   try {
+    if (opts.runId !== null) {
+      const r = guardUpload(gatherGuard(opts, gh));
+      r.lines.forEach((line) => log(line));
+      log(`${r.decision.toUpperCase()}: ${r.reason}`);
+      return r.decision === "upload"
+        ? 0
+        : r.decision === "skip"
+          ? GUARD_SKIP
+          : 1;
+    }
     const input = gather(opts, gh);
     if (opts.known) {
       const r = afterDispatch(input);
