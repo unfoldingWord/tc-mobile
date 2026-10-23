@@ -295,3 +295,67 @@ describe("the batch-two pixel bridge stays mapped (#460)", () => {
     expect(primitiveValue(primitives, "--p-text-md")).toBe("13px");
   });
 });
+
+/**
+ * The pixel half of the arbitrary-value bridge, batch three (#460).
+ *
+ * Batch three covers `segments-screen.tsx`, `phone-check-screen.tsx` and
+ * `send-log-control.tsx`. Exact matches swapped: `gap-[14px]` to
+ * `--c-gap-items` in the segments screen, `text-[13px]` to `--p-text-md` and
+ * `text-[12px]` to `--p-text-sm` in the phone check, and `text-[12px]` to
+ * `--p-text-sm` in the send-log control. Equality is asserted below from the
+ * token declarations, not judged by eye. Values with no exact token
+ * (`gap-[8px]`, `px-[4px]`, `py-[2px]`, `gap-[4px]`, `text-[20px]`) stay as
+ * they are and are not rounded.
+ */
+describe("the batch-three pixel bridge stays mapped (#460)", () => {
+  const SWEPT = [
+    { name: "segments-screen.tsx", literals: [/gap-\[14px\]/] },
+    {
+      name: "phone-check-screen.tsx",
+      literals: [/text-\[13px\]/, /text-\[12px\]/],
+    },
+    { name: "send-log-control.tsx", literals: [/text-\[12px\]/] },
+  ].map((f) => ({
+    ...f,
+    // None of the three holds `//` or `/*` inside a string.
+    code: stripComments(readFileSync(path.join(COMPONENTS, f.name), "utf8")),
+  }));
+
+  it("sees all three swept files", () => {
+    expect(SWEPT.length).toBe(3);
+    for (const { code } of SWEPT) expect(code.length).toBeGreaterThan(0);
+  });
+
+  for (const { name, code, literals } of SWEPT) {
+    for (const literal of literals) {
+      it(`${name} does not carry the bare ${literal.source} this batch replaced`, () => {
+        expect(code).not.toMatch(literal);
+      });
+    }
+  }
+
+  const USES = [
+    ["segments-screen.tsx", /gap-\[var\(--c-gap-items\)\]/],
+    ["phone-check-screen.tsx", /text-\[length:var\(--p-text-md\)\]/],
+    ["phone-check-screen.tsx", /text-\[length:var\(--p-text-sm\)\]/],
+    ["send-log-control.tsx", /text-\[length:var\(--p-text-sm\)\]/],
+  ] as const;
+  for (const [file, pattern] of USES) {
+    it(`${file} still uses ${pattern.source}`, () => {
+      const hit = SWEPT.find((f) => f.name === file);
+      expect(hit?.code).toMatch(pattern);
+    });
+  }
+
+  it("--c-gap-items still resolves to 14px", () => {
+    const body = cssRule(componentTokens, ":root");
+    expect(declarationValue(body, "--c-gap-items")).toBe("var(--p-space-4)");
+    expect(primitiveValue(primitives, "--p-space-4")).toBe("14px");
+  });
+
+  it("--p-text-md and --p-text-sm still resolve to 13px and 12px", () => {
+    expect(primitiveValue(primitives, "--p-text-md")).toBe("13px");
+    expect(primitiveValue(primitives, "--p-text-sm")).toBe("12px");
+  });
+});

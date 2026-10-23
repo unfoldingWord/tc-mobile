@@ -83,7 +83,9 @@ function SampleList({ samples }: { samples: readonly FontSample[] }) {
     <ul className="flex flex-col gap-2">
       {samples.map((s) => (
         <li key={s.id} className="flex flex-col">
-          <span className="text-ink-muted text-[13px]">{s.label}</span>
+          <span className="text-ink-muted text-[length:var(--p-text-md)]">
+            {s.label}
+          </span>
           {/* `lang` and `dir` are the point: they are what makes the phone
               choose this script's own font (#1486). `translate="no"` keeps
               a browser's page translation from rewriting the sample, so the
@@ -180,7 +182,9 @@ export function PhoneCheckView({
           {strings.phoneCheckClose}
         </button>
       </header>
-      <p className="text-ink-muted text-[13px]">{strings.phoneCheckIntro}</p>
+      <p className="text-ink-muted text-[length:var(--p-text-md)]">
+        {strings.phoneCheckIntro}
+      </p>
 
       <button
         type="button"
@@ -193,7 +197,7 @@ export function PhoneCheckView({
       </button>
 
       <p
-        className="text-ink-muted text-[13px]"
+        className="text-ink-muted text-[length:var(--p-text-md)]"
         role="status"
         data-phone-check="status"
       >
@@ -203,7 +207,7 @@ export function PhoneCheckView({
       <div className="border-edge flex flex-col gap-2 rounded-2xl border p-3">
         <h2 className="text-ink">{strings.phoneCheckMemoryTitle}</h2>
         <p
-          className="text-warn-text text-[13px]"
+          className="text-warn-text text-[length:var(--p-text-md)]"
           id="phone-check-memory-warning"
         >
           {strings.phoneCheckMemoryWarning}
@@ -226,7 +230,7 @@ export function PhoneCheckView({
       >
         <h2 className="text-ink">{strings.phoneCheckFontTitle}</h2>
         <p
-          className="text-ink-muted text-[13px]"
+          className="text-ink-muted text-[length:var(--p-text-md)]"
           data-phone-check="fonts-intro"
         >
           {strings.phoneCheckFontIntro}
@@ -234,7 +238,7 @@ export function PhoneCheckView({
         <SampleList samples={SCRIPT_SAMPLES} />
         <h3 className="text-ink">{strings.phoneCheckDigitsTitle}</h3>
         <p
-          className="text-ink-muted text-[13px]"
+          className="text-ink-muted text-[length:var(--p-text-md)]"
           data-phone-check="digits-note"
         >
           {strings.phoneCheckDigitsNote}
@@ -249,7 +253,7 @@ export function PhoneCheckView({
           readOnly
           value={report}
           rows={16}
-          className="border-edge bg-surface text-ink w-full rounded-xl border p-2 font-mono text-[12px]"
+          className="border-edge bg-surface text-ink w-full rounded-xl border p-2 font-mono text-[length:var(--p-text-sm)]"
           data-phone-check="report"
         />
       </label>
@@ -262,7 +266,7 @@ export function PhoneCheckView({
         {strings.phoneCheckCopy}
       </button>
       <p
-        className="text-ink-muted text-[13px]"
+        className="text-ink-muted text-[length:var(--p-text-md)]"
         role="status"
         data-phone-check="copy-status"
       >
