@@ -26,6 +26,7 @@ import { NameEdit } from "./name-edit";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
 import { CoverPicker } from "./cover-picker";
 import { LanguageAsk } from "./language-ask";
+import { LicenceAsk } from "./licence-ask";
 import { CoverTile, O4BookHead, O4CoverPick } from "./o4-book-menu";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
@@ -49,6 +50,7 @@ import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookCoverColour } from "@/hooks/use-book-cover-colour";
 import { useLanguageAsk, useLanguageList } from "@/hooks/use-language-ask";
+import { needsLicenceAsk, useLicenceAsk } from "@/hooks/use-licence-ask";
 import { useBookShare } from "@/hooks/use-book-share";
 import type { ChapterAudio } from "@/hooks/use-audio-session";
 import { useBooks } from "@/hooks/use-books";
@@ -75,7 +77,8 @@ import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import { reorderShift } from "@/lib/view/reorder-gesture";
-import type { BookId, ChapterId } from "@/types/domain";
+import type { Book, BookId, ChapterId } from "@/types/domain";
+import type { LicenceId } from "@/types/template";
 import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
 
 /**
@@ -376,6 +379,30 @@ export function BooksScreen({
     choose: chooseLanguage,
   } = useLanguageAsk();
   const languageList = useLanguageList(askingLanguageFor !== null);
+  // #1455: Share Book's licence ask for a book with none chosen; reset
+  // whenever the sheet closes, as the language ask is.
+  // Licences the ask has stored, kept locally so the share gate does not
+  // depend on the shelf reload succeeding (#1455).
+  const [chosenLicences, setChosenLicences] = useState<
+    Readonly<Record<string, LicenceId>>
+  >({});
+  const onLicenceCommitted = useCallback(
+    (book: Book) => {
+      const { licence } = book;
+      if (licence) setChosenLicences((m) => ({ ...m, [book.id]: licence }));
+      reload();
+    },
+    [reload]
+  );
+  const {
+    askingFor: askingLicenceFor,
+    saving: savingLicence,
+    failed: licenceFailed,
+    ask: askLicence,
+    cancel: cancelLicenceAsk,
+    choose: chooseLicence,
+    isSaving: licenceSaving,
+  } = useLicenceAsk(onLicenceCommitted);
   // A failed cover write, scoped to the picker: the screen's Notice sits
   // behind the sheet's scrim, as rename's does.
   const [coverFailed, setCoverFailed] = useState<FailureKey | null>(null);
@@ -560,16 +587,27 @@ export function BooksScreen({
    */
   const closeBookMenuState = useCallback(() => {
     if (bookShare.ownsScreen()) return false;
+    // A licence write in flight cannot be cancelled, so the sheet stays up
+    // until it settles: closing now would drop the share after the licence
+    // committed (#1455).
+    if (licenceSaving()) return false;
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
     setPickingCover(false);
     setCoverFailed(null);
     cancelLanguageAsk();
+    cancelLicenceAsk();
     setSavingName(false);
     bookShare.reset();
     return true;
-  }, [bookShare, setSavingName, cancelLanguageAsk]);
+  }, [
+    bookShare,
+    setSavingName,
+    cancelLanguageAsk,
+    cancelLicenceAsk,
+    licenceSaving,
+  ]);
 
   /**
    * Cancel / Escape / scrim / a system Back unmount the delete confirm with
@@ -670,7 +708,12 @@ export function BooksScreen({
       // the screen for its whole timeline (Amendment D, widened from
       // `status === "preparing"` because #491's modal outlives it — see
       // `UseShareFlow.ownsScreen`).
-      busy: () => savingBookNameRef.current || bookShare.ownsScreen(),
+      // A licence write in flight (#1455) cannot be cancelled and
+      // `closeBookMenuState` refuses while it runs, so Back must see it as
+      // busy: otherwise the adapter unregisters the layer and a second Back
+      // leaves the app mid-share.
+      busy: () =>
+        savingBookNameRef.current || bookShare.ownsScreen() || licenceSaving(),
       dismiss: () => {
         closeBookMenuState();
       },
@@ -1186,7 +1229,13 @@ export function BooksScreen({
 
   // The book whose ⋮ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
-  const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  const shelfBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // The stored licence wins over a card the reload has not refreshed (or could
+  // not): without it a second Share would ask again and could overwrite.
+  const shareMenuBook = useMemo(() => {
+    const chosen = shelfBook ? chosenLicences[shelfBook.bookId] : undefined;
+    return shelfBook && chosen ? { ...shelfBook, licence: chosen } : shelfBook;
+  }, [shelfBook, chosenLicences]);
   // The open book's cover colour: its stored key, or #957's id-derived
   // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
   // swatch and the delete ask all read this one value.
@@ -1205,8 +1254,6 @@ export function BooksScreen({
   const shareMenuBookName = shareMenuBook
     ? strings.bookHeading(shareMenuBook.name, shareMenuBook.number)
     : "";
-  // The licence tag Share Book's file names carry (#1579, #1566).
-  const shareMenuLicence = shareMenuBook?.licence ?? null;
   // The teardown the vanish effect below runs, behind a latest-ref ON PURPOSE.
   // It has to reset the share, and `useBookShare()` returns a fresh object
   // literal every render (`use-book-share.ts`) — putting that in an effect's
@@ -1247,12 +1294,19 @@ export function BooksScreen({
       setPickingCover(false);
       setCoverFailed(null);
       cancelLanguageAsk();
+      cancelLicenceAsk();
       // A different book's still-pending rename must not show THIS book's fresh
       // Confirm as busy before it has even been tapped (Frank r1, #384).
       setSavingName(false);
       layers.open("books:book-menu");
     },
-    [menuFocusRestore, layers, setSavingName, cancelLanguageAsk]
+    [
+      menuFocusRestore,
+      layers,
+      setSavingName,
+      cancelLanguageAsk,
+      cancelLicenceAsk,
+    ]
   );
   // Menu's actual `onClose`, and the one close every caller uses — see
   // `closeBookMenuState` above for what it does and why the share-overlay guard
@@ -1434,9 +1488,38 @@ export function BooksScreen({
   // remount and always names a live, non-destructive landmark for
   // `restore()`'s `fallback`. See `segments-screen.tsx`'s `shareControlRef`.
   const shareControlRef = useRef<HTMLButtonElement | null>(null);
+  // The prepare itself, handed the licence its file names carry (#1579,
+  // #1566): the stored one, or the one the ask just wrote (#1455), which the
+  // render this closure belongs to has not seen yet.
+  const runBookShare = useCallback(
+    (licence: LicenceId | null) => {
+      if (!shareMenuBook) return;
+      // On the native route `prepare()` chains straight into `send()` (#860,
+      // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so
+      // the tap alone must close the menu on `sent`/`dismissed` the same way
+      // `onSendBookShare` below already does for the web route's own second
+      // tap. On the web route (still `ready`, waiting for that second tap) and
+      // on every non-chained ending (nothing to share, a prepare error, a
+      // superseded run) this resolves `null`, and the guard below leaves the
+      // menu exactly as every one of those already did.
+      void bookShare
+        .prepare(
+          shareMenuBook.bookId,
+          strings.shareBookFilename(shareMenuBookName, licence),
+          (n, name, highest) =>
+            strings.shareFilename(shareMenuBookName, n, name, highest, licence)
+        )
+        .then((outcome) => {
+          if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
+        });
+    },
+    [bookShare, shareMenuBook, shareMenuBookName, onCloseShareMenu]
+  );
   // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
   // menu stays open across both gestures (the shelf is `inert` behind it), so the
-  // panel is what the translator is looking at.
+  // panel is what the translator is looking at. A book with no licence chosen
+  // asks it first (#1455, S6): nothing is encoded from this tap, and the share
+  // runs from the ask once the pick is stored.
   const onPrepareBookShare = useCallback(() => {
     if (!shareMenuBook) return;
     focusRestore.capture();
@@ -1447,40 +1530,36 @@ export function BooksScreen({
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
     setSavingName(false);
-    // On the native route `prepare()` chains straight into `send()` (#860,
-    // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so this
-    // tap alone must close the menu on `sent`/`dismissed` the same way
-    // `onSendBookShare` below already does for the web route's own second
-    // tap. On the web route (still `ready`, waiting for that second tap) and
-    // on every non-chained ending (nothing to share, a prepare error, a
-    // superseded run) this resolves `null`, and the guard below leaves the
-    // menu exactly as every one of those already did.
-    void bookShare
-      .prepare(
-        shareMenuBook.bookId,
-        strings.shareBookFilename(shareMenuBookName, shareMenuLicence),
-        (n, name, highest) =>
-          strings.shareFilename(
-            shareMenuBookName,
-            n,
-            name,
-            highest,
-            shareMenuLicence
-          )
-      )
-      .then((outcome) => {
-        if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
-      });
+    if (needsLicenceAsk(shareMenuBook)) {
+      askLicence(shareMenuBook.bookId);
+      return;
+    }
+    runBookShare(shareMenuBook.licence ?? null);
   }, [
     focusRestore,
-    bookShare,
     setSavingName,
     shareMenuBook,
-    shareMenuBookName,
-    shareMenuLicence,
-    onCloseShareMenu,
     stopChapter,
+    askLicence,
+    runBookShare,
   ]);
+  // The pick is stored once, then the share goes on with it; a failed write
+  // stays in the ask, and a closed or cancelled ask resolves null and shares
+  // nothing.
+  const onPickLicence = useCallback(
+    (licence: LicenceId) => {
+      void chooseLicence(licence).then((book) => {
+        if (!book) return;
+        runBookShare(book.licence);
+      });
+    },
+    [chooseLicence, runBookShare]
+  );
+  // Cancel goes back to the tiles with nothing written and focus on Share.
+  const onCancelLicence = useCallback(() => {
+    cancelLicenceAsk();
+    requestAnimationFrame(() => shareControlRef.current?.focus());
+  }, [cancelLicenceAsk]);
   // Export project (#1457): the same tap-1 handling as Share Book above — the
   // focus capture, the chapter stop, the rename-session bump, the chained
   // close — through the same flow, handed a Scripture Bundle instead of the
@@ -1709,6 +1788,7 @@ export function BooksScreen({
       setPickingCover(false);
       setCoverFailed(null);
       cancelLanguageAsk();
+      cancelLicenceAsk();
       setSavingName(false);
       resetBookShare();
       layers.close("books:book-menu");
@@ -1720,6 +1800,7 @@ export function BooksScreen({
     setSavingName,
     resetBookShare,
     cancelLanguageAsk,
+    cancelLicenceAsk,
   ]);
   // Arm the delete ask from the book sheet's Delete tile. The sheet stays
   // open and its share is NOT reset (#980): the ask is about the same book
@@ -2504,15 +2585,17 @@ export function BooksScreen({
           // comes back here.
           <>
             <O4BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
-              {!pickingCover && askingLanguageFor === null && (
-                <Control
-                  icon="pencil"
-                  label={strings.renameBook}
-                  size={24}
-                  className="o4-head-pen"
-                  onClick={() => setRenamingBook(true)}
-                />
-              )}
+              {!pickingCover &&
+                askingLanguageFor === null &&
+                askingLicenceFor === null && (
+                  <Control
+                    icon="pencil"
+                    label={strings.renameBook}
+                    size={24}
+                    className="o4-head-pen"
+                    onClick={() => setRenamingBook(true)}
+                  />
+                )}
             </O4BookHead>
             {askingLanguageFor !== null ? (
               <LanguageAsk
@@ -2522,6 +2605,13 @@ export function BooksScreen({
                 onCancel={onCancelLanguage}
                 saving={savingLanguage}
                 error={languageFailed ? strings[languageFailed] : null}
+              />
+            ) : askingLicenceFor !== null ? (
+              <LicenceAsk
+                onContinue={onPickLicence}
+                onCancel={onCancelLicence}
+                saving={savingLicence}
+                error={licenceFailed ? strings[licenceFailed] : null}
               />
             ) : pickingCover ? (
               <O4CoverPick

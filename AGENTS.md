@@ -479,7 +479,7 @@ back to one caller), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 the Export project language ask's failed write and failed list load
-(`hooks/use-language-ask.ts`, `"book-language"` and `"language-list"`, #1492),
+(`hooks/use-language-ask.ts`, `"book-language"` and `"language-list"`, #1492), a failed licence write from Share Book's ask (`hooks/use-licence-ask.ts`, `"book-licence"`, #1455),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context

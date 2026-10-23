@@ -324,6 +324,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNarrow: "Digite mais para ver outros idiomas.",
   languageSaving: "Salvando o idioma.",
   languageAskCancel: "Cancelar",
+  licenceAskTitle: "Licença deste livro",
+  licenceAskLead:
+    "Quem pode compartilhar estas gravações? Você escolhe uma vez para este livro.",
+  licenceAllRightsReserved: "Todos os direitos reservados",
+  licenceSaving: "Salvando a licença.",
+  licenceAskContinue: "Compartilhar",
+  licenceAskCancel: "Cancelar",
   exportProjectSuffix: "projeto",
   exportProjectFilename(
     this: Strings,

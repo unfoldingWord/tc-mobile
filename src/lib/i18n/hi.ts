@@ -331,6 +331,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNarrow: "दूसरी भाषाएँ देखने के लिए और टाइप करें।",
   languageSaving: "भाषा सहेजी जा रही है।",
   languageAskCancel: "रद्द करें",
+  licenceAskTitle: "इस पुस्तक का लाइसेंस",
+  licenceAskLead:
+    "ये रिकॉर्डिंग कौन साझा कर सकता है? आप इस पुस्तक के लिए एक बार चुनते हैं।",
+  licenceAllRightsReserved: "सर्वाधिकार सुरक्षित",
+  licenceSaving: "लाइसेंस सहेजा जा रहा है।",
+  licenceAskContinue: "साझा करें",
+  licenceAskCancel: "रद्द करें",
   shareBookNothing: "इस पुस्तक को साझा करने से पहले एक खंड रिकॉर्ड करें।",
   shareBookFailed: "यह पुस्तक साझा नहीं हो सकी। फिर से कोशिश करें।",
   shareBookFailedWeb:
