@@ -304,9 +304,11 @@ describe("the batch-two pixel bridge stays mapped (#460)", () => {
  * `--c-gap-items` in the segments screen, `text-[13px]` to `--p-text-md` and
  * `text-[12px]` to `--p-text-sm` in the phone check, and `text-[12px]` to
  * `--p-text-sm` in the send-log control. Equality is asserted below from the
- * token declarations, not judged by eye. Values with no exact token
- * (`gap-[8px]`, `px-[4px]`, `py-[2px]`, `gap-[4px]`, `text-[20px]`) stay as
- * they are and are not rounded.
+ * token declarations, not judged by eye. Five utilities stay as they are,
+ * outside this batch's scope. Four have a matching primitive that this batch
+ * did not take: 4px is `--p-space-1` (`px-[4px]`, `gap-[4px]`), 8px is
+ * `--p-space-3` (`gap-[8px]`), and 20px is `--p-text-20` (`text-[20px]`).
+ * `py-[2px]` is the one with no token at all.
  */
 describe("the batch-three pixel bridge stays mapped (#460)", () => {
   const SWEPT = [
