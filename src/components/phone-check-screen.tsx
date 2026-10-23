@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 
+import { CardProbePanel } from "@/components/card-probe-panel";
 import { strings } from "@/lib/strings";
 import { copyText, type CopyOutcome } from "@/hooks/copy-text";
 import {
@@ -189,6 +190,8 @@ export function PhoneCheckView({
           {strings.phoneCheckMemoryStart}
         </button>
       </div>
+
+      <CardProbePanel />
 
       <label className="flex flex-col gap-2">
         <span>{strings.phoneCheckReportLabel}</span>
