@@ -902,11 +902,15 @@ export const stringsEn = {
   exportProject: "Export project",
   tileExport: "Export",
   exportProjectPreparing: "Preparing the project to export.",
-  // ADR 0014 point 8: `<book> - project.zip`, a fixed English suffix on every
-  // phone language (#1627 asks whether it should follow the language), so it
-  // differs from Share Book's `<book>.zip`. Sanitised like shareBookFilename.
+  // ADR 0014 point 8 (amended 2026-10-22, #1627): `<book> - <word>.zip`, where
+  // the word follows the app's language the way Share Book's chapter names do
+  // (`chapterName`), so it differs from Share Book's `<book>.zip`. Sanitised
+  // like shareBookFilename. The book name from the Bible Passages dataset is
+  // not built yet (the rest of #1627).
+  exportProjectSuffix: "project",
   exportProjectFilename(book: string): string {
-    const suffix = " - project.zip";
+    const word = filenameSafe(this.exportProjectSuffix) || "project";
+    const suffix = ` - ${word}.zip`;
     const label =
       filenameSafe(book, new TextEncoder().encode(suffix).length) ||
       this.shareNameFallback;

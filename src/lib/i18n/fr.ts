@@ -315,6 +315,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNarrow: "Tapez plus pour voir d’autres langues.",
   languageSaving: "Sauvegarde de la langue.",
   languageAskCancel: "Annuler",
+  exportProjectSuffix: "projet",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>
