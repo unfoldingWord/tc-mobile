@@ -43,7 +43,17 @@ describe("Share Book's licence ask", () => {
 
   it("shares after the ask only once the pick is stored, with the stored licence", () => {
     expect(callbackBody("onPickLicence")).toMatch(
-      /chooseLicence\(licence\)\.then\(\(book\) => \{\s*if \(!book\) return;\s*reload\(\);\s*runBookShare\(book\.licence\);/
+      /chooseLicence\(licence\)\.then\(\(book\) => \{\s*if \(!book\) return;\s*runBookShare\(book\.licence\);/
+    );
+  });
+
+  it("reloads on any commit, even one whose share was dropped", () => {
+    expect(source).toContain("useLicenceAsk(reload)");
+  });
+
+  it("refuses to close the sheet while the licence write is in flight", () => {
+    expect(callbackBody("closeBookMenuState")).toMatch(
+      /if \(licenceSaving\(\)\) return false;/
     );
   });
 

@@ -388,7 +388,8 @@ export function BooksScreen({
     ask: askLicence,
     cancel: cancelLicenceAsk,
     choose: chooseLicence,
-  } = useLicenceAsk();
+    isSaving: licenceSaving,
+  } = useLicenceAsk(reload);
   // A failed cover write, scoped to the picker: the screen's Notice sits
   // behind the sheet's scrim, as rename's does.
   const [coverFailed, setCoverFailed] = useState<FailureKey | null>(null);
@@ -573,6 +574,10 @@ export function BooksScreen({
    */
   const closeBookMenuState = useCallback(() => {
     if (bookShare.ownsScreen()) return false;
+    // A licence write in flight cannot be cancelled, so the sheet stays up
+    // until it settles: closing now would drop the share after the licence
+    // committed (#1455).
+    if (licenceSaving()) return false;
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
@@ -583,7 +588,13 @@ export function BooksScreen({
     setSavingName(false);
     bookShare.reset();
     return true;
-  }, [bookShare, setSavingName, cancelLanguageAsk, cancelLicenceAsk]);
+  }, [
+    bookShare,
+    setSavingName,
+    cancelLanguageAsk,
+    cancelLicenceAsk,
+    licenceSaving,
+  ]);
 
   /**
    * Cancel / Escape / scrim / a system Back unmount the delete confirm with
@@ -1515,11 +1526,10 @@ export function BooksScreen({
     (licence: LicenceId) => {
       void chooseLicence(licence).then((book) => {
         if (!book) return;
-        reload();
         runBookShare(book.licence);
       });
     },
-    [chooseLicence, reload, runBookShare]
+    [chooseLicence, runBookShare]
   );
   // Cancel goes back to the tiles with nothing written and focus on Share.
   const onCancelLicence = useCallback(() => {

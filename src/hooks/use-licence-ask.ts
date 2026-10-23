@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
+import { getBook } from "@/lib/storage/books";
 import { setBookLicence } from "@/lib/storage/licence";
 import type { Book, BookId } from "@/types/domain";
 import type { LicenceId } from "@/types/template";
@@ -27,6 +28,17 @@ async function performSetBookLicence(
   try {
     return { ok: true, book: await setBookLicence(bookId, licence) };
   } catch (cause) {
+    // A template book's licence is fixed (D5) and the writer refuses it. The
+    // card only knows `null`, so a template book that somehow still reads null
+    // must not trap the share inside this ask: share it as it is, untagged.
+    // Matched by name, as `isBookNameTaken` is, so no class identity is needed.
+    if (
+      (cause as { name?: unknown } | null)?.name ===
+      "TemplateLicenceLockedError"
+    ) {
+      const book = await getBook(bookId);
+      if (book) return { ok: true, book };
+    }
     console.error("Saving a book's licence failed", cause);
     reportFailure(cause, "book-licence");
     return { ok: false, key: failureKey(cause, "saveFailed") };
@@ -38,8 +50,17 @@ async function performSetBookLicence(
  * `useLanguageAsk`. `choose` goes busy before its first await; a run a
  * `cancel`, a newer `ask` or an unmount overtook resolves `null`, so a closed
  * ask never continues a share.
+ *
+ * While a write is in flight the ask cannot be left or restarted: `cancel` and
+ * `ask` are no-ops and `isSaving` says so for the sheet that hosts it. A write
+ * that commits is reported to `onCommitted` even if its result is dropped, so
+ * the shelf never keeps showing "not chosen" for a licence that was stored.
  */
-export function useLicenceAsk() {
+export function useLicenceAsk(onCommitted?: () => void) {
+  const committed = useRef(onCommitted);
+  useEffect(() => {
+    committed.current = onCommitted;
+  });
   const [askingFor, setAskingFor] = useState<BookId | null>(null);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState<FailureKey | null>(null);
@@ -48,6 +69,7 @@ export function useLicenceAsk() {
   useEffect(() => () => void (session.current += 1), []);
 
   const ask = useCallback((bookId: BookId | null) => {
+    if (savingRef.current) return;
     session.current += 1;
     savingRef.current = false;
     setSaving(false);
@@ -55,6 +77,7 @@ export function useLicenceAsk() {
     setAskingFor(bookId);
   }, []);
   const cancel = useCallback(() => ask(null), [ask]);
+  const isSaving = useCallback(() => savingRef.current, []);
 
   const choose = useCallback(
     async (licence: LicenceId): Promise<Book | null> => {
@@ -64,6 +87,7 @@ export function useLicenceAsk() {
       setSaving(true);
       setFailed(null);
       const result = await performSetBookLicence(askingFor, licence);
+      if (result.ok) committed.current?.();
       if (session.current !== mine) return null;
       savingRef.current = false;
       setSaving(false);
@@ -77,5 +101,5 @@ export function useLicenceAsk() {
     [askingFor]
   );
 
-  return { askingFor, saving, failed, ask, cancel, choose };
+  return { askingFor, saving, failed, ask, cancel, choose, isSaving };
 }

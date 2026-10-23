@@ -21,7 +21,8 @@ const CHOICES: readonly LicenceId[] = [
 ];
 
 function choiceName(id: LicenceId): string {
-  return licenceLabel(id) ?? strings.licenceAllRightsReserved;
+  if (id === "all-rights-reserved") return strings.licenceAllRightsReserved;
+  return licenceLabel(id) ?? id;
 }
 
 /**
@@ -58,6 +59,7 @@ export function LicenceAsk(props: {
                 aria-checked={on}
                 aria-label={choiceName(id)}
                 data-licence={id}
+                disabled={saving}
                 className="licence-row"
                 onClick={() => setSelected(id)}
               >
@@ -80,6 +82,7 @@ export function LicenceAsk(props: {
           <button
             type="button"
             className="licence-ask-quiet"
+            disabled={saving}
             onClick={props.onCancel}
           >
             {strings.licenceAskCancel}

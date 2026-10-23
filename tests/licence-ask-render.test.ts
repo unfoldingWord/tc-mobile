@@ -101,6 +101,24 @@ describe("LicenceAsk", () => {
   });
 });
 
+describe("LicenceAsk while saving", () => {
+  it("disables every row and Cancel, so nothing can leave or change the pick mid-write", () => {
+    const root = ask({ saving: true });
+    const rows = Array.from(root.querySelectorAll('[role="radio"]'));
+    expect(rows).toHaveLength(4);
+    expect(rows.every((r) => r.hasAttribute("disabled"))).toBe(true);
+    const cancel = Array.from(root.querySelectorAll("button")).find(
+      (b) => b.textContent === strings.licenceAskCancel
+    )!;
+    expect(cancel.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("leaves them live when idle", () => {
+    const root = ask();
+    expect(root.querySelectorAll("button[disabled]")).toHaveLength(0);
+  });
+});
+
 describe("needsLicenceAsk", () => {
   it("asks for a blank book whose licence is not chosen", async () => {
     const book = await createBook("Mark", null);

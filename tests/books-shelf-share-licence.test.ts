@@ -172,4 +172,57 @@ describe("the shelf's Share Book names its files with the licence (#1579)", () =
     expect(document.querySelector('[role="radiogroup"]')).toBeNull();
     expect(mocks.setBookLicence).not.toHaveBeenCalled();
   });
+
+  it("keeps the ask up while the write is in flight, then shares with the pick", async () => {
+    let release: (book: unknown) => void = () => {};
+    mocks.setBookLicence.mockImplementation(
+      () => new Promise((resolve) => (release = resolve))
+    );
+    mocks.books = [
+      { bookId: mark, name: "Mark", number: 1, licence: null, chapters: [] },
+    ];
+    await act(async () => {
+      root.render(
+        createElement(BooksScreen, {
+          audio: idleChapterAudio(),
+          onOpenChapter: vi.fn(),
+          pushLayer: vi.fn<(layer: Layer) => void>(),
+          popLayer: vi.fn<(id: string) => void>(),
+        })
+      );
+    });
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (b) => b.getAttribute("aria-label") === label
+      )!;
+    const click = async (el: HTMLElement) =>
+      act(async () => {
+        el.focus();
+        el.click();
+      });
+    await click(byLabel(strings.bookMenuOpen("Mark")));
+    await click(byLabel(strings.shareBook));
+    await click(byLabel(strings.licenceAskContinue));
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+
+    // Cancel, a second pick and the sheet's own Close are all inert mid-write.
+    const cancel = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === strings.licenceAskCancel
+    )!;
+    await click(cancel);
+    await click(
+      document.querySelector<HTMLElement>(
+        '[role="radio"][data-licence="CC0-1.0"]'
+      )!
+    );
+    await click(byLabel(strings.menuClose));
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+
+    await act(async () => release({ id: mark, licence: "CC-BY-SA-4.0" }));
+    expect(mocks.setBookLicence).toHaveBeenCalledTimes(1);
+    expect(mocks.setBookLicence).toHaveBeenCalledWith(mark, "CC-BY-SA-4.0");
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    expect(mocks.prepare.mock.calls[0]![1]).toBe("Mark (CC BY-SA 4.0).zip");
+  });
 });

@@ -14,14 +14,17 @@ import type { Book, BookId } from "@/types/domain";
  */
 
 const setBookLicence = vi.hoisted(() => vi.fn());
+const getBook = vi.hoisted(() => vi.fn());
+const committedSpy = vi.hoisted(() => vi.fn());
 const reportFailure = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/storage/licence", () => ({ setBookLicence }));
+vi.mock("@/lib/storage/books", () => ({ getBook }));
 vi.mock("@/hooks/report-failure", () => ({ reportFailure }));
 
 type Ask = ReturnType<typeof useLicenceAsk>;
 const latest: { current: Ask | null } = { current: null };
 function Probe() {
-  const ask = useLicenceAsk();
+  const ask = useLicenceAsk(committedSpy);
   useEffect(() => {
     latest.current = ask;
   });
@@ -31,6 +34,8 @@ function Probe() {
 let root: Root;
 beforeEach(async () => {
   setBookLicence.mockReset();
+  getBook.mockReset();
+  committedSpy.mockReset();
   reportFailure.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -77,21 +82,6 @@ it("writes nothing and hands nothing back when the ask is cancelled", async () =
   expect(latest.current!.askingFor).toBeNull();
 });
 
-it("drops a write's result when the ask was cancelled while it ran", async () => {
-  await act(async () => latest.current!.ask(id));
-  let release: (b: Book) => void = () => {};
-  setBookLicence.mockImplementation(
-    () => new Promise<Book>((resolve) => (release = resolve))
-  );
-  let pending: Promise<Book | null> = Promise.resolve(null);
-  await act(async () => {
-    pending = latest.current!.choose("CC0-1.0");
-    latest.current!.cancel();
-    release({ id, licence: "CC0-1.0" } as Book);
-  });
-  expect(await pending).toBeNull();
-});
-
 it("writes once for two taps in one render", async () => {
   await act(async () => latest.current!.ask(id));
   let release: (b: Book) => void = () => {};
@@ -122,4 +112,74 @@ it("reports a failed write as book-licence, keeps the ask open and continues not
   expect(latest.current!.askingFor).toBe(id);
   expect(latest.current!.failed).not.toBeNull();
   expect(latest.current!.saving).toBe(false);
+});
+
+function deferWrite() {
+  const w: { release: (b: Book) => void } = { release: () => {} };
+  setBookLicence.mockImplementation(
+    () => new Promise<Book>((resolve) => (w.release = resolve))
+  );
+  return w;
+}
+
+it("ignores Cancel while the write is in flight, then hands the book back and reports the commit", async () => {
+  await act(async () => latest.current!.ask(id));
+  const w = deferWrite();
+  let pending: Promise<Book | null> = Promise.resolve(null);
+  await act(async () => {
+    pending = latest.current!.choose("CC-BY-4.0");
+  });
+  expect(latest.current!.isSaving()).toBe(true);
+  await act(async () => latest.current!.cancel());
+  expect(latest.current!.askingFor).toBe(id);
+  expect(latest.current!.saving).toBe(true);
+  await act(async () => w.release({ id, licence: "CC-BY-4.0" } as Book));
+  expect((await pending)?.licence).toBe("CC-BY-4.0");
+  expect(committedSpy).toHaveBeenCalledTimes(1);
+  expect(latest.current!.isSaving()).toBe(false);
+});
+
+it("does not let a newer ask clear the in-flight write, so a second pick cannot commit over the first", async () => {
+  await act(async () => latest.current!.ask(id));
+  const w = deferWrite();
+  await act(async () => void latest.current!.choose("CC-BY-4.0"));
+  await act(async () => latest.current!.ask(id));
+  let second: Book | null | undefined;
+  await act(async () => {
+    second = await latest.current!.choose("CC0-1.0");
+  });
+  expect(second).toBeNull();
+  await act(async () => w.release({ id, licence: "CC-BY-4.0" } as Book));
+  expect(setBookLicence).toHaveBeenCalledTimes(1);
+  expect(setBookLicence).toHaveBeenCalledWith(id, "CC-BY-4.0");
+});
+
+it("reports a commit even when the ask unmounted mid-write, so the shelf can reload", async () => {
+  await act(async () => latest.current!.ask(id));
+  const w = deferWrite();
+  let pending: Promise<Book | null> = Promise.resolve(null);
+  await act(async () => {
+    pending = latest.current!.choose("CC0-1.0");
+  });
+  await act(async () => root.unmount());
+  await act(async () => w.release({ id, licence: "CC0-1.0" } as Book));
+  expect(await pending).toBeNull();
+  expect(committedSpy).toHaveBeenCalledTimes(1);
+  root = createRoot(document.getElementById("root")!);
+});
+
+it("lets a template book that reads null share untagged instead of trapping it in the ask", async () => {
+  await act(async () => latest.current!.ask(id));
+  const locked = Object.assign(new Error("locked"), {
+    name: "TemplateLicenceLockedError",
+  });
+  setBookLicence.mockRejectedValue(locked);
+  getBook.mockResolvedValue({ id, licence: null } as Book);
+  let book: Book | null | undefined;
+  await act(async () => {
+    book = await latest.current!.choose("CC-BY-SA-4.0");
+  });
+  expect(book?.id).toBe(id);
+  expect(reportFailure).not.toHaveBeenCalled();
+  expect(latest.current!.askingFor).toBeNull();
 });
