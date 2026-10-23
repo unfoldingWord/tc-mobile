@@ -11,6 +11,67 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-22 to 10-23 (day) — Sprint 5 day 4: Capacitor-or-Expo research, a Settings screen, Export project with a language list, five more AI-drafted languages, the issue pipeline in CI, and a tested release re-dispatch check, 31 PRs merged
+
+One coordinator session in orchestrator mode. No device results reached this session.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Capacitor or Expo (#1520):** "Research + ADR + throwaway proof (Recommended)", and "Hold native plugins, keep #38 (Recommended)". The research note and ADR 0016 (Proposed) are in (#1605). The note recommends staying on Capacitor. The DRI decides after the #1612 proof app runs on a phone.
+- **Trademark notice (#1581):** "Separate notice, outside the grant (Recommended)" (#1598).
+- **Release re-dispatch (#1613):** "Both", and #1316 item 2, "Never dispatch an RC after prod". At #1613's review cap: "Park; replace with a tested script (Recommended)". The script is #1636 (#1640, #1641), and #1613 is closed as superseded.
+- **Settings (#1575):** "Gear icon on Books header", and the theme tiles: "Remove, Settings only".
+- **Export project row (#1457):** "Book's own menu, below Share (Recommended)".
+- **Language list (#1492):** "Bundled searchable list (Recommended)", then "MIT grant is enough, bundle langtags". The ISO 639-3 attribution clause is met in About & licenses; ADR 0017 records it.
+- **Issue pipeline (#1442):** a close rule, "Close with a device label"; session links, "Keep on commits/PRs, drop from skills text (Recommended)". At #1615's cap: "Fix it, one more round (Recommended)".
+- **#1617 at its cap:** "Fix it, one more round (Recommended)".
+- **The Export project file name:** first "Localized suffix", then: "Actually, I'm not sure on that one: fixed English versus localized export name." and "Let's check with Tim, maybe." The code follows ADR 0014 point 8 (fixed English) until the requirements owner answers. Filed as #1627.
+- **A typed chapter number (#1272):** "Ask Tim (Recommended)".
+
+### Requirements owner
+
+- Round 5 on the project site's Review page is fully answered. The answers built today: U2a ("The chapter's own number (22 if someone typed 22)"), U3 ("When tapping the kebab to open the menu, show the full chapter name at the top of that menu"), U4a ("Leave existing duplicates alone and block only new ones") and U4b ("The app refuses and asks for a different name").
+- Round 6 is on the Review page and was posted on Zulip: V1, the Export project file name (#1627), and V2, whether a chapter's number can be typed (#1272). Both are open.
+
+### Completed
+
+- **Merged to develop (31):** #1599, #1600, #1598, #1601, #1602, #1609, #1611, #1614, #1607, #1610, #1620, #1621, #1622, #1604, #1626, #1605, #1618, #1623, #1615, #1631, #1632, #1634, #1629, #1637, #1633, #1617, #1640, #1624, #1641, #1630 and #1639.
+- **Settings:** a gear on the Books header opens Settings, with the theme and "Always show chapter numbers" (#1623). The theme tiles left the Books ≡ menu.
+- **Library:**
+  - A chapter keeps its own number when it is moved, and the move is announced as "Chapter N moved to place M." (#1634).
+  - A new or renamed book cannot take a name another book already has; existing duplicates are left alone (#1633). The store enforces it in the write's own transaction.
+  - A row's ⋮ menu shows the full book, chapter or segment name at its top, and screen readers get it (#1617). The recorder's own menu and the header crumbs still cut long names (#1284 stays open).
+- **Export:**
+  - Export project in a book's menu (#1624), with the book's language asked once at the first export (#1630).
+  - The language list is SIL's langtags, bundled and searchable: 9,354 entries, precached and lazily loaded (#1629).
+  - The Scripture Bundle gather step (#1614) and the 66-book Bible table (#1611).
+  - Share Book's files carry the book's licence (#1599).
+- **Pending takes (#38):** PR 1, schema v13 with audio revisions and take dispositions (#1618), and PR 2, segment and book deletes drop their pending rows (#1632). #1548 is closed under the design note's rule; its required tests passed 16/16 locally. #1557 and #1549 wait for PR 3.
+- **Translations:** Portuguese (#1602), Indonesian (#1622), Swahili (#1626), Hindi (#1631), and Russian (#1639) are AI-drafted and complete on develop, under the standing language rule. No reader of any of them has checked the text. Every PR that added a string after a language became complete had to add that language too; the coordinator held Russian (#1635, PR #1639) until last for that reason. #1639 covers every key on develop.
+- **Issue pipeline (#1442, closed):** the collateral script (#1610), the seven stage skills dev1–dev7 (#1615), and a "PR Body" CI check on every pull request (#1637). The check is advisory until the DRI makes it a required check in the ruleset.
+- **Release tooling:** `npm run check:redispatch` decides whether a native lane may be re-dispatched (#1640, #1641; #1636 closed). It was run read-only against real run data; it has not been used in a real release. The release bump is proved by its diff (#1607).
+- **Audio:** the loudness chain is hardened against a wrapped index and non-finite input (#1600).
+- **Closed:** #1442, #1454, #1468, #1477, #1481, #1485, #1492, #1528, #1538, #1542, #1548, #1552, #1559, #1579, #1582, #1585, #1594, #1595, #1597, #1603, #1606, #1619, #1625, #1628, #1635 and #1636; PR #1613 closed as superseded. #1538 closed with `needs-device` under the DRI's close rule.
+- **Filed and still open:** #1608 (trademark follow-ups), #1616 (native concurrency group), #1627 (export file name, for the requirements owner), #1638 (change a book's language later, for the requirements owner).
+
+### Not run
+
+- **No device run of anything merged today.** Export, the language ask, Settings, the menus, the translations and the pending-take changes are verified only in Node, jsdom render tests and headless Chromium.
+- **The 1.1.1 device check** still has no results here. #1518 and #1521 wait on them.
+- **The #1612 Expo proof app** has not been run on a phone.
+
+### In progress
+
+- **The open questions:** Round 6 V1 and V2, and #1638, all with the requirements owner.
+- **#38 PR 3:** `judgePending`. It closes #1557, after which #1549 follows. It also folds in a disposition record that can outlive its deleted segment, and corrects a stale line in note §6.
+- **Next languages:** zh-Hans. Arabic waits for the right-to-left device pass.
+- **#1455:** the licence choice when sharing, Sprint 7. It shares the export files, so it starts after today's export work settles.
+- **The DRI's ruleset call:** whether "PR Body" becomes a required check.
+
+---
+
 ## 2026-10-21 (day) — Sprint 5 day 3: the 2.0 roadmap and its first waves, Spanish and French AI drafts live on develop, Scripture Bundle export end to end in tests, 39 PRs merged
 
 One coordinator session in orchestrator mode. The tester group ran 1.1.1 today; no device results are recorded here.
