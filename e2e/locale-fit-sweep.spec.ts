@@ -29,15 +29,13 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  *   - or the box itself leaves the viewport sideways.
  * And for the page: `scrollWidth` over the viewport width.
  *
- * A locale that really overflows today is an entry in `KNOWN` holding the
- * exact findings it returns (#1665). Every case is a plain test that must get
- * exactly that list, sorted, or `[]` when it has no entry: a new overflow, a
- * fix, or a broken walk all turn it red.
+ * Every case is a plain test that must find nothing. A broken walk turns it
+ * red too, because `measure()` throws when the screen it was asked to measure
+ * is not there.
  */
 test.use({ viewport: { width: 360, height: 740 } });
 
 const LOCALES = ["en", "es", "fr", "hi", "id", "pt", "ru", "sw"] as const;
-type Tag = (typeof LOCALES)[number];
 
 const SCREENS = [
   "books",
@@ -47,24 +45,6 @@ const SCREENS = [
   "settings",
 ] as const;
 type Screen = (typeof SCREENS)[number];
-
-/**
- * Locale/screen pairs that overflow today, with the exact findings (tracked in
- * #1665). The detail must match `measure()`, not a paraphrase.
- */
-const KNOWN: Partial<Record<`${Tag}/${Screen}`, Finding[]>> = {
-  "es/book-menu": [collision("Color de la portada", "Eliminar")],
-  "fr/book-menu": [collision("Couleur de la couverture", "Supprimer")],
-  "pt/book-menu": [collision("Compartilhar", "Exportar")],
-  "ru/book-menu": [collision("Поделиться", "Экспорт")],
-};
-
-function collision(a: string, b: string): Finding {
-  return {
-    what: "tile captions run into each other",
-    detail: `"${a}" and "${b}"`,
-  };
-}
 
 /**
  * The nodes that show a name the translator typed. The design cuts these with
@@ -249,7 +229,11 @@ async function settled(page: Page, selector: string) {
   await page.evaluate((s) => {
     const el = document.querySelector(s);
     return Promise.all(
-      (el?.getAnimations({ subtree: true }) ?? []).map((a) => a.finished)
+      (el?.getAnimations({ subtree: true }) ?? [])
+        // An infinite animation never finishes; only a bounded one comes to
+        // rest. A cancelled one rejects `finished`, which is also "done".
+        .filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime))
+        .map((a) => a.finished.catch(() => undefined))
     ).then(() => undefined);
   }, selector);
 }
@@ -319,10 +303,7 @@ const byDetail = (x: Finding, y: Finding) =>
 
 for (const tag of LOCALES) {
   for (const screen of SCREENS) {
-    const known = KNOWN[`${tag}/${screen}`] ?? [];
-    test(`${tag} ${screen}: findings are ${known.length === 0 ? "none" : "exactly the known overflow (#1665)"} at 360px (#1458)`, async ({
-      page,
-    }) => {
+    test(`${tag} ${screen}: no findings at 360px (#1458)`, async ({ page }) => {
       const findings = await sweep(page, tag, screen);
       if (process.env.LOCALE_FIT_SHOT) {
         await page.screenshot({
@@ -332,13 +313,14 @@ for (const tag of LOCALES) {
       expect(
         [...findings].sort(byDetail),
         `${tag} ${screen}:\n${findings.map((f) => `${f.what}: ${f.detail}`).join("\n")}`
-      ).toEqual([...known].sort(byDetail));
+      ).toEqual([]);
     });
   }
 }
 
 /**
- * The sweep has to be able to die. Two guards: a label that cannot fit its box
+ * The sweep has to be able to die. Three guards (a 300 px viewport case is not
+ * one: no guard here changes the viewport, so none needs it): a label that cannot fit its box
  * must be a finding, and so must a translated label saved only by an
  * ellipsis; if either returned nothing the sweep above would measure nothing.
  * A typed name cut by an ellipsis must stay exempt.
@@ -357,6 +339,29 @@ test("the sweep reports a control that cannot fit (mutation guard)", async ({
   });
   const findings = await measure(page, null);
   expect(findings.map((f) => f.what)).toContain("label wider than its box");
+});
+
+test("the sweep reports tile captions that run into each other (mutation guard)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  await page
+    .getByRole("button", { name: "Back to books", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^More actions for/ })
+    .first()
+    .click();
+  await settled(page, '[role="dialog"]');
+  // Undo the wrap and make the captions long enough to meet.
+  await page.addStyleTag({
+    content:
+      ".o4-tile > .control-caption { white-space: nowrap !important; max-width: none !important; hyphens: none !important; overflow-wrap: normal !important; font-size: 22px !important; }",
+  });
+  const findings = await measure(page, '[role="dialog"]');
+  expect(findings.map((f) => f.what)).toContain(
+    "tile captions run into each other"
+  );
 });
 
 test("the sweep still reports a translated label cut with an ellipsis, and exempts a typed name (mutation guard)", async ({
