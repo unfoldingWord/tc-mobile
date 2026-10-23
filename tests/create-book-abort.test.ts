@@ -44,14 +44,18 @@ function failRenumberPut(
     ...args: Parameters<IDBObjectStore["put"]>
   ) {
     const row: unknown = args[0];
-    // A non-object value falls through to the real `put`, which rejects it
-    // itself, rather than throwing a TypeError from inside this spy.
-    const isTarget = (value: unknown): value is Book =>
-      this.name === "books" &&
+    // A non-object value falls through to the real `put`, which throws its own
+    // DataError, rather than a TypeError from inside this spy.
+    const isBook = (value: unknown): value is Book =>
       typeof value === "object" &&
       value !== null &&
-      (value as Book).id === targetId &&
-      priorPositions.get((value as Book).id) !== (value as Book).shelfPosition;
+      "id" in value &&
+      "shelfPosition" in value;
+    const isTarget = (value: unknown): value is Book =>
+      this.name === "books" &&
+      isBook(value) &&
+      value.id === targetId &&
+      priorPositions.get(value.id) !== value.shelfPosition;
     if (!isTarget(row)) return real.apply(this, args);
     hits.push(row);
     if (mode === "throw") throw new Error("injected put failure");

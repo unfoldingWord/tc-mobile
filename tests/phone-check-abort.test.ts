@@ -52,6 +52,8 @@ vi.mock("@/hooks/phone-check-probes", async (importOriginal) => {
         quotaBytes: null,
         usageBytes: null,
         persisted: null,
+        language: null,
+        languages: null,
       };
     },
     runWorkerEncodeProbe: (signal?: AbortSignal) => {

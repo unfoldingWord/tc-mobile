@@ -143,17 +143,18 @@ default, the text there says to keep using it.
    -->
 
    **Once a phone has updated to a new build, do not put an older build back
-   on it.** Builds 1.1.0 and 1.2.0 each change how recordings are stored, and
-   an older build cannot read them again: they stay on the phone, but out of
-   reach, until a build at least as new as the one the phone last opened is
-   installed over it. If the app says "This copy is
-   out of date" and restarting does not clear it, do not uninstall, because
+   on it.** When the newer build changed how recordings are stored (1.1.0 and
+   1.2.0 each did), the recordings stay on the phone but out of reach until a
+   build at least as new as the one it last opened is installed over it
+   (AGENTS.md, "A rollback is not free once a phone has opened a build with a newer database
+   schema"). If the app says "This copy is out of date" and restarting does
+   not clear it, do not uninstall, because
    that deletes every recording. Write down the stamp and what you saw, as in
    section 5, and report it. (On Android, the phone itself refuses to install
    an older build over a newer one; see
    [docs/native/README.md](../native/README.md) §5a.) <!-- source: AGENTS.md
-   "What rollback does not do"; src/lib/storage/db.ts DB_VERSION 12 (1.1.0 raised it to 11, #1462 to 12); screen
-   text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
+   "A rollback is not free once a phone has opened a build with a newer
+   database schema"; screen text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
 
    **The same rules apply to testers and to participants.** On an iPhone,
    open TestFlight, choose the newest build of tC Mobile and tap **Update**
@@ -205,16 +206,23 @@ default, the text there says to keep using it.
    src/app/App.tsx -->
 
 2. **Allow the microphone when asked.** The first time someone taps record,
-   the phone will ask for microphone access. Tap **Allow**. Without it,
-   recording will not work at all. If the choices are **Allow**, **While
-   using the app** and **Only this time**, pick **Allow** or **While using
-   the app** for anyone who will record more than once, such as over a
-   training day. **Only this time** may end once the app is left, and the
-   phone would ask again at a later recording. On some older Android
-   versions the refusing button says **Deny**; it means **Don't allow**.
+   the phone will ask for microphone access. Without it, recording will not
+   work at all. Read the labels the dialog actually shows and choose by
+   these rules (the labels named here are English): if **While using the
+   app** is shown, choose it; otherwise, if **Allow** is shown, choose it.
+   Do not choose **Only this time** for anyone who will
+   record again later, such as over a training day: it may end once the app
+   is left, and the phone would ask again at a later recording. **Deny** and
+   **Don't allow** both refuse the microphone; do not choose either. Which
+   labels appear depends on the phone. If none of these labels is on the
+   dialog, for example because the phone is in another language, stop and
+   do not guess by position: ask someone who reads that language which
+   button allows the microphone. **The wording above
+   has not been checked against a real permission dialog on a phone.**
    <!-- inference, not repo evidence: how long an "Only this time" grant lasts
    is Android platform behaviour and has not been tested here; same wording
-   as docs/tester-install.md step 5; gh issue #248, comment 2026-09-24 -->
+   as docs/tester-install.md step 5; gh issue #248, comment 2026-09-24 and
+   the 2026-10-12 follow-up -->
 3. **If the app never asks, or recording fails after allowing it:** open the
    phone's own settings — **Settings → Apps → tC Mobile → Permissions →
    Microphone** — and turn it on. (Standard Android path; wording varies by

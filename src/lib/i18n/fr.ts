@@ -30,6 +30,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuClose: "Fermer le menu",
   settingsOpen: "Réglages",
   settingsTitle: "Réglages",
+  templatesOpen: "Modèles",
+  templatesTitle: "Modèles",
+  templateLicenceLabel: (licence: string): string => `Licence : ${licence}`,
   settingsChapterNumbers: "Toujours afficher le numéro de chapitre",
   booksEmpty: "Commencez votre premier livre",
   booksEmptyTeach: "Un livre contient les chapitres que vous enregistrez.",
@@ -315,6 +318,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNarrow: "Tapez plus pour voir d’autres langues.",
   languageSaving: "Sauvegarde de la langue.",
   languageAskCancel: "Annuler",
+  exportProjectSuffix: "projet",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>
@@ -509,6 +513,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "Ouvrir la politique de confidentialité",
   aboutThirdParty: "Composants libres",
   aboutTexts: "Textes des licences",
+  aboutQrCaption: "Scannez pour obtenir l'application",
   aboutContent: "Contenu inclus",
   aboutLanguageCodes: "Codes de langue : ISO 639-3, de iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Lire ${name}`,

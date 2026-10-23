@@ -219,6 +219,19 @@ async function endOwnRow(
   return true;
 }
 
+/**
+ * Abort a transaction that has not committed yet. `false` when it already
+ * settled, so whatever it staged did land and the caller reports that.
+ */
+function abortNow(tx: TakeTx): boolean {
+  try {
+    tx.abort();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether every dependency of a row's recipe is on disk in this transaction. */
 async function recipeWhole(
   tx: TakeTx,
@@ -377,9 +390,11 @@ export async function saveTake(
  * `judgePending` (docs/design/pending-take-lifecycle.md §4):
  *
  *   - `saved` (`free`): the take is the active take now;
- *   - `already-saved` (`done`): it already was, or another copy saved it;
- *     nothing new was written;
- *   - `discarded`: it was discarded here or in another copy; nothing written;
+ *   - `already-saved` (`done`): it already was, or another copy saved it; no
+ *     second clip or take; a missing `saved` record is backfilled and this
+ *     take's own row is dropped;
+ *   - `discarded`: it was discarded here or in another copy, or this copy
+ *     asked to discard it during the commit's writes; nothing written;
  *   - `gone`: its segment was deleted; only a row left behind was dropped;
  *   - `kept` (`moved`, `unexplained`): nothing was saved over the segment, and
  *     the take is on disk as a marked row, so the slot may let it go;
@@ -469,6 +484,16 @@ export async function saveReplayedTake(
           { finished: take.finished, now }
         );
         await recordDisposition(tx, segmentId, clipId, "saved");
+        // The request again, in the last write's own turn (the hold's step 7,
+        // George r1 on #1652): a tap during the writes above must not be
+        // sealed as `saved`, which is final. Abort, so the row, the active
+        // take and the revision stay as they were and the Discard's own
+        // settle records it; otherwise commit here, so no window reopens.
+        if (opts.isDiscardRequested?.(clipId) === true && abortNow(tx)) {
+          await tx.done.catch(() => {});
+          return { outcome: "discarded" };
+        }
+        tx.commit();
         result = { outcome: "saved", take: saved };
         break;
       }

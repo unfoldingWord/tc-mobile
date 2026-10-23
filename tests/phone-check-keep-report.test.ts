@@ -59,6 +59,8 @@ vi.mock("@/hooks/phone-check-probes", async (importOriginal) => {
         quotaBytes: null,
         usageBytes: null,
         persisted: null,
+        language: null,
+        languages: null,
       };
     },
     runWorkerEncodeProbe: async () => {
@@ -109,6 +111,8 @@ const EARLIER: SavedChecks = {
       quotaBytes: 1,
       usageBytes: 1,
       persisted: true,
+      language: null,
+      languages: null,
     },
   },
   encode: {

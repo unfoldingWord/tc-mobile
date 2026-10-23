@@ -181,15 +181,16 @@ describe("the step count is threaded from prepare() to the exports (#986)", () =
       readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
     );
 
-  it("prepare() hands its build a stepReporter over this run's current() and the modal", () => {
+  it("prepare() hands its build a stepReporter and a readReporter (#1078) over this run's current() and the modal", () => {
     expect(src("src/hooks/share-flow.ts")).toMatch(
-      /await build\(\s*current,\s*controller\.signal,\s*stepReporter\(current, modal\.dispatch\)\s*\)/
+      /await build\(\s*current,\s*controller\.signal,\s*stepReporter\(current, modal\.dispatch\),\s*readReporter\(current, modal\.dispatch\)\s*\)/
     );
   });
 
-  it("Share Chapter forwards the build's onStep into exportChapterMp3", () => {
+  it("Share Chapter forwards the build's onStep into exportChapterMp3, and its onRead into withEncodeSteps (#1078)", () => {
     const s = src("src/hooks/use-chapter-share.ts");
-    expect(s).toMatch(/run\(\(isCurrent, signal, onStep\) =>/);
+    expect(s).toMatch(/run\(\(isCurrent, signal, onStep, onRead\) =>/);
+    expect(s).toMatch(/\},\s*onRead\s*\)\s*\)\s*\),\s*\[run\]/);
     expect(s).toMatch(
       /exportChapterMp3\(\s*chapterId,\s*codec,\s*isCurrent,\s*onStep\s*\)/
     );

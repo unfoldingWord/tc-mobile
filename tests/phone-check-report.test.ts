@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { fontReportLines } from "@/lib/phone-check/font-samples";
 import {
   MB,
   UNITS_NOTE,
@@ -28,6 +29,8 @@ const ALL_RUN: PhoneCheckReportInput = {
       quotaBytes: 2048 * MB,
       usageBytes: 12.5 * MB,
       persisted: true,
+      language: null,
+      languages: null,
     },
   },
   encode: {
@@ -99,6 +102,8 @@ describe("formatPhoneCheckReport", () => {
         "- CPU cores: 8",
         "- Storage: 12.5 MB used of 2048.0 MB quota",
         "- Persisted: yes",
+        "- Language: not reported",
+        "- Languages: not reported",
         "",
         "Encode (real MP3 worker)",
         "- Audio: 300.0 s of synthetic speech",
@@ -116,6 +121,9 @@ describe("formatPhoneCheckReport", () => {
         "Memory ceiling",
         "- Last succeeded: 200 MB",
         "- Failed at 225 MB: RangeError",
+        "",
+        "Script samples (write rendered or tofu after each)",
+        ...fontReportLines(),
       ].join("\n")
     );
   });
@@ -167,6 +175,8 @@ describe("formatPhoneCheckReport", () => {
           quotaBytes: null,
           usageBytes: null,
           persisted: null,
+          language: null,
+          languages: null,
         },
       },
     });

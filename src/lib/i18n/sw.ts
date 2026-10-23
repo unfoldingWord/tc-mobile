@@ -40,6 +40,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuClose: "Funga menyu",
   settingsOpen: "Mipangilio",
   settingsTitle: "Mipangilio",
+  templatesOpen: "Violezo",
+  templatesTitle: "Violezo",
+  templateLicenceLabel: (licence: string): string => `Leseni: ${licence}`,
   settingsChapterNumbers: "Onyesha daima nambari ya sura",
   booksEmpty: "Anza kitabu chako cha kwanza",
   booksEmptyTeach: "Kitabu kina sura unazorekodi.",
@@ -309,6 +312,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Hamisha mradi",
   tileExport: "Hamisha",
   exportProjectPreparing: "Inaandaa mradi ili uhamishwe.",
+  exportProjectSuffix: "mradi",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>
@@ -509,6 +513,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "Fungua sera ya faragha",
   aboutThirdParty: "Vipengele vya chanzo wazi",
   aboutTexts: "Maandishi ya leseni",
+  aboutQrCaption: "Skani ili kupata programu",
   aboutContent: "Maudhui yaliyojumuishwa",
   aboutLanguageCodes: "Misimbo ya lugha: ISO 639-3, kutoka iso639-3.sil.org.",
   aboutReadText: (name: string): string => `Soma ${name}`,

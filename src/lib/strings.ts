@@ -112,6 +112,9 @@ export const stringsEn = {
   // `backToBooks`. Theme rows reuse `useLightTheme` and `useDarkTheme`.
   settingsOpen: "Settings",
   settingsTitle: "Settings",
+  templatesOpen: "Templates",
+  templatesTitle: "Templates",
+  templateLicenceLabel: (licence: string): string => `Licence: ${licence}`,
   // S12: the requirements owner's option. Off, a chapter shows its name when
   // it has one and its number when it does not. On, always the number.
   settingsChapterNumbers: "Always show chapter numbers",
@@ -902,11 +905,15 @@ export const stringsEn = {
   exportProject: "Export project",
   tileExport: "Export",
   exportProjectPreparing: "Preparing the project to export.",
-  // ADR 0014 point 8: `<book> - project.zip`, a fixed English suffix on every
-  // phone language (#1627 asks whether it should follow the language), so it
-  // differs from Share Book's `<book>.zip`. Sanitised like shareBookFilename.
+  // ADR 0014 point 8 (amended 2026-10-22, #1627): `<book> - <word>.zip`, where
+  // the word follows the app's language the way Share Book's chapter names do
+  // (`chapterName`), so it differs from Share Book's `<book>.zip`. Sanitised
+  // like shareBookFilename. The book name from the Bible Passages dataset is
+  // not built yet (the rest of #1627).
+  exportProjectSuffix: "project",
   exportProjectFilename(book: string): string {
-    const suffix = " - project.zip";
+    const word = filenameSafe(this.exportProjectSuffix) || "project";
+    const suffix = ` - ${word}.zip`;
     const label =
       filenameSafe(book, new TextEncoder().encode(suffix).length) ||
       this.shareNameFallback;
@@ -1397,6 +1404,9 @@ export const stringsEn = {
   aboutVisitPrivacy: "Open the privacy policy",
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
+  // The Android build's store QR (#1250): the visible caption under it, and the
+  // image's accessible name.
+  aboutQrCaption: "Scan to get the app",
   aboutContent: "Bundled content",
   // The ISO 639-3 terms of use ask that "attribution is given to
   // iso639-3.sil.org as the source of the codes" (ADR 0017).
@@ -1539,6 +1549,12 @@ export const stringsEn = {
   phoneCheckCopied: "Copied.",
   phoneCheckSelected: "Selected. Use your phone's Copy.",
   phoneCheckClose: "Close",
+  phoneCheckFontTitle: "Script samples",
+  phoneCheckFontIntro:
+    "Each line is one script, tagged with its language so this phone picks its own font. Boxes, blanks or question marks mean this phone has no font for it. After each line in the report, write rendered or tofu.",
+  phoneCheckDigitsTitle: "Digits",
+  phoneCheckDigitsNote:
+    "The same ten digits in three forms. These are fixed strings: they show which digit shapes this phone can draw, not what the app prints.",
 
   // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
   // The picker's group name, and one name per palette key

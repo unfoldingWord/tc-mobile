@@ -79,8 +79,22 @@ replaces D4. This ADR is that record.
      note's launch prompt goes beyond the option; the default is internal
      either way, and how the prompt and the facilitator's switch combine is not
      decided.
-   - **Plain files (R17):** "No: plain audio files the app owns". Nothing on the
-     card is encrypted.
+   - **Plain files (R17):** "No: plain audio files the app owns". Recordings on
+     the card are not encrypted.
+   - **The mode this records.** R17 asked "Should recordings on the card be
+     encrypted?" and the requirements owner decided `no`: "plain audio files the
+     app owns". So recordings the app writes to the card are **plaintext audio
+     files**; anyone who can read the card can play them. This is the only
+     encryption mode decided for card recordings.
+   - **What this does not decide.** R17 is about whether card files are
+     encrypted. It is not the `confidential` flag in the exported project's
+     metadata, which [ADR 0014](0014-scripture-bundle-profile.md) sets to
+     `false` on the requirements owner's S8 answer, "Not confidential". Whether
+     `confidential` also says anything about how backup copies on the card or in
+     the cloud are protected is an **open technical question to the DRI,
+     [#1580](https://github.com/unfoldingWord/tc-mobile/issues/1580)**. It is
+     not answered here. When it is, the answer is recorded in ADR 0014 and,
+     once the backup destination is decided, in this ADR.
 4. **Card removal is warned against, not designed around.** The product
    owner's note on D2-microsd: "Removing a card mid-recording is highly
    unlikely, so should be warned against, but not worried about."

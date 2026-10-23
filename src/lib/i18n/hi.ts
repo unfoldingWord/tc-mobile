@@ -42,6 +42,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuClose: "मेनू बंद करें",
   settingsOpen: "सेटिंग",
   settingsTitle: "सेटिंग",
+  templatesOpen: "टेम्पलेट",
+  templatesTitle: "टेम्पलेट",
+  templateLicenceLabel: (licence: string): string => `लाइसेंस: ${licence}`,
   settingsChapterNumbers: "अध्याय संख्या हमेशा दिखाएँ",
   booksEmpty: "अपनी पहली पुस्तक शुरू करें",
   booksEmptyTeach: "पुस्तक में वे अध्याय होते हैं जो आप रिकॉर्ड करते हैं।",
@@ -309,6 +312,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "प्रोजेक्ट निर्यात करें",
   tileExport: "निर्यात",
   exportProjectPreparing: "निर्यात के लिए प्रोजेक्ट तैयार किया जा रहा है।",
+  exportProjectSuffix: "प्रोजेक्ट",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>
@@ -511,6 +515,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "गोपनीयता नीति खोलें",
   aboutThirdParty: "ओपन-सोर्स घटक",
   aboutTexts: "लाइसेंस के पाठ",
+  aboutQrCaption: "ऐप पाने के लिए स्कैन करें",
   aboutContent: "शामिल सामग्री",
   aboutLanguageCodes: "भाषा कोड: ISO 639-3, iso639-3.sil.org से।",
   aboutReadText: (name: string): string => `${name} पढ़ें`,

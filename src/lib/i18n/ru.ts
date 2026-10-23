@@ -45,6 +45,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   menuClose: "Закрыть меню",
   settingsOpen: "Настройки",
   settingsTitle: "Настройки",
+  templatesOpen: "Шаблоны",
+  templatesTitle: "Шаблоны",
+  templateLicenceLabel: (licence: string): string => `Лицензия: ${licence}`,
   settingsChapterNumbers: "Всегда показывать номера глав",
   booksEmpty: "Начните свою первую книгу",
   booksEmptyTeach: "В книге хранятся главы, которые вы записываете.",
@@ -370,6 +373,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Экспортировать проект",
   tileExport: "Экспорт",
   exportProjectPreparing: "Готовим проект к экспорту.",
+  exportProjectSuffix: "проект",
   exportProjectFilename(
     this: Strings,
     ...args: Parameters<typeof stringsEn.exportProjectFilename>
@@ -540,6 +544,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   aboutVisitPrivacy: "Открыть политику конфиденциальности",
   aboutThirdParty: "Компоненты с открытым кодом",
   aboutTexts: "Тексты лицензий",
+  aboutQrCaption: "Отсканируйте, чтобы получить приложение",
   aboutContent: "Встроенные материалы",
   aboutReadText: (name: string): string => `Прочитать: ${name}`,
   aboutBack: "Назад к списку",

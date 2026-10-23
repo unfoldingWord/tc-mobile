@@ -96,6 +96,14 @@ export type StepReporter = (
   keys?: readonly string[]
 ) => void;
 
+/**
+ * The joined path's clip reads as they happen (#1078): `done` of `total`
+ * stored clips read, `(0, total)` before the first. Its own channel, never a
+ * step: see {@link joinFinishedChapter} for why a read on that path cannot
+ * be counted as one. A reader shows it as its own phase.
+ */
+export type ReadReporter = (done: number, total: number) => void;
+
 interface ChapterPcm {
   /** The chapter's segments concatenated in order, gaps between. */
   readonly samples: Int16Array;
@@ -356,7 +364,12 @@ export async function exportChapterMp3(
 ): Promise<ChapterExport | null> {
   const plan = await sizeChapter(chapterId);
   if (plan.allMp3 && plan.present.length > 0) {
-    const joined = await joinFinishedChapter(plan, shouldEncode, onStep);
+    const joined = await joinFinishedChapter(
+      plan,
+      shouldEncode,
+      onStep,
+      codec.onRead
+    );
     if (joined === "cancelled") return null;
     if (joined !== "not-joinable") {
       if (joined !== null) codec.onJoined?.();
@@ -453,7 +466,11 @@ async function streamChapterMp3(
  * fills it in so a joined chapter's count still reaches its total; a caller
  * that does not count (Share Book) passes a plain `AudioCodec`.
  */
-export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
+export type ChapterCodec = AudioCodec & {
+  readonly onJoined?: () => void;
+  /** The joined path's clip reads (#1078); see {@link ReadReporter}. */
+  readonly onRead?: ReadReporter;
+};
 
 /**
  * Build an all-Finished chapter's MP3 by joining its stored frames (#1004).
@@ -504,15 +521,18 @@ export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
  * Reporting speculatively, before that is known, risks reporting something
  * for a chapter this function is about to refuse — the one guarantee
  * `"not-joinable"` below exists to make. Given `hooks/share-progress.ts`'s
- * contract cannot be changed to carry an explicit per-clip index instead of
- * inferring one (out of scope here), holding every report until success is
+ * step contract cannot be changed to carry an explicit per-clip index
+ * instead of inferring one (out of scope here), holding every report until success is
  * confirmed is what keeps the reducer's inference sound: whichever pass
  * — this one, on success, or `fillChapterPcm`'s fallback, on failure —
  * ends up producing the file is the ONLY account the reducer ever sees, so
  * there is nothing for a later pass to contradict or a guard to swallow.
- * This does mean a chapter's read is silent on the ring until the join
- * succeeds or fails, same as before #1004 was first tried on this path —
- * `ENCODE_STEPS`'s docblock says the same thing from the caller's side.
+ * The read itself is not silent (#1078): `onRead` reports each clip read
+ * live, on its own channel, which the progress machine keeps apart from the
+ * step count (`withRead`, `hooks/share-progress.ts`). A read claims no step,
+ * so the fallback's count, or this function's own on success, is still the
+ * only step account the reducer sees. Like a step, a read is reported only
+ * after the cancel re-check that follows its await.
  *
  * A clip gone since pass 1 is skipped and counted missing, as there, and
  * still gets its own step — it is a resolved clip, just one with nothing to
@@ -521,11 +541,11 @@ export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
  * Returns:
  *
  * - `"not-joinable"` — some clip cannot be copied safely, or `joinMp3`
- *   refused the whole set: nothing was reported, and the caller builds the
+ *   refused the whole set: no step was reported, and the caller builds the
  *   chapter by decode and encode instead.
  * - `"cancelled"` — `shouldContinue` went false; checked before every read
- *   and re-checked after it, and again once every clip is read. Nothing is
- *   reported either way, since nothing is reported before this point at all.
+ *   and re-checked after it, and again once every clip is read. No step is
+ *   reported either way, since no step is reported before this point at all.
  * - `null` — every clip vanished: nothing to share.
  * - the joined MP3 otherwise.
  *
@@ -535,18 +555,23 @@ export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
 async function joinFinishedChapter(
   plan: ChapterPlan,
   shouldContinue?: () => boolean,
-  onStep?: StepReporter
+  onStep?: StepReporter,
+  onRead?: ReadReporter
 ): Promise<ChapterExport | "not-joinable" | "cancelled" | null> {
   const pieces: JoinPiece[] = [];
   /** Per present clip, in order: whether it was skipped (gone since pass 1). */
   const skippedAt: boolean[] = [];
   let missing = plan.missing;
+  const reads = plan.present.length;
+  if (shouldContinue && !shouldContinue()) return "cancelled";
+  onRead?.(0, reads);
   for (const { clipId, frames } of plan.present) {
     if (shouldContinue && !shouldContinue()) return "cancelled";
     const clip = await getClip(clipId);
     // Re-checked after the await: a cancel that landed during this read
     // stops here, before this clip is even added to `skippedAt` below.
     if (shouldContinue && !shouldContinue()) return "cancelled";
+    onRead?.(skippedAt.length + 1, reads);
     if (!clip) {
       missing++;
       skippedAt.push(true);
@@ -600,7 +625,9 @@ async function joinFinishedChapter(
  * deliberate, not a residual gap — {@link joinFinishedChapter}'s own docblock
  * explains why reporting any earlier is unsound against #1049's progress
  * machine (review bench round 2 on PR #1068 reverted an earlier attempt at
- * live per-clip reporting here for exactly that reason).
+ * live per-clip reporting here for exactly that reason). The reads are
+ * reported live instead on their own channel (#1078, {@link ReadReporter}),
+ * which never moves this count.
  */
 export const ENCODE_STEPS = 100;
 
@@ -636,12 +663,17 @@ export const ENCODE_STEPS = 100;
  *
  * If the build never reports a gather total (a chapter with nothing to
  * gather), the encode reports nothing either — there is no scale to put it on.
- * Pure: the codec and reporter are injected, so this is tested in Node.
+ *
+ * `onRead` (#1078), when given, becomes the codec's `onRead`: the joined
+ * path's clip reads, passed through untouched by this count, and dropped once
+ * `shouldContinue` is false, as a step is.
+ * Pure: the codec and reporters are injected, so this is tested in Node.
  */
 export function withEncodeSteps<T>(
   onStep: StepReporter,
   shouldContinue: () => boolean,
-  build: (codec: ChapterCodec, onStep: StepReporter) => Promise<T>
+  build: (codec: ChapterCodec, onStep: StepReporter) => Promise<T>,
+  onRead?: ReadReporter
 ): (codec: AudioCodec) => Promise<T> {
   return (encoder) => {
     /** The gather's segment count, fixed by its first report. */
@@ -687,6 +719,11 @@ export function withEncodeSteps<T>(
       }),
       // Joined instead of encoded (#1004): the MP3 exists all the same.
       onJoined: () => encoded(ENCODE_STEPS),
+      ...(onRead && {
+        onRead: (done: number, total: number) => {
+          if (shouldContinue()) onRead(done, total);
+        },
+      }),
       encodeMp3: async (samples, onProgress) => {
         const mp3 = await encoder.encodeMp3(samples, (fraction) => {
           encoded(

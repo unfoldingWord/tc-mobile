@@ -464,11 +464,14 @@ the same way on `https://tcmobile.app` and
   set -o pipefail
   rc=0
   for origin in https://tcmobile.app https://tc-mobile.unfoldingword.workers.dev; do
-    if rec=$(curl -fsS --connect-timeout 10 --max-time 30 "$origin/version.json?t=$(date +%s)" |
-      jq -enr 'input | select([.sha, .version] | all(type=="string" and length>0 and (test("[[:cntrl:]]")|not))) | "sha=\(.sha|@json) version=\(.version|@json)"'); then
+    if ! body=$(curl -fsS --connect-timeout 10 --max-time 30 "$origin/version.json?t=$(date +%s)"); then
+      echo "FAIL: $origin did not answer with a 2xx"
+      rc=1
+    elif rec=$(printf '%s' "$body" |
+      jq -enr 'input | select([.sha, .version] | all(type=="string" and length>0 and (test("[[:cntrl:][:space:]\u200e\u200f\u202a-\u202e\u2066-\u2069]")|not))) | "sha=\(.sha) version=\(.version)"'); then
       echo "OK: $origin $rec"
     else
-      echo "FAIL: $origin gave no deploy record"
+      echo "FAIL: $origin answered but the body is not a deploy record"
       rc=1
     fi
   done
@@ -479,18 +482,21 @@ the same way on `https://tcmobile.app` and
 plus the available Cloudflare rollback target. A failed origin is recorded and
 the subshell exits 1 after both origins have been tried, so the step fails as
 a whole (a bare `|| echo` leaves the exit status 0, and `pipefail` does not
-imply `errexit`); the subshell keeps `exit` from closing your terminal. Write
-down only the `sha=… version=…` it prints after `OK:` (each value in JSON
-quotes, so a space cannot shift it; drop the quotes when you pass it on), and
-read every line, because `FAIL:` goes to stdout beside `OK:`. `-f` makes an
-HTTP error exit non-zero instead of printing an error page, and `pipefail`
-keeps that exit. The timeouts make a silent origin fail instead of hanging.
-A `sha` or `version` holding a control character (CR, LF, ESC) fails too, so
-a bad record cannot print a second `OK:` line or overwrite the one shown.
-`jq -en 'input | …'` exits non-zero on an empty body (a redirect `curl`
-does not follow, or an empty 200), on a body that is not JSON, and unless
-`sha` and `version` are both non-empty strings; plain `jq -e` on an empty
-body exits 0. A read that fails any of these is not a deploy record, so do
+imply `errexit`); the subshell keeps `exit` from closing your terminal. Two
+different `FAIL:` lines say which failure it was: `did not answer with a 2xx`
+is an origin that timed out, refused the connection or returned an HTTP error
+(`-f` makes an HTTP error exit non-zero instead of printing an error page);
+`answered but the body is not a deploy record` is a 2xx whose body is empty,
+is not JSON, or lacks a non-empty string `sha` and `version`. Write down only
+the `sha=… version=…` it prints after `OK:`. The values are decoded by `jq -r`,
+not quoted, and the block rejects any value holding whitespace, a control
+character (CR, LF, ESC) or a bidi control, so a value cannot shift the fields
+or print a second `OK:` line. Read every line, because `FAIL:` goes to stdout
+beside `OK:`. The timeouts make a silent origin fail instead of hanging.
+`jq -en 'input | …'` exits non-zero on an empty body, where plain `jq -e`
+exits 0. [`tests/rollback-read-block.test.ts`](../../tests/rollback-read-block.test.ts)
+runs this block against local servers in both states.
+A read that prints `FAIL:` is not a deploy record, so do
 not write it down as the rollback target. Do not take it from the bare
 `npm run check:deploy:prod`: that command prints the `origin/main` tip first
 as its expectation, prints the served `Deployed:` line only after that, and
@@ -501,18 +507,14 @@ wrong one to record. If you do read it from the checker, record only the
 run again". That served build is the rollback target. It equals `MAIN_SHA`
 (§3 step 3) only when that read says so: a commit on `main` is not a deployed
 build (#143).
+
 **Before you roll back, check whether the build you would undo raised the
 IndexedDB schema** (`DB_VERSION` in `src/lib/storage/db.ts`, compared between
-the rollback target and the served build). If it did, a rollback is not free:
-IndexedDB refuses to open a database at a lower version, so every phone that
-has opened the newer build cannot run the older code against its recordings.
-The recordings are not deleted, but they are unreachable until a build at the
-newer schema or later is served or installed again. v1.1.0 moved the schema
-from 9 to 11, and v1.2.0 moves it from 11 to 13. In that case **roll forward with a fix** instead. If a rollback
-is unavoidable, know that those phones are locked out until the newer schema
-is served again, and tell facilitators not to uninstall, because uninstalling
-deletes the recordings (AGENTS.md, "What rollback does not do"). This was
-established by a Node run and a code read, not on a device.
+the rollback target and the served build). If it did, a rollback is not free
+for any phone that has opened the newer build: read AGENTS.md, "A rollback is
+not free once a phone has opened a build with a newer database schema", which
+states the condition and the exit once. Roll forward with a fix instead; if a
+rollback is unavoidable, tell facilitators not to uninstall.
 
 Follow AGENTS.md's **Confirming a deploy and rolling one back** procedure:
 dashboard rollback or
