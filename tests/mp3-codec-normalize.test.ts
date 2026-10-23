@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { NORMALIZE_STAGES } from "@/lib/audio/loudness";
+import { NORMALIZE_STAGES, normalizePcm } from "@/lib/audio/loudness";
 import { speechLikePcm } from "@/lib/phone-check/speech";
 import type { ClipProcessing } from "@/types/audio";
 
@@ -214,7 +214,10 @@ describe("mp3.worker — the normalize half (#1433)", () => {
     expect(answer.length).toBe(original.length);
     expect(answer.processing.stages).toEqual(NORMALIZE_STAGES);
     const out = new Int16Array(answer.buffer, answer.byteOffset, answer.length);
-    expect(Array.from(out)).not.toEqual(Array.from(original));
+    // Exactly the chain's own output over the same input, run here.
+    const expected = Int16Array.from(original);
+    expect(answer.processing).toEqual(normalizePcm(expected, 44_100));
+    expect(Array.from(out)).toEqual(Array.from(expected));
   });
 
   it("refuses an unknown version with an error answer", () => {
