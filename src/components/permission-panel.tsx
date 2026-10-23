@@ -92,7 +92,14 @@ export function PermissionPanel({
   // a stub.
   return (
     <div className="o4-err o4-err-split flex flex-1 flex-col items-center px-[22px] text-center">
-      <div className="o4-err-body">
+      {/* `data-refused` is the shake's hook (#1089, o4/motion.css). It is set
+          only while the steps show, which is the `refused` phase, and Retry
+          takes the steps away (the phase leaves `refused` at the tap), so each
+          new refusal adds the attribute afresh and the animation plays again. */}
+      <div
+        className="o4-err-body"
+        data-refused={settingsPlatform !== null ? "true" : undefined}
+      >
         {settingsPlatform !== null ? (
           // The steps are showing (#1569): a compact header, the circle shrunk
           // to a small icon beside the title, and no refusal sentence. The
