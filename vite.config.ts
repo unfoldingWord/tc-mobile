@@ -519,15 +519,14 @@ export default defineConfig(({ mode }) => {
         selfDestroying: isNativeBuild,
         workbox: {
           // Audio lives in IndexedDB, not the Cache API. The OBS thumbnails
-          // (public/obs/thumbs — 598 files, 2.5 MB) are temporarily excluded from
-          // the precache: no shipped screen reads them yet (`thumbUrl` in
-          // src/lib/obs/catalog.ts has no importer), so precaching them made a
-          // first install fetch ~2.6 MB of pictures nothing draws — ~80% of the
-          // bytes and 98% of the entries — and Workbox's atomic install meant a
-          // single failed fetch restarted the whole set. Dropping `jpg` removes
-          // them from the manifest; the files still ship in the bundle.
+          // (public/obs/thumbs — 598 files, 2.5 MB) were excluded from the
+          // precache by #177 while no screen read them. The Template Library
+          // (#246, `components/template-picker.tsx`) reads one now, so `jpg` is
+          // RESTORED below, as ADR 0006's 2026-09-04 amendment required: the
+          // cost is ~611 precache entries on a first install, and the rows
+          // would otherwise draw broken images offline.
           //
-          // End state (ADR 0006, 2026-09-04 amendment): when a screen reads OBS
+          // History (ADR 0006, 2026-09-04 amendment): when a screen reads OBS
           // frame imagery — imports/calls `thumbUrl`, or otherwise references
           // the `/obs/thumbs/` path (the Template Library, #33) — RESTORE `jpg`
           // here so the set is precached for offline first-run again. This is a
@@ -540,7 +539,7 @@ export default defineConfig(({ mode }) => {
           // the LGPL notice resolves offline in the field, same as the app shell
           // — small files (the largest is the ~42 KB LGPL text), unrelated to the
           // thumbnail exclusion above.
-          globPatterns: ["**/*.{js,css,html,svg,png,woff2,txt}"],
+          globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2,txt}"],
           // No single precached asset exceeds the 2 MiB default (the largest is
           // the ~552 KB entry chunk); the former 4 MiB override existed only for
           // the now-excluded thumbnails, which were individually tiny anyway.

@@ -184,6 +184,7 @@ describe("one ✕ closes every sheet (#1268 item 2)", () => {
       "components/segment-row.tsx": 1,
       "components/segments-screen.tsx": 1,
       "components/settings-panel.tsx": 1,
+      "components/template-picker.tsx": 1,
     });
     // Settings (#1575) keeps the chevron: it is a screen opened from the
     // Books header, and its header control is "Back to books".

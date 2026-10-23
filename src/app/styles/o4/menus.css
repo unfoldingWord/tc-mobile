@@ -525,4 +525,32 @@
     inset-inline-end: 3px;
     background: var(--s-done-ink);
   }
+
+  /* === #246: the Template Library list =====================================
+     The plainest list: a thumbnail, the title, one licence line. A row is a
+     settings row (same well, same 56px floor), taller for the thumbnail. */
+  :root .template-row {
+    min-height: 72px;
+  }
+  :root .template-row-thumb {
+    flex: none;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--p-radius-12);
+    object-fit: cover;
+  }
+  :root .template-row-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  :root .template-row-licence {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--s-ink-faint);
+    font-size: var(--p-text-sm);
+  }
 }
