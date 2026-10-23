@@ -911,9 +911,9 @@ So a device that has opened the newer build cannot run older code against its
 own data again, whether the older code arrives by a Worker rollback, by a
 stale service worker, or by an older native build if one ever runs. The
 recordings are not deleted: the older code's `getDb()` rejects with
-`DatabaseDowngradeError` and nothing is written. They are unreachable until a
-build at that schema or later is served or installed again. On staging
-(`3b5e098d`, schema 9) a refused open calls `coordinator?.onYielded()`,
+`DatabaseDowngradeError` before any read or write through it. They are
+unreachable until a build at that schema or later is served or installed
+again. A refused open calls `coordinator?.onYielded()`,
 `use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
 shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
 "Restart to use the new version."); Restart leads back to the same screen
@@ -922,7 +922,9 @@ v1.1.0 moved the schema from 9 to 11 (v10 and v11 in #1346 and #1367), and
 v1.2.0 moves it from 11 to 13 (v12 and v13 in #1462 and #38). **Roll forward with a fix rather than
 back when the build to undo raised the schema, and never uninstall to clear the
 screen: uninstalling deletes the recordings.**
-`docs/release/promotion-v1.0.0.md` §5 has the procedure.
+This paragraph is the one statement of the condition; `docs/release/promotion-v1.0.0.md`
+§5 has the procedure and `docs/training/facilitator-runbook.md` the facilitator
+instruction, and both point here.
 
 ## Device testing — the HTTPS caveat
 
