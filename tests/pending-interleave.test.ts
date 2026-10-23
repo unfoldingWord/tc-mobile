@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { mergeTake } from "@/lib/audio/edit";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
 import type { NewTake } from "@/lib/takes/pending-take";
@@ -55,7 +56,8 @@ import type {
  *   L1  every clip on disk is named by a take or by a pending row's `stored`
  *       base, so a delete that drops a row also lets its base clip go.
  *
- * The scenario list is a floor. PR 3 adds the replay as one more step kind.
+ * The scenario list is a floor. Rebuild PR 3 added the replay as one more
+ * step kind (`replay`, the conditional commit `saveReplayedTake`).
  */
 
 type Copy = {
@@ -259,6 +261,34 @@ function deleteBook(copy: Copy["name"]): Step {
     label: `${copy}:delete book`,
     run: async (world) => {
       await world.copies[copy].books.deleteBook(world.bookId);
+    },
+  };
+}
+
+/**
+ * The launch replay's conditional commit of a take this copy holds (rebuild
+ * PR 3). Every outcome but `held` lets the slot go, as the replay does: the
+ * take is then saved, recorded as ended, on disk as a marked row, or its
+ * segment is gone. A rejection keeps it held.
+ */
+function replay(copy: Copy["name"], letter: string): Step {
+  return {
+    copy,
+    label: `${copy}:replay ${letter}`,
+    run: async (world) => {
+      const t = takeOf(world, letter);
+      const live = world.live[copy];
+      try {
+        const result = await world.copies[copy].takes.saveReplayedTake(
+          { ...t, baseRevision: t.baseRevision ?? 0 },
+          mergeTake(t.existing, t.recorded, t.offset),
+          RATE,
+          { isDiscardRequested: (id) => live.flags.has(id) }
+        );
+        if (result.outcome !== "held") live.slot.delete(t.clipId);
+      } catch {
+        // The slot stays held, as the hook keeps it.
+      }
     },
   };
 }
@@ -569,6 +599,41 @@ const SCENARIOS: readonly Scenario[] = [
       settleDiscard("A", "C"),
     ],
     B: [deleteBook("B")],
+  },
+  // Rebuild PR 3: the replay as one more step kind. B's hold of C stands for
+  // the row an earlier, killed life of B left; its replay then runs against
+  // every order of A's writes.
+  {
+    // Frank r2 (a) on the note: a cross-copy quota give-up.
+    name: "B replays C from its row; A, also holding C, gives it up for quota",
+    takes: { C: { stored: true } },
+    slots: { A: ["C"], B: ["C"] },
+    A: [commitQuota("A", "C"), commit("A", "C")],
+    B: [hold("B", "C", { stored: true }), replay("B", "C")],
+  },
+  {
+    // Frank r2 (b) on the note: a cross-copy Discard.
+    name: "B replays C from its row; A, also holding C, discards it",
+    takes: { C: { stored: false } },
+    slots: { A: ["C"], B: ["C"] },
+    A: [tap("A", "C"), settleDiscard("A", "C")],
+    B: [hold("B", "C"), replay("B", "C")],
+  },
+  {
+    // RP-S and the mixed-build case: another take on the same segment.
+    name: "B replays C from its row; A records D on the same segment",
+    takes: { C: { stored: true }, D: { stored: true } },
+    slots: { A: ["D"], B: ["C"] },
+    A: [hold("A", "D", { stored: true }), commit("A", "D")],
+    B: [hold("B", "C", { stored: true }), replay("B", "C")],
+  },
+  {
+    // RP-E and RP-D: the segment erased, then deleted, around the replay.
+    name: "B replays C from its row; A erases and then deletes the segment",
+    takes: { C: { stored: true } },
+    slots: { A: [], B: ["C"] },
+    A: [erase("A"), deleteSegment("A")],
+    B: [hold("B", "C", { stored: true }), replay("B", "C")],
   },
 ];
 

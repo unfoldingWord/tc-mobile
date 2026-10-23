@@ -342,6 +342,13 @@ growth: one small record (tens of bytes; inference, not measured) per take
 that ended on a segment that still exists. That is residual 5. The earlier
 draft's 30-day sweep is withdrawn.
 
+**A settle after its segment was deleted writes no record** (rebuild PR 3).
+A Discard or give-up can run after another copy deleted the segment; a
+record written then would never be deleted, because its segment's delete has
+already run. None is needed: the segment never comes back (§1), and every
+writer already refuses a take whose segment is gone (hold step 1, the
+commit's missing-segment throw, the verdict's `gone`).
+
 ### Every write on behalf of a take reads the record
 
 George r3 on this note found the record in place and one writer not reading
@@ -1077,39 +1084,39 @@ row that replayed over `K`.
 
 ## 6. Every finding against this design
 
-| Round, lens, finding                                                                              | Where it lands here                                                                              |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| #1546 r1/r2 Frank: a newer save between the recipe read and the commit is overwritten             | `moved` (RP-P)                                                                                   |
-| #1546 r1 George: the replay saved a take it never installed in the slot                           | carried as is: `writeSlot` and the `installed` check (RP-P)                                      |
-| #1546 r3 Frank: an old row beside a newer take saved before launch                                | `moved` (RP-P): `b` is from the row's write, not from the replay's read                          |
-| #1546 r3 Frank: Retry dropped the condition                                                       | the replayed take carries `baseRevision`; every Retry is conditional (TP-R)                      |
-| #1546 r4 Frank: Discard deleted a clip another copy had made active                               | Discard's settle deletes only an unreferenced clip (DL-X, TP-P)                                  |
-| #1546 r5 George: the target was written after the row                                             | the hold reads the revision and puts the row in one transaction (§3, "The hold")                 |
-| #1546 r5 George (Medium, #1557): a full inline row rewritten after another copy saved it          | `done`, from the active clip or the `saved` record, before anything else (§4)                    |
-| #1546 r6 George: a read awaited before the hold's transaction let a Discard win                   | no read outside the hold's transaction (TP-X)                                                    |
-| #1546 r6 Frank / r7 Frank: an erase undone by a first-take replay or a quota Retry                | the revision (RP-E, TP-E)                                                                        |
-| #1546 r7 George (Medium): a foreign row parks the only copy on the no-Retry screen                | a hold never overwrites a row; a foreign row is `unexplained`, which keeps and offers Retry (§4) |
-| #1546 r7 George (Low): a kept refused row is re-read from `clipData` every launch                 | classification before any recipe read (§3)                                                       |
-| this note, Frank r1: a PR-1 writer overwrites a row a PR-3 replay holds                           | §8, "The compatibility boundary"; mixed-build test (RP-P)                                        |
-| this note, George r1 High: a Discard during the hold, then a kill, replays over K                 | hold steps 2 and 3 (§3); kill test (TP-X)                                                        |
-| this note, George r1 Medium: a legacy row for a deleted segment is kept and deleted               | one rule: `gone` first, then `legacy` (§2, §3, DL-P)                                             |
-| this note, George r1 Medium: residual 2, a given-up take discarded elsewhere is saved             | the disposition: `given-up` becomes `discarded`, and `discarded` wins (§4, TP-X)                 |
-| this note, George r1 Low: `moved` with the row gone does not say what the slot does               | "Keep, exactly" (§4)                                                                             |
-| this note, George r1 Low: the revision's definition disagrees with the transcode row              | the definition tracks the active take; transcode is out of band (§1)                             |
-| this note, George r1 Low: "creation order" across copies                                          | "serialization", and nothing depends on which runs first (§3)                                    |
-| #1618 r1 George: the hold stamped its own read of the revision, hiding a move since the base read | the take carries the revision its base was read at; the hold stamps that (§3 step 6, HM)         |
-| this note, George r1 questions: `kept-foreign`'s signal; a `generation` mismatch                  | open for the requirements owner (§9); refused, kept, never installed (§3)                        |
-| this note, George r3 High: an ordinary Retry saves a take another copy discarded                  | the writer rule: `saveTake` reads the record and the request (§3, §4); test in TP-R              |
-| this note, George r3 Medium: a Discard after the hold's read and before its commit                | hold step 7 re-checks in the put's success callback and commits there (§3); test in TP-X         |
-| this note, George r3 Low: ageing a record out deletes the only proof of a Discard                 | no clock ageing; records go only with their segment (§3, residual 5)                             |
-| this note, Frank r3: a kept row's `stored` base clip is deleted by another copy's save            | a row's base clip is a use: clip clean-up and transcode check `bySourceClip` (§3); test in RP-P  |
-| this note, Frank r2: a cross-copy quota delete reads as `claimed` and frees C                     | `unexplained` and `free`-on-`given-up` replace `claimed`; paired test (TP-X)                     |
-| this note, Frank r4: a stored reference made from stale source metadata                           | only the hold makes one, after checking the clip in its own transaction (§3); three tests        |
-| this note, George r4 Medium: `free` on `given-up` overwrites another clip's row                   | `free` needs an empty row key; a foreign row is `unexplained` (§4); test in TP-X                 |
-| this note, George r4 Medium: PR 1 and PR 2 both claimed the delete scope                          | one assignment: PR 1 widens the scope and drops records, PR 2 drops rows (§3, §8, RP-D)          |
-| this note, George r4 Low: the flag is read, the hold awaits, then puts                            | already closed by hold step 7 (§3)                                                               |
-| this note, George r4 Low: `None of the three blocks` hid a durability limit                       | §9 names the limit                                                                               |
-| this note, DRI at the cap: "test harness first"                                                   | §8, "Interleaving harness (PR 1's first deliverable)"                                            |
+| Round, lens, finding                                                                              | Where it lands here                                                                                |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| #1546 r1/r2 Frank: a newer save between the recipe read and the commit is overwritten             | `moved` (RP-P)                                                                                     |
+| #1546 r1 George: the replay saved a take it never installed in the slot                           | carried as is: `writeSlot` and the `installed` check (RP-P)                                        |
+| #1546 r3 Frank: an old row beside a newer take saved before launch                                | `moved` (RP-P): `b` is the revision the take's base was read at (§3 step 6), not the replay's read |
+| #1546 r3 Frank: Retry dropped the condition                                                       | the replayed take carries `baseRevision`; every Retry is conditional (TP-R)                        |
+| #1546 r4 Frank: Discard deleted a clip another copy had made active                               | Discard's settle deletes only an unreferenced clip (DL-X, TP-P)                                    |
+| #1546 r5 George: the target was written after the row                                             | the hold reads the revision and puts the row in one transaction (§3, "The hold")                   |
+| #1546 r5 George (Medium, #1557): a full inline row rewritten after another copy saved it          | `done`, from the active clip or the `saved` record, before anything else (§4)                      |
+| #1546 r6 George: a read awaited before the hold's transaction let a Discard win                   | no read outside the hold's transaction (TP-X)                                                      |
+| #1546 r6 Frank / r7 Frank: an erase undone by a first-take replay or a quota Retry                | the revision (RP-E, TP-E)                                                                          |
+| #1546 r7 George (Medium): a foreign row parks the only copy on the no-Retry screen                | a hold never overwrites a row; a foreign row is `unexplained`, which keeps and offers Retry (§4)   |
+| #1546 r7 George (Low): a kept refused row is re-read from `clipData` every launch                 | classification before any recipe read (§3)                                                         |
+| this note, Frank r1: a PR-1 writer overwrites a row a PR-3 replay holds                           | §8, "The compatibility boundary"; mixed-build test (RP-P)                                          |
+| this note, George r1 High: a Discard during the hold, then a kill, replays over K                 | hold steps 2 and 3 (§3); kill test (TP-X)                                                          |
+| this note, George r1 Medium: a legacy row for a deleted segment is kept and deleted               | one rule: `gone` first, then `legacy` (§2, §3, DL-P)                                               |
+| this note, George r1 Medium: residual 2, a given-up take discarded elsewhere is saved             | the disposition: `given-up` becomes `discarded`, and `discarded` wins (§4, TP-X)                   |
+| this note, George r1 Low: `moved` with the row gone does not say what the slot does               | "Keep, exactly" (§4)                                                                               |
+| this note, George r1 Low: the revision's definition disagrees with the transcode row              | the definition tracks the active take; transcode is out of band (§1)                               |
+| this note, George r1 Low: "creation order" across copies                                          | "serialization", and nothing depends on which runs first (§3)                                      |
+| #1618 r1 George: the hold stamped its own read of the revision, hiding a move since the base read | the take carries the revision its base was read at; the hold stamps that (§3 step 6, HM)           |
+| this note, George r1 questions: `kept-foreign`'s signal; a `generation` mismatch                  | open for the requirements owner (§9); refused, kept, never installed (§3)                          |
+| this note, George r3 High: an ordinary Retry saves a take another copy discarded                  | the writer rule: `saveTake` reads the record and the request (§3, §4); test in TP-R                |
+| this note, George r3 Medium: a Discard after the hold's read and before its commit                | hold step 7 re-checks in the put's success callback and commits there (§3); test in TP-X           |
+| this note, George r3 Low: ageing a record out deletes the only proof of a Discard                 | no clock ageing; records go only with their segment (§3, residual 5)                               |
+| this note, Frank r3: a kept row's `stored` base clip is deleted by another copy's save            | a row's base clip is a use: clip clean-up and transcode check `bySourceClip` (§3); test in RP-P    |
+| this note, Frank r2: a cross-copy quota delete reads as `claimed` and frees C                     | `unexplained` and `free`-on-`given-up` replace `claimed`; paired test (TP-X)                       |
+| this note, Frank r4: a stored reference made from stale source metadata                           | only the hold makes one, after checking the clip in its own transaction (§3); three tests          |
+| this note, George r4 Medium: `free` on `given-up` overwrites another clip's row                   | `free` needs an empty row key; a foreign row is `unexplained` (§4); test in TP-X                   |
+| this note, George r4 Medium: PR 1 and PR 2 both claimed the delete scope                          | one assignment: PR 1 widens the scope and drops records, PR 2 drops rows (§3, §8, RP-D)            |
+| this note, George r4 Low: the flag is read, the hold awaits, then puts                            | already closed by hold step 7 (§3)                                                                 |
+| this note, George r4 Low: `None of the three blocks` hid a durability limit                       | §9 names the limit                                                                                 |
+| this note, DRI at the cap: "test harness first"                                                   | §8, "Interleaving harness (PR 1's first deliverable)"                                              |
 
 ## 7. The open follow-ups
 
@@ -1190,6 +1197,15 @@ is test code and is not counted in these. PR 1 is now estimated over the 500-lin
 it is a rule the compatibility boundary needs in the build that first opens
 v13, so a split would reopen Frank r1's finding. If it measures over 500, it
 ships with a declared `size-exception` naming that reason.
+
+**PR 3 lands in two slices** (a lane's tactical split, to keep each under
+the cap). The store slice: `judgePending`, `saveReplayedTake` with its keep
+and park, the settle rule in §3 ("A settle after its segment was deleted"),
+and the replay as a step in the interleaving harness; it closes #1557. The
+replay slice: classification, the replay loop, the slot guard, the quiet
+first attempt, conditional Retry in the hook, the failure-log contexts and
+the runbook. Neither slice changes the five rules of the compatibility
+boundary.
 
 ### Interleaving harness (PR 1's first deliverable)
 
