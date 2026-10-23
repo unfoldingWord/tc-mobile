@@ -71,9 +71,11 @@ export interface ClipMeta {
    */
   readonly peaks: Peaks | null;
   /**
-   * What processed the audio on its way to MP3 (v14, #1433). `null` on PCM,
-   * and on a clip finished before v14, which is never back-filled (U6c).
-   * `stages: []` means finished with no stage run: the preference was off.
+   * What processed the audio on its way to MP3 (v14, #1433). `null` means
+   * no decision yet: a PCM clip eligible for the chain once Finished, or an
+   * MP3 finished before v14, which is never back-filled (U6c). `stages: []`
+   * means no stage ran: the preference was off, or the segment was Finished
+   * before v14 with its transcode still owed (U6c).
    */
   readonly processing: ClipProcessing | null;
 }

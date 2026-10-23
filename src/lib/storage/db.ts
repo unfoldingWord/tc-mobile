@@ -144,9 +144,11 @@
  *
  * `ClipMeta` gained `processing`: which stages of the Finished chain ran and
  * at which version, the measured loudness and true peak, and the applied
- * gain. The v14 step stamps `processing: null` on every clip row that lacks
- * the field, keyed on absence, and touches nothing else. It reads no clock.
- * A clip finished before v14 keeps `null` and is never back-filled (U6c).
+ * gain. The v14 step gives every clip row that lacks the field a record,
+ * keyed on absence, and touches nothing else. It reads no clock. A Finished
+ * segment's active clip that is still PCM (its transcode was owed at the
+ * upgrade) gets `stages: []`, so it is encoded as it was; every other clip
+ * gets `null`. A clip finished before v14 is never normalized (U6c).
  */
 
 import {
@@ -880,14 +882,41 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           }
         }
 
-        // v14 (#1433): every clip row without a processing record gets null.
+        // v14 (#1433): every clip row without a processing record gets one.
         // Keyed on absence, so a record a newer build wrote is left alone.
+        // The active PCM clip of a Finished segment is a transcode still
+        // owed from before v14 (a stall, a full phone): it gets an explicit
+        // "no stage ran", so the sweep encodes it as it was (U6c, Frank R1
+        // P2 on #1679). Every other clip gets null, eligible for the chain
+        // once Finished. "affirmed" is the Finished status as v13 stores it,
+        // frozen here rather than read from `takes.ts`, which imports this.
         if (oldVersion < 14) {
+          const owedClips = new Set<string>();
+          let segment = await tx.objectStore("segments").openCursor();
+          while (segment) {
+            const { status, activeTakeId } = segment.value;
+            if (status === "affirmed" && activeTakeId !== null) {
+              const take = await tx.objectStore("takes").get(activeTakeId);
+              if (take) owedClips.add(take.clipId);
+            }
+            segment = await segment.continue();
+          }
           let cursor = await tx.objectStore("clipMeta").openCursor();
           while (cursor) {
             const row: Omit<ClipMeta, "processing"> = cursor.value;
             if (!("processing" in row)) {
-              await cursor.update({ ...row, processing: null });
+              const owed = row.encoding === "pcm" && owedClips.has(row.id);
+              await cursor.update({
+                ...row,
+                processing: owed
+                  ? {
+                      stages: [],
+                      measuredLufs: null,
+                      measuredTruePeakDbtp: null,
+                      appliedGainDb: 0,
+                    }
+                  : null,
+              });
             }
             cursor = await cursor.continue();
           }

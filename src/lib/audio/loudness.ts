@@ -643,7 +643,7 @@ export const NORMALIZE_STAGES: readonly ProcessingStage[] = [
   { id: "limiter", version: 1 },
 ];
 
-/** The record of a clip finished with no stage run: the preference off. */
+/** The record of a clip finished with no stage run: the preference off, or Finished before v14. */
 export const NO_STAGES_RUN: ClipProcessing = {
   stages: [],
   measuredLufs: null,

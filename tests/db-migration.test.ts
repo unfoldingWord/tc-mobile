@@ -460,7 +460,14 @@ describe("v8 segment-label backfill (append-only)", () => {
       expect(await v8.get("clipMeta", "c1" as never)).toEqual({
         ...priorMeta,
         transcodeStallCount: version === 7 ? 3 : 0,
-        ...V14_CLIP,
+        // s1 is Finished and its clip still PCM: a transcode owed across the
+        // upgrade, so v14 records that no stage ran (U6c).
+        processing: {
+          stages: [],
+          measuredLufs: null,
+          measuredTruePeakDbtp: null,
+          appliedGainDb: 0,
+        },
       });
       expect(await v8.get("takes", "t1" as never)).toEqual(priorTake);
       // The audio behind the segment is untouched.
@@ -2253,6 +2260,51 @@ describe("the v13 → v14 schema (#1433)", () => {
     expect((await db.get("clipMeta", "c1" as never))?.processing).toEqual(
       record
     );
+  });
+
+  it("records no stage on a Finished segment's PCM clip, so its owed transcode encodes it as it was (U6c)", async () => {
+    // Frank R1 P2 on #1679: null would let the first sweep normalize it.
+    const v13 = await openLegacyV13();
+    const take = (id: string, clipId: string, segmentId: string) => ({
+      id,
+      segmentId,
+      clipId,
+      createdAt: 1,
+      durationMs: 1,
+    });
+    const seg = (id: string, takeId: string, status: string) => ({
+      ...v12Segment(id, { activeTakeId: takeId, status }),
+      audioRevision: 0,
+    });
+    // Finished and still PCM: the owed transcode.
+    await v13.put("segments", seg("s1", "t1", "affirmed"));
+    await v13.put("takes", take("t1", "pcm-finished", "s1"));
+    await v13.put("clipMeta", v13ClipMeta("pcm-finished", "pcm"));
+    // Recorded, not finished: Finished after the upgrade normalizes it.
+    await v13.put("segments", seg("s2", "t2", "draft"));
+    await v13.put("takes", take("t2", "pcm-draft", "s2"));
+    await v13.put("clipMeta", v13ClipMeta("pcm-draft", "pcm"));
+    // Finished and already MP3: nothing is owed, null as before.
+    await v13.put("segments", seg("s3", "t3", "affirmed"));
+    await v13.put("takes", take("t3", "mp3-finished", "s3"));
+    await v13.put("clipMeta", v13ClipMeta("mp3-finished", "mp3"));
+    // An earlier take's clip, no longer active: not what the sweep reads.
+    await v13.put("clipMeta", v13ClipMeta("pcm-orphan", "pcm"));
+    v13.close();
+
+    vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+    const db = await getDb();
+    const processing = async (id: string) =>
+      (await db.get("clipMeta", id as never))?.processing;
+    expect(await processing("pcm-finished")).toEqual({
+      stages: [],
+      measuredLufs: null,
+      measuredTruePeakDbtp: null,
+      appliedGainDb: 0,
+    });
+    expect(await processing("pcm-draft")).toBeNull();
+    expect(await processing("mp3-finished")).toBeNull();
+    expect(await processing("pcm-orphan")).toBeNull();
   });
 
   it("a fresh clip is written with processing null", async () => {
