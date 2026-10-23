@@ -578,6 +578,20 @@ export function isJsonContentType(contentType) {
  * fallback) instead of a generic "could not fetch". */
 export class SpaFallbackError extends Error {}
 
+/**
+ * The first words of a fetch failure's FAIL line, so a promoter can tell an
+ * origin that did not answer (timeout, refused, DNS: the fetch itself threw)
+ * from one that answered 200 with a body that fails the content check
+ * (#1321). A non-2xx status is neither, and keeps its bare message.
+ */
+function failureLead(err) {
+  if (err instanceof SpaFallbackError) {
+    return "origin answered but its body failed the content check: ";
+  }
+  if (err && err.cause !== undefined) return "origin did not answer: ";
+  return "";
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 async function fetchVersionJson(
@@ -789,7 +803,7 @@ async function main() {
     // failure mode (timeout, network error, or a `SpaFallbackError` for a
     // 200 that isn't actually version.json) — see `describeFetchFailure`
     // and `isJsonContentType` above.
-    console.error(`FAIL: ${err.message}`);
+    console.error(`FAIL: ${failureLead(err)}${err.message}`);
     process.exitCode = 1;
     return;
   }
