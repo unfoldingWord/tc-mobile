@@ -932,6 +932,13 @@ export const stringsEn = {
   languageNarrow: "Type more to see other languages.",
   languageSaving: "Saving the language.",
   languageAskCancel: "Cancel",
+  licenceAskTitle: "Licence of this book",
+  licenceAskLead:
+    "Who may share these recordings? You choose once for this book.",
+  licenceAllRightsReserved: "All rights reserved",
+  licenceSaving: "Saving the licence.",
+  licenceAskContinue: "Share",
+  licenceAskCancel: "Cancel",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome

@@ -331,6 +331,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNarrow: "Andika zaidi ili uone lugha nyingine.",
   languageSaving: "Inahifadhi lugha.",
   languageAskCancel: "Ghairi",
+  licenceAskTitle: "Leseni ya kitabu hiki",
+  licenceAskLead:
+    "Nani anaweza kushiriki rekodi hizi? Unachagua mara moja kwa kitabu hiki.",
+  licenceAllRightsReserved: "Haki zote zimehifadhiwa",
+  licenceSaving: "Inahifadhi leseni.",
+  licenceAskContinue: "Shiriki",
+  licenceAskCancel: "Ghairi",
   shareBookNothing: "Rekodi kipande kimoja kabla ya kushiriki kitabu hiki.",
   shareBookFailed: "Kitabu hiki hakikuweza kushirikiwa. Jaribu tena.",
   shareBookFailedWeb:

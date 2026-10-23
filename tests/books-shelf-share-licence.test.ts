@@ -21,6 +21,7 @@ import { idleChapterAudio } from "./chapter-audio";
 
 const mocks = vi.hoisted(() => ({
   books: [] as BookCard[],
+  setBookLicence: vi.fn(),
   prepare: vi.fn<
     (
       bookId: string,
@@ -65,6 +66,9 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
+vi.mock("@/lib/storage/licence", () => ({
+  setBookLicence: mocks.setBookLicence,
+}));
 vi.mock("@/hooks/failure-log", () => ({
   useFailureCount: () => 0,
   useMarkedFailureCount: () => 0,
@@ -79,6 +83,7 @@ let root: Root;
 
 beforeEach(() => {
   mocks.prepare.mockClear();
+  mocks.setBookLicence.mockReset();
   document.body.innerHTML = "<div id='root'></div>";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   root = createRoot(document.getElementById("root")!);
@@ -88,7 +93,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function shelfShare(licence: BookCard["licence"]) {
+async function shelfShare(licence: BookCard["licence"], pick?: string) {
   mocks.books = [
     { bookId: mark, name: "Mark", number: 1, licence, chapters: [] },
   ];
@@ -114,6 +119,20 @@ async function shelfShare(licence: BookCard["licence"]) {
   };
   await tap(strings.bookMenuOpen("Mark"));
   await tap(strings.shareBook);
+  if (pick) {
+    // A book with no licence asks first and prepares nothing from the tap
+    // (#1455); the pick is stored, and only then does the share run.
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    mocks.setBookLicence.mockImplementation(
+      async (_id: string, chosen: string) => ({ id: mark, licence: chosen })
+    );
+    const row = document.querySelector<HTMLElement>(
+      `[role="radio"][data-licence="${pick}"]`
+    )!;
+    await act(async () => row.click());
+    await tap(strings.licenceAskContinue);
+    expect(mocks.setBookLicence).toHaveBeenCalledWith(mark, pick);
+  }
   expect(mocks.prepare).toHaveBeenCalledTimes(1);
   const [, zip, nameChapter] = mocks.prepare.mock.calls[0]!;
   return { zip, chapter: nameChapter(4, null, 4) };
@@ -127,10 +146,30 @@ describe("the shelf's Share Book names its files with the licence (#1579)", () =
     });
   });
 
-  it("tags nothing for a book with no licence", async () => {
-    expect(await shelfShare(null)).toEqual({
-      zip: "Mark.zip",
-      chapter: "Mark - 04 Chapter 4.mp3",
+  it("asks a book with no licence first, writes the pick, then tags the files with it (#1455)", async () => {
+    expect(await shelfShare(null, "CC-BY-4.0")).toEqual({
+      zip: "Mark (CC BY 4.0).zip",
+      chapter: "Mark - 04 Chapter 4 (CC BY 4.0).mp3",
     });
+  });
+
+  it("shares and writes nothing when the ask is cancelled (#1455)", async () => {
+    await expect(
+      shelfShare(null, undefined).catch(() => "no-prepare")
+    ).resolves.toBe("no-prepare");
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+    const cancel = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === strings.licenceAskCancel
+    )!;
+    await act(async () => cancel.click());
+    expect(mocks.setBookLicence).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+  });
+
+  it("never asks a book that already has a licence, a template book included (D5)", async () => {
+    await shelfShare("all-rights-reserved");
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(mocks.setBookLicence).not.toHaveBeenCalled();
   });
 });

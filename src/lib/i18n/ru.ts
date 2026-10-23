@@ -392,6 +392,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNarrow: "Введите больше, чтобы увидеть другие языки.",
   languageSaving: "Сохраняем язык.",
   languageAskCancel: "Отмена",
+  licenceAskTitle: "Лицензия этой книги",
+  licenceAskLead:
+    "Кто может делиться этими записями? Вы выбираете один раз для этой книги.",
+  licenceAllRightsReserved: "Все права защищены",
+  licenceSaving: "Сохраняем лицензию.",
+  licenceAskContinue: "Поделиться",
+  licenceAskCancel: "Отмена",
   shareNameFallback: "Книга",
 
   // Save and recovery
