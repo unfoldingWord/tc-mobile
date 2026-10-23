@@ -128,7 +128,7 @@
  * and `Book.languageCode` are kept as stored. Takes and clips are not read.
  *
  * Roll forward only: a phone that has opened v12 cannot be opened by an older
- * build (`DatabaseDowngradeError`, nothing written).
+ * build (`DatabaseDowngradeError`).
  *
  * ── v13 (#38): the audio revision and take dispositions — append-only ──
  *
