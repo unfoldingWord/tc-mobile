@@ -330,6 +330,16 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "Lugha hazikuweza kupakiwa.",
   languageNoMatch: "Hakuna lugha inayolingana. Jaribu jina au msimbo mwingine.",
   languageNarrow: "Andika zaidi ili uone lugha nyingine.",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "Lugha {n} inalingana.",
+      other: "Lugha {n} zinalingana.",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `Lugha {n} zinalingana. Zinaonyeshwa ${shown} za kwanza. Andika zaidi ili kupunguza utafutaji.`,
+      other: `Lugha {n} zinalingana. Zinaonyeshwa ${shown} za kwanza. Andika zaidi ili kupunguza utafutaji.`,
+    }),
   languageSaving: "Inahifadhi lugha.",
   languageAskCancel: "Ghairi",
   licenceAskTitle: "Leseni ya kitabu hiki",
@@ -345,6 +355,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceAskSave: "Hifadhi",
   licenceAskSaveLead:
     "Nani anaweza kushiriki rekodi hizi? Unaweza kubadilisha hili tena baadaye.",
+  licenceNameCcBySa:
+    "Creative Commons Utambuzi wa Mwandishi, Shiriki kwa Namna Ile Ile 4.0",
+  licenceNameCcBy: "Creative Commons Utambuzi wa Mwandishi 4.0",
+  licenceNameCc0: "Creative Commons Zero 1.0, kikoa cha umma",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "Rekodi kipande kimoja kabla ya kushiriki kitabu hiki.",
   shareBookFailed: "Kitabu hiki hakikuweza kushirikiwa. Jaribu tena.",
   shareBookFailedWeb:

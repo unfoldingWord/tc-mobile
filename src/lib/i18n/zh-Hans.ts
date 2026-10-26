@@ -295,6 +295,11 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileTemplates: "模板",
   licenceAskSave: "保存",
   licenceAskSaveLead: "谁可以分享这些录音？你以后可以再更改。",
+  licenceNameCcBySa: "知识共享 署名-相同方式共享 4.0",
+  licenceNameCcBy: "知识共享 署名 4.0",
+  licenceNameCc0: "知识共享 零 1.0，公有领域",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "分享这本书之前，请先录一个段落。",
   shareBookFailed: "未能分享这本书。请重试。",
   shareBookFailedWeb: "未能分享这本书。请在 tC Mobile 应用中分享书。",
@@ -342,6 +347,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "未能加载语言。",
   languageNoMatch: "没有找到语言。请输入其他名称或代码。",
   languageNarrow: "请多输入几个字，以查看其他语言。",
+  languageCount: (n: number): string =>
+    plural(n, { one: "{n} 种语言匹配。", other: "{n} 种语言匹配。" }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      other: `{n} 种语言匹配。显示前 ${shown} 种。请多输入几个字，缩小搜索范围。`,
+    }),
   languageSaving: "正在保存语言。",
   languageAskCancel: "取消",
   shareNameFallback: "书",
