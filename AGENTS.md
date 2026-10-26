@@ -503,7 +503,14 @@ says so in place and nothing is lost), the editor's dropped edit
 (`hooks/use-segment-editor.ts`, `"recorder-edit-apply"`, logged and not
 lighting `≡`: the edit is dropped, the saved audio and history are unchanged),
 a system Back whose `requestClose()` rejected (`hooks/use-nav-stack.ts`,
-`"recorder-close-rejected"`, which lights it), a shared context that reports `"running"`
+`"recorder-close-rejected"`, which lights it), a Back that found the recorder
+screen with no recorder handle (same file, `"recorder-back-no-handle"`, which
+lights it: the Back did nothing and whether the take was committed is not known
+from there; the row carries an `Error` built at the site, there being no cause),
+the resume fired by a load panel's "Try again" tap being refused
+(`hooks/use-recorder-segment.ts`, `"recorder-segment-resume-retry"`, logged and
+not lighting `≡`: the re-read goes ahead regardless and a refused resume is a
+routine iOS event), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -531,11 +538,7 @@ effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
 the microphone-refusal and start paths inside `hooks/use-recorder.ts` (among
 them its foreground and start-time `resumeAudioContext()` calls and the level
-meter's open), `hooks/use-recorder-segment.ts`'s resume before a load retry, and
-`hooks/use-nav-stack.ts`'s missing-recorder-handle line on Back. Routing those
-is follow-up work, for a different reason each. `use-recorder-segment.ts`'s
-line was left out of #1712 because #1704 is changing that file. The nav-stack
-line carries no cause to report. The `use-recorder.ts` paths are not a one-line
+meter's open). Routing those is follow-up work: they are not a one-line
 change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
 The recorder sheet's own Stop notice (`captureFailureText` in

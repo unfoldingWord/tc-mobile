@@ -242,6 +242,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
     // context for and even a decode may still complete without.
     void resumeAudioContext().catch((cause) => {
       console.error("Could not resume the AudioContext before retry", cause);
+      reportFailure(cause, "recorder-segment-resume-retry");
     });
     setRetrying(true);
     setAttempt((n) => n + 1);

@@ -204,6 +204,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "更多操作",
   selectionStartHandle: "所选部分的起点",
   selectionEndHandle: "所选部分的终点",
+  selectionHandleTime: (n: number): string => plural(n, { other: "{n} 秒" }),
   editFailed: "未能应用这次修改。请选择更短的一段。",
   clearFailed: "未能重置音频。请重试。",
   captureSilence: "没有录到声音。请重试。",

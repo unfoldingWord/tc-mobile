@@ -228,6 +228,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Другие действия",
   selectionStartHandle: "Начало выделения",
   selectionEndHandle: "Конец выделения",
+  selectionHandleTime: (n: number): string =>
+    plural(n, {
+      one: "{n} секунда",
+      few: "{n} секунды",
+      many: "{n} секунд",
+      other: "{n} секунды",
+    }),
   editFailed: "Не удалось применить изменение. Выберите участок короче.",
   clearFailed: "Не удалось сбросить звук. Повторите попытку.",
   captureSilence: "Звук не записан. Повторите попытку.",

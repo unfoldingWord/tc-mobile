@@ -196,6 +196,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Tindakan lainnya",
   selectionStartHandle: "Awal pilihan",
   selectionEndHandle: "Akhir pilihan",
+  selectionHandleTime: (n: number): string => plural(n, { other: "{n} detik" }),
   editFailed:
     "Perubahan itu tidak dapat diterapkan. Coba pilihan yang lebih kecil.",
   clearFailed: "Suara tidak dapat disetel ulang. Coba lagi.",

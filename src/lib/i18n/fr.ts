@@ -209,6 +209,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Plus d'actions",
   selectionStartHandle: "Début de la sélection",
   selectionEndHandle: "Fin de la sélection",
+  selectionHandleTime: (n: number): string =>
+    plural(n, {
+      one: "{n} seconde",
+      many: "{n} secondes",
+      other: "{n} secondes",
+    }),
   editFailed:
     "Ce changement n'a pas pu être appliqué. Essayez avec une sélection plus courte.",
   clearFailed: "Le son n'a pas pu être réinitialisé. Réessayez.",

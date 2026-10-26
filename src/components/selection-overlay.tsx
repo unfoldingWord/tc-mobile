@@ -35,6 +35,12 @@ interface SelectionOverlayProps {
   readonly onChange: (range: SampleRange) => void;
   readonly startLabel: string;
   readonly endLabel: string;
+  /**
+   * A handle's position as words, for `aria-valuetext` (#1344). `aria-valuenow`
+   * stays the raw sample count (specs and tests read it as a number); a screen
+   * reader says the text instead. Absent, the slider is announced by its number.
+   */
+  readonly valueText?: (sample: number) => string;
 }
 
 /**
@@ -64,6 +70,7 @@ export function SelectionOverlay({
   onChange,
   startLabel,
   endLabel,
+  valueText,
 }: SelectionOverlayProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The edge under each active pointer, keyed by pointerId — so two fingers on
@@ -118,6 +125,7 @@ export function SelectionOverlay({
       aria-valuemin={0}
       aria-valuemax={workingLength}
       aria-valuenow={Math.round(valueNow)}
+      aria-valuetext={valueText?.(Math.round(valueNow))}
       tabIndex={0}
       className="selection-handle"
       style={{ left: hitLeft(pct(valueNow, win)) }}
