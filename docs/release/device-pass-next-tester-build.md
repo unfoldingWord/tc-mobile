@@ -22,13 +22,20 @@ entries in [the progress tracker](../progress_tracker.md). The sheet describes w
   uninstall to clear a screen: uninstalling deletes the recordings. A phone that has opened a
   newer database schema cannot open an older build again
   ([AGENTS.md](../../AGENTS.md), "A rollback is not free").
+- Before you install, write down the shelf: book order, book, chapter and segment names, colours
+  and Finished marks. Row 1.3 compares against that note. Start a timer when you open the app in
+  row 1.1; row 1.7 records it.
+- Row 1.8 can lose recordings. Run it after 1.1 to 1.7, in a browser profile whose recordings you
+  can lose. A lost recording there is the result to report.
 - Report one comment per phone on the tracking issue: platform, device, OS version, the build
-  version shown in the app's footer, and who you are by role. Write pass, fail or "could not reach"
-  against each row. A failed row also gets an evidence comment on its source issue or PR.
+  version shown in the app's footer, and who you are by role. Write a result code (below) against
+  each row. A failed row also gets an evidence comment on its source issue or PR.
 - The dated run record belongs in `docs/progress_tracker.md`, never in a docblock or a test name.
 - Whatever comes back, quote it as seen. Do not round a "could not reach" up to a pass.
 
-Result codes: P = pass, F = fail, N = could not reach.
+Result codes: P = pass, F = fail, N = could not reach, R = recorded. Use R, never P or F, where
+the Expected cell gives no expected value, calls a result a report rather than a verdict, or only
+asks you to record or note what happened. Quote what you saw beside the R.
 
 ## 1. Upgrade in place (first, on a phone holding v1.1.x data)
 
@@ -43,7 +50,7 @@ chapter and a renamed segment, all made on v1.1.x.
 | 1.4 | Both     | Record a new segment and save it.                                                    | It saves and plays.                                                                                                           | #1464, #1618                             |        |
 | 1.5 | Both     | Delete a segment, including one that was recorded just before the update if you can. | The delete works and nothing else moves.                                                                                      | #1464, #1632                             |        |
 | 1.6 | Both     | Close the app and open it again.                                                     | Nothing changes. Books has no failure mark.                                                                                   | #1464                                    |        |
-| 1.7 | Both     | Time how long the first open after the update takes on a large shelf.                | Record the time. The sources name upgrade time as unmeasured, so there is no expected value.                                  | #1522                                    |        |
+| 1.7 | Both     | Record how long row 1.1's first open took, on a large shelf.                         | Record the time. The sources name upgrade time as unmeasured, so there is no expected value.                                  | #1522                                    |        |
 | 1.8 | Web      | With an old tab open, open the new build in a second tab.                            | Record what each tab shows and whether any recording is lost. The issue names the two-copy case and gives no expected screen. | #1464                                    |        |
 
 Also read the sources' note that the schema is now v14 on `develop` (v12 and v13 above, v14 for
@@ -68,8 +75,8 @@ Source for the whole section: #1521 (the fix for #1518; the tracker says the dev
 
 | #   | Platform | Action                                                                                                                    | Expected                                                                                                               | Source              | Result |
 | --- | -------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
-| 3.1 | Both     | Record a take, stop, edit it, save it. Then force-close the app (swipe it away) and reopen.                               | The recording is on the segment, saved once, with nothing shown.                                                       | #1694, #1660, #1540 |        |
-| 3.2 | Both     | Record and tap Stop, then force-close the app straight away, before the sheet closes. Reopen.                             | The take is saved quietly on launch ("Finish the save quietly"). It is not saved a second time after a further reopen. | #1660, #1540, #38   |        |
+| 3.1 | Both     | Record a take, stop, edit it, save it. Then force-close the app (swipe it away) and reopen.                               | The segment shows the take once. No recovery sheet appears and there is no second copy.                                | #1694, #1660, #1540 |        |
+| 3.2 | Both     | Record and tap Stop, then force-close the app straight away. Reopen, then reopen again.                                   | Saved quietly on launch, once, not again later. No take at all is N, not F: the copy is kept only after Stop ends.     | #1660, #1540, #38   |        |
 | 3.3 | Both     | Reopen after a kill where another copy of the app already finished the same take (hard to arrange; mark N if you cannot). | Nothing is shown and the take is not duplicated.                                                                       | #1660               |        |
 | 3.4 | Both     | Open the app with a waiting recording still on disk, then record and tap Stop straight away.                              | The new recording is saved once the replay finishes. It is not lost.                                                   | #1683, #1549        |        |
 | 3.5 | Both     | Edit and save a recording, then edit and save it again, then reopen after a kill.                                         | The saved audio matches the last save, not an earlier one.                                                             | #1694               |        |
@@ -117,7 +124,7 @@ the low-end Android phone and the iPhone. Source for the section: #1470 (the dev
 
 | #   | Platform | Action                                                                                                                                    | Expected                                                                                                                                                                        | Source              | Result |
 | --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
-| 6.1 | Both     | Open Settings and find the "Even out the volume when done" switch. Leave it on. Record a quiet and a loud segment and mark each Finished. | The switch looks like a normal button in the list. Listen to both after: they sound more even, without clipping or pumping. The target is -19 LUFS and -1.5 dBTP. Judge by ear. | #1679, #1685, #1433 |        |
+| 6.1 | Both     | Open Settings and find the "Even out the volume when done" switch. Leave it on. Record a quiet and a loud segment and mark each Finished. | The switch looks like a normal button in the list. Listen to both after: they sound more even, without clipping or pumping. P/F by ear only, not against -19 LUFS / -1.5 dBTP.   | #1679, #1685, #1433 |        |
 | 6.2 | Both     | Time the Finished step on the low-end phone.                                                                                              | Record how long it takes. The sources call this unmeasured, so there is no expected value.                                                                                      | #1679               |        |
 | 6.3 | Both     | Turn the switch off and mark another segment Finished.                                                                                    | The audio is not changed by the chain.                                                                                                                                          | #1685               |        |
 
@@ -167,8 +174,8 @@ the low-end Android phone and the iPhone. Source for the section: #1470 (the dev
 | #    | Platform | Action                                                                                    | Expected                                                                                                                     | Source              | Result |
 | ---- | -------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
 | 10.1 | Android  | Open Menu, then About and licences. Scan the QR code from a second phone, in both themes. | The camera reads it. The link opens the Play listing page. It only works for other people once the listing is public (#874). | #1668, #1663, #1250 |        |
-| 10.3 | Both     | Run the Phone check, including the loudness benchmark step.                               | It completes. Record the numbers (T5 of the loudness plan).                                                                  | #1502, #1519, #1512 |        |
-| 10.4 | Both     | Run the Phone check twice in a row.                                                       | The second run starts after the first finishes.                                                                              | #1512               |        |
+| 10.2 | Both     | Run the Phone check, including the loudness benchmark step.                               | It completes. Record the numbers (T5 of the loudness plan).                                                                  | #1502, #1519, #1512 |        |
+| 10.3 | Both     | Run the Phone check twice in a row.                                                       | The second run starts after the first finishes.                                                                              | #1512               |        |
 
 ## 11. Re-tests carried from earlier issues
 
@@ -186,8 +193,8 @@ the low-end Android phone and the iPhone. Source for the section: #1470 (the dev
   and its own device pass.
 - **Android tablet that did not load** (#1253): the tester's details are still missing. A tablet row
   needs make, model, WebView version and the install route first.
-- **Scripture Bundle export in another app** (#1614, #1588): the bundle is built in tests only and
-  has no UI. Nothing to do on a phone yet.
+- **Scripture Bundle export in another app** (#1614, #1588): Export project itself is rows 7.6
+  and 7.7. Reading the bundle in a Scripture Bundle tool is not on this sheet.
 - **Schema rollback on a device** (#1464): out of scope there, and forbidden in practice.
 - **#1294 T4** (seal on a `muted` track at bind): waits on the result of row 4.2.
 - **#1235 / #1233 items 5, 6, 35, A1, A5** (does `close()` settle on an interrupted context): needs
@@ -199,5 +206,5 @@ the low-end Android phone and the iPhone. Source for the section: #1470 (the dev
 ## Where to write the result
 
 One dated entry per platform in `docs/progress_tracker.md`, naming the build and OS, with what was
-and was not seen. List every row not run as not run. Close the source issue only with that entry in
-place.
+and was not seen. List every row not run as not run. Close a source issue only when every platform
+its rows name has an entry, or is listed there as not run.
