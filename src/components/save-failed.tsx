@@ -252,7 +252,7 @@ export function SaveFailed({
             </p>
           )}
 
-          <div className="mt-[10px] flex flex-col items-center gap-[8px]">
+          <div className="mt-[10px] flex flex-col items-center gap-[var(--p-space-3)]">
             <Control
               icon="trash"
               label={discardLabel}
