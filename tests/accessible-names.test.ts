@@ -245,9 +245,6 @@ const SURFACES: Surface[] = [
   },
   {
     name: "LicenceAsk",
-    // Rule 3 off: #1718 gives the radios full licence names, which will not
-    // contain the short drawn label. Rules 1 and 2 still apply.
-    labelInName: false,
     build: () => [
       createElement(LicenceAsk, {
         onContinue: noop,
@@ -309,7 +306,10 @@ const SURFACES: Surface[] = [
   },
   {
     name: "LanguageAsk",
-    // Rule 3 off: #1718 owns this component and may rename its rows.
+    // Rule 3 off: a row draws the autonym (for example "français") but is
+    // named by the English name and tag ("French, fr"), so the autonym is not
+    // in the name. Whether that is intended is #1718's call; the gap stays
+    // named here rather than hidden. Rules 1 and 2 still apply.
     labelInName: false,
     build: () => [
       createElement(LanguageAsk, {
