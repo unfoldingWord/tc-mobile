@@ -635,6 +635,7 @@ export function useAudioSession(): UseAudioSession {
       // samples are already in hand — but the gesture rule is unchanged.
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
+        reportFailure(cause, "playback-buffer-tap-resume");
       });
 
       // Optimistic, so the control responds to the tap rather than to the graph.
@@ -748,6 +749,7 @@ export function useAudioSession(): UseAudioSession {
           // could be -- a rejection before the claim, or `sealRecording()`
           // throwing after a live start -- cannot be told apart here.
           console.error("Starting the recorder failed", cause);
+          reportFailure(cause, "recorder-start");
           return false;
         });
     },
@@ -814,6 +816,7 @@ export function useAudioSession(): UseAudioSession {
     // session, only the shared decode/playback context.
     void resumeAudioContext().catch((cause: unknown) => {
       console.error("Could not resume the audio context", cause);
+      reportFailure(cause, "sheet-open-resume");
     });
   }, []);
 

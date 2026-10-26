@@ -496,7 +496,13 @@ missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
 and its in-tap `resumeAudioContext()` rejection, #1468, #1559; the hide-path
 pause is wrapped so a throw is reported under the same context and the context
 drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
-(`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), a shared context that reports `"running"`
+(`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), the same in-tap
+resume on a buffer Play (`"playback-buffer-tap-resume"`) and on sheet open
+(`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker,
+a **pending DRI question** (the default is a routine iOS event; one constant,
+`RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`, flips it) —
+`startRecording`'s catch (`"recorder-start"`, which does light it), a share
+whose send failed (`hooks/share-flow.ts`, `"share-send"`), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -522,9 +528,9 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-mic/record-start, the in-tap `resumeAudioContext()` calls on a buffer Play and
-on sheet open (`use-audio-session.ts`), the recorder's preview path, and share _send_
-(`hooks/share-flow.ts`). Routing those is follow-up work — and it is
+the microphone-refusal and start paths inside `hooks/use-recorder.ts` and the
+recorder's preview path. Routing those is follow-up
+work — and it is
 not a one-line change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
 Until it lands, do not describe the log as holding "anything that went wrong":

@@ -57,6 +57,23 @@ describe("lightsFailureMarker", () => {
     expect(lightsFailureMarker("recorder-take-cap")).toBe(false);
   });
 
+  // PENDING DRI QUESTION (see `RESUME_FAILURES_LIGHT_MARKER`): the default is
+  // that a failed in-tap resume is logged but does not light ≡. If the DRI
+  // flips it, change `false` to `true` here and in the constant.
+  it.each(["playback-buffer-tap-resume", "sheet-open-resume"])(
+    "the in-tap resume row %j is logged but does not light the marker",
+    (context) => {
+      expect(lightsFailureMarker(context)).toBe(false);
+    }
+  );
+
+  it.each(["recorder-start", "share-send", "playback-tap-resume"])(
+    "the failure row %j lights the marker",
+    (context) => {
+      expect(lightsFailureMarker(context)).toBe(true);
+    }
+  );
+
   it.each([
     "render",
     "save-take",
