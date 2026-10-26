@@ -44,25 +44,31 @@ function completeLocales(
 
 const sorted = (xs: readonly string[]) => [...xs].sort();
 
+/** Whether the spec text's list is exactly the complete languages. */
+function listMatches(specText: string, complete: readonly string[]): boolean {
+  return (
+    JSON.stringify(sorted(sweptLocales(specText))) ===
+    JSON.stringify(sorted(complete))
+  );
+}
+
 describe("the locale-fit sweep's language list", () => {
   it("is English plus every complete language, no more and no fewer", () => {
-    expect(sorted(sweptLocales(readFileSync(SPEC, "utf8")))).toEqual(
-      sorted(completeLocales(PENDING))
-    );
+    expect(
+      listMatches(readFileSync(SPEC, "utf8"), completeLocales(PENDING))
+    ).toBe(true);
   });
 
   it("is red when a complete language has no sweep entry", () => {
     const without = completeLocales(PENDING).filter((t) => t !== "zh-Hans");
     const text = `const LOCALES = [${without.map((t) => `"${t}"`).join(", ")}] as const;`;
-    expect(sorted(sweptLocales(text))).not.toEqual(
-      sorted(completeLocales(PENDING))
-    );
+    expect(listMatches(text, completeLocales(PENDING))).toBe(false);
   });
 
   it("is red when a language is added to pending.ts as complete", () => {
     const next = { ...PENDING, xx: [] as readonly string[] };
-    expect(sorted(sweptLocales(readFileSync(SPEC, "utf8")))).not.toEqual(
-      sorted(completeLocales(next))
+    expect(listMatches(readFileSync(SPEC, "utf8"), completeLocales(next))).toBe(
+      false
     );
   });
 
