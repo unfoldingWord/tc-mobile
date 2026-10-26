@@ -218,6 +218,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "और विकल्प",
   selectionStartHandle: "चयन की शुरुआत",
   selectionEndHandle: "चयन का अंत",
+  selectionHandleTime: (n: number): string =>
+    plural(n, { one: "{n} सेकंड", other: "{n} सेकंड" }),
   editFailed: "वह बदलाव लागू नहीं हो सका। छोटा चयन आज़माएँ।",
   clearFailed: "ऑडियो रीसेट नहीं हो सका। फिर से कोशिश करें।",
   captureSilence: "कोई आवाज़ रिकॉर्ड नहीं हुई। फिर से कोशिश करें।",
@@ -330,6 +332,16 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "भाषाएँ लोड नहीं हो सकीं।",
   languageNoMatch: "कोई भाषा मेल नहीं खाती। कोई दूसरा नाम या कोड आज़माएँ।",
   languageNarrow: "दूसरी भाषाएँ देखने के लिए और टाइप करें।",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "{n} भाषा मेल खाती है।",
+      other: "{n} भाषाएँ मेल खाती हैं।",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `{n} भाषाएँ मेल खाती हैं। पहली ${shown} दिखाई गई हैं। खोज को सीमित करने के लिए और टाइप करें।`,
+      other: `{n} भाषाएँ मेल खाती हैं। पहली ${shown} दिखाई गई हैं। खोज को सीमित करने के लिए और टाइप करें।`,
+    }),
   languageSaving: "भाषा सहेजी जा रही है।",
   languageAskCancel: "रद्द करें",
   licenceAskTitle: "इस पुस्तक का लाइसेंस",
@@ -345,6 +357,11 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceAskSave: "सहेजें",
   licenceAskSaveLead:
     "ये रिकॉर्डिंग कौन साझा कर सकता है? आप इसे बाद में फिर बदल सकते हैं।",
+  licenceNameCcBySa: "क्रिएटिव कॉमन्स एट्रिब्यूशन-शेयरअलाइक 4.0",
+  licenceNameCcBy: "क्रिएटिव कॉमन्स एट्रिब्यूशन 4.0",
+  licenceNameCc0: "क्रिएटिव कॉमन्स ज़ीरो 1.0, सार्वजनिक डोमेन",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "इस पुस्तक को साझा करने से पहले एक खंड रिकॉर्ड करें।",
   shareBookFailed: "यह पुस्तक साझा नहीं हो सकी। फिर से कोशिश करें।",
   shareBookFailedWeb:
@@ -589,6 +606,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `${heading} को विराम दें`,
   resumeChapter: (heading: string, percent: number): string =>
     `${heading} जारी रखें, ${percent} प्रतिशत पर रुका हुआ`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} नहीं चल सका। फिर से कोशिश करने के लिए टैप करें`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: चलाने के लिए कुछ रिकॉर्ड नहीं है`,
 };

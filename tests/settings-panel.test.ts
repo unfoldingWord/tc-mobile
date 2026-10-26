@@ -184,11 +184,11 @@ it("the chapter-number row shows its state, persists, and changes the shelf's la
 
   await click(strings.settingsOpen);
   const row = button(strings.settingsChapterNumbers);
-  expect(row.getAttribute("aria-pressed")).toBe("false");
+  expect(row.getAttribute("aria-checked")).toBe("false");
 
   await click(strings.settingsChapterNumbers);
   expect(
-    button(strings.settingsChapterNumbers).getAttribute("aria-pressed")
+    button(strings.settingsChapterNumbers).getAttribute("aria-checked")
   ).toBe("true");
   expect(window.localStorage.getItem(ALWAYS_CHAPTER_NUMBER_KEY)).toBe("1");
   expect(chapterTitle()).toBe(strings.chapterName(3));
@@ -202,20 +202,20 @@ it("the loudness row shows ON with nothing stored, and a tap writes off", async 
   await mount();
   await click(strings.settingsOpen);
   expect(
-    button(strings.settingsNormalizeOnFinished).getAttribute("aria-pressed")
+    button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("true");
   expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBeNull();
 
   await click(strings.settingsNormalizeOnFinished);
   expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBe("0");
   expect(
-    button(strings.settingsNormalizeOnFinished).getAttribute("aria-pressed")
+    button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("false");
 
   await click(strings.settingsNormalizeOnFinished);
   expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBe("1");
   expect(
-    button(strings.settingsNormalizeOnFinished).getAttribute("aria-pressed")
+    button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("true");
 });
 
@@ -224,6 +224,6 @@ it("the loudness row reflects a stored off", async () => {
   await mount();
   await click(strings.settingsOpen);
   expect(
-    button(strings.settingsNormalizeOnFinished).getAttribute("aria-pressed")
+    button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("false");
 });

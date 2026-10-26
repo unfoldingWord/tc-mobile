@@ -622,6 +622,12 @@ export const stringsEn = {
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
   selectionEndHandle: "Selection end",
+  // A selection handle's spoken position (#1344), the slider's
+  // `aria-valuetext`: seconds into the clip, to a tenth. `n` arrives already
+  // rounded to a tenth, so the count in the phrase is the one that is said.
+  // English is a proposal for the requirements owner (lib/plural.ts).
+  selectionHandleTime: (n: number): string =>
+    plural(n, { one: "{n} second", other: "{n} seconds" }),
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not reset the audio. Try again.",
   // ── Why a capture produced no take (#169) ────────────────────────────────
@@ -733,13 +739,13 @@ export const stringsEn = {
   eraseConfirmTitle: "Reset segment and start over",
   eraseConfirm: "Reset recording",
   // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
-  // for every flow it now serves — segment Clear, book Delete and segment
+  // for every flow it now serves — segment Reset, book Delete and segment
   // Delete (#590) — because it is the same control on the same surface
   // saying the same word.
   eraseCancel: "Cancel",
   // The record bar's bin confirm (O4 G5, #1028): the one tap that clears the
   // segment AND starts the next take, and the workbench's own "Keep it" for
-  // the safe answer. The ⋮ menu's Clear keeps Clear / Cancel above.
+  // the safe answer. The ⋮ menu's Reset keeps Reset / Cancel above.
   recordAgainConfirm: "Record again",
   recordAgainKeep: "Keep it",
   eraseFailed: "Could not reset the recording. Try again.",
@@ -749,7 +755,7 @@ export const stringsEn = {
   eraseConfirmPreviewPlay: "Play what will be lost",
   eraseConfirmPreviewPause: "Pause",
   // The clipboard's bin under the line (#862): throws away a cut that was
-  // never pasted, behind the same confirm as the whole-take Clear. "Cut
+  // never pasted, behind the same confirm as the whole-take Reset. "Cut
   // audio", not "clipboard": the translator cut a piece of their recording,
   // and that piece is what is lost.
   discardClip: "Throw away the cut audio",
@@ -778,7 +784,7 @@ export const stringsEn = {
   // ── Delete a segment (#590) ────────────────────────────────────────────────
   // The chapter view's segment-row menu tile/row that deletes the segment
   // itself, not only its audio (reverses G4, `docs/design/pivot-plan.md`'s
-  // Gate 1, for this one entry) — behind the same confirm component Clear and
+  // Gate 1, for this one entry) — behind the same confirm component Reset and
   // book Delete use, mounted a second time on the chapter view
   // (`segments-screen.tsx` keeps a separate `EraseConfirm` for it).
   //
@@ -800,7 +806,7 @@ export const stringsEn = {
   deleteSegmentConfirmTitle: (ordinal: number): string =>
     `Delete segment ${ordinal}?`,
   deleteSegmentConfirm: "Delete",
-  // `eraseCancel`'s own comment already says Clear and book Delete share one
+  // `eraseCancel`'s own comment already says Reset and book Delete share one
   // dialog and one word; this is the third flow on it.
   deleteSegmentFailed: "Could not delete this segment. Try again.",
 
@@ -933,6 +939,15 @@ export const stringsEn = {
   languageLoadFailed: "Could not load the languages.",
   languageNoMatch: "No language matches. Try another name or code.",
   languageNarrow: "Type more to see other languages.",
+  // The language search's spoken result count (#1344, #1492): a polite status
+  // line, said once the search settles. English is a proposal for the
+  // requirements owner. Each form is a whole phrase (lib/plural.ts).
+  languageCount: (n: number): string =>
+    plural(n, { one: "{n} language matches.", other: "{n} languages match." }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      other: `{n} languages match. Showing the first ${shown}. Type more to narrow your search.`,
+    }),
   languageSaving: "Saving the language.",
   languageAskCancel: "Cancel",
   licenceAskTitle: "Licence of this book",
@@ -952,6 +967,16 @@ export const stringsEn = {
   licenceAskSave: "Save",
   licenceAskSaveLead:
     "Who may share these recordings? You can change this again later.",
+  // Each licence radio's spoken name (#1344, #1455): the full title, then the
+  // short label the row shows, so the name still holds the visible text. The
+  // file-name tag and the ID3 text keep the short label. English is a proposal
+  // for the requirements owner (inference: the standard Creative Commons
+  // titles are what they would choose).
+  licenceNameCcBySa: "Creative Commons Attribution-ShareAlike 4.0",
+  licenceNameCcBy: "Creative Commons Attribution 4.0",
+  licenceNameCc0: "Creative Commons Zero 1.0, public domain",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome
@@ -1612,6 +1637,11 @@ export const stringsEn = {
   pauseChapter: (heading: string): string => `Pause ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Resume ${heading}, paused at ${percent} percent`,
+  // A failed play's whole name (#1344): it says the chapter did not play and
+  // that a tap tries again, because the ring's failure colour is not spoken.
+  // English is a proposal for the requirements owner.
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} did not play. Tap to try again`,
   // The disabled control's whole name: it stays focusable, so the reason is
   // what it says.
   chapterNothingToPlay: (heading: string): string =>

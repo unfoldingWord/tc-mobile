@@ -9,8 +9,12 @@ import { Icon, type IconName } from "./icon";
  * `label` is the whole accessible name and is also the visible text, so the
  * name holds what is drawn (WCAG 2.5.3). `on` is omitted for a row whose tap
  * is an action rather than a two-state switch (the theme, which names its
- * destination): an absent `aria-pressed` and a `false` one say different
+ * destination): an absent `aria-checked` and a `false` one say different
  * things, so it is only set for a real switch.
+ *
+ * A switch row is `role="switch"` with `aria-checked`, so a screen reader
+ * speaks on or off rather than "pressed" (inference: not run with VoiceOver or
+ * TalkBack). The accessible name is unchanged: still `label`.
  */
 export function SettingRow({
   icon,
@@ -28,7 +32,8 @@ export function SettingRow({
       type="button"
       className={on ? "setting-row is-on" : "setting-row"}
       aria-label={label}
-      aria-pressed={on}
+      role={on === undefined ? undefined : "switch"}
+      aria-checked={on}
       onClick={onClick}
     >
       <Icon name={icon} size={26} />

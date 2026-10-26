@@ -449,7 +449,12 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
 delete of the held take's pending row, or a hold that found another take's
 row and so kept no safety copy (same file, `"pending-take-write"`,
 `"pending-take-delete"`, #38), a save refused because the take was already
-discarded (same file, `"pending-take-refused"`, #38), a failed book delete
+discarded (same file, `"pending-take-refused"`, #38), a waiting take the
+launch replay saved (same file, `"pending-take-replayed"`, #38) — not a
+failure, but the one durable record that a waiting take existed and was
+saved, written only when the replay's commit saved its audio, so like the
+take-cap row it goes out with the report and does not light `≡` (DRI on PR
+#1706: "A: one text round + log row (Recommended)"), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
@@ -487,11 +492,30 @@ pause is wrapped so a throw is reported under the same context and the context
 drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
 (`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), the same in-tap
 resume on a buffer Play (`"playback-buffer-tap-resume"`) and on sheet open
-(`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker,
-a **pending DRI question** (the default is a routine iOS event; one constant,
-`RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`, flips it) —
+(`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker
+(the DRI's pick on #1692, "Log only, no ≡ (Recommended)": a routine iOS event;
+`RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`) —
 `startRecording`'s catch (`"recorder-start"`, which does light it), a share
-whose send failed (`hooks/share-flow.ts`, `"share-send"`), a shared context that reports `"running"`
+whose send failed (`hooks/share-flow.ts`, `"share-send"`), the recorder
+sheet's commit and exit nets and recovery panel (`components/recorder.tsx`: the
+Stop-commit net `"recorder-commit-stop"`, the close-commit net
+`"recorder-commit-close"`, the no-capture tail net `"recorder-close-tail"`, a
+failed save of a recovered take `"recorder-recovered-save"` and a recovered
+take's share refused `"recorder-recovered-share"` — all five light `≡`,
+because a recording could be lost or stranded; and a refused Finished change
+`"recorder-finished-flag"`, which is logged but does **not** light it: the sheet
+says so in place and nothing is lost), the editor's dropped edit
+(`hooks/use-segment-editor.ts`, `"recorder-edit-apply"`, logged and not
+lighting `≡`: the edit is dropped, the saved audio and history are unchanged),
+a system Back whose `requestClose()` rejected (`hooks/use-nav-stack.ts`,
+`"recorder-close-rejected"`, which lights it), a Back that found the recorder
+screen with no recorder handle (same file, `"recorder-back-no-handle"`, which
+lights it: the Back did nothing and whether the take was committed is not known
+from there; the row carries an `Error` built at the site, there being no cause),
+the resume fired by a load panel's "Try again" tap being refused
+(`hooks/use-recorder-segment.ts`, `"recorder-segment-resume-retry"`, logged and
+not lighting `≡`: the re-read goes ahead regardless and a refused resume is a
+routine iOS event), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -502,8 +526,12 @@ clock still stopped, `"audio-clock-stalled-on-return"`), the tester-only phone c
 breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
 allocation is the measurement, not a failure, and is not reported), a
 licence text in Menu → About & licenses that fails to load or comes back as
-HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), and
-the log's own share and clear paths. `SaveFailed` now
+HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), a lazy
+chunk that would not load after an update (`hooks/stale-chunk-reload.ts`,
+#1421 O1: `"stale-chunk-reload"` when the page reloads once for it — not a
+failure, so it does not light ≡ — and `"stale-chunk"` when no reload is
+allowed: already reloaded once for this build, or audio held only in memory),
+and the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
@@ -517,11 +545,14 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-the microphone-refusal and start paths inside `hooks/use-recorder.ts` and the
-recorder's preview path. Routing those is follow-up
-work — and it is
-not a one-line change, because `SaveFailed` replaces the tree the way the
+the microphone-refusal and start paths inside `hooks/use-recorder.ts` (among
+them its foreground and start-time `resumeAudioContext()` calls and the level
+meter's open). Routing those is follow-up work: they are not a one-line
+change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
+The recorder sheet's own Stop notice (`captureFailureText` in
+`components/recorder.tsx`) is not on this list because it calls neither
+`console.error` nor `reportFailure`: it only sets the on-screen copy.
 Until it lands, do not describe the log as holding "anything that went wrong":
 `docs/training/facilitator-runbook.md` §5 names both halves for facilitators
 and this paragraph is the engineering copy of the same list.

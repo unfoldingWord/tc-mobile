@@ -1123,6 +1123,12 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
             // level below the screen it is showing (invariant 2). Surface the
             // missed mount — it should be vanishingly rare, never nominal.
             console.error("commit-close-recorder: no recorder handle on Back");
+            // No cause object exists here, so one is built at the site: the
+            // row's value is the context, the time and the build it carries.
+            reportFailure(
+              new Error("commit-close-recorder: no recorder handle on Back"),
+              "recorder-back-no-handle"
+            );
             pushHistoryEntry();
             return;
           }
@@ -1185,6 +1191,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
               // Surface it. The .finally below is load-bearing for the same
               // reason — do not drop it.
               console.error("Recorder close rejected", cause);
+              reportFailure(cause, "recorder-close-rejected");
             })
             .finally(() => {
               transitionInFlight.current = false;

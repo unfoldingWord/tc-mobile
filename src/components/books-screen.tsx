@@ -276,10 +276,10 @@ export function BooksScreen({
   // instead of it.
   const [failureRetryToken, setFailureRetryToken] = useState(0);
   const failureCount = useFailureCount(failureRetryToken);
-  // The rows that mark ≡: every row except informational ones, today only a
-  // take sealed at the 20-minute cap (#1005; DRI on #1076, verbatim: "Log it,
-  // don't light ≡ (Recommended)"). The panel below still keys on
-  // `failureCount`, so a log holding only that row can still be sent.
+  // The rows that mark ≡: every row except those `lightsFailureMarker` leaves
+  // plain, such as a take sealed at the 20-minute cap (#1005; DRI on #1076,
+  // verbatim: "Log it, don't light ≡ (Recommended)"). The panel below still
+  // keys on `failureCount`, so a log holding only such rows can still be sent.
   const markedFailureCount = useMarkedFailureCount();
   // Both halves of Try again, in one handler so a later edit cannot drop one:
   // re-read the shelf, and hand the failure count's ladder back.

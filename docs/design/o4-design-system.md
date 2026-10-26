@@ -238,9 +238,11 @@ Round 1 was answered by the requirements owner
 - **D9, icons:** only the 13 the screens use ([#937 round 1][937-r1]).
 - **D10, tier 2:** spoken titles (#952) after the training; reorder (#953)
   only if the restyle is done by 2026-09-29 ([#937 round 1][937-r1]).
-- **D11, reorder:** drag only for the training. The workbench has no keyboard
-  or switch-control path to move a row; that path is post-training
-  ([#937 round 1][937-r1]).
+- **D11, reorder:** drag only for the training; the workbench had no keyboard
+  or switch-control path to move a row ([#937 round 1][937-r1]). Revisited
+  2026-10-26 for books, chapters and segments: DRI pick (verbatim) "Yes, menu
+  Move up/down (Recommended)", so each row's menu gets Move up and Move down
+  ([#1344 comment](https://github.com/unfoldingWord/tc-mobile/issues/1344#issuecomment-6424140590)).
 
 ### Share (#947)
 

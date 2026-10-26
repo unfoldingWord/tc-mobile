@@ -51,6 +51,18 @@ describe("O4BookDeleteAsk markup (#980)", () => {
     );
   });
 
+  it("has Keep's aria-describedby resolve to the question naming the book (#1032)", () => {
+    const root = ask();
+    const keep = buttonNamed(root, strings.keepBook);
+    const id = keep.getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    const target = root.ownerDocument.getElementById(id!);
+    expect(target).toBeTruthy();
+    expect(target!.textContent).toBe(strings.deleteBookConfirmTitle("Mark"));
+    expect(target!.textContent).toContain("Mark");
+    expect(target!.classList.contains("sr-only")).toBe(true);
+  });
+
   it("puts Keep then Delete, as direct children of the confirm actions row", () => {
     const root = ask();
     const actions = one(root, ".confirm-actions");

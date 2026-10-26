@@ -228,6 +228,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Другие действия",
   selectionStartHandle: "Начало выделения",
   selectionEndHandle: "Конец выделения",
+  selectionHandleTime: (n: number): string =>
+    plural(n, {
+      one: "{n} секунда",
+      few: "{n} секунды",
+      many: "{n} секунд",
+      other: "{n} секунды",
+    }),
   editFailed: "Не удалось применить изменение. Выберите участок короче.",
   clearFailed: "Не удалось сбросить звук. Повторите попытку.",
   captureSilence: "Звук не записан. Повторите попытку.",
@@ -391,6 +398,20 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "Не удалось загрузить языки.",
   languageNoMatch: "Языков не найдено. Введите другое название или код.",
   languageNarrow: "Введите больше, чтобы увидеть другие языки.",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "Подходит {n} язык.",
+      few: "Подходят {n} языка.",
+      many: "Подходят {n} языков.",
+      other: "Подходят {n} языка.",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `Подходит {n} язык. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+      few: `Подходят {n} языка. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+      many: `Подходят {n} языков. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+      other: `Подходят {n} языка. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+    }),
   languageSaving: "Сохраняем язык.",
   languageAskCancel: "Отмена",
   licenceAskTitle: "Лицензия этой книги",
@@ -406,6 +427,11 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceAskSave: "Сохранить",
   licenceAskSaveLead:
     "Кто может делиться этими записями? Вы можете изменить это позже.",
+  licenceNameCcBySa: "Криэйтив Коммонс, Атрибуция, на тех же условиях 4.0",
+  licenceNameCcBy: "Криэйтив Коммонс, Атрибуция 4.0",
+  licenceNameCc0: "Криэйтив Коммонс, ноль 1.0, общественное достояние",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareNameFallback: "Книга",
 
   // Save and recovery
@@ -624,6 +650,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Пауза: ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Продолжить: ${heading}, пауза на отметке ${percent} %`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} не воспроизвелось. Нажмите, чтобы повторить`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: нечего воспроизводить`,
 };
