@@ -627,4 +627,32 @@
     width: 54px;
     height: 54px;
   }
+
+  /* Hold-to-reveal (S14, #1284): a cut-off book name or chapter title, held,
+     shows whole in this bubble above it (components/name-reveal.tsx). It is
+     portalled to <body> and placed from the name's own rectangle, so its
+     left or right, bottom and max-width are set inline; everything else is
+     here. It never takes a touch (the finger that raised it is still down,
+     and the release is the name's), and it wraps a long name to as many
+     lines as it needs. The overlay surface and an edge, the menus' own
+     roles, so it reads as raised in both themes. No motion: it appears
+     where the finger already is. */
+  :root .name-reveal {
+    position: fixed;
+    z-index: 95;
+    width: max-content;
+    padding: 10px 14px;
+    border-radius: var(--p-radius-12);
+    border: 1px solid var(--s-edge);
+    background: var(--s-overlay);
+    color: var(--s-ink);
+    font-size: var(--p-text-17);
+    font-weight: var(--p-weight-heavy);
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
