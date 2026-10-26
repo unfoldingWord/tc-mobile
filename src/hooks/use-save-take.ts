@@ -181,7 +181,14 @@ export async function performSaveTake(
       take.clipId,
       merged,
       CANONICAL_SAMPLE_RATE,
-      { finished: take.finished, isDiscardRequested }
+      // The generation of the audio the recorder loaded, not the replaced
+      // clip's, which a transcode under the open sheet may have moved
+      // (#163 A-14); `null` keeps the re-read.
+      {
+        finished: take.finished,
+        isDiscardRequested,
+        baseGeneration: take.baseGeneration,
+      }
     ));
   } catch (cause) {
     // The failure that produces the `SaveFailed` recovery screen — one row
@@ -670,8 +677,10 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // the recovery screen's wording depends on it — the save itself is identical.
       editOnly = false
     ): Promise<boolean> => {
-      // The revision `existing` was read at, not one read now: the hold stamps
-      // it, so a replay sees a move since (cell HM).
+      // The revision and generation `existing` was read at, not ones read
+      // now: the hold stamps them, so a replay sees a move since (cell HM),
+      // and the commit stamps the generation the audio was cut from (#163
+      // A-14).
       return slot.save(
         withObservedRevision({
           segmentId,

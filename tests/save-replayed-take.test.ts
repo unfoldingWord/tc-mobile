@@ -71,6 +71,7 @@ const firstTake = (segmentId: SegmentId): NewTake => ({
   finished: false,
   editOnly: false,
   baseRevision: 0,
+  baseGeneration: null,
 });
 
 /** A segment with kept take K (revision 1), and an append onto K's audio. */
@@ -84,6 +85,7 @@ const keptSegment = async () => {
     existing: pcm,
     offset: 80,
     baseRevision: 1,
+    baseGeneration: null,
   };
   return { segmentId, kept, meta, pcm, append };
 };

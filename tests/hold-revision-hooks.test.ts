@@ -219,6 +219,63 @@ describe("the noted revision follows the adopted view (George r2 on observed-rev
     expect(baseRevisionOf(segmentId)).toBe(1);
   });
 
+  // #163 A-14: the generation is noted with the revision, from the same view.
+  const baseGenerationOf = (segmentId: SegmentId) =>
+    withObservedRevision({
+      segmentId,
+      ordinal: 1,
+      clipId: newClipId(),
+      existing: samples(0),
+      recorded: samples(10, 7),
+      offset: 0,
+      finished: false,
+      editOnly: false,
+    }).baseGeneration;
+
+  it("a load the recorder cancelled notes no generation; reload notes its view's", async () => {
+    const segmentId = await keptSegment();
+    const first = gate();
+    vi.mocked(loadSegmentClip).mockImplementationOnce(async (...args) => {
+      await first.wait;
+      return real.loadSegmentClip(...args);
+    });
+    await act(async () => {
+      root.render(createElement(Probe, { segmentId }));
+    });
+    await act(async () => {
+      probe.current!.retry();
+    });
+    await vi.waitFor(() => expect(probe.current!.view?.hasClip).toBe(true));
+    expect(baseGenerationOf(segmentId)).toBe(0);
+
+    // Another copy saves a fix of an MP3 (generation 2); then the cancelled
+    // load reads it.
+    await real.saveTake(
+      segmentId,
+      newClipId(),
+      samples(20),
+      CANONICAL_SAMPLE_RATE,
+      {
+        baseGeneration: 2,
+      }
+    );
+    await act(async () => {
+      first.open();
+    });
+    await vi.waitFor(() =>
+      expect(vi.mocked(loadSegmentClip).mock.results[0]?.value).toBeDefined()
+    );
+    await act(async () => {
+      await vi.mocked(loadSegmentClip).mock.results[0]!.value;
+    });
+    expect(baseGenerationOf(segmentId)).toBe(0);
+
+    await act(async () => {
+      await probe.current!.reload();
+    });
+    expect(baseGenerationOf(segmentId)).toBe(2);
+  });
+
   it("reload notes the revision of the view it returns", async () => {
     const segmentId = await keptSegment();
     await act(async () => {

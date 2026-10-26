@@ -200,7 +200,7 @@ describe("the revision a recording's base was read at (cell HM, George r1 on #16
       const view = await loadRecorderSegmentView(segmentId);
       // What `useRecorderSegment` does when it adopts the view
       // (tests/hold-revision-hooks.test.ts pins that it does).
-      noteObservedRevision(segmentId, view.audioRevision);
+      noteObservedRevision(segmentId, view);
       await move(segmentId);
 
       const take = recording(segmentId, view.samples!);
@@ -221,7 +221,7 @@ describe("the revision a recording's base was read at (cell HM, George r1 on #16
     await saveTake(segmentId, newClipId(), samples(20), CANONICAL_SAMPLE_RATE);
     const before = await loadRecorderSegmentView(segmentId);
     expect(before.audioRevision).toBe(1);
-    noteObservedRevision(segmentId, before.audioRevision);
+    noteObservedRevision(segmentId, before);
     await clearSegmentTake(segmentId);
     const after = await loadRecorderSegmentView(segmentId);
     expect(after.audioRevision).toBe(2);

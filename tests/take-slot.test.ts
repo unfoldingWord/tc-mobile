@@ -63,6 +63,7 @@ const firstTake = (segmentId: SegmentId): ReplayTake => ({
   finished: false,
   editOnly: false,
   baseRevision: 0,
+  baseGeneration: null,
 });
 
 const activeClip = async (segmentId: SegmentId): Promise<ClipId | null> => {

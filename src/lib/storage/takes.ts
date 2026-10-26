@@ -316,6 +316,8 @@ export async function saveTake(
     finished?: boolean;
     now?: number;
     isDiscardRequested?: (clipId: ClipId) => boolean;
+    /** The generation the saved buffer was cut from; see the stamp below. */
+    baseGeneration?: number | null;
   } = {}
 ): Promise<CommitResult> {
   const now = opts.now ?? Date.now();
@@ -349,7 +351,14 @@ export async function saveTake(
     // An erase clears the take first, so a genuinely fresh recording starts at
     // 0. Read inside the transaction so the count and the take it describes
     // come from the same state.
-    const generation = await priorClipGeneration(tx, segmentId);
+    //
+    // When the caller knows the generation of the audio it loaded, that is
+    // the count, not this re-read (#163 A-14): the sweep is not paused while
+    // the recorder is open, so a Finished segment's PCM can be transcoded
+    // under it, same clip id, generation + 1, while the buffer being saved
+    // was cut from the PCM. `null` (not known) keeps the re-read.
+    const generation =
+      opts.baseGeneration ?? (await priorClipGeneration(tx, segmentId));
     const meta = { ...base, generation };
     await tx.objectStore("clipMeta").put(meta);
     await tx.objectStore("clipData").put(bytes.buffer, clipId);
@@ -472,7 +481,11 @@ export async function saveReplayedTake(
         result = { outcome: "discarded" };
         break;
       case "free": {
-        const generation = await priorClipGeneration(tx, segmentId);
+        // The row's own generation when it carries one (#163 A-14): a
+        // transcode since the hold does not move `audioRevision`, so the
+        // verdict is still `free` over a clip one lossy pass further on.
+        const generation =
+          take.baseGeneration ?? (await priorClipGeneration(tx, segmentId));
         await tx.objectStore("clipMeta").put({ ...base, generation });
         await tx.objectStore("clipData").put(bytes.buffer, clipId);
         await endOwnRow(tx, segmentId, clipId);
@@ -522,6 +535,9 @@ export async function saveReplayedTake(
             editOnly: take.editOnly,
             createdAt: row?.createdAt ?? now,
             baseRevision: take.baseRevision,
+            ...(take.baseGeneration === null
+              ? {}
+              : { baseGeneration: take.baseGeneration }),
             refusal,
           });
           if (row?.base.kind === "stored") {

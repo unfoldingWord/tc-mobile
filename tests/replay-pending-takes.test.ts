@@ -84,6 +84,7 @@ const firstTake = (segmentId: SegmentId): ReplayTake => ({
   finished: false,
   editOnly: false,
   baseRevision: 0,
+  baseGeneration: null,
 });
 
 const rowsNow = async (): Promise<StoredPendingTake[]> => {
@@ -319,6 +320,7 @@ describe("classification, before any audio is read (§3, The replay's own reads)
       existing: new Int16Array(80).fill(1000),
       offset: 80,
       baseRevision: 1,
+      baseGeneration: null,
     };
     expect(await writePendingTake(t, { source: meta })).toEqual({
       ok: true,
