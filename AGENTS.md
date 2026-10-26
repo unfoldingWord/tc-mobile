@@ -533,9 +533,14 @@ the microphone-refusal and start paths inside `hooks/use-recorder.ts` (among
 them its foreground and start-time `resumeAudioContext()` calls and the level
 meter's open), `hooks/use-recorder-segment.ts`'s resume before a load retry, and
 `hooks/use-nav-stack.ts`'s missing-recorder-handle line on Back. Routing those
-is follow-up work — and it is
-not a one-line change, because `SaveFailed` replaces the tree the way the
+is follow-up work, for a different reason each. `use-recorder-segment.ts`'s
+line was left out of #1712 because #1704 is changing that file. The nav-stack
+line carries no cause to report. The `use-recorder.ts` paths are not a one-line
+change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
+The recorder sheet's own Stop notice (`captureFailureText` in
+`components/recorder.tsx`) is not on this list because it calls neither
+`console.error` nor `reportFailure`: it only sets the on-screen copy.
 Until it lands, do not describe the log as holding "anything that went wrong":
 `docs/training/facilitator-runbook.md` §5 names both halves for facilitators
 and this paragraph is the engineering copy of the same list.
