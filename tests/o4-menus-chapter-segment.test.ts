@@ -317,7 +317,7 @@ describe("the segment menu (07) on the tile grid", () => {
     it("never gives Clear and Delete the same glyph", async () => {
       await mount(recorded);
       await openRow();
-      // Exact glyphs, against the `Icon` component's own markup: Clear
+      // Exact glyphs, against the `Icon` component's own markup: Reset
       // draws the eraser and Delete the bin, and the two references are
       // themselves different drawings.
       const eraser = iconMarkup("eraser");
@@ -403,7 +403,7 @@ describe("the segment menu (07) on the tile grid", () => {
     const done = `${strings.markFinished(3)}. ${why}`;
     // Done, Edit — greyed, hinted — then Delete, UNGREYED (#590's own
     // field-tester ask: an accidentally added, never-recorded segment is
-    // exactly what Delete exists to remove). No Clear: nothing to clear.
+    // exactly what Delete exists to remove). No Reset: nothing to reset.
     expect(dialogNames()).toEqual([
       strings.menuClose,
       strings.renameSegment,
@@ -421,11 +421,11 @@ describe("the segment menu (07) on the tile grid", () => {
     const del = tile(strings.deleteSegment);
     expect(del.getAttribute("aria-disabled")).toBeNull();
     expect(del.disabled).toBe(false);
-    // No Play or Clear on a segment with nothing to play or clear.
+    // No Play or Reset on a segment with nothing to play or reset.
     expect(dialogNames()).not.toContain(strings.playSegment(3));
     expect(dialogNames()).not.toContain(strings.eraseSegment);
     expect(focusedName()).toBe(strings.renameSegment);
-    // Three real tiles (no Clear) already fit the pinned 76 x 76 token
+    // Three real tiles (no Reset) already fit the pinned 76 x 76 token
     // (#1119 round 5's arithmetic): this row keeps its spacer and stays at
     // full size, unlike the four-tile `recorded` case above.
     const grid = dialog().querySelector(".o4-tiles")!;
