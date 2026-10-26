@@ -152,10 +152,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-ion-ios-filesystem 2.x — MIT
+ion-ios-filesystem 2.0.1 — MIT
 https://github.com/ionic-team/ion-ios-filesystem
 
-Declared by @capacitor/filesystem as 2.0.0 or newer within 2.x.
+Declared by @capacitor/filesystem at exactly 2.0.1.
 
 MIT License
 

@@ -911,6 +911,7 @@ cd android && ./gradlew :app:dependencies --configuration releaseRuntimeClasspat
 Every module in that output gets a section (`group:artifact version — SPDX`,
 the licence from the module's published POM), except a `-bom` platform, which
 ships no code. The iOS remote packages are the `.package(url:)` entries the
-test lists; `ion-ios-filesystem` is declared with a floor, not an exact
-version, and no `Package.resolved` is committed, so its section names the
-major (`1.x`) rather than a resolved release.
+test lists. A package pinned `exact:` gets a section at that version. One
+declared with a floor (`from:`) gets a section naming the major (`N.x`) and
+the floor, because no `Package.resolved` is committed and the resolved release
+is not known here.
