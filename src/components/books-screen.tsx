@@ -1273,8 +1273,14 @@ export function BooksScreen({
       live = false;
     };
   }, [shareMenuBookId]);
+  // Also off unless the share is idle: a prepared file's names carry the
+  // licence it was armed with, and Share now sends that file, so a change
+  // while one is armed or preparing would go out under the old licence — the
+  // Export tile's rule for the same armed file (Frank r1 P2, #1707).
   const canChangeLicence =
-    shareMenuBook !== null && bookKinds[shareMenuBook.bookId] === false;
+    shareMenuBook !== null &&
+    bookKinds[shareMenuBook.bookId] === false &&
+    bookShare.status === "idle";
   // The open book's cover colour: its stored key, or #957's id-derived
   // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
   // swatch and the delete ask all read this one value.
@@ -2677,6 +2683,9 @@ export function BooksScreen({
               />
             ) : askingLicenceFor !== null ? (
               <LicenceAsk
+                // A fresh ask per book and mode, so the seeded selection can
+                // never come from another open (George r1 Low).
+                key={`${askingLicenceFor}:${changingLicence ? "change" : "share"}`}
                 change={
                   changingLicence
                     ? { current: shareMenuBook?.licence ?? null }

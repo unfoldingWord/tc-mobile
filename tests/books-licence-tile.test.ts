@@ -22,6 +22,7 @@ import { idleChapterAudio } from "./chapter-audio";
 const mocks = vi.hoisted(() => ({
   books: [] as BookCard[],
   kind: "blank" as "blank" | "template",
+  status: "idle" as "idle" | "preparing" | "ready",
   getBook: vi.fn(),
   setBookLicence: vi.fn(),
   reload: vi.fn(),
@@ -46,7 +47,7 @@ vi.mock("@/hooks/use-books", () => ({
 }));
 vi.mock("@/hooks/use-book-share", () => ({
   useBookShare: () => ({
-    status: "idle",
+    status: mocks.status,
     error: null,
     sendUnconfirmed: false,
     missing: 0,
@@ -80,6 +81,7 @@ let root: Root;
 
 beforeEach(() => {
   mocks.kind = "blank";
+  mocks.status = "idle";
   mocks.prepare.mockClear();
   mocks.setBookLicence.mockReset();
   mocks.reload.mockReset();
@@ -213,6 +215,13 @@ describe("the book menu's Licence tile (#1455)", () => {
     expect(byLabel(strings.shareBook)).toBeDefined();
     expect(byLabel(strings.licenceTileLabel)).toBeUndefined();
     expect(mocks.setBookLicence).not.toHaveBeenCalled();
+  });
+
+  it("offers no tile while a share file is armed, so Share now cannot send an old licence", async () => {
+    mocks.status = "ready";
+    await openMenu("CC-BY-4.0");
+    expect(mocks.getBook).toHaveBeenCalled();
+    expect(byLabel(strings.licenceTileLabel)).toBeUndefined();
   });
 
   it("offers no tile while the book's provenance is unknown", async () => {
