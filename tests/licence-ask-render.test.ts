@@ -69,7 +69,9 @@ describe("LicenceAsk", () => {
       "CC0-1.0",
       "all-rights-reserved",
     ]);
-    expect(radios.map((r) => r.getAttribute("aria-label"))).toEqual([
+    // The row shows the short label; the spoken name is pinned in
+    // tests/ask-spoken-names.test.ts (#1344).
+    expect(radios.map((r) => r.textContent)).toEqual([
       "CC BY-SA 4.0",
       "CC BY 4.0",
       "CC0 1.0",

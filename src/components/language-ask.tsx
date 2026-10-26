@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import type { LanguageListState } from "@/hooks/use-language-ask";
 import { searchLanguages } from "@/lib/languages/list";
@@ -8,6 +8,33 @@ import { TileGrid } from "./o4-tile-menu";
 
 /** Rows drawn at once; more matches ask for a longer query instead. */
 const SHOWN = 50;
+
+/** How long a query holds still before its count is said aloud. */
+const SETTLE_MS = 500;
+
+/**
+ * The spoken result count (#1344): one polite status line, mounted with the
+ * ask so the live region exists before its text changes. Silent for no search
+ * (the whole list is not news) and for no match (the visible notice is an
+ * alert and already says it). That a screen reader reads it is inference from
+ * the markup, not observed.
+ */
+export function LanguageCountStatus(props: {
+  result: { readonly total: number; readonly shown: number } | null;
+}) {
+  const { result } = props;
+  const text =
+    !result || result.total === 0
+      ? ""
+      : result.total > result.shown
+        ? strings.languageCountMore(result.total, result.shown)
+        : strings.languageCount(result.total);
+  return (
+    <p className="sr-only" role="status" aria-live="polite">
+      {text}
+    </p>
+  );
+}
 
 /**
  * The language ask (#1492): a search over the bundled list (ADR 0017) in the
@@ -25,11 +52,23 @@ export function LanguageAsk(props: {
 }) {
   const { state, saving, error } = props;
   const [query, setQuery] = useState("");
+  const [settled, setSettled] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(query), SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [query]);
   const listId = useId();
   const found = useMemo(
     () =>
       state.kind === "ready" ? searchLanguages(state.list, query, SHOWN) : null,
     [state, query]
+  );
+  const spoken = useMemo(
+    () =>
+      state.kind === "ready" && settled.trim() !== ""
+        ? searchLanguages(state.list, settled, SHOWN)
+        : null,
+    [state, settled]
   );
   const onArrow = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const step = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
@@ -75,6 +114,13 @@ export function LanguageAsk(props: {
             </button>
           </>
         )}
+        <LanguageCountStatus
+          result={
+            spoken
+              ? { total: spoken.total, shown: spoken.matches.length }
+              : null
+          }
+        />
         <ul id={listId} className="language-list">
           {found?.matches.map((entry) => (
             <li key={entry.tag}>

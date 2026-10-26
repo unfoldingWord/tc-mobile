@@ -47,7 +47,7 @@ wins.
 | External microphone testing                                             | v2 desired      | Meeting 2.3                               |
 | MP3 cover art generated from the chapter title                          | v2 desired      | Whiteboard; meeting 3.1                   |
 | Cloud backup sync: Google Drive and iCloud                              | v2 desired      | Meeting 9.3, 9.4                          |
-| Audio for all text strings                                              | v3 required     | Whiteboard; meeting 8.2 to 8.5            |
+| Audio for all text strings (recorded audio only; no in-app speech)      | v3 required     | Whiteboard; meeting 8.2 to 8.5            |
 | BT Servant chat (opt-in)                                                | v3 required     | Whiteboard                                |
 | Text labels on edit-mode buttons                                        | Dropped         | Meeting 1.2; interview kept current icons |
 
@@ -728,6 +728,20 @@ names what it leaves undecided where the record shows something.
    phone's own text to speech, comma. That does not create any new issues for
    this app as long as the text strings are available to the phone operating
    system so that it can be converted to audio by the operating system."
+   - DRI pick, 2026-10-26, on what S4 means (verbatim): "Screen reader only".
+     [#1344 comment](https://github.com/unfoldingWord/tc-mobile/issues/1344#issuecomment-6423502858).
+   - DRI picks, 2026-10-26, on two follow-ups (verbatim): "No, recorded audio
+     stays (Recommended)" and "Yes, menu Move up/down (Recommended)".
+     [#1344 comment](https://github.com/unfoldingWord/tc-mobile/issues/1344#issuecomment-6424140590).
+   - Coordinator reading, not the DRI's words. Out: in-app text-to-speech; the
+     app does not synthesize speech. Stays: recorded audio people made
+     themselves (a recorded book name, #952; the recorded prompts of "Audio for
+     all text strings"), and screen-reader labels, so that every control has a
+     full accessible name and the phone's screen reader does the speaking.
+     Added: Move up and Move down in the row menus of books, chapters and
+     segments (see D11 in `o4-design-system.md`). Trimmed: the
+     text-to-speech halves of #952, #1028, #1031 and #91, and the speech half
+     of #1032.
 5. **S5-after-interviews** — "5 · After the training interviews (#1271)".
    Decided `no-change`: "No change". Note: "It worked really well to have a
    separate microphone icon to indicate entering the recording studio. When we
