@@ -214,6 +214,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Mais ações",
   selectionStartHandle: "Início da seleção",
   selectionEndHandle: "Fim da seleção",
+  selectionHandleTime: (n: number): string =>
+    plural(n, {
+      one: "{n} segundo",
+      many: "{n} segundos",
+      other: "{n} segundos",
+    }),
   editFailed:
     "Não foi possível aplicar essa alteração. Tente uma seleção menor.",
   clearFailed: "Não foi possível redefinir o áudio. Tente novamente.",
@@ -615,6 +621,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Pausar ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Retomar ${heading}, em pausa em ${percent} por cento`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} não foi reproduzido. Toque para tentar de novo`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} não tem nada gravado para reproduzir`,
 };

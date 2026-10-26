@@ -218,6 +218,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Vitendo zaidi",
   selectionStartHandle: "Mwanzo wa uteuzi",
   selectionEndHandle: "Mwisho wa uteuzi",
+  selectionHandleTime: (n: number): string =>
+    plural(n, { one: "sekunde {n}", other: "sekunde {n}" }),
   editFailed:
     "Mabadiliko hayo hayakuweza kutekelezwa. Jaribu uteuzi mdogo zaidi.",
   clearFailed: "Sauti haikuweza kuwekwa upya. Jaribu tena.",
@@ -604,6 +606,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Sitisha ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Endelea na ${heading}, ulipositisha: asilimia ${percent}`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} haikuchezwa. Gusa ili ujaribu tena`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: hakuna rekodi ya kucheza`,
 };

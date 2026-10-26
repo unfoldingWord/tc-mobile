@@ -218,6 +218,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "और विकल्प",
   selectionStartHandle: "चयन की शुरुआत",
   selectionEndHandle: "चयन का अंत",
+  selectionHandleTime: (n: number): string =>
+    plural(n, { one: "{n} सेकंड", other: "{n} सेकंड" }),
   editFailed: "वह बदलाव लागू नहीं हो सका। छोटा चयन आज़माएँ।",
   clearFailed: "ऑडियो रीसेट नहीं हो सका। फिर से कोशिश करें।",
   captureSilence: "कोई आवाज़ रिकॉर्ड नहीं हुई। फिर से कोशिश करें।",
@@ -604,6 +606,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `${heading} को विराम दें`,
   resumeChapter: (heading: string, percent: number): string =>
     `${heading} जारी रखें, ${percent} प्रतिशत पर रुका हुआ`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} नहीं चल सका। फिर से कोशिश करने के लिए टैप करें`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: चलाने के लिए कुछ रिकॉर्ड नहीं है`,
 };

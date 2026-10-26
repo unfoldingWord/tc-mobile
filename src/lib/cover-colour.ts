@@ -25,12 +25,10 @@
  * reshuffles which book looks like what. It is also not a small, enumerable
  * set of MEANINGS (success/warn/live, the roles layer 2 actually holds) but a
  * palette a later PR can retune, so it does not belong in layer 1 either —
- * that would make trimming it a CSS-file edit alongside this one, in the one
- * layer AGENTS.md says nothing here can check (`knip`'s own words: ".css —
- * Compiled extension excluded by project"). Keeping key → hex as plain `lib/`
- * data keeps it one edit, keeps it typed, and keeps it reachable from a Node
- * test. `components/cover-picker.tsx` paints the swatch fill from this table
- * directly (inline style), and reaches for a layer-2 role only for the
+ * that would make trimming it a CSS-file edit alongside this one. Keeping key
+ * → hex as plain `lib/` data keeps it one edit, keeps it typed, and keeps it
+ * reachable from a Node test. `components/cover-picker.tsx` paints the swatch
+ * fill from this table directly (inline style), and reaches for a layer-2 role only for the
  * THEMED part of its own markup — the selected ring — which is a UI decision
  * that does vary sensibly by theme.
  *

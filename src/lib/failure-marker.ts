@@ -53,15 +53,23 @@ const RESUME_CONTEXTS: readonly string[] = [
  * - `"recorder-edit-apply"`: an edit's buffer could not be allocated. The edit
  *   is dropped and shown in place, the history and the saved audio are
  *   unchanged, and the person can try again.
+ * - `"recorder-segment-resume-retry"`: the audio-context resume fired in the
+ *   "Try again" tap was refused. It is fire-and-forget and never gates the
+ *   re-read, so the retry goes ahead regardless; a refused resume is a routine
+ *   iOS event (the same reasoning as the two in-tap resume rows above).
  *
  * Every other recorder-sheet context in the log (`"recorder-commit-stop"`,
  * `"recorder-commit-close"`, `"recorder-close-tail"`, `"recorder-close-rejected"`,
  * `"recorder-recovered-save"`, `"recorder-recovered-share"`) is a commit or an
  * exit that failed where a recording could be lost or stranded, so it lights.
+ * So does `"recorder-back-no-handle"`: a Back found the recorder screen with no
+ * recorder to close, so the Back did nothing and whether the take was committed
+ * is not known from here (inference; the cause is an unobserved unmount gap).
  */
 const ROUTINE_RECOVERABLE_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-finished-flag",
   "recorder-edit-apply",
+  "recorder-segment-resume-retry",
 ]);
 
 /** True when a row with this context should mark the Books ≡ control. */

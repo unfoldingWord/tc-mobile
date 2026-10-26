@@ -76,13 +76,23 @@ describe("the chapter row's play control (#1469)", () => {
     );
   });
 
-  it("says nothing on a failure: the name is Play and the mark is the ring's", () => {
+  it("names a failure in the label: it did not play, and a tap tries again", () => {
     const c = control("failed");
     expect(button(c).getAttribute("aria-label")).toBe(
-      strings.playChapter(HEADING)
+      strings.chapterPlayFailed(HEADING)
+    );
+    expect(button(c).getAttribute("title")).toBe(
+      strings.chapterPlayFailed(HEADING)
     );
     expect(one(c, ".books-play").getAttribute("data-status")).toBe("failed");
     expect(c.querySelector("[role='alert'], [aria-live]")).toBeNull();
+  });
+
+  it("an empty chapter keeps its nothing-to-play name even if the status says failed", () => {
+    const c = control("failed", { recordedCount: 0 });
+    expect(button(c).getAttribute("aria-label")).toBe(
+      strings.chapterNothingToPlay(HEADING)
+    );
   });
 
   it("is not a toggle and announces nothing", () => {

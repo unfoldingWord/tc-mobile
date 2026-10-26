@@ -22,22 +22,6 @@ export async function loadObsCatalog(): Promise<ObsCatalog> {
 }
 
 /**
- * The scope string identifying one OBS frame, in Scripture Burrito grammar.
- *
- * OBS is addressed as book "OBS" with story-as-chapter and frame-as-verse, so
- * story 1 frame 7 is `"1:7"`. This keeps OBS sections in the same addressing
- * scheme as scripture sections (the grammar in `tests/scope.ts`, test-only
- * since #818/#159) rather than inventing a second one.
- *
- * Note the standard does not define an audio flavour for stories — see
- * docs/research/prior-art.md §4. This addressing is internally consistent and
- * burrito-shaped, but exporting OBS audio as a valid burrito remains unsolved.
- */
-export function obsFrameScope(story: number, frame: number): string {
-  return `${story}:${frame}`;
-}
-
-/**
  * Path to a frame's bundled thumbnail.
  *
  * Thumbnails ship with the app (598 frames, 2.5 MB total) rather than being

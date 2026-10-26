@@ -17,12 +17,9 @@
  * Test-only helper (moved out of `src/lib/scripture/` in #818/#159, per the
  * DRI pick on that PR): no `src/` caller exists, and #253's own text does not
  * name `ParsedScope`/`parseScope`/`isValidScope`/`formatScope` as consumers —
- * AGENTS.md: an export with no issue behind it gets deleted, not tagged. This
- * grammar is kept because `tests/obs-catalog.test.ts` uses `parseScope` and
- * `isValidScope` as a real helper to check `obsFrameScope`'s output against
- * it, alongside `tests/scope.test.ts`'s own coverage. #253 can reintroduce a
- * `src/`-side version of this grammar if the Template Library actually needs
- * one.
+ * AGENTS.md: an export with no issue behind it gets deleted, not tagged.
+ * #253 can reintroduce a `src/`-side version of this grammar if the Template
+ * Library actually needs one.
  */
 
 export interface ParsedScope {

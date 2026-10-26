@@ -108,6 +108,18 @@ export function framesToMs(
   return (frames / sampleRate) * 1000;
 }
 
+/**
+ * A frame position as seconds rounded to a tenth, never negative (#1344). The
+ * spoken position of a selection handle: what a person is told is the number
+ * this returns, so it is rounded here and not left to the formatter.
+ */
+export function framesToSpokenSeconds(
+  frames: number,
+  sampleRate: number = CANONICAL_SAMPLE_RATE
+): number {
+  return Math.max(0, Math.round(framesToMs(frames, sampleRate) / 100) / 10);
+}
+
 export function msToFrames(
   ms: number,
   sampleRate: number = CANONICAL_SAMPLE_RATE

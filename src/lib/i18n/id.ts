@@ -196,6 +196,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Tindakan lainnya",
   selectionStartHandle: "Awal pilihan",
   selectionEndHandle: "Akhir pilihan",
+  selectionHandleTime: (n: number): string => plural(n, { other: "{n} detik" }),
   editFailed:
     "Perubahan itu tidak dapat diterapkan. Coba pilihan yang lebih kecil.",
   clearFailed: "Suara tidak dapat disetel ulang. Coba lagi.",
@@ -550,6 +551,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Jeda ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Lanjutkan ${heading}, dijeda di ${percent} persen`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} tidak terputar. Ketuk untuk mencoba lagi`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} belum ada rekaman untuk diputar`,
 };

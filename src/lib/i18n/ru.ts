@@ -228,6 +228,13 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Другие действия",
   selectionStartHandle: "Начало выделения",
   selectionEndHandle: "Конец выделения",
+  selectionHandleTime: (n: number): string =>
+    plural(n, {
+      one: "{n} секунда",
+      few: "{n} секунды",
+      many: "{n} секунд",
+      other: "{n} секунды",
+    }),
   editFailed: "Не удалось применить изменение. Выберите участок короче.",
   clearFailed: "Не удалось сбросить звук. Повторите попытку.",
   captureSilence: "Звук не записан. Повторите попытку.",
@@ -643,6 +650,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Пауза: ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Продолжить: ${heading}, пауза на отметке ${percent} %`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} не воспроизвелось. Нажмите, чтобы повторить`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: нечего воспроизводить`,
 };
