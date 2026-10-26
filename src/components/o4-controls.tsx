@@ -21,9 +21,6 @@ type ControlProps = ComponentProps<typeof Control>;
 
 /**
  * The circular "hear this" button: the `hear` glyph on the well.
- *
- * @pivotpending O4 batch 1 — the Books, Segments and Recorder lanes (#942,
- * #944, #945) mount it; nothing does yet.
  */
 export const SpeakerButton = forwardRef<
   HTMLButtonElement,
@@ -62,9 +59,6 @@ export const SquareButton = forwardRef<
  * A segment row's 72 × 72 play or record circle. `kind` picks `Control`'s
  * existing `play` or `record` variant, so the fill, the ink and the inert
  * desaturation are the ones those variants already have.
- *
- * @pivotpending O4 batch 1 — the Segments lane (#944) mounts it; nothing
- * does yet.
  */
 export const TransportButton = forwardRef<
   HTMLButtonElement,
@@ -84,9 +78,6 @@ export const TransportButton = forwardRef<
 /**
  * The 60-tall pill with a glyph and a visible caption (Ask your helper, Send
  * report). The caption is shown, not announced: `label` stays the name.
- *
- * @pivotpending O4 batch 2 — the mic-denied and crash lane (#948) mounts it;
- * nothing does yet.
  */
 export const PillButton = forwardRef<
   HTMLButtonElement,
