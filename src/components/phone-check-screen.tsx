@@ -7,12 +7,17 @@ import {
   type PhoneCheckActivity,
   type PhoneCheckState,
 } from "@/hooks/use-phone-check";
+import {
+  DIGIT_SAMPLES,
+  SCRIPT_SAMPLES,
+  type FontSample,
+} from "@/lib/phone-check/font-samples";
 import { formatPhoneCheckReport } from "@/lib/phone-check/report";
 
 /**
  * The phone check (#1009, from #1002 §6): a hidden tester screen that measures
- * encode speed, storage speed and the memory ceiling, and hands back a
- * plain-text report to paste into #974.
+ * encode speed, the DSP benchmark's cost (#1433), storage speed and the
+ * memory ceiling, and hands back a plain-text report to paste into #974.
  *
  * Reached by five taps on the build stamp (`components/build-stamp.tsx`, the
  * only way in on an APK, where there is no address bar) or by `?check=phone`
@@ -42,10 +47,14 @@ function activityLine(activity: PhoneCheckActivity): string | null {
   switch (activity.kind) {
     case "waiting":
       return strings.phoneCheckRunWaiting;
+    case "stopping":
+      return strings.phoneCheckRunStopping;
     case "device":
       return strings.phoneCheckRunDevice;
     case "encode":
       return strings.phoneCheckRunEncode;
+    case "dsp":
+      return strings.phoneCheckRunDsp;
     case "storage":
       return strings.phoneCheckRunStorage;
     case "memory":
@@ -67,6 +76,33 @@ export interface PhoneCheckViewProps {
   onStart: () => void;
   onStartMemory: () => void;
   onClose: () => void;
+}
+
+function SampleList({ samples }: { samples: readonly FontSample[] }) {
+  return (
+    <ul className="flex flex-col gap-2">
+      {samples.map((s) => (
+        <li key={s.id} className="flex flex-col">
+          <span className="text-ink-muted text-[length:var(--p-text-md)]">
+            {s.label}
+          </span>
+          {/* `lang` and `dir` are the point: they are what makes the phone
+              choose this script's own font (#1486). `translate="no"` keeps
+              a browser's page translation from rewriting the sample, so the
+              tester judges the phone's font, not a translation. */}
+          <span
+            lang={s.lang}
+            dir={s.dir}
+            translate="no"
+            className="text-ink text-[length:var(--p-text-20)]"
+            data-phone-check-sample={s.id}
+          >
+            {s.text}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** A copy's outcome, keyed to the report text that copy wrote. */
@@ -92,15 +128,18 @@ export function PhoneCheckView({
     sha,
     device: state.device,
     encode: state.encode,
+    dsp: state.dsp,
     storage: state.storage,
     allocation: state.allocation,
   });
   const status = activityLine(state.activity);
-  // "Done" means all three ordered steps landed, not merely that the first
-  // one did (#1014 item 7). A reload mid-run restores whichever of the three
+  // "Done" means every ordered step landed, not merely that the first one
+  // did (#1014 item 7). A reload mid-run restores whichever steps
   // `readSavedChecks` found and nothing marks the rest `null` again, so
   // checking `state.device` alone read a partial restore as complete.
-  const allStepsLanded = Boolean(state.device && state.encode && state.storage);
+  const allStepsLanded = Boolean(
+    state.device && state.encode && state.dsp && state.storage
+  );
 
   // The report changing under a "Copied." label is stale the moment it
   // happens (#1014 item 8): a tester who copies mid-run, then watches a later
@@ -143,7 +182,9 @@ export function PhoneCheckView({
           {strings.phoneCheckClose}
         </button>
       </header>
-      <p className="text-ink-muted text-[13px]">{strings.phoneCheckIntro}</p>
+      <p className="text-ink-muted text-[length:var(--p-text-md)]">
+        {strings.phoneCheckIntro}
+      </p>
 
       <button
         type="button"
@@ -156,7 +197,7 @@ export function PhoneCheckView({
       </button>
 
       <p
-        className="text-ink-muted text-[13px]"
+        className="text-ink-muted text-[length:var(--p-text-md)]"
         role="status"
         data-phone-check="status"
       >
@@ -166,7 +207,7 @@ export function PhoneCheckView({
       <div className="border-edge flex flex-col gap-2 rounded-2xl border p-3">
         <h2 className="text-ink">{strings.phoneCheckMemoryTitle}</h2>
         <p
-          className="text-warn-text text-[13px]"
+          className="text-warn-text text-[length:var(--p-text-md)]"
           id="phone-check-memory-warning"
         >
           {strings.phoneCheckMemoryWarning}
@@ -183,6 +224,28 @@ export function PhoneCheckView({
         </button>
       </div>
 
+      <div
+        className="border-edge flex flex-col gap-2 rounded-2xl border p-3"
+        data-phone-check="fonts"
+      >
+        <h2 className="text-ink">{strings.phoneCheckFontTitle}</h2>
+        <p
+          className="text-ink-muted text-[length:var(--p-text-md)]"
+          data-phone-check="fonts-intro"
+        >
+          {strings.phoneCheckFontIntro}
+        </p>
+        <SampleList samples={SCRIPT_SAMPLES} />
+        <h3 className="text-ink">{strings.phoneCheckDigitsTitle}</h3>
+        <p
+          className="text-ink-muted text-[length:var(--p-text-md)]"
+          data-phone-check="digits-note"
+        >
+          {strings.phoneCheckDigitsNote}
+        </p>
+        <SampleList samples={DIGIT_SAMPLES} />
+      </div>
+
       <label className="flex flex-col gap-2">
         <span>{strings.phoneCheckReportLabel}</span>
         <textarea
@@ -190,7 +253,7 @@ export function PhoneCheckView({
           readOnly
           value={report}
           rows={16}
-          className="border-edge bg-surface text-ink w-full rounded-xl border p-2 font-mono text-[12px]"
+          className="border-edge bg-surface text-ink w-full rounded-xl border p-2 font-mono text-[length:var(--p-text-sm)]"
           data-phone-check="report"
         />
       </label>
@@ -203,7 +266,7 @@ export function PhoneCheckView({
         {strings.phoneCheckCopy}
       </button>
       <p
-        className="text-ink-muted text-[13px]"
+        className="text-ink-muted text-[length:var(--p-text-md)]"
         role="status"
         data-phone-check="copy-status"
       >

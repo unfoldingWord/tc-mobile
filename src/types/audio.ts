@@ -70,6 +70,41 @@ export interface ClipMeta {
    * `null` on PCM, where peaks are computed from the samples on load.
    */
   readonly peaks: Peaks | null;
+  /**
+   * What processed the audio on its way to MP3 (v14, #1433). `null` means
+   * no decision yet: a PCM clip eligible for the chain once Finished, or an
+   * MP3 finished before v14, which is never back-filled (U6c). `stages: []`
+   * means no stage ran, for one of three reasons: the preference was off;
+   * the codec had no chain (a test fake; the browser codec always has one);
+   * or the segment was Finished before v14 with its transcode still owed,
+   * which the v14 step records (U6c).
+   */
+  readonly processing: ClipProcessing | null;
+}
+
+/** One stage of the Finished chain, as a clip records it (#1433). */
+export interface ProcessingStage {
+  readonly id: "hpf" | "loudness" | "limiter";
+  /** Bumped whenever the stage's output changes. */
+  readonly version: number;
+}
+
+/** The chain's record on a clip (#1433): see {@link ClipMeta.processing}. */
+export interface ClipProcessing {
+  /** The stages that ran, in order. */
+  readonly stages: readonly ProcessingStage[];
+  /** Gated integrated loudness before processing; null when nothing passed the gates. */
+  readonly measuredLufs: number | null;
+  /** True peak before the gain; null for silence. */
+  readonly measuredTruePeakDbtp: number | null;
+  /** The static gain applied, in dB; 0 when no stage ran. */
+  readonly appliedGainDb: number;
+}
+
+/** PCM after the chain, and the record of what ran (#1433). */
+export interface NormalizedPcm {
+  readonly samples: Int16Array;
+  readonly processing: ClipProcessing;
 }
 
 /**
@@ -141,6 +176,17 @@ export interface AudioCodec {
    * health: a phone that cannot run the benchmark has not lost its encoder.
    */
   readonly benchDsp?: (seconds: number) => Promise<DspBenchResult>;
+  /**
+   * Run the Finished chain (#1433) over `samples` in the encoder's worker and
+   * hand back the processed PCM with its record. CONSUMES `samples`
+   * (transferred), as `encodeMp3` does. Optional, so existing fakes are
+   * untouched; the transcode sweep records `stages: []` for a codec without it.
+   */
+  readonly normalizePcm?: (
+    samples: Int16Array,
+    sampleRate: number,
+    onProgress?: (fraction: number) => void
+  ) => Promise<NormalizedPcm>;
 }
 
 /**
@@ -205,7 +251,7 @@ export interface DspBenchResult {
   readonly workingSetBytes: number;
   /** A hash of the apply pass's output, so an engine cannot skip the work. */
   readonly checksum: number;
-  /** Ungated K-weighted loudness, or null for silence. */
+  /** Gated integrated loudness (BS.1770), or null when no block passes the gates. */
   readonly loudnessLufs: number | null;
   /** True peak of the high-passed input, or null for silence. */
   readonly truePeakDbtp: number | null;

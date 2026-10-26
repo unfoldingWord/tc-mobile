@@ -240,10 +240,10 @@ describe("the segment menu (07) on the tile grid", () => {
     async (_, row) => {
       await mount(row);
       await openRow();
-      // Tile order is Done, Edit, Clear, Delete (the DRI's 2026-09-28 pick
+      // Tile order is Done, Edit, Reset, Delete (the DRI's 2026-09-28 pick
       // on #1119) — NOT the Edit-then-Done order the workbench itself draws,
       // and Delete (#590, moved here by #1104) is new since D20 was drawn.
-      // `eraseSegment` is Clear's name ("Reset segment and start over").
+      // `eraseSegment` is Reset's name ("Reset segment and start over").
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.renameSegment,
@@ -257,16 +257,16 @@ describe("the segment menu (07) on the tile grid", () => {
     }
   );
 
-  it("draws Done, Edit, Clear and Delete with no gap, compact, with Rename as the head's pencil (#859, D20; order and compact per #1119)", async () => {
+  it("draws Done, Edit, Reset and Delete with no gap, compact, with Rename as the head's pencil (#859, D20; order and compact per #1119)", async () => {
     await mount(recorded);
     await openRow();
     // Edit and Done carry a hint slot (#135), so each sits in its
     // `.control-hinted` wrapper; read the grid's buttons, not its children.
-    // Order is Done, Edit, Clear, Delete, contiguous — NO gap. Four real
+    // Order is Done, Edit, Reset, Delete, contiguous — NO gap. Four real
     // tiles (this `recorded` fixture's hasClip case) do not fit the pinned
     // 76 x 76 token at 320-360px (#1119 round 5, George Medium 1), so this
     // grid drops the spacer entirely and goes `o4-tiles--compact`
-    // (`o4/menus.css`) instead of pushing Clear/Delete to the far end —
+    // (`o4/menus.css`) instead of pushing Reset/Delete to the far end —
     // there is no room left to push into. The three-tile, no-clip case below (`never-recorded segment`)
     // still fits at full size and keeps its spacer.
     const grid = dialog().querySelector(".o4-tiles")!;
@@ -295,11 +295,11 @@ describe("the segment menu (07) on the tile grid", () => {
     expectCaptionInName();
   });
 
-  // The DRI's 2026-09-28 Clear/Delete ruling (#1119): Clear removes only the
+  // The DRI's 2026-09-28 Reset/Delete ruling (#1119): Reset removes only the
   // audio and Delete removes the whole segment, so the two must not look
-  // alike. Clear wears the eraser on a neutral fill; only Delete keeps the
+  // alike. Reset wears the eraser on a neutral fill; only Delete keeps the
   // bin and the destructive (red) fill.
-  describe("Clear and Delete look different (#1119, DRI 2026-09-28)", () => {
+  describe("Reset and Delete look different (#1119, DRI 2026-09-28)", () => {
     /** The markup the `Icon` component draws for `name`. */
     function iconMarkup(name: IconName): string {
       const svg = render(createElement(Icon, { name })).querySelector("svg");
@@ -559,24 +559,20 @@ describe("the chapter menu (G2) on the tile grid", () => {
     await mount();
     await openChapter();
     const tiles = gridOrder().filter((name) => name !== "|");
-    expect(tiles).toHaveLength(3);
+    expect(tiles).toHaveLength(2);
     expect(dialogNames()).toEqual([strings.menuClose, ...tiles]);
     expect(focusedName()).toBe(strings.renameChapter);
   });
 
-  it("draws Rename and Share, then the theme tile past a gap", async () => {
+  it("draws Rename and Share, and no theme tile or gap (#1575)", async () => {
     await mount();
     await openChapter();
     const order = gridOrder();
-    expect(order.slice(0, 3)).toEqual([
-      strings.renameChapter,
-      strings.shareChapter,
-      "|",
-    ]);
-    expect(order).toHaveLength(4);
+    expect(order).toEqual([strings.renameChapter, strings.shareChapter]);
     expect(tone(tile(strings.renameChapter))).toBe("name");
     expect(tone(tile(strings.shareChapter))).toBe("send");
-    expect(tone(tile(order[3]!))).toBe("plain");
+    for (const name of [strings.useLightTheme, strings.useDarkTheme])
+      expect(dialogNames()).not.toContain(name);
     expectCaptionInName();
   });
 

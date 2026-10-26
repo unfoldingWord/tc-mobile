@@ -9,7 +9,7 @@ import {
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { buildClipMeta, newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
-import { saveTake } from "@/lib/storage/takes";
+import { saveTake, type CommitResult } from "@/lib/storage/takes";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
 import type { ClipId, SegmentId, Take } from "@/types/domain";
@@ -104,7 +104,18 @@ export async function clearAllStores(): Promise<void> {
  * naming absent audio is damage, and a suite that wants it deletes the clip
  * after this returns (#159 S-13).
  */
-export function recordTake(
+/**
+ * The take an ordinary commit wrote; throws when it wrote none (a discarded or
+ * already-saved take, v13 #38), so a setup that expected a save fails loudly.
+ */
+export function savedTake(result: CommitResult): Take {
+  if (result.outcome !== "saved") {
+    throw new Error(`Expected a saved take, got ${result.outcome}`);
+  }
+  return result.take;
+}
+
+export async function recordTake(
   segmentId: SegmentId,
   opts: {
     clipId?: ClipId;
@@ -114,13 +125,41 @@ export function recordTake(
   } = {}
 ): Promise<Take> {
   const { clipId = newClipId(), frames = 100, ...take } = opts;
-  return saveTake(
-    segmentId,
-    clipId,
-    new Int16Array(frames).fill(1000),
-    CANONICAL_SAMPLE_RATE,
-    take
+  return savedTake(
+    await saveTake(
+      segmentId,
+      clipId,
+      new Int16Array(frames).fill(1000),
+      CANONICAL_SAMPLE_RATE,
+      take
+    )
   );
+}
+
+/**
+ * Drop a clip's disposition record (v13, #38), so a case can hand a SECOND take
+ * the same clip id through `saveTake`. The app never does: a clip id is minted
+ * once per take, and the record keyed by it is what refuses a second save. The
+ * shared-clip cases pin a defensive store invariant, so they build the sharing
+ * themselves, here.
+ */
+export async function forgetDisposition(clipId: ClipId): Promise<void> {
+  await (await getDb()).delete("takeDispositions", clipId);
+}
+
+/**
+ * Lose a clip's metadata and bytes from under the take that names it: the
+ * damaged state the resolvers report. Not a write path (`deleteClip` keeps a
+ * clip a take still names, v13 #38), so it is done on the stores directly.
+ */
+export async function loseClip(clipId: ClipId): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
+  await Promise.all([
+    tx.objectStore("clipMeta").delete(clipId),
+    tx.objectStore("clipData").delete(clipId),
+    tx.done,
+  ]);
 }
 
 /**
@@ -150,6 +189,39 @@ export async function storeOrphanClip(
     tx.objectStore("clipData").put(new Int16Array(samples).buffer, clipId),
     tx.done,
   ]);
+}
+
+/**
+ * Make every transaction this connection opens from now on throw `error` the
+ * moment its caller asks it for `storeName`, until `vi.restoreAllMocks()`.
+ *
+ * The seam is the native `IDBDatabase.transaction` (pass `unwrap(await
+ * getDb())`), reached past idb's proxy, because the storage writes do not
+ * return their transaction and the stores they ask for are the only thing
+ * observable from outside. A throw, not a failed request: it is the case
+ * IndexedDB does NOT abort on its own, so it is what proves a write's own
+ * abort guard. Shared by the delete suites and the v12 write-path suite.
+ */
+export function throwWhenStoreRequested(
+  raw: IDBDatabase,
+  storeName: string,
+  error: Error
+) {
+  const open = raw.transaction.bind(raw);
+  return vi
+    .spyOn(raw, "transaction")
+    .mockImplementation((...args: Parameters<IDBDatabase["transaction"]>) => {
+      const tx = open(...args);
+      const objectStore = tx.objectStore.bind(tx);
+      Object.defineProperty(tx, "objectStore", {
+        configurable: true,
+        value: (name: string) => {
+          if (name === storeName) throw error;
+          return objectStore(name);
+        },
+      });
+      return tx;
+    });
 }
 
 /**
@@ -433,4 +505,19 @@ export function declarationValue(body: string, property: string): string {
     throw new Error(`declarationValue: no ${property} declaration`);
   }
   return value;
+}
+
+/**
+ * A shared chapter file's audio: the bytes after its one leading ID3v2 tag
+ * (#252). Throws when the file has no tag, or when the audio after it opens
+ * with a second one, so a suite comparing audio also pins "exactly one tag".
+ */
+export function audioAfterId3v2(file: Uint8Array): Uint8Array {
+  const isTag = (at: number) =>
+    file[at] === 0x49 && file[at + 1] === 0x44 && file[at + 2] === 0x33;
+  if (!isTag(0)) throw new Error("audioAfterId3v2: no ID3v2 tag");
+  const size = (file[6]! << 21) | (file[7]! << 14) | (file[8]! << 7) | file[9]!;
+  const end = 10 + size;
+  if (isTag(end)) throw new Error("audioAfterId3v2: a second ID3v2 tag");
+  return file.subarray(end);
 }

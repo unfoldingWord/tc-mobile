@@ -4,12 +4,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { strings } from "@/lib/strings";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { ShareProgress } from "@/hooks/share-progress";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { Book, BookId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
+import { BOOK_V12_FIELDS } from "./row-fields";
 
 /**
  * #395 items 1, 2 and 3 — the busy/Notice wiring #384 added, and the three
@@ -37,6 +39,7 @@ const fakeBook = (): Book => ({
   updatedAt: 0,
   coverColourKey: null,
   shelfPosition: 0,
+  ...BOOK_V12_FIELDS,
 });
 
 // What `useBooks().createBook` actually resolves to (`use-books.ts`'s
@@ -124,6 +127,7 @@ async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer,
         popLayer,

@@ -51,7 +51,9 @@ describe("the O4 chapter row's room for its dots (#1229)", () => {
     expect(declared(row, "min-height")).toBe("68px");
     expect(declared(row, "height")).toBeNull();
     expect(declared(row, "max-height")).toBeNull();
-    const [top, , bottom] = declared(row, "padding")!.split(" ");
-    expect(parseFloat(top!) + 44 + parseFloat(bottom!)).toBe(68);
+    // `padding-block` is one value: the same top and bottom (#1552 split the
+    // old four-value `padding` into block and inline).
+    const block = parseFloat(declared(row, "padding-block")!);
+    expect(block + 44 + block).toBe(68);
   });
 });

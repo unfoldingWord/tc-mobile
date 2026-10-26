@@ -1,14 +1,44 @@
 # 0014 — The Scripture Bundle profile tC Mobile writes
 
-**Status:** Proposed · **Date:** 2026-10-19 · **DRI:** the dev lead drafts; the requirements owner answers the two product questions in "Open" · **Issue:** [#1474](https://github.com/unfoldingWord/tc-mobile/issues/1474), part of the v2 export epic [#1457](https://github.com/unfoldingWord/tc-mobile/issues/1457)
+**Status:** Accepted 2026-10-21 by the DRI, with Open 1 unanswered (see "Open") · **Date:** 2026-10-19 (drafted); 2026-10-21 (accepted) · **DRI:** the dev lead drafted it and accepted it; the requirements owner answered Open 2a (S8) and Open 2b in part (S19); U1a and the OBS attribution wording are still open (see "Open") · **Issue:** [#1474](https://github.com/unfoldingWord/tc-mobile/issues/1474), part of the v2 export epic [#1457](https://github.com/unfoldingWord/tc-mobile/issues/1457)
 
-This ADR is **Proposed**. It decides what the `metadata.json` of an exported
+This ADR is **Accepted**. It decides what the `metadata.json` of an exported
 book says, so the build lanes that write it (the metadata builder, the zip
-writer, the language question in #1492) have one thing to follow. It is
-Proposed rather than Accepted for two reasons: the requirements owner has not
-answered the two questions in "Open", and the spec's maintainers have not been
-asked to confirm points 1, 2 and 4 (also "Open"). No code follows from it until
-it is Accepted.
+writer, the language question in #1492) have one thing to follow.
+
+It was drafted Proposed for two reasons. The requirements owner had not
+answered the two product questions in "Open"; S8 and S19 (2026-10-19) answer
+them, one fully and one in part. The spec's maintainers had not been asked to
+confirm points 1, 2 and 4, and had given no answer by 2026-10-21. The DRI
+accepted it on 2026-10-21 with that second reason standing. The DRI's pick,
+verbatim: "Accept, Open 1 'no answer by 10-21' (Recommended)". One point of the
+licence mapping stays visibly open (see "Open"); this acceptance does not settle
+it.
+
+**What the acceptance authorizes.** This ADR as written, including points 1, 2
+and 4: Open 1 stays a recorded non-answer, and a later "no" from the
+maintainers is an amendment. For a book whose licence is "Other" or not chosen
+yet, that is point 6's
+`{"shortStatements": [{"statement": "No licence chosen."}]}` (the DRI's pick).
+It does not authorize these, which stay open or assumptions:
+
+- whether "Other" is the same as `all-rights-reserved` (U1a, for the
+  requirements owner), so no lane writes "All rights reserved." for "Other" on
+  this ADR's authority;
+- whether the "No licence chosen." entry carries a `lang` (point 6);
+- who owns the OBS attribution wording (Open 2b);
+- in point 5, every row still marked proposal or assumption: the `performance`
+  value (`singleVoice`, `reading`), `meta.normalization` `"NFC"`, and
+  `identification.primary`'s revision `"1"` (a proposal). Nothing else in
+  point 5 carries either mark.
+
+Provisional writes while the mark remains, not confirmed decisions:
+`performance` is `["singleVoice", "reading"]` and `identification.primary`
+revision is `"1"`, because point 5 says the schema requires both.
+`meta.normalization` may be omitted, or written `"NFC"` under the same mark.
+
+The licence URLs in point 6 follow from this ADR, not from S19: S19 settles the
+option set and the file-name tag.
 
 ## Naming
 
@@ -114,6 +144,19 @@ Compute once per export, over the segments that have audio:
   across several USFM books or with some unreferenced segments):
   `type.flavorType.name = "parascriptural"`, `flavor.name = "x-tcMobileAudio"`,
   and **no `currentScope`**.
+- **Mixed sample rates.** The audio flavour also needs one rate per encoding:
+  if the clips of one encoding (`mp3`, or `pcm` written as `wav`) have more than
+  one `sampleRate`, the book takes this custom path too, because one `formats`
+  entry cannot describe them. A book whose rates agree and whose segments all
+  reference one USFM book keeps the audio flavour. This is the implementation
+  rule recorded from #1574 at head 73698f9b (`uniformRate` and `ratesAgree` in
+  `src/lib/export/bundle/metadata.ts`; the coordinator's tactical call under the
+  DRI's acceptance), not a requirements decision.
+- A reference with exactly one null verse (a start or an end with the other
+  missing) is treated as **missing**: that segment has no reference, so the book
+  takes this custom path with no scope. This is a **new rule**, from George's
+  round 1 on #1574 (half-null means no reference), not observed behaviour of
+  the spec or of the app before that PR.
 
 _Reasons, each observed._
 
@@ -187,35 +230,55 @@ a valid USFM reference.
 
 ### 5. Values for fields the app does not know
 
-| Field                              | Value                                                                                                                                                 | Basis                                                                                                                                                                                                                                     |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format`                           | `"scripture burrito"`                                                                                                                                 | enum in the schema (observed)                                                                                                                                                                                                             |
-| `meta.version`                     | `"1.0.0"`                                                                                                                                             | point 1                                                                                                                                                                                                                                   |
-| `meta.category`                    | `"source"`                                                                                                                                            | the book is the recordings, not a template of one                                                                                                                                                                                         |
-| `meta.generator`                   | `{softwareName: "tC Mobile", softwareVersion: <app version>}`                                                                                         | both required inside `generator` (observed)                                                                                                                                                                                               |
-| `meta.defaultLocale`               | the interface locale, BCP 47 (`src/lib/locale.ts`)                                                                                                    | not the book's language                                                                                                                                                                                                                   |
-| `meta.dateCreated`                 | the export time, date-time                                                                                                                            | schema format                                                                                                                                                                                                                             |
-| `meta.normalization`               | `"NFC"`                                                                                                                                               | optional; the app writes NFC (assumption; to be checked by the metadata builder)                                                                                                                                                          |
-| `idAuthorities`                    | `{tcmobile: {id: "https://tcmobile.app", name: {en: "tC Mobile"}}}`                                                                                   | at least one authority required; the production domain is AGENTS.md's                                                                                                                                                                     |
-| `identification.primary`           | `tcmobile` → the book's id → `{revision: "1", timestamp: <export time>}`                                                                              | exactly one authority → id → revision and timestamp. **Proposal:** revision stays `"1"` because nothing stores an export count                                                                                                            |
-| `identification.name`              | the book's name, `{<defaultLocale>: name}`                                                                                                            | required; unnamed-book fallback is a copy decision for the build lane (a strings entry, not an empty object)                                                                                                                              |
-| `languages`                        | `[{tag, name: {<defaultLocale>: <name>}}]` from the book's language                                                                                   | R12 / #1492: asked once at export, stored on the book. Never omitted. If the facilitator skips the question the tag is `und` (BCP 47 "undetermined", validates) with the name "Undetermined"; whether skipping is allowed is #1492's call |
-| `performance` (audio flavour only) | `["singleVoice", "reading"]`                                                                                                                          | **assumption:** one person records, reading not drama. The schema requires exactly one of singleVoice/multipleVoice and one of reading/drama                                                                                              |
-| `formats` (audio flavour only)     | one entry per codec present: `mp3` and/or `wav`, each `{compression, trackConfiguration: "1/0 (Mono)", samplingRate: 44100}`, WAV with `bitDepth: 16` | `compression` enum is `mp3`/`wav` only (observed). `bitRate` is left out: the unit is not stated in the schema and I did not find it in the docs                                                                                          |
-| `confidential`                     | `false`                                                                                                                                               | **proposal**; asked of the requirements owner (see "Open")                                                                                                                                                                                |
-| `localizedNames`                   | `book-<code>` only for a USFM-referenced book                                                                                                         | optional; each entry needs `short`                                                                                                                                                                                                        |
+| Field                              | Value                                                                                                                                                                                                                                                            | Basis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`                           | `"scripture burrito"`                                                                                                                                                                                                                                            | enum in the schema (observed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `meta.version`                     | `"1.0.0"`                                                                                                                                                                                                                                                        | point 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `meta.category`                    | `"source"`                                                                                                                                                                                                                                                       | the book is the recordings, not a template of one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `meta.generator`                   | `{softwareName: "tC Mobile", softwareVersion: <app version>}`                                                                                                                                                                                                    | both required inside `generator` (observed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `meta.defaultLocale`               | the interface locale, BCP 47 (`src/lib/locale.ts`)                                                                                                                                                                                                               | not the book's language                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `meta.dateCreated`                 | the export time, date-time                                                                                                                                                                                                                                       | schema format                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `meta.normalization`               | `"NFC"`                                                                                                                                                                                                                                                          | optional; the app writes NFC (assumption; to be checked by the metadata builder)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `idAuthorities`                    | `{tcmobile: {id: "https://tcmobile.app", name: {en: "tC Mobile"}}}`                                                                                                                                                                                              | at least one authority required; the production domain is AGENTS.md's                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `identification.primary`           | `tcmobile` → the book's id → `{revision: "1", timestamp: <export time>}`                                                                                                                                                                                         | exactly one authority → id → revision and timestamp. **Proposal:** revision stays `"1"` because nothing stores an export count                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `identification.name`              | the book's name, `{<defaultLocale>: name}`                                                                                                                                                                                                                       | required; unnamed-book fallback is a copy decision for the build lane (a strings entry, not an empty object)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `languages`                        | `[{tag, name: {<defaultLocale>: <name>}}]` from the book's language                                                                                                                                                                                              | R12 / #1492: asked once at export, stored on the book. Never omitted. If the facilitator skips the question the tag is `und` (BCP 47 "undetermined", validates) with the name "Undetermined"; whether skipping is allowed is #1492's call                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `performance` (audio flavour only) | `["singleVoice", "reading"]`                                                                                                                                                                                                                                     | **assumption:** one person records, reading not drama. The schema requires exactly one of singleVoice/multipleVoice and one of reading/drama                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `formats` (audio flavour only)     | one entry per codec present, `mp3` (clips whose encoding is `mp3`) and/or `wav` (clips whose encoding is `pcm`): `compression`, `trackConfiguration: "1/0 (Mono)"`, `samplingRate` (the clips' shared rate for that encoding), and for `wav` only `bitDepth: 16` | The implementation rule recorded from #1574 at head 73698f9b (the coordinator's tactical call under the DRI's acceptance), not a requirements decision. `trackConfiguration` and `bitDepth` are capture invariants: everything the app stores is mono 16-bit PCM (`lib/audio/format.ts:4`, `CANONICAL_CHANNELS = 1` at `:16`; the encoder is built from it, `lib/audio/mp3.ts:73`). `samplingRate` is read from the clips; if the clips of one encoding have more than one rate the book takes the custom flavour (point 2). `compression` enum is `mp3`/`wav` only (observed). `bitRate` is left out: the unit is not stated in the schema and I did not find it in the docs |
+| `confidential`                     | `false`                                                                                                                                                                                                                                                          | S8 (2026-10-19), "Not confidential": no longer a proposal (see "Open")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `localizedNames`                   | `book-<code>` only for a USFM-referenced book                                                                                                                                                                                                                    | optional; each entry needs `short`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ### 6. Copyright
 
 Mapped from the book's licence (the v12 field the storage work adds):
 
-| Book's licence                           | `copyright`                                                                            |
-| ---------------------------------------- | -------------------------------------------------------------------------------------- |
-| CC BY-SA 4.0                             | `{"licenses": [{"url": "https://creativecommons.org/licenses/by-sa/4.0/"}]}`           |
-| CC BY 4.0                                | `{"licenses": [{"url": "https://creativecommons.org/licenses/by/4.0/"}]}`              |
-| CC0                                      | `{"licenses": [{"url": "https://creativecommons.org/publicdomain/zero/1.0/"}]}`        |
-| All rights reserved                      | `{"shortStatements": [{"statement": "All rights reserved.", "lang": "en"}]}`           |
-| Not chosen yet (R20: empty until shared) | treated as all rights reserved, until the licence work says otherwise (**assumption**) |
+| Book's licence                                       | `copyright`                                                                      |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| CC BY-SA 4.0                                         | `{"licenses": [{"url": "https://creativecommons.org/licenses/by-sa/4.0/"}]}`     |
+| CC BY 4.0                                            | `{"licenses": [{"url": "https://creativecommons.org/licenses/by/4.0/"}]}`        |
+| CC0                                                  | `{"licenses": [{"url": "https://creativecommons.org/publicdomain/zero/1.0/"}]}`  |
+| ~~All rights reserved~~ (withdrawn)                  | ~~`{"shortStatements": [{"statement": "All rights reserved.", "lang": "en"}]}`~~ |
+| "Other", or not chosen yet (R20: empty until shared) | `{"shortStatements": [{"statement": "No licence chosen."}]}` (see below)         |
+
+**"Other" and "not chosen yet" claim no licence.** The DRI decided on
+2026-10-21 (Round 5, U1b: the export copyright for a book whose licence is
+"Other" or not chosen yet), verbatim: "Say nothing". This replaces the earlier
+assumption that such a book is treated as all rights reserved. The schema
+requires the `copyright` key on a source bundle, and an absent key or `{}` fails
+it (observed by running the pinned schema gate on the audio example), so "say
+nothing" needed a carrier. The DRI chose it the same day, verbatim: "\"No
+licence chosen.\"". The row is a `shortStatements` entry whose `statement` is
+"No licence chosen.". It is not an empty string and not "All rights reserved."
+The choice refines "Say nothing": the file claims no licence and no rights
+position, and only says that none was chosen. Whether the entry carries a
+`lang` is not decided. #1574 writes it with no `lang`, and its test "writes
+exactly one of the two for licence %s, and validates" (`tests/bundle-metadata.test.ts`,
+head 73698f9b) runs that object (the `null` case) through the vendored schema
+gate and expects no errors. The "All rights reserved." row above is withdrawn
+until U1a is answered. #1574 writes "No licence chosen." for a stored
+`all-rights-reserved` as well (test "writes %s as exactly the statement No
+licence chosen. (DRI, #1567)"); that is that PR's own record, not a decision of
+this ADR.
 
 `licenses` and `shortStatements` are **never both**: the schema is a `oneOf`,
 and the two together fail with `passingSchemas [1,2]` (observed). A full
@@ -236,12 +299,24 @@ observed), optional.
 
 ### 8. The export's file name
 
-A strings-table entry in the shape `<book> - project.zip`, built from the
+A strings-table entry in the shape `<book> - <word>.zip`, built from the
 sanitised book name (`filenameSafe`, `src/lib/utils.ts:46`, label capped at
 `FILENAME_LABEL_MAX_BYTES` = 120, `src/lib/utils.ts:70`). It differs from Share
 Book's `<book>.zip` (`src/lib/strings.ts:972`) so a person can tell the two files
 apart. The word "project" is copy and follows the string rules (#169). The
 file name is not an ingredient path, so the space is fine.
+
+**Amendment, 2026-10-22 (#1627).** The suffix was fixed English (`- project.zip`)
+on every phone language. The requirements owner decided, on the project site
+Review page (card V1-export-name), choice `phone-language`: "Follow the phone's
+language: `Mark - proyecto.zip` on a Spanish phone, the same way Share Book
+names its chapter files", with the note: "When we have the Bible Passages
+dataset, we will use the book name for the phone's OS language (if it is
+available in the dataset)". So `<word>` is the strings key `exportProjectSuffix`
+(English `project`), drafted by AI in each complete locale, and still passes
+through `filenameSafe` with its bytes reserved from the book label. The
+book-name half of the note is not built; it waits for the dataset and stays open
+on #1627.
 
 ## Worked examples
 
@@ -363,13 +438,34 @@ This is the document the validation run called `custom-x-tcMobileAudio`.
    [prior-art](../research/prior-art.md) names) whether v1.0.0 is the right pin,
    whether `parascriptural` + `x-` is the right home for audio of books that
    have no USFM reference, and whether per-segment data in a sidecar is
-   acceptable. **A person posts it.** Answer: none yet; record the answer or
-   "no answer by <date>" here.
-2. **For the requirements owner, in the same PR:**
-   - Is `confidential: false` right for a copy whose purpose is to safeguard
-     the work off the device, or should the default be `true` (point 5)?
-   - Is the licence mapping in point 6 right, in particular "not chosen yet is
-     treated as all rights reserved", and who owns the OBS attribution wording?
+   acceptable. **A person posts it.** Answer: no answer by 2026-10-21. The DRI
+   accepted this ADR on that date with the question unanswered. A later answer
+   is recorded here, and a "no" is an amendment with the reason.
+2. **Answered by the requirements owner on 2026-10-19:**
+   - **2a, `confidential`.** S8-confidential, `no`: "Not confidential".
+     `confidential: false` (point 5) stands as decided. This answer is about
+     the exported project's metadata. The separate R17 decision that recordings
+     on the card are plaintext files is recorded in
+     [ADR 0011](0011-v2-storage-and-export.md) (point 3, "The mode this
+     records"). Whether `confidential` also governs how backup copies are
+     protected is still open: [#1580](https://github.com/unfoldingWord/tc-mobile/issues/1580),
+     a technical question to the DRI.
+   - **2b, the licence mapping, in part.** S19-arr-filename, `no-tag`: "Leave
+     the tag off". Note: "Note: the only license options to be included are
+     CC0, CC BY, and CC BY-SA. If the user selects "Other" the filename should
+     not show any licensing information." So the licence options are CC0, CC BY
+     and CC BY-SA, and "Other" puts no licence in the file name.
+   - **Answered by the DRI, 2026-10-21 (Round 5, U1b):** for a book whose
+     licence is "Other" or not chosen yet, the export copyright is "Say
+     nothing", carried as a `shortStatements` entry with the statement "No
+     licence chosen." (the DRI's pick, verbatim: "\"No licence chosen.\""). Point
+     6's "All rights reserved" fallback is replaced.
+   - **Still open, for the requirements owner (Round 5, U1a):** whether "Other"
+     is the same as `all-rights-reserved`, the value the template contract
+     carries. Point 6's "All rights reserved." row is withdrawn until it is
+     answered. S19 lists CC0, CC BY and CC BY-SA plus "Other" and
+     does not name `all-rights-reserved`.
+   - Who owns the OBS attribution wording is also not answered.
 3. **Which desktop app "tC Desktop" is** and what it needs to open an audio
    bundle: a question for the translationCore 4 team (R11), tracked in the
    export epic, not here.

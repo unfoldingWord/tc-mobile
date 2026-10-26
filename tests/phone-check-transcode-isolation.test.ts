@@ -6,6 +6,7 @@ import { runMemoryCheck, runPhoneChecks } from "@/hooks/use-phone-check";
 import type { AllocationDeps } from "@/lib/phone-check/allocation";
 import type {
   DeviceInfo,
+  DspResult,
   EncodeResult,
   ProbeOutcome,
   StorageResult,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/storage/transcode";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, SegmentId, TakeId } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * #1009, Frank R1 P2 on #1013: the background transcode sweep must not run
@@ -50,6 +52,8 @@ function resolvedPcm(segmentId: SegmentId, clipId: ClipId): SegmentAudio<Clip> {
       label: null,
       activeTakeId: "take" as TakeId,
       status: "affirmed",
+      ...ROW_V12_FIELDS,
+      audioRevision: 0,
     },
     take: {
       id: "take" as TakeId,
@@ -71,6 +75,7 @@ function resolvedPcm(segmentId: SegmentId, clipId: ClipId): SegmentAudio<Clip> {
         byteLength: samples.length * 2,
         transcodeStallCount: 0,
         peaks: null,
+        processing: null,
       },
       samples,
     },
@@ -87,6 +92,7 @@ const OWED = [{ segmentId: sid("s1"), clipId: cid("clip-s1") }];
 const ok = <T>(value: T): ProbeOutcome<T> => ({ status: "ok", value });
 const DEVICE = {} as DeviceInfo;
 const ENCODE = {} as EncodeResult;
+const DSP = {} as DspResult;
 const STORAGE = {} as StorageResult;
 
 function memoryDeps(onAllocate: () => void): AllocationDeps {
@@ -172,6 +178,7 @@ describe("the phone check holds the transcode sweep off its measurements", () =>
       {
         device: async () => ok(DEVICE),
         encode: async () => ok(ENCODE),
+        dsp: async () => ok(DSP),
         storage: async () => {
           void requestTranscodeSweep();
           await settle();
@@ -185,6 +192,34 @@ describe("the phone check holds the transcode sweep off its measurements", () =>
     );
 
     expect(listedDuringStorage).toBe(0);
+    expect(commitTranscode).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(commitTranscode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("starts no sweep turn while the DSP step runs, and runs the request after (#1433)", async () => {
+    vi.mocked(listPcmFinishedSegments).mockResolvedValue(OWED);
+    let listedDuringDsp = -1;
+
+    await runPhoneChecks(
+      {
+        device: async () => ok(DEVICE),
+        encode: async () => ok(ENCODE),
+        dsp: async () => {
+          void requestTranscodeSweep();
+          await settle();
+          listedDuringDsp = vi.mocked(listPcmFinishedSegments).mock.calls
+            .length;
+          return ok(DSP);
+        },
+        storage: async () => ok(STORAGE),
+      },
+      () => {},
+      () => {}
+    );
+
+    expect(listedDuringDsp).toBe(0);
     expect(commitTranscode).not.toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(commitTranscode).toHaveBeenCalledTimes(1);
@@ -226,6 +261,7 @@ describe("the phone check holds the transcode sweep off its measurements", () =>
       {
         device: async () => ok(DEVICE),
         encode: async () => ok(ENCODE),
+        dsp: async () => ok(DSP),
         storage: async () => {
           log.push("storage");
           return ok(STORAGE);
@@ -283,6 +319,7 @@ describe("the phone check holds the transcode sweep off its measurements", () =>
       {
         device: async () => ok(DEVICE),
         encode: async () => ok(ENCODE),
+        dsp: async () => ok(DSP),
         storage: async () => ok(STORAGE),
       },
       () => {},

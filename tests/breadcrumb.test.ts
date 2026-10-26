@@ -162,9 +162,13 @@ describe("the default chapter name is written once", () => {
     // The assertion above passes on a COPY too — that is exactly why the copy
     // survived. This is the one that does not: restore the duplicate and the
     // count goes to two.
+    // It counts templates that ARE the name, "Chapter ${n}" and nothing else.
+    // The reorder lines are whole sentences that say "Chapter 3 is now
+    // chapter 5." in their own words (#1483). They contain the word, and they
+    // are not a second copy of the name.
     const table = source("src/lib/strings.ts");
     expect(table.length, "no strings table to read").toBeGreaterThan(1000);
-    expect(table.match(/`Chapter \$\{/g) ?? []).toHaveLength(1);
+    expect(table.match(/`Chapter \$\{[^}`]*\}`/g) ?? []).toHaveLength(1);
   });
 });
 
@@ -197,12 +201,16 @@ describe("the trail and the heading are read from the table", () => {
     // The header's heading is the `chapterHeading` the crumbs are handed
     // (`chapter={chapterHeading}`), so the call checked is the one that
     // defines it.
-    const decl = sheet.indexOf("const chapterHeading =");
+    //
+    // Since #1575 the call is `useChapterHeading`, which applies the
+    // always-show-the-number setting and then calls `strings.chapterHeading`; the screen's
+    // `chapterHeading` is that result gated on there being a view.
+    const decl = sheet.indexOf("const shownChapterHeading =");
     expect(
       decl,
       "the header's chapterHeading is not defined"
     ).toBeGreaterThanOrEqual(0);
-    const at = sheet.indexOf("strings.chapterHeading(", decl);
+    const at = sheet.indexOf("useChapterHeading(", decl);
     expect(at, "chapterHeading is not called").toBeGreaterThanOrEqual(0);
     // The call belongs to that declaration: nothing but its own ternary
     // stands between the two.
@@ -217,7 +225,10 @@ describe("the trail and the heading are read from the table", () => {
     // sheet — a renamed chapter reads correctly on Segments and wrongly one tap
     // deeper, which is the original bug verbatim. The storage test proves the
     // VIEW carries the name; only this proves the HEADER reads it.
-    expect(call).toContain("view.chapterName");
+    expect(call).toContain("view?.chapterName");
+    expect(sheet).toContain(
+      "const chapterHeading = view ? shownChapterHeading"
+    );
     expect(sheet).toContain("chapter={chapterHeading}");
   });
 });

@@ -1,7 +1,8 @@
 <!--
 Every section is required. The "PR Body" check (scripts/check-pr-body.mjs)
 reads the filled body, and text inside comments like this one does not count.
-Dependabot, `chore(release):` bumps into develop and promotion PRs (base
+Dependabot, `chore(release):` bumps into develop (only when the diff is the
+version files and nothing else) and promotion PRs (base
 staging or main) are exempt. Check a draft before opening:
   node scripts/check-pr-body.mjs --body-file <path>
 -->
@@ -30,7 +31,7 @@ Tier:
 
 ## Testing
 
-<!-- Test-first: the red test, its command and failing output (trimmed), then green, and what the mutation run killed. For a change with nothing to test, "N/A — <reason>". The line may continue on the lines below it. -->
+<!-- Test-first: the red test, its command and failing output (trimmed), then green, and what the mutation run killed. For a change with nothing to test, "N/A — <reason>". The line may continue on indented lines below it. -->
 
 Test-first:
 

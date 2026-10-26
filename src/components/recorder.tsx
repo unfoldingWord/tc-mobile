@@ -62,6 +62,13 @@ import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { WaveformScroller } from "./waveform-scroller";
 import { classifyShareError } from "@/hooks/share-flow";
+import { readMicSettingsPlatform } from "@/hooks/mic-settings-platform";
+import {
+  MIC_RETRY_TAPPED,
+  nextMicRetryPhase,
+  showMicSettingsSteps,
+  type MicRetryPhase,
+} from "@/lib/audio/mic-retry";
 import {
   nativeShare,
   readShareEnvironment,
@@ -74,6 +81,7 @@ import type { RecorderAudio } from "@/hooks/use-audio-session";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useChapterHeading } from "@/hooks/use-settings";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
@@ -324,6 +332,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     }, [loadError, databaseUnreachable, onExit]);
 
     const [menuOpen, setMenuOpen] = useState(false);
+    // Where Retry is on the permission panel (#1569): the settings steps show
+    // only once a retry attempt has settled back refused, see `mic-retry.ts`.
+    const [micRetry, setMicRetry] = useState<MicRetryPhase>("none");
     // The sheet is two modes over one segment (#89): a record mode (the hero
     // Record + Play + Edit trio, #315, and the #592 bin) and an edit mode (the waveform-editing
     // toolbar). The sheet always opens in record; App keys it on `segmentId` so
@@ -527,7 +538,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // render state (Frank F3 / George G3): two taps in one frame both read
     // `heldRetrying === false` and each mint a fresh clip through `saveRecording`,
     // orphaning one. A ref answers for the current moment — the same shape as
-    // `closing.current` and `use-save-take`'s `savingRef`, which exist for this race.
+    // `closing.current` and `use-save-take`'s slot `saving` guard, which exist for this race.
     const heldRetryingRef = useRef(false);
     // The synchronous in-flight latch for Share (George R2 B-6): a same-gesture
     // double-tap before the OS sheet paints could fire a second `navigator.share`,
@@ -639,9 +650,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const takeActive = state !== "idle" || isClosing;
 
     // The chapter's resolved name for the header's chapter crumb (#1230).
-    const chapterHeading = view
-      ? strings.chapterHeading(view.chapterName, view.chapterNumber)
-      : "";
+    const shownChapterHeading = useChapterHeading(
+      view?.chapterName ?? null,
+      view?.chapterNumber ?? 0
+    );
+    const chapterHeading = view ? shownChapterHeading : "";
 
     // `finishedIntent` is the translator's EXPLICIT choice, null until they tap
     // the checkbox — never written speculatively (an optimistic reset at Record
@@ -1777,6 +1790,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // the edit toolbar on screen and no Record/Pause/VU — "Editing" over a live
     // capture (George R3). Any path that starts the mic belongs in record mode.
     const onRetryRecord = useCallback(() => {
+      setMicRetry(MIC_RETRY_TAPPED);
       setMode("record");
       // Drop any latched `menuOpen`. The menu is already HIDDEN while `denied`
       // (`menuShown`), but the raw flag survives, so a Retry that succeeds would
@@ -2299,7 +2313,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // `clearSegmentTake` and returns false — so nothing reaches
                 // `pendingTake`, `SaveFailed` cannot mount, and the panel cannot
                 // either while this sheet is up. Staying would leave "Could not
-                // clear the audio. Try again." over a call that can never
+                // reset the audio. Try again." over a call that can never
                 // succeed, on a screen whose only exit is the Back that just
                 // failed (George R6 P2). Nothing is lost by leaving: the clear
                 // never committed, so the original take is still on disk.
@@ -2985,6 +2999,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // R3). Same principle a decode failure already follows via `stopError`.
     const denied =
       !audio.supported || (micError && !hasAudio && !editor.hasEdits);
+    // The retry phase follows the recorder's own transitions (requesting, then
+    // settled refused; recording ends it). A pure step, adjusted during render
+    // (React's derive-state pattern), not in an effect.
+    const micRetryNext = nextMicRetryPhase(
+      micRetry,
+      state,
+      audio.recorderError !== null
+    );
+    if (micRetryNext !== micRetry) setMicRetry(micRetryNext);
 
     // The ⋮-menu rows' disabled REASONS (#135). Each row's `disabled` is
     // `reason !== null`, so the cue that explains a grey row and the gate that
@@ -3216,12 +3239,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // native-disabled, no-reason gap and left the bin's as a named residual —
     // pre-existing, unrelated to #857's `hasTake` change, and nobody had
     // reviewed bar-appropriate erase copy yet. #878 closes it the same way
-    // Edit was closed: `strings.stopToErase` ("Stop recording to clear."),
+    // Edit was closed: `strings.stopToErase` ("Stop recording to reset."),
     // naming the bar's own Stop control, only while the take is LIVE
     // (`recording`) — the same split `editToolbarHint` above uses. The commit
     // window (`committing` half of `"uncommitted-take"`, Stop already
     // pressed) gets no label and stays natively `disabled` with no reason,
-    // same as Edit's commit-window half: "Stop recording to clear." would
+    // same as Edit's commit-window half: "Stop recording to reset." would
     // name a control that is now Record.
     const rerecordHint = barHint(
       eraseReason,
@@ -3722,6 +3745,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           ) : denied ? (
             <PermissionPanel
               message={audio.error}
+              settingsPlatform={
+                audio.supported &&
+                showMicSettingsSteps(micRetry, audio.recorderError)
+                  ? readMicSettingsPlatform()
+                  : null
+              }
               onRetry={onRetryRecord}
               onBack={onRequestBack}
             />
@@ -4202,13 +4231,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}
+          // The typed name, drawn whole at the top of the menu (#1284).
+          chapterName={view?.chapterName}
           // The header's own chapter chip text (#1230), so the ⋮ menu's
           // sheet head always matches the header it was opened from.
-          chapterHeading={
-            view
-              ? strings.chapterHeading(view.chapterName, view.chapterNumber)
-              : undefined
-          }
+          chapterHeading={view ? chapterHeading : undefined}
         />
         <EraseConfirm
           key={confirmMount}

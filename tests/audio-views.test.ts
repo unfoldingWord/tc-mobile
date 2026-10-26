@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  ChapterAudio,
   RecorderAudio,
   SegmentsAudio,
   UseAudioSession,
 } from "@/hooks/use-audio-session";
 
 /**
- * The two narrow audio views (#160, L-18), asserted rather than counted.
+ * The narrow audio views (#160, L-18), asserted rather than counted. A third,
+ * `ChapterAudio`, came with chapter play (#1468) for the Books row (#1469).
  *
  * `SegmentsAudio` and `RecorderAudio` are `Pick`s over `UseAudioSession`, and
  * the property that matters is not how many members each has — it is that the
@@ -36,8 +38,16 @@ type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 /** Members of the session that neither screen's view admits. */
 type Unclassified = Exclude<
   keyof UseAudioSession,
-  keyof SegmentsAudio | keyof RecorderAudio
+  keyof SegmentsAudio | keyof RecorderAudio | keyof ChapterAudio
 >;
+
+/** Exactly what a chapter row may reach: chapter play, and nothing else. */
+type ChapterMayReach =
+  | "chapterPlay"
+  | "pauseChapter"
+  | "playChapter"
+  | "readChapterProgress"
+  | "stopChapter";
 
 /** Mic verbs must NOT be reachable from the list screen's view. */
 type MicOnList = Extract<
@@ -71,6 +81,8 @@ type ListMayReach =
 // Each `true` below is the assertion; a drift makes the annotation fail `tsc`.
 const micIsOffTheList: Exact<MicOnList, never> = true;
 const listReachesOnlyThese: Exact<keyof SegmentsAudio, ListMayReach> = true;
+const chapterReachesOnlyThese: Exact<keyof ChapterAudio, ChapterMayReach> =
+  true;
 const onlyPrimeIsUnclassified: Exact<Unclassified, "primeAudioContext"> = true;
 const listCanPlay: Exact<
   Extract<keyof SegmentsAudio, "playTake">,
@@ -81,12 +93,18 @@ const recorderCanRecord: Exact<
   "startRecording"
 > = true;
 
-describe("the two audio views, and what each screen may reach", () => {
+describe("the audio views, and what each screen may reach", () => {
   it("admits nothing to the list screen beyond its declared set", () => {
     // The allow-list, and the stronger of the two. `micIsOffTheList` catches
     // the two verbs it names; this catches a capture verb under a name nobody
     // thought to deny, which is the shape a future session member would take.
     expect(listReachesOnlyThese).toBe(true);
+  });
+
+  it("admits nothing to a chapter row beyond chapter play", () => {
+    // The same allow-list for the Books row (#1469): it plays, pauses and
+    // stops a chapter, and cannot reach the microphone or a single take.
+    expect(chapterReachesOnlyThese).toBe(true);
   });
 
   it("keeps the microphone off the list screen's view", () => {

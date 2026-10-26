@@ -11,6 +11,7 @@ import {
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
+import { CAPTURE_SILENCE_MS } from "@/lib/audio/capture-silence";
 import { decodeRetry } from "@/lib/audio/retry-decode";
 import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
 import {
@@ -819,8 +820,28 @@ export function useRecorder(): UseRecorder {
         // Open the VU tap on the live stream. Non-fatal: a device with a quirky
         // Web Audio implementation should still record even if the meter cannot
         // be wired, so a failure here is logged and the recorder runs meterless.
+        //
+        // The tap also reports a capture that went silent with no event at
+        // all (#1294, R13: "A visible “recording stopped” state that saves
+        // what was captured"): exact zeros on a moving clock, which is the
+        // flat line an alarm left on the screen. That take is sealed the way
+        // the length cap seals it — `seal()` freezes, the sheet's commit
+        // saves it, Record is back at rest — and one row says so. Generation-
+        // guarded like `onInterrupted`; `seal()`'s freeze clears
+        // `recordingRef`, so a second report writes nothing. A meterless take
+        // has no tap and so no such seal.
+        const onCaptureSilent = () => {
+          if (generation !== generationRef.current) return;
+          if (!recordingRef.current || !seal()) return;
+          reportFailure(
+            new Error(
+              `The level tap read exact silence for ${CAPTURE_SILENCE_MS} ms on a running clock with no track or recorder event; the take was sealed and saved (#1294)`
+            ),
+            "recorder-capture-stalled"
+          );
+        };
         try {
-          tapRef.current = createLevelTap(stream);
+          tapRef.current = createLevelTap(stream, { onCaptureSilent });
           setMeterFailed(false);
         } catch (tapCause) {
           console.error("Could not open the level meter", tapCause);
@@ -880,6 +901,7 @@ export function useRecorder(): UseRecorder {
       clearTick,
       closeTap,
       releaseStream,
+      seal,
       setState,
       startTick,
       supported,
@@ -1144,7 +1166,8 @@ export function useRecorder(): UseRecorder {
       const current2 = generation === generationRef.current;
       const verdict = classifyStopDecode(
         { decoded: true, sampleCount: samples.length },
-        current2
+        current2,
+        flushThrew
       );
       if (current2) setState("idle");
       return {

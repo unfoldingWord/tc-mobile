@@ -123,7 +123,7 @@ describe("moveToIndex", () => {
 });
 
 describe("moveChapter (#953)", () => {
-  it("reorders the book's array and renumbers every chapter densely", async () => {
+  it("reorders the book's array and leaves every chapter's own number alone (#1272, U2a)", async () => {
     const { bookId, chapterIds } = await bookOf(4);
     const [c1, c2, c3, c4] = chapterIds as [
       ChapterId,
@@ -135,17 +135,17 @@ describe("moveChapter (#953)", () => {
     const order = await moveChapter(c4, 1);
 
     expect(await storedChapterIds(bookId)).toEqual([c1, c4, c2, c3]);
-    expect(await numbersOf([c1, c4, c2, c3])).toEqual([1, 2, 3, 4]);
-    // The return is the new visible order, with the numbers it now holds.
+    expect(await numbersOf([c1, c4, c2, c3])).toEqual([1, 4, 2, 3]);
+    // The return is the new visible order, each with the number it keeps.
     expect(order.map((c) => [c.id, c.number])).toEqual([
       [c1, 1],
-      [c4, 2],
-      [c2, 3],
-      [c3, 4],
+      [c4, 4],
+      [c2, 2],
+      [c3, 3],
     ]);
   });
 
-  it("leaves a chapter's name alone — only the number follows position", async () => {
+  it("leaves a chapter's name and number alone", async () => {
     const { chapterIds } = await bookOf(3);
     await renameChapter(chapterIds[2]!, "Mark 6");
 
@@ -153,7 +153,16 @@ describe("moveChapter (#953)", () => {
 
     const moved = await getChapter(chapterIds[2]!);
     expect(moved?.name).toBe("Mark 6");
-    expect(moved?.number).toBe(1);
+    expect(moved?.number).toBe(3);
+  });
+
+  it("writes no chapter row at all: only the book's order changes", async () => {
+    const { chapterIds } = await bookOf(4);
+    const put = spyPut();
+
+    await moveChapter(chapterIds[3]!, 0);
+
+    expect(put).toHaveBeenCalledTimes(1);
   });
 
   it("does not bump the book's updatedAt, and the shelf order holds", async () => {
@@ -201,7 +210,7 @@ describe("moveChapter (#953)", () => {
     expect(await numbersOf(chapterIds)).toEqual(numbersAfterFirst);
   });
 
-  it("keeps a dangling id in its stored slot, unnumbered, and still counted missing", async () => {
+  it("keeps a dangling id in its stored slot and still counted missing", async () => {
     const { bookId, chapterIds } = await bookOf(4);
     const [c1, gone, c3, c4] = chapterIds as [
       ChapterId,
@@ -215,7 +224,7 @@ describe("moveChapter (#953)", () => {
     await moveChapter(c4, 0);
 
     expect(await storedChapterIds(bookId)).toEqual([c4, gone, c1, c3]);
-    expect(await numbersOf([c4, c1, c3])).toEqual([1, 2, 3]);
+    expect(await numbersOf([c4, c1, c3])).toEqual([4, 1, 3]);
     expect(await getChapter(gone)).toBeUndefined();
     const { chapters, missing } = await resolveBookChapters(bookId);
     expect(chapters.map((c) => c.id)).toEqual([c4, c1, c3]);
@@ -237,17 +246,16 @@ describe("moveChapter (#953)", () => {
     await moveChapter(c1, 1);
 
     expect(await storedChapterIds(bookId)).toEqual([c3, gone, c1, c4]);
-    expect(await numbersOf([c3, c1, c4])).toEqual([1, 2, 3]);
+    expect(await numbersOf([c3, c1, c4])).toEqual([3, 1, 4]);
   });
 
-  it("rolls back the array AND the numbers when a write fails mid-transaction", async () => {
+  it("rolls back the array when its write fails", async () => {
     const { bookId, chapterIds } = await bookOf(4);
     const arrayBefore = await storedChapterIds(bookId);
     const numbersBefore = await numbersOf(chapterIds);
 
-    // The first put (the book's array) goes through; the next (a chapter's
-    // number) throws. One transaction, so the array must roll back too.
-    failPutAfter(1);
+    // The book's array is the only put; it throws. Nothing may be left changed.
+    failPutAfter(0);
     await expect(moveChapter(chapterIds[3]!, 0)).rejects.toThrow(
       /injected put failure/
     );
@@ -300,13 +308,21 @@ describe("moveSegment (#953)", () => {
   });
 
   it("leaves labels, takes and status alone", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
     const { segmentIds } = await chapterOf(3);
     await renameSegment(segmentIds[2]!, "verses 3–4");
     const before = await getSegment(segmentIds[2]!);
 
+    clock.mockReturnValue(2_000);
     await moveSegment(segmentIds[2]!, 0);
 
-    expect(await getSegment(segmentIds[2]!)).toEqual({ ...before, index: 1 });
+    // Only the index moves, with the write's `modifiedAt` (v12 J6, #1463).
+    expect(before?.modifiedAt).toBe(1_000);
+    expect(await getSegment(segmentIds[2]!)).toEqual({
+      ...before,
+      index: 1,
+      modifiedAt: 2_000,
+    });
   });
 
   it("does not touch the book (no shelf bump)", async () => {

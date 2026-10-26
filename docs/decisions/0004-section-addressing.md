@@ -32,6 +32,18 @@ because `tests/obs-catalog.test.ts` uses it as a real helper against
 `obsFrameScope`'s output. #253 can reintroduce a `src/`-side version if the
 Template Library actually needs one.
 
+**Amended 2026-10-20 (v12, #1462): stored as numbers, spoken as the grammar on
+export.** `SegmentRef` is now `{ book, startChapter, startVerse, endChapter,
+endVerse }`, the decision Q4 ("Yes: a segment stores a start and an end
+chapter:verse"), so the question of which chapter shows a span that crosses a
+chapter boundary is a comparison of numbers, not a parse. This revises the
+accepted "scope strings, not a bespoke pair" **for storage only**. Its point
+is kept: the export speaks the Scripture Bundle scope grammar, writing the
+string when it writes ingredients, and nothing in `src/` parses one. No stored
+row needed converting, because every stored `reference` was `null`. The
+allowed span states and their rationale are in `docs/design/v12-schema.md`
+("Why each field has the shape it has").
+
 ## Rejected: make "Section" a pluggable division scheme
 
 The requirements owner's inception notes sketch a fixed hierarchy:

@@ -41,7 +41,11 @@
     "check:deploy": "node scripts/check-deploy.mjs",
     "check:deploy:prod": "node scripts/check-deploy-prod.mjs",
     "check:commit-msg": "node scripts/check-commit-messages.mjs",
-    "check:prepush": "node scripts/prepush-check.mjs"
+    "check:prepush": "node scripts/prepush-check.mjs",
+    "check:pr-body": "node scripts/check-pr-body.mjs",
+    "check:redispatch": "node scripts/check-redispatch.mjs",
+    "i18n:pending": "node scripts/i18n-pending.mjs",
+    "collateral": "node scripts/collateral.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
@@ -60,6 +64,7 @@
     "@capacitor/filesystem": "8.1.4",
     "@capacitor/ios": "8.5.3",
     "@capacitor/share": "8.0.3",
+    "@noble/hashes": "2.4.0",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "idb": "^8.0.4",
@@ -79,6 +84,8 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "5.0.4",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.0",
     "eslint-plugin-react-refresh": "^0.5.7",

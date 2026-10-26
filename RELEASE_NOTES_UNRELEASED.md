@@ -7,9 +7,16 @@ its body and empties it.
 
 ## Added
 
+- Export project asks once what language a book is in, from a searchable list of languages, and writes it into the book and its export (#1630).
+
 ## Changed
 
+- A segment marked Finished has its loudness evened out before it is stored, so finished segments play back at a similar level; segments finished before this change are left as they were (#1679).
+
 ## Fixed
+
+- A recording that was being saved when the app closed is saved on the next launch, and one another copy already saved is not saved twice (#38, #1557).
+- A recording finished in the first moments after the app opens, while that save is still running, is saved once it is done instead of being lost (#1549, #1683).
 
 ## Removed
 

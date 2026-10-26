@@ -16,6 +16,9 @@
  * Pure: no DOM, no clock. The browser-side probes that fill these shapes are in
  * `hooks/phone-check-probes.ts`.
  */
+import type { DspBenchResult } from "@/types/audio";
+
+import { fontReportLines } from "./font-samples";
 
 /** One mebibyte. Every "MB" this check prints is this unit. */
 export const MB = 1024 * 1024;
@@ -37,6 +40,10 @@ export interface DeviceInfo {
   readonly usageBytes: number | null;
   /** `navigator.storage.persisted()`. */
   readonly persisted: boolean | null;
+  /** `navigator.language` (#1486): feeds the native-language question. */
+  readonly language: string | null;
+  /** `navigator.languages`, most preferred first (#1486). */
+  readonly languages: readonly string[] | null;
 }
 
 /** One encode of synthetic speech through the real MP3 worker. */
@@ -44,6 +51,16 @@ export interface EncodeResult {
   readonly audioSeconds: number;
   readonly wallMs: number;
   readonly mp3Bytes: number;
+}
+
+/**
+ * The DSP benchmark (#1433 step 1), run twice in the MP3 worker: `cold` is
+ * the first run after the encode, `warm` the one straight after it, so a
+ * tester sees both a first-run and a steady figure from one Start.
+ */
+export interface DspResult {
+  readonly cold: DspBenchResult;
+  readonly warm: DspBenchResult;
 }
 
 /** One write-then-read of PCM through a throwaway IndexedDB database. */
@@ -81,6 +98,7 @@ export interface PhoneCheckReportInput {
   readonly sha: string;
   readonly device: ProbeOutcome<DeviceInfo> | null;
   readonly encode: ProbeOutcome<EncodeResult> | null;
+  readonly dsp: ProbeOutcome<DspResult> | null;
   readonly storage: ProbeOutcome<StorageResult> | null;
   readonly allocation: AllocationResult | null;
 }
@@ -138,6 +156,8 @@ function deviceLines(device: ProbeOutcome<DeviceInfo> | null): string[] {
     `- CPU cores: ${orUnknown(d.cores, String)}`,
     `- Storage: ${storage}`,
     `- Persisted: ${orUnknown(d.persisted, (p) => (p ? "yes" : "no"))}`,
+    `- Language: ${orUnknown(d.language, (l) => l || UNKNOWN)}`,
+    `- Languages: ${orUnknown(d.languages, (ls) => (ls.length > 0 ? ls.join(", ") : UNKNOWN))}`,
   ];
 }
 
@@ -151,6 +171,58 @@ function encodeLines(encode: ProbeOutcome<EncodeResult> | null): string[] {
     `- Wall time: ${formatSeconds(e.wallMs)}`,
     `- Speed: ${factor === null ? "n/a" : `${factor.toFixed(1)}x realtime`}`,
     `- MP3 size: ${formatMb(e.mp3Bytes)}`,
+  ];
+}
+
+/** A per-stage time: whole milliseconds, or "under 1 ms" below the clock's useful grain. */
+function formatMs(ms: number): string {
+  return ms < 1 ? "under 1 ms" : `${Math.round(ms)} ms`;
+}
+
+/** Wall seconds per minute of audio, the figure the #1433 plan estimates. */
+function secondsPerAudioMinute(audioSeconds: number, wallMs: number): string {
+  if (!(audioSeconds > 0)) return "n/a";
+  return (wallMs / 1000 / (audioSeconds / 60)).toFixed(2);
+}
+
+function dspRunLines(label: string, run: DspBenchResult): string[] {
+  const wallMs = run.measureMs + run.applyMs;
+  const factor = realtimeFactor(run.audioSeconds, wallMs);
+  const s = run.stageMs;
+  return [
+    `- ${label} run: ${secondsPerAudioMinute(run.audioSeconds, wallMs)} s per audio minute (${factor === null ? "n/a" : `${factor.toFixed(1)}x realtime`})`,
+    `  - Measure pass ${formatMs(run.measureMs)}, apply pass ${formatMs(run.applyMs)}, slowest chunk ${formatMs(run.slowestChunkMs)}`,
+    `  - Stages: high-pass ${formatMs(s.highPass)}, K-weight ${formatMs(s.kWeight)}, true peak ${formatMs(s.truePeak)}, gain ${formatMs(s.gain)}, limiter ${formatMs(s.limiter)}`,
+  ];
+}
+
+function signedDb(db: number): string {
+  return `${db >= 0 ? "+" : ""}${db.toFixed(1)} dB`;
+}
+
+const hex = (n: number) => n.toString(16).padStart(8, "0");
+
+function dspLines(dsp: ProbeOutcome<DspResult> | null): string[] {
+  if (dsp === null) return [`- ${NOT_RUN}`];
+  if (dsp.status === "failed") return [`- failed: ${dsp.errorName}`];
+  const { cold, warm } = dsp.value;
+  const loudness =
+    cold.loudnessLufs === null
+      ? "no signal"
+      : `${cold.loudnessLufs.toFixed(1)} LUFS integrated`;
+  const peak =
+    cold.truePeakDbtp === null
+      ? "no signal"
+      : `${cold.truePeakDbtp.toFixed(1)} dBTP`;
+  return [
+    // The two caveats a reader of #974 needs before any figure below.
+    "- A load profile only: not a BS.1770 conformance test.",
+    "- Working set is the kernel's own buffers, not a measured peak.",
+    ...dspRunLines("Cold", cold),
+    ...dspRunLines("Warm", warm),
+    `- Working set: ${(cold.workingSetBytes / 1024).toFixed(1)} KB`,
+    `- Output checksum: cold ${hex(cold.checksum)}, warm ${hex(warm.checksum)}`,
+    `- Measured: ${loudness}, true peak ${peak}, gain ${signedDb(cold.gainDb)}, limiter at most ${cold.limiterMaxReductionDb.toFixed(1)} dB`,
   ];
 }
 
@@ -220,11 +292,19 @@ export function formatPhoneCheckReport(input: PhoneCheckReportInput): string {
     "Encode (real MP3 worker)",
     ...encodeLines(input.encode),
     "",
+    // One minute: `DSP_PROBE_SECONDS` in `speech.ts`, which a test pins.
+    "DSP chain (1 minute of synthetic speech, in the MP3 worker)",
+    ...dspLines(input.dsp),
+    "",
     "Storage (throwaway database, deleted afterwards)",
     ...storageLines(input.storage),
     "",
     "Memory ceiling",
     ...allocationLines(input.allocation),
+    "",
+    // Filled in by the tester from the Script samples section on screen.
+    "Script samples (write rendered or tofu after each)",
+    ...fontReportLines(),
   ];
   return lines.join("\n");
 }

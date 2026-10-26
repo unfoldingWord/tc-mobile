@@ -15,8 +15,8 @@
  * Names follow the v12 schema freeze (`docs/design/v12-schema.md`, PR #1490):
  * `TemplateRef`, `LicenceId`, and the span's `book`, `startChapter`,
  * `startVerse`, `endChapter`, `endVerse`. The span type is declared here as
- * `SegmentSpan` so this slice touches no stored shape; the v12 migration
- * (#1462) is where `SegmentRef` in `domain.ts` becomes this same shape.
+ * `SegmentSpan`; since the v12 migration (#1462), `SegmentRef` in
+ * `domain.ts` is this type.
  */
 
 /**

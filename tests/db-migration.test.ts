@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { openDB, type IDBPDatabase } from "idb";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listBooks } from "@/lib/storage/books";
 import { closeDb, getDb, type TcMobileDb } from "@/lib/storage/db";
@@ -13,7 +13,26 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 11;
+const APP_VERSION = 14;
+
+/**
+ * What the v12 step (#1462, docs/design/v12-schema.md) adds to a row that had
+ * none of it. Spread into the whole-row expectations of the older steps' cases,
+ * which climb to v12 too: every value is null or blank, never an upgrade time.
+ */
+const V12_BOOK = {
+  provenance: { kind: "blank" },
+  licence: null,
+  modifiedAt: null,
+} as const;
+const V12_ROW = { createdAt: null, modifiedAt: null, templateKey: null };
+/**
+ * A segment climbing to v13 also gains `audioRevision: 0` (#38,
+ * docs/design/pending-take-lifecycle.md §2): the v12 fields plus that one.
+ */
+const V13_SEGMENT = { ...V12_ROW, audioRevision: 0 };
+/** A clip row climbing to v14 gains `processing: null` (#1433), and only that. */
+const V14_CLIP = { processing: null };
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -229,6 +248,7 @@ describe("v9 book cover-colour backfill (append-only)", () => {
       coverColourKey: null,
       // v11 (#338): the only book on the shelf is at its top.
       shelfPosition: 0,
+      ...V12_BOOK,
     });
   });
 
@@ -333,10 +353,20 @@ describe("v9 book cover-colour backfill (append-only)", () => {
     expect(priorSegment).toBeDefined();
     expect(priorTake).toBeDefined();
     expect(priorMeta).toBeDefined();
-    expect(await v9.get("chapters", "ch1" as never)).toEqual(priorChapter);
-    expect(await v9.get("segments", "s1" as never)).toEqual(priorSegment);
+    // v12 (#1462) adds its three fields, and only those, on the same open.
+    expect(await v9.get("chapters", "ch1" as never)).toEqual({
+      ...priorChapter,
+      ...V12_ROW,
+    });
+    expect(await v9.get("segments", "s1" as never)).toEqual({
+      ...priorSegment,
+      ...V13_SEGMENT,
+    });
     expect(await v9.get("takes", "t1" as never)).toEqual(priorTake);
-    expect(await v9.get("clipMeta", "c1" as never)).toEqual(priorMeta);
+    expect(await v9.get("clipMeta", "c1" as never)).toEqual({
+      ...priorMeta,
+      ...V14_CLIP,
+    });
     const data = await v9.get("clipData", "c1" as never);
     expect(data).toBeInstanceOf(ArrayBuffer);
     expect(Array.from(new Int16Array(data as ArrayBuffer))).toEqual([
@@ -414,6 +444,7 @@ describe("v8 segment-label backfill (append-only)", () => {
           activeTakeId: "t1",
           status: "affirmed",
           label: null,
+          ...V13_SEGMENT,
         },
         {
           id: "s2",
@@ -423,11 +454,20 @@ describe("v8 segment-label backfill (append-only)", () => {
           activeTakeId: null,
           status: "not-started",
           label: null,
+          ...V13_SEGMENT,
         },
       ]);
       expect(await v8.get("clipMeta", "c1" as never)).toEqual({
         ...priorMeta,
         transcodeStallCount: version === 7 ? 3 : 0,
+        // s1 is Finished and its clip still PCM: a transcode owed across the
+        // upgrade, so v14 records that no stage ran (U6c).
+        processing: {
+          stages: [],
+          measuredLufs: null,
+          measuredTruePeakDbtp: null,
+          appliedGainDb: 0,
+        },
       });
       expect(await v8.get("takes", "t1" as never)).toEqual(priorTake);
       // The audio behind the segment is untouched.
@@ -502,6 +542,7 @@ describe("v4 → v5 chapter-name backfill (append-only)", () => {
       number: 6,
       segmentIds: ["s1", "s2"],
       name: null,
+      ...V12_ROW,
     });
   });
 
@@ -549,6 +590,7 @@ describe("v3 → v5 chapter-name backfill over a real row", () => {
       number: 3,
       segmentIds: ["s1", "s2"],
       name: null,
+      ...V12_ROW,
     });
   });
 });
@@ -667,6 +709,11 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
       const db = await getDb();
       expect(db.version).toBe(APP_VERSION);
       expect(Array.from(db.objectStoreNames)).toContain("failures");
+      // v12's two stores obey the same rule (#1462, M3).
+      expect(Array.from(db.objectStoreNames)).toContain("tombstones");
+      expect(Array.from(db.objectStoreNames)).toContain("pendingTakes");
+      // And v13's (#38, R6).
+      expect(Array.from(db.objectStoreNames)).toContain("takeDispositions");
     } finally {
       restore();
     }
@@ -699,6 +746,9 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
       const db = await getDb();
       expect(db.version).toBe(APP_VERSION);
       expect(Array.from(db.objectStoreNames)).toContain("failures");
+      expect(Array.from(db.objectStoreNames)).toContain("tombstones");
+      expect(Array.from(db.objectStoreNames)).toContain("pendingTakes");
+      expect(Array.from(db.objectStoreNames)).toContain("takeDispositions");
       // And both yield-dependent backfills still did their job.
       expect((await db.get("chapters", "ch1" as never))?.name).toBeNull();
       expect((await db.get("clipMeta", "c1" as never))?.encoding).toBe("pcm");
@@ -760,6 +810,7 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
       byteLength: 20,
       peaks: null,
       transcodeStallCount: 0,
+      ...V14_CLIP,
     });
   });
 
@@ -920,6 +971,7 @@ describe("the v9 → v10 book placeholder migration (#169)", () => {
       coverColourKey: null,
       // v11 (#338): the only book on the shelf is at its top.
       shelfPosition: 0,
+      ...V12_BOOK,
     });
   });
 
@@ -1045,6 +1097,7 @@ describe("the v9 → v10 book placeholder migration (#169)", () => {
       coverColourKey: null,
       // v11 (#338): the only book on the shelf is at its top.
       shelfPosition: 0,
+      ...V12_BOOK,
     });
   });
 });
@@ -1134,6 +1187,7 @@ describe("the v10 → v11 shelf position (#338)", () => {
       updatedAt: 22,
       coverColourKey: "forest",
       shelfPosition: 0,
+      ...V12_BOOK,
     });
   });
 
@@ -1207,6 +1261,7 @@ describe("the v10 → v11 shelf position (#338)", () => {
       updatedAt: 0,
       coverColourKey: null,
       shelfPosition: 1,
+      ...V12_BOOK,
     });
     expect(await db.get("books", "b2" as never)).toMatchObject({
       name: "Mark",
@@ -1233,6 +1288,10 @@ type SeedBook = {
   createdAt: number;
   /** Present from v10 on. */
   number?: number;
+  /** Present from v11 on. */
+  shelfPosition?: number;
+  /** `null` unless a case gives one; v12 must keep a stored tag. */
+  languageCode?: string | null;
 };
 
 type SeededClip = {
@@ -1259,7 +1318,7 @@ async function seedShelf(
     const chapterIds = [1, 2].map((n) => `${book.id}-ch${n}`);
     await db.put("books", {
       ...book,
-      languageCode: null,
+      languageCode: book.languageCode ?? null,
       chapterIds,
       updatedAt: book.createdAt + 1,
       coverColourKey: null,
@@ -1374,19 +1433,129 @@ async function expectEveryRecordingResolves(clips: readonly SeededClip[]) {
 }
 
 // Newest first; "Book 2" is a typed look-alike (not the 3-digit placeholder),
-// and b4/b5 tie on createdAt so only the key order separates them.
+// and b4/b5 tie on createdAt so only the key order separates them. b5 carries a
+// language tag, which v12 keeps (R12: the existing field is the language).
 const SHELF: readonly SeedBook[] = [
   { id: "b1", name: "Book 001", createdAt: 10 },
   { id: "b2", name: "Mark", createdAt: 60 },
   { id: "b3", name: "Book 2", createdAt: 30 },
   { id: "b4", name: "Book 1000", createdAt: 50 },
-  { id: "b5", name: "Luke", createdAt: 50 },
+  { id: "b5", name: "Luke", createdAt: 50, languageCode: "swh" },
   { id: "b6", name: "Book 003", createdAt: 20 },
 ];
 const SHELF_ORDER_1_0_X = ["b2", "b4", "b5", "b3", "b6", "b1"];
 
+/** What v10 makes of SHELF's names: the slot each book holds afterwards. */
+const SHELF_SLOTS: Record<string, [string | null, number]> = {
+  b1: [null, 1],
+  b2: ["Mark", 2],
+  b3: ["Book 2", 4],
+  b4: [null, 1000],
+  b5: ["Luke", 5],
+  b6: [null, 3],
+};
+
+/** SHELF as v10 stored it: slots written, no shelf position. */
+const SHELF_V10: readonly SeedBook[] = SHELF.map((b) => ({
+  ...b,
+  name: SHELF_SLOTS[b.id]![0],
+  number: SHELF_SLOTS[b.id]![1],
+}));
+
+/** SHELF as v11 stored it: slots and the shelf position 1.0.x showed. */
+const SHELF_V11: readonly SeedBook[] = SHELF_V10.map((b) => ({
+  ...b,
+  shelfPosition: SHELF_ORDER_1_0_X.indexOf(b.id),
+}));
+
+/**
+ * The before/after comparison narrowed field by field for v12
+ * (docs/design/v12-schema.md, "Narrowing the whole-shelf test"), not loosened:
+ *
+ * - takes, clipMeta and the clip bytes keep a full `toEqual` (M5 dies here);
+ * - every chapter and segment row's key set is exactly the before-row's keys
+ *   plus the three v12 keys, each of them `null` (a stamped clock value, or a
+ *   missing or extra key, fails);
+ * - with exactly those keys removed, the row equals the before-row, so a
+ *   chapter's `number` and every other stored field is pinned unchanged.
+ */
+function expectNarrowedToBefore(
+  after: Awaited<ReturnType<typeof snapshotNonBookStores>>,
+  before: Awaited<ReturnType<typeof snapshotNonBookStores>>
+): void {
+  expect(after.data).toEqual(before.data);
+  expect(after.rows.takes).toEqual(before.rows.takes);
+  expect(after.rows.clipMeta).toEqual(
+    (before.rows.clipMeta as object[]).map((row) => ({ ...row, ...V14_CLIP }))
+  );
+  for (const store of ["chapters", "segments"] as const) {
+    const added = store === "segments" ? V13_SEGMENT : V12_ROW;
+    const addedKeys = Object.keys(added);
+    const priorRows = before.rows[store] as unknown as Record<
+      string,
+      unknown
+    >[];
+    const rows = after.rows[store] as unknown as Record<string, unknown>[];
+    expect(rows).toHaveLength(priorRows.length);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const [i, row] of rows.entries()) {
+      const prior = priorRows[i]!;
+      expect(Object.keys(row).sort()).toEqual(
+        [...Object.keys(prior), ...addedKeys].sort()
+      );
+      for (const [key, value] of Object.entries(added)) {
+        expect(row[key]).toBe(value);
+      }
+      const rest = Object.fromEntries(
+        Object.entries(row).filter(([key]) => !addedKeys.includes(key))
+      );
+      expect(rest).toEqual(prior);
+    }
+  }
+}
+
+/**
+ * Every book row, whole: the seeded fields, the v10/v11 fields, and the v12
+ * backfill. A `toEqual`, because `toMatchObject` passes an unexpected extra
+ * field (a `language` key, say).
+ */
+async function expectV12Books(db: IDBPDatabase<TcMobileDb>): Promise<void> {
+  const rows = await db.getAll("books");
+  expect(rows).toHaveLength(SHELF.length);
+  for (const book of rows) {
+    const seeded = SHELF.find((s) => s.id === book.id)!;
+    expect(book).toEqual({
+      id: seeded.id,
+      name: SHELF_SLOTS[seeded.id]![0],
+      number: SHELF_SLOTS[seeded.id]![1],
+      languageCode: seeded.languageCode ?? null,
+      chapterIds: [`${seeded.id}-ch1`, `${seeded.id}-ch2`],
+      createdAt: seeded.createdAt,
+      updatedAt: seeded.createdAt + 1,
+      coverColourKey: null,
+      shelfPosition: SHELF_ORDER_1_0_X.indexOf(seeded.id),
+      provenance: { kind: "blank" },
+      licence: null,
+      modifiedAt: null,
+    });
+  }
+  expect((await db.get("books", "b5" as never))?.languageCode).toBe("swh");
+  // The two v12 stores arrive empty: no backfill writes either.
+  expect(await db.getAll("tombstones")).toEqual([]);
+  expect(await db.getAll("pendingTakes")).toEqual([]);
+}
+
 describe("a whole shelf survives the upgrade to the current version (#1421)", () => {
-  it("v9 → v11: every non-book row and clip byte is identical and every recording resolves", async () => {
+  // A finite clock: a backfill that stamped the upgrade time would carry this
+  // number into a row, and `expectNarrowedToBefore` asks for null (M13).
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("v9 → v13: every non-book row and clip byte is identical and every recording resolves", async () => {
     const v9 = await openLegacyV9();
     const clips = await seedShelf(v9, SHELF);
     const before = await snapshotNonBookStores(
@@ -1399,7 +1568,7 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
 
     const db = await getDb();
     expect(db.version).toBe(APP_VERSION);
-    expect(await snapshotNonBookStores(db)).toEqual(before);
+    expectNarrowedToBefore(await snapshotNonBookStores(db), before);
     await expectEveryRecordingResolves(clips);
 
     // The shelf reads in the order 1.0.x showed it.
@@ -1420,49 +1589,14 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
       b6: "Book 003",
     });
     // The rendered placeholder is taken back off the row and becomes a slot;
-    // a typed name (including the look-alike "Book 2") is kept, with a free slot.
-    expect(
-      Object.fromEntries(
-        (await db.getAll("books")).map((b) => [b.id, [b.name, b.number]])
-      )
-    ).toEqual({
-      b1: [null, 1],
-      b2: ["Mark", 2],
-      b3: ["Book 2", 4],
-      b4: [null, 1000],
-      b5: ["Luke", 5],
-      b6: [null, 3],
-    });
-    // Only the book rows changed, and only in the fields the steps own.
-    for (const book of await db.getAll("books")) {
-      const seeded = SHELF.find((s) => s.id === book.id);
-      expect(book).toMatchObject({
-        createdAt: seeded?.createdAt,
-        updatedAt: (seeded?.createdAt ?? 0) + 1,
-        coverColourKey: null,
-        chapterIds: [`${book.id}-ch1`, `${book.id}-ch2`],
-      });
-    }
+    // a typed name (including the look-alike "Book 2") is kept, with a free
+    // slot. Only the book rows changed, and only in the fields the steps own.
+    await expectV12Books(db);
   });
 
-  it("v10 → v11: the same shelf, with slots already written", async () => {
+  it("v10 → v13: the same shelf, with slots already written", async () => {
     const v10 = await openLegacyV10();
-    const slots: Record<string, [string | null, number]> = {
-      b1: [null, 1],
-      b2: ["Mark", 2],
-      b3: ["Book 2", 4],
-      b4: [null, 1000],
-      b5: ["Luke", 5],
-      b6: [null, 3],
-    };
-    const clips = await seedShelf(
-      v10,
-      SHELF.map((b) => ({
-        ...b,
-        name: slots[b.id]![0],
-        number: slots[b.id]![1],
-      }))
-    );
+    const clips = await seedShelf(v10, SHELF_V10);
     const before = await snapshotNonBookStores(
       v10 as unknown as IDBPDatabase<TcMobileDb>
     );
@@ -1470,11 +1604,766 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
 
     const db = await getDb();
     expect(db.version).toBe(APP_VERSION);
-    expect(await snapshotNonBookStores(db)).toEqual(before);
+    expectNarrowedToBefore(await snapshotNonBookStores(db), before);
     await expectEveryRecordingResolves(clips);
     expect((await listBooks()).map((b) => b.id)).toEqual(SHELF_ORDER_1_0_X);
+    await expectV12Books(db);
+  });
+
+  it("v11 → v13: the same shelf, with slots and positions already written", async () => {
+    const v11 = await openLegacyV11();
+    const clips = await seedShelf(v11, SHELF_V11);
+    const before = await snapshotNonBookStores(
+      v11 as unknown as IDBPDatabase<TcMobileDb>
+    );
+    v11.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expectNarrowedToBefore(await snapshotNonBookStores(db), before);
+    await expectEveryRecordingResolves(clips);
+    expect((await listBooks()).map((b) => b.id)).toEqual(SHELF_ORDER_1_0_X);
+    await expectV12Books(db);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v12 (#1462): provenance, licence, timestamps, template keys; two new stores
+// ---------------------------------------------------------------------------
+
+/**
+ * Stand up the v11 schema — v10's stores, unchanged (v11 was a book-row pass,
+ * not a structure change). Rows written here carry everything v11 wrote and
+ * none of the v12 fields.
+ */
+async function openLegacyV11() {
+  const legacy = await openLegacyV10();
+  legacy.close();
+  return openDB(DB_NAME, 11);
+}
+
+const v11Book = (id: string, chapterIds: string[] = []) => ({
+  id,
+  name: "Mark",
+  number: 1,
+  languageCode: "swh",
+  chapterIds,
+  createdAt: 3,
+  updatedAt: 4,
+  coverColourKey: "forest",
+  shelfPosition: 0,
+});
+const v11Chapter = (id: string, number: number, segmentIds: string[] = []) => ({
+  id,
+  bookId: "b1",
+  number,
+  name: null,
+  segmentIds,
+});
+const v11Segment = (id: string, index = 1) => ({
+  id,
+  chapterId: "ch1",
+  index,
+  reference: null,
+  label: "verses 1-2",
+  activeTakeId: null,
+  status: "draft",
+});
+
+/**
+ * Count the row writes the upgrade makes, per store, through either path a
+ * step can write by: a cursor `update` or a store `put`.
+ */
+function countWrites(): Record<string, number> {
+  const writes: Record<string, number> = {};
+  const realUpdate = IDBCursor.prototype.update;
+  const realPut = IDBObjectStore.prototype.put;
+  vi.spyOn(IDBCursor.prototype, "update").mockImplementation(function (
+    this: IDBCursor,
+    ...args
+  ) {
+    const name = (this.source as IDBObjectStore).name;
+    writes[name] = (writes[name] ?? 0) + 1;
+    return realUpdate.apply(this, args);
+  });
+  vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+    this: IDBObjectStore,
+    ...args
+  ) {
+    writes[this.name] = (writes[this.name] ?? 0) + 1;
+    return realPut.apply(this, args);
+  });
+  return writes;
+}
+
+describe("the v11 → v12 schema (#1462)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("gives a book blank provenance, no licence and no modifiedAt, and keeps its language", async () => {
+    const v11 = await openLegacyV11();
+    await v11.put("books", v11Book("b1", ["ch1"]));
+    v11.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await db.get("books", "b1" as never)).toEqual({
+      ...v11Book("b1", ["ch1"]),
+      provenance: { kind: "blank" },
+      licence: null,
+      modifiedAt: null,
+    });
+  });
+
+  it("gives a chapter null createdAt, modifiedAt and templateKey, and keeps its number", async () => {
+    const v11 = await openLegacyV11();
+    await v11.put("chapters", v11Chapter("ch1", 6, ["s1"]));
+    v11.close();
+
+    const db = await getDb();
+    expect(await db.get("chapters", "ch1" as never)).toEqual({
+      ...v11Chapter("ch1", 6, ["s1"]),
+      ...V12_ROW,
+    });
+  });
+
+  it("gives a segment null createdAt, modifiedAt and templateKey, and keeps everything else", async () => {
+    // M4: a v12 step without the segments walk dies here.
+    const v11 = await openLegacyV11();
+    await v11.put("segments", v11Segment("s1"));
+    await v11.put("segments", v11Segment("s2", 2));
+    v11.close();
+
+    const db = await getDb();
+    expect(await db.getAll("segments")).toEqual([
+      { ...v11Segment("s1"), ...V13_SEGMENT },
+      { ...v11Segment("s2", 2), ...V13_SEGMENT },
+    ]);
+  });
+
+  it("keeps chapter numbers that differ from their position, and the chapter order (R7)", async () => {
+    // `number` is the real chapter number from v12 on, and today's stored
+    // value is kept as it is: no renumbering from position, in either order.
+    const v11 = await openLegacyV11();
+    await v11.put("books", v11Book("b1", ["chA", "chB", "chC"]));
+    await v11.put("chapters", v11Chapter("chA", 7));
+    await v11.put("chapters", v11Chapter("chB", 2));
+    await v11.put("chapters", v11Chapter("chC", 2));
+    v11.close();
+
+    const db = await getDb();
+    expect((await db.get("books", "b1" as never))?.chapterIds).toEqual([
+      "chA",
+      "chB",
+      "chC",
+    ]);
+    expect((await db.getAll("chapters")).map((c) => [c.id, c.number])).toEqual([
+      ["chA", 7],
+      ["chB", 2],
+      ["chC", 2],
+    ]);
+  });
+
+  it("leaves a row that already carries createdAt alone", async () => {
+    // M1: a stamp with no absence check overwrites the 5.
+    const v11 = await openLegacyV11();
+    await v11.put("chapters", { ...v11Chapter("ch1", 1), createdAt: 5 });
+    await v11.put("segments", { ...v11Segment("s1"), createdAt: 5 });
+    v11.close();
+
+    const db = await getDb();
+    expect(await db.get("chapters", "ch1" as never)).toEqual({
+      ...v11Chapter("ch1", 1),
+      ...V12_ROW,
+      createdAt: 5,
+    });
+    expect(await db.get("segments", "s1" as never)).toEqual({
+      ...v11Segment("s1"),
+      ...V13_SEGMENT,
+      createdAt: 5,
+    });
+  });
+
+  it("a row carrying every v12 field, nullable ones null, is left identical and not written", async () => {
+    // M2: a value test (`row.templateKey == null`) reads the deliberate null
+    // as missing and restamps the row; the write count catches a rewrite that
+    // happens to leave the same values.
+    const book = {
+      ...v11Book("b1"),
+      provenance: {
+        kind: "template",
+        template: { id: "pkg", version: "1.0.0", kind: "collection" },
+        attribution: "Text: CC BY-SA 4.0",
+      },
+      licence: "CC-BY-SA-4.0",
+      modifiedAt: null,
+    };
+    const chapter = {
+      ...v11Chapter("ch1", 1),
+      createdAt: 5,
+      modifiedAt: 7,
+      templateKey: null,
+    };
+    const segment = {
+      ...v11Segment("s1"),
+      createdAt: 5,
+      modifiedAt: null,
+      templateKey: "01-07",
+    };
+    const v11 = await openLegacyV11();
+    await v11.put("books", book);
+    await v11.put("chapters", chapter);
+    await v11.put("segments", segment);
+    v11.close();
+
+    const writes = countWrites();
+    const db = await getDb();
+    // The v12 pass writes nothing; v13's walk gives the segment its revision.
+    expect(writes).toEqual({ segments: 1 });
+    vi.restoreAllMocks();
+    expect(await db.get("books", "b1" as never)).toEqual(book);
+    expect(await db.get("chapters", "ch1" as never)).toEqual(chapter);
+    expect(await db.get("segments", "s1" as never)).toEqual({
+      ...segment,
+      audioRevision: 0,
+    });
+  });
+
+  it("writes each row that lacks fields exactly once, and nothing else", async () => {
+    // One put per row at most: the fields a row lacks go in one update. A
+    // second put, or a write to any other store, changes these counts.
+    const v11 = await openLegacyV11();
+    await v11.put("books", v11Book("b1"));
+    await v11.put("books", { ...v11Book("b2"), licence: null });
+    await v11.put("chapters", v11Chapter("ch1", 1));
+    await v11.put("segments", v11Segment("s1"));
+    await v11.put("segments", { ...v11Segment("s2"), templateKey: null });
+    v11.close();
+
+    const writes = countWrites();
+    await getDb();
+    // Segments: one v12 write and one v13 write each, never more.
+    expect(writes).toEqual({ books: 2, chapters: 1, segments: 4 });
+  });
+
+  it("reads no clock: every backfilled timestamp is null under a finite fake clock", async () => {
+    // M13: `modifiedAt: Date.now()` (or any per-row clock read) would put an
+    // upgrade time in a row that a merger reads as a real user write.
+    const v11 = await openLegacyV11();
+    await v11.put("books", v11Book("b1"));
+    await v11.put("chapters", v11Chapter("ch1", 1));
+    await v11.put("segments", v11Segment("s1"));
+    v11.close();
+
+    // Whether `Date.now` is called at all cannot be asserted: fake-indexeddb
+    // reads it itself. The values are what the clock would leak into.
+    vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+    const db = await getDb();
+    expect((await db.get("books", "b1" as never))?.modifiedAt).toBeNull();
+    for (const store of ["chapters", "segments"] as const) {
+      for (const row of await db.getAll(store)) {
+        expect(row.createdAt).toBeNull();
+        expect(row.modifiedAt).toBeNull();
+      }
+    }
+  });
+
+  it("creates both new stores, empty, on a fresh install: ten stores in all with v13's", async () => {
+    const db = await getDb();
+    expect(Array.from(db.objectStoreNames).sort()).toEqual([
+      "books",
+      "chapters",
+      "clipData",
+      "clipMeta",
+      "failures",
+      "pendingTakes",
+      "segments",
+      "takeDispositions",
+      "takes",
+      "tombstones",
+    ]);
+    expect(await db.count("tombstones")).toBe(0);
+    expect(await db.count("pendingTakes")).toBe(0);
+  });
+
+  it("pendingTakes is keyed by segment: two puts for one segment leave one row", async () => {
+    // M8: a `clipId` keyPath keeps both rows.
+    const db = await getDb();
+    const row = (clipId: string) => ({
+      segmentId: "s1",
+      ordinal: 1,
+      clipId,
+      base: { kind: "inline", samples: new ArrayBuffer(0) },
+      recorded: new ArrayBuffer(4),
+      sampleRate: 48000,
+      offset: 0,
+      finished: false,
+      editOnly: false,
+      createdAt: 1,
+    });
+    await db.put("pendingTakes", row("c1") as never);
+    await db.put("pendingTakes", row("c2") as never);
+    const rows = await db.getAll("pendingTakes");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.clipId).toBe("c2");
+  });
+
+  it("tombstones is a log: two deletions of one id are two rows, in order", async () => {
+    // An entity-id key would let the second delete overwrite the first.
+    const db = await getDb();
+    const stone = (deletedAt: number) => ({
+      entity: "segment",
+      entityId: "s1",
+      parentId: "ch1",
+      deletedAt,
+    });
+    await db.add("tombstones", stone(1) as never);
+    await db.add("tombstones", stone(2) as never);
+    expect(await db.getAll("tombstones")).toEqual([stone(1), stone(2)]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v13 (#38): the audio revision, the disposition store, the base-clip index
+// (docs/design/pending-take-lifecycle.md §2)
+// ---------------------------------------------------------------------------
+
+/** Stand up the v12 schema: v11's stores plus `tombstones` and `pendingTakes`. */
+async function openLegacyV12() {
+  const legacy = await openLegacyV11();
+  legacy.close();
+  return openDB(DB_NAME, 12, {
+    upgrade(db) {
+      db.createObjectStore("tombstones", { autoIncrement: true });
+      db.createObjectStore("pendingTakes", { keyPath: "segmentId" });
+    },
+  });
+}
+
+const v12Segment = (id: string, extra: Record<string, unknown> = {}) => ({
+  ...v11Segment(id),
+  ...V12_ROW,
+  ...extra,
+});
+
+/** A pending row as a v12 build wrote it: no `baseRevision`. */
+const v12PendingRow = (
+  segmentId: string,
+  clipId: string,
+  base: Record<string, unknown>
+) => ({
+  segmentId,
+  ordinal: 1,
+  clipId,
+  base,
+  recorded: Int16Array.from([5, 6, 7]).buffer,
+  sampleRate: 48000,
+  offset: 0,
+  finished: false,
+  editOnly: false,
+  createdAt: 9,
+});
+
+/** Every row of every store, and the clip bytes as plain arrays. */
+async function snapshotAll(db: IDBPDatabase<TcMobileDb>) {
+  const stores = [
+    "books",
+    "chapters",
+    "segments",
+    "takes",
+    "clipMeta",
+    "tombstones",
+    "pendingTakes",
+    "failures",
+  ] as const;
+  const rows = Object.fromEntries(
+    await Promise.all(stores.map(async (s) => [s, await db.getAll(s)] as const))
+  ) as Record<(typeof stores)[number], unknown[]>;
+  const keys = (await db.getAllKeys("clipData")) as string[];
+  const data: Record<string, number[]> = {};
+  for (const k of keys) {
+    data[k] = Array.from(
+      new Uint8Array((await db.get("clipData", k as never)) as ArrayBuffer)
+    );
+  }
+  return { rows, data };
+}
+
+describe("the v12 → v13 schema (#38)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("keeps every row of a seeded v12 shelf: segments gain only audioRevision 0, every other row and clip byte is identical", async () => {
+    // R4, and the device case: a phone holding v12 data upgrades without
+    // losing a row. A whole shelf with v12 fields, a stored and an inline
+    // pending row, a tombstone and a failure-log row.
+    const v12 = await openLegacyV12();
+    const clips = await seedShelf(v12, SHELF_V11);
+    for (const store of ["books", "chapters", "segments"] as const) {
+      const fill = store === "books" ? V12_BOOK : V12_ROW;
+      for (const row of await v12.getAll(store)) {
+        await v12.put(store, { ...row, ...fill });
+      }
+    }
+    const pcm = clips.find((c) => c.encoding === "pcm")!;
+    await v12.put(
+      "pendingTakes",
+      v12PendingRow(pcm.segmentId, "pending-stored", {
+        kind: "stored",
+        sourceClipId: pcm.clipId,
+        generation: 0,
+        frameCount: 4,
+      })
+    );
+    await v12.put(
+      "pendingTakes",
+      v12PendingRow("b1-ch1-s3", "pending-inline", {
+        kind: "inline",
+        samples: Int16Array.from([1, 2]).buffer,
+      })
+    );
+    await v12.add("tombstones", {
+      entity: "segment",
+      entityId: "gone",
+      parentId: "b1-ch1",
+      deletedAt: 3,
+    });
+    await v12.add("failures", { at: 1, context: "save-take", name: "E" });
+    const before = await snapshotAll(
+      v12 as unknown as IDBPDatabase<TcMobileDb>
+    );
+    expect(before.rows.segments).toHaveLength(36);
+    expect(before.rows.pendingTakes).toHaveLength(2);
+    v12.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    const after = await snapshotAll(db);
+    expect(after.data).toEqual(before.data);
+    for (const store of Object.keys(before.rows) as Array<
+      keyof typeof before.rows
+    >) {
+      if (store === "segments" || store === "clipMeta") continue;
+      expect(after.rows[store]).toEqual(before.rows[store]);
+    }
+    expect(after.rows.segments).toEqual(
+      (before.rows.segments as object[]).map((s) => ({
+        ...s,
+        audioRevision: 0,
+      }))
+    );
+    expect(after.rows.clipMeta).toEqual(
+      (before.rows.clipMeta as object[]).map((c) => ({ ...c, ...V14_CLIP }))
+    );
+    await expectEveryRecordingResolves(clips);
+    expect(await db.count("takeDispositions")).toBe(0);
+  });
+
+  it("v12 → v13 gives every segment audioRevision 0, recorded or not, and reads no clock", async () => {
+    // R2 (the walk) and R3 (no clock): a backfill of `Date.now()` would carry
+    // this finite value into the row.
+    const v12 = await openLegacyV12();
+    await v12.put("segments", v12Segment("s1"));
+    await v12.put("segments", v12Segment("s2", { activeTakeId: "t2" }));
+    v12.close();
+
+    vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+    const db = await getDb();
+    expect(await db.getAll("segments")).toEqual([
+      { ...v12Segment("s1"), audioRevision: 0 },
+      { ...v12Segment("s2", { activeTakeId: "t2" }), audioRevision: 0 },
+    ]);
+  });
+
+  it("v13 leaves a segment that already carries audioRevision alone", async () => {
+    // R1: a stamp with no absence check overwrites the 5.
+    const v12 = await openLegacyV12();
+    await v12.put("segments", v12Segment("s1", { audioRevision: 5 }));
+    v12.close();
+
+    const writes = countWrites();
+    const db = await getDb();
+    expect(writes).toEqual({});
+    vi.restoreAllMocks();
+    expect((await db.get("segments", "s1" as never))?.audioRevision).toBe(5);
+  });
+
+  it("v13 indexes a stored base's clip and leaves inline rows out of the index", async () => {
+    // R7: without `bySourceClip` the index read throws NotFoundError.
+    const v12 = await openLegacyV12();
+    await v12.put(
+      "pendingTakes",
+      v12PendingRow("s1", "p1", {
+        kind: "stored",
+        sourceClipId: "base-clip",
+        generation: 0,
+        frameCount: 4,
+      })
+    );
+    await v12.put(
+      "pendingTakes",
+      v12PendingRow("s2", "p2", { kind: "inline", samples: new ArrayBuffer(0) })
+    );
+    v12.close();
+
+    const db = await getDb();
+    const index = db.transaction("pendingTakes").store.index("bySourceClip");
+    expect(await index.getAllKeys("base-clip" as never)).toEqual(["s1"]);
+    expect(await index.count()).toBe(1);
+  });
+
+  it("v13 indexes a disposition by its segment", async () => {
+    // R8: without `bySegment` the delete clean-up cannot find a segment's
+    // records; the index read throws NotFoundError.
+    const db = await getDb();
+    const record = (clipId: string, segmentId: string) => ({
+      clipId,
+      segmentId,
+      kind: "saved",
+      at: 1,
+    });
+    await db.put("takeDispositions", record("c1", "s1") as never);
+    await db.put("takeDispositions", record("c2", "s1") as never);
+    await db.put("takeDispositions", record("c3", "s2") as never);
     expect(
-      (await db.getAll("books")).map((b) => [b.id, b.name, b.number])
-    ).toEqual(SHELF.map((b) => [b.id, slots[b.id]![0], slots[b.id]![1]]));
+      await db.getAllKeysFromIndex(
+        "takeDispositions",
+        "bySegment",
+        "s1" as never
+      )
+    ).toEqual(["c1", "c2"]);
+  });
+
+  it("a fresh install opens at the current version with an empty takeDispositions, and addSegment writes audioRevision 0", async () => {
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await db.count("takeDispositions")).toBe(0);
+    const { addChapter, addSegment, createBook } =
+      await import("@/lib/storage/books");
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    expect((await addSegment(chapter.id)).audioRevision).toBe(0);
+  });
+
+  it("a database at the current version refuses an open at 12, and every row and clip byte is unchanged", async () => {
+    // What a build at 12 meets: IndexedDB's VersionError, which that build's
+    // `getDb` maps to DatabaseDowngradeError (tests/db-open.test.ts pins the
+    // mapping). Nothing is written.
+    const v12 = await openLegacyV12();
+    await seedShelf(v12, SHELF_V11);
+    v12.close();
+    const db = await getDb();
+    const before = await snapshotAll(db);
+    await closeDb();
+
+    await expect(openDB(DB_NAME, 12)).rejects.toMatchObject({
+      name: "VersionError",
+    });
+    const raw = await openDB(DB_NAME);
+    expect(raw.version).toBe(APP_VERSION);
+    expect(
+      await snapshotAll(raw as unknown as IDBPDatabase<TcMobileDb>)
+    ).toEqual(before);
+    raw.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v14 (#1433): the clip's processing record
+// ---------------------------------------------------------------------------
+
+/** Stand up the v13 schema: v12's stores plus `takeDispositions` and the base index. */
+async function openLegacyV13() {
+  const legacy = await openLegacyV12();
+  legacy.close();
+  return openDB(DB_NAME, 13, {
+    upgrade(_db, _old, _new, tx) {
+      _db
+        .createObjectStore("takeDispositions", { keyPath: "clipId" })
+        .createIndex("bySegment", "segmentId");
+      tx.objectStore("pendingTakes").createIndex(
+        "bySourceClip",
+        "base.sourceClipId"
+      );
+    },
+  });
+}
+
+/** A clip row as a v13 build wrote it: no `processing`. */
+const v13ClipMeta = (id: string, encoding: "pcm" | "mp3") => ({
+  id,
+  sampleRate: 44100,
+  frameCount: 10,
+  durationMs: 1,
+  createdAt: 7,
+  encoding,
+  generation: encoding === "mp3" ? 1 : 0,
+  byteLength: encoding === "mp3" ? 4 : 20,
+  transcodeStallCount: 0,
+  peaks: null,
+});
+
+describe("the v13 → v14 schema (#1433)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("gives every clip row processing null and changes nothing else, reading no clock", async () => {
+    const v13 = await openLegacyV13();
+    await v13.put("clipMeta", v13ClipMeta("pcm-1", "pcm"));
+    await v13.put("clipMeta", v13ClipMeta("mp3-1", "mp3"));
+    await v13.put("clipData", Int16Array.from([1, 2]).buffer, "pcm-1");
+    await v13.put("segments", { ...v12Segment("s1"), audioRevision: 3 });
+    const before = await snapshotAll(
+      v13 as unknown as IDBPDatabase<TcMobileDb>
+    );
+    v13.close();
+
+    vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+    const db = await getDb();
+    expect(db.version).toBe(14);
+    const after = await snapshotAll(db);
+    // U6c: an already-finished clip is not back-filled with a record, only null.
+    expect(after.rows.clipMeta).toEqual([
+      { ...v13ClipMeta("mp3-1", "mp3"), processing: null },
+      { ...v13ClipMeta("pcm-1", "pcm"), processing: null },
+    ]);
+    expect(after.data).toEqual(before.data);
+    for (const store of Object.keys(before.rows) as Array<
+      keyof typeof before.rows
+    >) {
+      if (store === "clipMeta") continue;
+      expect(after.rows[store]).toEqual(before.rows[store]);
+    }
+  });
+
+  it("leaves a clip row that already carries processing alone, and writes nothing", async () => {
+    const record = {
+      stages: [{ id: "hpf", version: 1 }],
+      measuredLufs: -20,
+      measuredTruePeakDbtp: -3,
+      appliedGainDb: 1,
+    };
+    const v13 = await openLegacyV13();
+    await v13.put("clipMeta", {
+      ...v13ClipMeta("c1", "mp3"),
+      processing: record,
+    });
+    // Already null and not owed: what a re-run of the step meets.
+    await v13.put("clipMeta", {
+      ...v13ClipMeta("c2", "pcm"),
+      processing: null,
+    });
+    v13.close();
+
+    const writes = countWrites();
+    const db = await getDb();
+    expect(writes).toEqual({});
+    vi.restoreAllMocks();
+    expect((await db.get("clipMeta", "c1" as never))?.processing).toEqual(
+      record
+    );
+    expect((await db.get("clipMeta", "c2" as never))?.processing).toBeNull();
+  });
+
+  it("records no stage on a Finished segment's PCM clip, so its owed transcode encodes it as it was (U6c)", async () => {
+    // Frank R1 P2 on #1679: null would let the first sweep normalize it.
+    const v13 = await openLegacyV13();
+    const take = (id: string, clipId: string, segmentId: string) => ({
+      id,
+      segmentId,
+      clipId,
+      createdAt: 1,
+      durationMs: 1,
+    });
+    const seg = (id: string, takeId: string, status: string) => ({
+      ...v12Segment(id, { activeTakeId: takeId, status }),
+      audioRevision: 0,
+    });
+    // Finished and still PCM: the owed transcode.
+    await v13.put("segments", seg("s1", "t1", "affirmed"));
+    await v13.put("takes", take("t1", "pcm-finished", "s1"));
+    await v13.put("clipMeta", v13ClipMeta("pcm-finished", "pcm"));
+    // Recorded, not finished: Finished after the upgrade normalizes it.
+    await v13.put("segments", seg("s2", "t2", "draft"));
+    await v13.put("takes", take("t2", "pcm-draft", "s2"));
+    await v13.put("clipMeta", v13ClipMeta("pcm-draft", "pcm"));
+    // Finished and already MP3: nothing is owed, null as before.
+    await v13.put("segments", seg("s3", "t3", "affirmed"));
+    await v13.put("takes", take("t3", "mp3-finished", "s3"));
+    await v13.put("clipMeta", v13ClipMeta("mp3-finished", "mp3"));
+    // An earlier take's clip, no longer active: not what the sweep reads.
+    await v13.put("clipMeta", v13ClipMeta("pcm-orphan", "pcm"));
+    v13.close();
+
+    vi.spyOn(Date, "now").mockReturnValue(1_760_000_000_000);
+    const db = await getDb();
+    const processing = async (id: string) =>
+      (await db.get("clipMeta", id as never))?.processing;
+    expect(await processing("pcm-finished")).toEqual({
+      stages: [],
+      measuredLufs: null,
+      measuredTruePeakDbtp: null,
+      appliedGainDb: 0,
+    });
+    expect(await processing("pcm-draft")).toBeNull();
+    expect(await processing("mp3-finished")).toBeNull();
+    expect(await processing("pcm-orphan")).toBeNull();
+  });
+
+  it("classifies a pre-v4 clip in the v14 step, though the v4 stamp wrote null first (George and Frank R2 on #1679)", async () => {
+    const v3 = await openLegacyV3();
+    const v3Clip = (id: string) => ({
+      id,
+      sampleRate: 44100,
+      frameCount: 4,
+      durationMs: 1,
+      createdAt: 1,
+    });
+    const v3Segment = (id: string, takeId: string, status: string) => ({
+      id,
+      chapterId: "ch",
+      index: 1,
+      reference: null,
+      activeTakeId: takeId,
+      status,
+    });
+    const v3Take = (id: string, clipId: string, segmentId: string) => ({
+      id,
+      segmentId,
+      clipId,
+      createdAt: 1,
+      durationMs: 1,
+    });
+    await v3.put("segments", v3Segment("s1", "t1", "affirmed"));
+    await v3.put("takes", v3Take("t1", "pcm-finished", "s1"));
+    await v3.put("clipMeta", v3Clip("pcm-finished"));
+    await v3.put("segments", v3Segment("s2", "t2", "draft"));
+    await v3.put("takes", v3Take("t2", "pcm-draft", "s2"));
+    await v3.put("clipMeta", v3Clip("pcm-draft"));
+    v3.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(
+      (await db.get("clipMeta", "pcm-finished" as never))?.processing
+    ).toEqual({
+      stages: [],
+      measuredLufs: null,
+      measuredTruePeakDbtp: null,
+      appliedGainDb: 0,
+    });
+    expect(
+      (await db.get("clipMeta", "pcm-draft" as never))?.processing
+    ).toBeNull();
+  });
+
+  it("a fresh clip is written with processing null", async () => {
+    const { buildClipMeta } = await import("@/lib/storage/clips");
+    expect(
+      buildClipMeta("c" as never, Int16Array.of(1), 44100, 0).processing
+    ).toBeNull();
   });
 });

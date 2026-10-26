@@ -82,11 +82,13 @@ export function StoragePressureBanner({
       strings.shareAllFilename,
       (book) =>
         strings.shareAllFolder(strings.bookHeading(book.name, book.number)),
-      (book, n, chapterName) =>
+      (book, n, chapterName, highest) =>
         strings.shareFilename(
           strings.bookHeading(book.name, book.number),
           n,
-          chapterName
+          chapterName,
+          highest,
+          book.licence ?? null
         )
     );
   };

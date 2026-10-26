@@ -15,6 +15,7 @@ default, the text there says to keep using it.
 1. Whether to offer the browser version at the training (§2, step 1).
 2. Whether "share a very long book chapter by chapter" is a rule (§3).
 3. Whether participants file their own problem reports (§5, "Where reports go").
+   This one has no default yet: ask the requirements owner before the session.
 4. Which private address the problem-report file goes to (§5, "Where reports go").
 
 <!-- source: PR #1297 body, "For the requirements owner to confirm" items 1-4; no answer to any of them is on gh issue #248 as of 2026-10-05 -->
@@ -85,7 +86,10 @@ default, the text there says to keep using it.
 
    **Keep only the right file.** A browser may warn that an app file can "harm
    your device". Before a participant chooses to keep it, check that the file
-   the warning names is `app-release.apk` from the releases page. A warning on
+   the warning names is `app-release.apk`, or the same name with a number in
+   brackets before `.apk` (such as `app-release (1).apk`, which a browser gives
+   a second download), and that it came from the releases page. The same names
+   from a chat, an email or another tab mean stop: do not keep it. A warning on
    any other file means stop: do not keep it. <!-- source: docs/tester-install.md
    "Android" step 2 (the same guard); gh issue #248, comment 2026-09-24 -->
 
@@ -138,17 +142,19 @@ default, the text there says to keep using it.
    an ancestor of this branch
    -->
 
-   **Once a phone has updated to 1.1.0, do not put an older build back on it.**
-   The newer build changes how recordings are stored, and an older build
-   cannot read them again: they stay on the phone, but out of reach, until a
-   1.1.0 or newer build is installed over it. If the app says "This copy is
-   out of date" and restarting does not clear it, do not uninstall, because
+   **Once a phone has updated to a new build, do not put an older build back
+   on it.** When the newer build changed how recordings are stored (1.1.0 and
+   1.2.0 each did), the recordings stay on the phone but out of reach until a
+   build at least as new as the one it last opened is installed over it
+   (AGENTS.md, "A rollback is not free once a phone has opened a build with a newer database
+   schema"). If the app says "This copy is out of date" and restarting does
+   not clear it, do not uninstall, because
    that deletes every recording. Write down the stamp and what you saw, as in
    section 5, and report it. (On Android, the phone itself refuses to install
    an older build over a newer one; see
    [docs/native/README.md](../native/README.md) §5a.) <!-- source: AGENTS.md
-   "What rollback does not do"; src/lib/storage/db.ts DB_VERSION 11; screen
-   text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
+   "A rollback is not free once a phone has opened a build with a newer
+   database schema"; screen text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
 
    **The same rules apply to testers and to participants.** On an iPhone,
    open TestFlight, choose the newest build of tC Mobile and tap **Update**
@@ -200,16 +206,23 @@ default, the text there says to keep using it.
    src/app/App.tsx -->
 
 2. **Allow the microphone when asked.** The first time someone taps record,
-   the phone will ask for microphone access. Tap **Allow**. Without it,
-   recording will not work at all. If the choices are **Allow**, **While
-   using the app** and **Only this time**, pick **Allow** or **While using
-   the app** for anyone who will record more than once, such as over a
-   training day. **Only this time** may end once the app is left, and the
-   phone would ask again at a later recording. On some older Android
-   versions the refusing button says **Deny**; it means **Don't allow**.
+   the phone will ask for microphone access. Without it, recording will not
+   work at all. Read the labels the dialog actually shows and choose by
+   these rules (the labels named here are English): if **While using the
+   app** is shown, choose it; otherwise, if **Allow** is shown, choose it.
+   Do not choose **Only this time** for anyone who will
+   record again later, such as over a training day: it may end once the app
+   is left, and the phone would ask again at a later recording. **Deny** and
+   **Don't allow** both refuse the microphone; do not choose either. Which
+   labels appear depends on the phone. If none of these labels is on the
+   dialog, for example because the phone is in another language, stop and
+   do not guess by position: ask someone who reads that language which
+   button allows the microphone. **The wording above
+   has not been checked against a real permission dialog on a phone.**
    <!-- inference, not repo evidence: how long an "Only this time" grant lasts
    is Android platform behaviour and has not been tested here; same wording
-   as docs/tester-install.md step 5; gh issue #248, comment 2026-09-24 -->
+   as docs/tester-install.md step 5; gh issue #248, comment 2026-09-24 and
+   the 2026-10-12 follow-up -->
 3. **If the app never asks, or recording fails after allowing it:** open the
    phone's own settings — **Settings → Apps → tC Mobile → Permissions →
    Microphone** — and turn it on. (Standard Android path; wording varies by
@@ -321,14 +334,15 @@ been measured on a device yet.
 
 - **Starting a segment over.** A translator who wants to say the whole
   segment again does not need to edit it: in the recorder, the **eraser** at
-  the left end of the bottom bar ("Clear and record again") clears the
+  the left end of the bottom bar ("Reset and record again") resets the
   recording. A small panel asks once more (the eraser there confirms, the back
   arrow cancels). The recorder stays open with the segment empty, ready for
   Record. The eraser is greyed while recording and when the segment has
-  nothing saved yet. There is no undo for a clear. Clearing keeps the
+  nothing saved yet. There is no undo for a reset. Resetting keeps the
   segment, and so does **Reset** in the segment's **⋮** on the chapter screen
-  (its confirm box reads "Reset segment and start over"). **Delete** (the bin,
-  in the same **⋮**) removes the whole segment. <!-- source: src/components/recorder-toolbars.tsx (rerecord icon="eraser"), src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx (glyph), src/components/segment-row.tsx (Reset and Delete tiles, #1119, #1220); not device-verified -->
+  (its confirm box reads "Reset segment and start over", and its button
+  "Reset recording"). **Delete** (the bin,
+  in the same **⋮**) removes the whole segment. <!-- source: src/components/recorder-toolbars.tsx (rerecord icon="eraser"), src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx (glyph), src/components/segment-row.tsx (Reset and Delete tiles, #1119, #1220); src/lib/strings.ts rerecord and eraseConfirm (one verb, "Reset", #1233); not device-verified -->
 - **Recording a new segment.** On the chapter screen, a segment with no
   recording shows a gray button with a red outline and a red microphone. It
   does **not** start recording: it opens the recorder, and the translator
@@ -365,7 +379,11 @@ been measured on a device yet.
   closes the menu.** <!-- source: src/components/menu.tsx (`back` prop docblock, dismissGlyph, drag down to close); src/components/recorder-menu.tsx (hamburger, dismissIcon="more"); src/components/sheet-drag.ts; #1268; not device-verified -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
-  sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->
+  sheet (the same menu you'd use to share a photo). Each MP3 is named for the
+  book, then the chapter's number and name, such as "Jonah - 03 Jonah
+  runs.mp3", so a book's files sort in chapter order; a chapter with no name
+  of its own is "Jonah - 03 Chapter 3.mp3". A book with 100 chapters or more
+  uses three digits for all its files ("Psalms - 003 …"). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md; src/lib/strings.ts shareFilename (number and name, the requirements owner's R18 pick on gh issue #1233); not device-verified -->
 - **Agree where to send recordings before the exercise.** The participant
   chooses an app or destination in the phone's share sheet. Check that chosen
   app to confirm the file arrived; tC Mobile does not keep a destination
@@ -434,7 +452,7 @@ your other notes (§5).
    - **Edited the recording:** opened editing with the scissors in the
      bottom bar, then cut a piece out (the scissors under the sound picture)
      or put a cut piece back (paste, the arrow onto a line).
-   - **Said it all again:** the eraser in the recorder ("Clear and record
+   - **Said it all again:** the eraser in the recorder ("Reset and record
      again"), or **Reset** in the segment's ⋮ menu.
 
    Write whether they found it alone or someone showed them. Opening editing
@@ -454,7 +472,7 @@ your other notes (§5).
    background, so run it if you can.
 
 <!-- source and tracking, for maintainers:
-     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Clear and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
+     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Reset and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
      item 2: gh issue #1284 (long names cut off with "…", no way to read them in full; known limit in §4) and gh issue #1272 (a typed chapter "number" becomes the chapter's name while the badge shows its position — the issue labels this inferred from the code).
      item 3: gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
      Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->
@@ -630,7 +648,10 @@ recording, or when the app came back to the screen. In the exported file these t
 show as `playback-clock-stalled` (Play started but no sound followed),
 `recorder-tap-clock-stalled` (the level meter's clock stopped during a
 recording) and `audio-clock-stalled-on-return` (found when the app came back
-to the screen). Each one also puts the red mark on Books **≡**. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand; recorder-release-track #479 — a track stop() that throws while the mic stream is released, reported per track so the other tracks are still stopped; recorder-take-cap #1005 — the elapsed tick sealing a take at the 20-minute cap, which the sheet then saves; not a failure, the one record that a take was cut); src/hooks/audio-io.ts (recorder-tap-clone-stop #479 — the level tap's cloned track throwing on its own stop()); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:97 (save-take, #456); src/hooks/use-save-take.ts:202 (erase-segment, #456 — performClearEditedSegment's cut-to-empty close, not the segment-store erase below); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one); src/hooks/use-chapter-segments.ts renameSegment's catch and src/components/segment-row.tsx's rejection handler (segment-rename, #591 — not the vanished-segment case, which shows the stale-segment state instead); src/hooks/audio-io.ts's playSamples (a single try/finally is now the ONE report site for all three keys below — dev lead pick, option A, 2026-09-19 judgment sheet, closing the row-accounting class George round-2 P3 and Frank rounds 1 and 3 each found one more exit of: playback-resume #469 — raceAudioResume's own rejection report, or playSamples's single exit reporting a captured one; fires for a LATE rejection arriving after the 1000 ms bound already won the race (except one on a context `discardSharedContext` closed, which `raceAudioResume` drops because that Play already wrote its row, #1213), for an early rejection whose OWN resume() call failed but the shared context turned out usable anyway because a DIFFERENT, concurrent resumeAudioContext() call elsewhere (playTake/playBuffer's own fire-and-forget in-gesture unlock) won first (Frank round-1 P2), OR for an early rejection on a claim that was superseded (a Stop, a competing Play) before either fail-closed check below ever ran — previously dropped with no row at all (Frank round-3 P2 @ audio-io.ts:678), now still reported since the finally is reached from every exit, superseded or not; an early rejection that leaves the context still unusable is instead folded into playback-resume-unusable below, carrying the REAL captured cause rather than a synthetic stand-in (previously always synthetic even when a real cause existed — Frank round-3 P2 @ audio-io.ts:694), so one failed Play never writes more than one row (George round-2 P3); playback-resume-timeout #469 — the single exit's fail-closed report when the 1000 ms bound was what left the context still needing resume; playback-resume-unusable #469 — the same single exit when the context still needs resume without the bound firing: an early rejection, a resume() that resolved but left the context still needing resume, or a fresh interruption arriving during the buffer-fill/yield after resume had already succeeded (George round-2 P2)); src/hooks/use-audio-session.ts playTake's and playBuffer's catches and the dangling-clip branch (playback-take, playback-buffer, playback-dangling, #1213 — each skips the #469 error, whose row playSamples already wrote, and writes nothing for a superseded Play); src/hooks/audio-io.ts playSamples, createLevelTap and checkSharedClockOnReturn (playback-clock-stalled, recorder-tap-clock-stalled, audio-clock-stalled-on-return, #1251 — a shared context reporting running whose currentTime did not advance for 1000 ms: after a Play's source.start, across the level tap's frames during a take, or after the page became visible again; the Play one fails that Play, and playTake/playBuffer's catches skip its error the way they skip the #469 one); src/hooks/audio-io.ts discardSharedContext (playback-context-close, #1213 — a failed close() of the shared context a fail-closed Play dropped) --> What is **not** written
+to the screen). Each one also puts the red mark on Books **≡**. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand; recorder-release-track #479 — a track stop() that throws while the mic stream is released, reported per track so the other tracks are still stopped; recorder-take-cap #1005 — the elapsed tick sealing a take at the 20-minute cap, which the sheet then saves; not a failure, the one record that a take was cut); src/hooks/audio-io.ts (recorder-tap-clone-stop #479 — the level tap's cloned track throwing on its own stop()); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:97 (save-take, #456); src/hooks/use-save-take.ts:202 (erase-segment, #456 — performClearEditedSegment's cut-to-empty close, not the segment-store erase below); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one); src/hooks/use-chapter-segments.ts renameSegment's catch and src/components/segment-row.tsx's rejection handler (segment-rename, #591 — not the vanished-segment case, which shows the stale-segment state instead); src/hooks/audio-io.ts's playSamples (a single try/finally is now the ONE report site for all three keys below — dev lead pick, option A, 2026-09-19 judgment sheet, closing the row-accounting class George round-2 P3 and Frank rounds 1 and 3 each found one more exit of: playback-resume #469 — raceAudioResume's own rejection report, or playSamples's single exit reporting a captured one; fires for a LATE rejection arriving after the 1000 ms bound already won the race (except one on a context `discardSharedContext` closed, which `raceAudioResume` drops because that Play already wrote its row, #1213), for an early rejection whose OWN resume() call failed but the shared context turned out usable anyway because a DIFFERENT, concurrent resumeAudioContext() call elsewhere (playTake/playBuffer's own fire-and-forget in-gesture unlock) won first (Frank round-1 P2), OR for an early rejection on a claim that was superseded (a Stop, a competing Play) before either fail-closed check below ever ran — previously dropped with no row at all (Frank round-3 P2 @ audio-io.ts:678), now still reported since the finally is reached from every exit, superseded or not; an early rejection that leaves the context still unusable is instead folded into playback-resume-unusable below, carrying the REAL captured cause rather than a synthetic stand-in (previously always synthetic even when a real cause existed — Frank round-3 P2 @ audio-io.ts:694), so one failed Play never writes more than one row (George round-2 P3); playback-resume-timeout #469 — the single exit's fail-closed report when the 1000 ms bound was what left the context still needing resume; playback-resume-unusable #469 — the same single exit when the context still needs resume without the bound firing: an early rejection, a resume() that resolved but left the context still needing resume, or a fresh interruption arriving during the buffer-fill/yield after resume had already succeeded (George round-2 P2)); src/hooks/use-audio-session.ts playTake's and playBuffer's catches and the dangling-clip branch (playback-take, playback-buffer, playback-dangling, #1213 — each skips the #469 error, whose row playSamples already wrote, and writes nothing for a superseded Play); src/hooks/audio-io.ts playSamples, createLevelTap and checkSharedClockOnReturn (playback-clock-stalled, recorder-tap-clock-stalled, audio-clock-stalled-on-return, #1251 — a shared context reporting running whose currentTime did not advance for 1000 ms: after a Play's source.start, across the level tap's frames during a take, or after the page became visible again; the Play one fails that Play, and playTake/playBuffer's catches skip its error the way they skip the #469 one); src/hooks/audio-io.ts discardSharedContext (playback-context-close, #1213 — a failed close() of the shared context a fail-closed Play dropped) --> A
+recording the app stopped and saved by itself, because the microphone sent
+only silence for five seconds, shows as `recorder-capture-stalled` and also
+puts the red mark on Books **≡**. <!-- source: src/hooks/use-recorder.ts start()'s onCaptureSilent; src/lib/audio/capture-silence.ts CAPTURE_SILENCE_MS (exact zeros on a running context whose clock moved, with no track or recorder event); gh issue #1294, the requirements owner's R13 decision 2026-10-19; src/lib/failure-marker.ts (only recorder-take-cap is exempt); inferred from the code, not run on a phone --> What is **not** written
 down today is the microphone refusing to start, a Stop that fails the way you
 see it — the recorder's own notice that no sound was recorded or that the
 recording could not be decoded — and the share sheet failing

@@ -4,10 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * Add Chapter prompts for a name before it writes anything (#609) — the chapter
@@ -36,6 +38,7 @@ const made: Chapter = {
   number: 3,
   name: null,
   segmentIds: [],
+  ...ROW_V12_FIELDS,
 };
 const mocks = vi.hoisted(() => ({ addChapter: vi.fn() }));
 const shelf = (): BookCard[] => [
@@ -162,6 +165,7 @@ async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer,
         popLayer,

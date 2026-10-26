@@ -142,6 +142,15 @@ async function setup() {
       readMeterAvailable: () => true,
       readScope: () => null,
       peekScope: () => null,
+      chapterPlay: {
+        chapterId: null,
+        status: "idle" as const,
+        pausedFraction: null,
+      },
+      playChapter: () => {},
+      pauseChapter: () => {},
+      stopChapter: () => {},
+      readChapterProgress: () => null,
     };
   // Resting erase: this suite never opens the confirm, but the sheet reads
   // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12;

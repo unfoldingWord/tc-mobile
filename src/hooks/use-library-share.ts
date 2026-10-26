@@ -140,7 +140,8 @@ export interface UseLibraryShare
     nameChapter: (
       book: BookLabel,
       chapterNumber: number,
-      chapterName: string | null
+      chapterName: string | null,
+      highestNumber: number
     ) => string
   ) => Promise<ShareOutcome | null>;
 }
@@ -194,7 +195,8 @@ export function useLibraryShare(): UseLibraryShare {
       nameChapter: (
         book: BookLabel,
         chapterNumber: number,
-        chapterName: string | null
+        chapterName: string | null,
+        highestNumber: number
       ) => string
     ): Promise<ShareOutcome | null> => {
       setStorageShort(false);

@@ -122,7 +122,24 @@ describe("o4/menus.css (#941)", () => {
     expect(rules.length).toBeGreaterThanOrEqual(8);
     for (const rule of rules)
       for (const selector of rule.selectors)
-        expect(selector).toMatch(/^:root /);
+        expect(selector).toMatch(/^:root(\[dir="rtl"\])? /);
+  });
+
+  it("lets a tile caption wrap inside its tile's width plus the gap (#1665)", () => {
+    const caption = declsFor(rules, ":root .o4-tile > .control-caption");
+    expect(caption.get("white-space")).toBe("normal");
+    expect(caption.get("max-width")).toBe("calc(100% + 10px)");
+    expect(caption.get("overflow-wrap")).toBe("break-word");
+    // The compact grid's gap is 6px, so its caption bound follows it.
+    const compact = declsFor(
+      rules,
+      ":root .o4-tiles--compact .o4-tile > .control-caption"
+    );
+    expect(compact.get("max-width")).toBe("calc(100% + 6px)");
+    // The tile's one column must not size to the caption's width.
+    expect(declsFor(rules, ":root .o4-tile").get("grid-template-columns")).toBe(
+      "minmax(0, 1fr)"
+    );
   });
 
   it("paints colour only through layer-2 roles", () => {

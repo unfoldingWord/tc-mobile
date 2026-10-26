@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, ChapterId } from "@/types/domain";
@@ -27,6 +28,7 @@ const shelf = (): BookCard[] => [
     bookId,
     name: "Mark",
     number: 1,
+    licence: "all-rights-reserved",
     chapters: [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,
@@ -113,6 +115,7 @@ it("names each MP3 in the book's zip from the chapter's own name", async () => {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {
@@ -128,6 +131,6 @@ it("names each MP3 in the book's zip from the chapter's own name", async () => {
   const [id, zip, nameChapter] = mocks.prepare.mock.calls[0]!;
   expect(id).toBe(bookId);
   expect(zip).toBe(strings.shareBookFilename("Mark"));
-  expect(nameChapter(1, "The sower")).toBe("Mark - The sower.mp3");
-  expect(nameChapter(2, null)).toBe(`Mark - ${strings.chapterName(2)}.mp3`);
+  expect(nameChapter(1, "The sower")).toBe("Mark - 01 The sower.mp3");
+  expect(nameChapter(2, null)).toBe(`Mark - 02 ${strings.chapterName(2)}.mp3`);
 });

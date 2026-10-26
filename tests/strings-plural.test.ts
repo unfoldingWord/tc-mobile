@@ -37,6 +37,15 @@ describe("count-varying strings", () => {
         "Mark, 0 chapters, expanded"
       );
     });
+
+    it("keeps a book name that holds a placeholder as typed (#1483)", () => {
+      // The name is free text, and since #1483 it goes into a whole-row form
+      // through `{name}`. It must go in after the count, or "{n}" in the name
+      // would be read as the count's slot.
+      expect(strings.bookRow("Book {n} {name}", 2, true)).toBe(
+        "Book {n} {name}, 2 chapters, expanded"
+      );
+    });
   });
 
   describe("shareBookMissing", () => {
@@ -71,7 +80,9 @@ describe("count-varying strings", () => {
      * The two used to spell the phrase out separately — byte-identical, so a
      * later edit to one would have left the other saying something else about
      * the same number. Same defect class the strings gate in #600 exists to
-     * catch, caught here by construction instead.
+     * catch. Since #1483 the entry is a whole sentence again rather than the
+     * marker with a stop appended, so this equality is what keeps the English
+     * of the two in step.
      */
     it("is the marker's own wording, not a second copy of it", () => {
       for (const n of [1, 2, 4]) {
@@ -160,11 +171,17 @@ describe("the chapter clause keeps `exactly one` off the `one` category (#169)",
   const file = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
   const code = stripCodeComments(readFileSync(file, "utf8"), file);
 
+  // Since #1483 each arm holds whole sentences, through the entry's local
+  // `bySegments`, so the pattern reads past that call to the first form.
   it("carries the exact-1 wording under `=1`", () => {
-    expect(code).toMatch(/"=1":\s*"an included chapter"/);
+    expect(code).toMatch(
+      /"=1":\s*bySegments\(\s*"[^"]*\ban included chapter\b/
+    );
   });
 
   it("does not key that wording off `one`", () => {
-    expect(code).not.toMatch(/\bone:\s*"an included chapter"/);
+    expect(code).not.toMatch(
+      /\bone:\s*(?:bySegments\(\s*)?"[^"]*\ban included chapter\b/
+    );
   });
 });

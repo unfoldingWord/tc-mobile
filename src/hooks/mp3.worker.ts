@@ -46,6 +46,11 @@
  * boundary, runs the phone check's DSP benchmark with the same heartbeat, and
  * answers `bench-result` or `bench-error` - its own kinds, so the client can
  * keep a benchmark out of the encoder's health. It touches no stream session.
+ *
+ * And `normalize` (#1433 step 3): the Finished chain over a clip's PCM, in
+ * place, with the same heartbeat, answered with `normalized` carrying the
+ * processed PCM back (transferred) and the record of what ran. The client
+ * then encodes that PCM with an ordinary whole encode.
  */
 
 import {
@@ -54,6 +59,7 @@ import {
   encodeMp3,
 } from "@/lib/audio/mp3";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { normalizePcm } from "@/lib/audio/loudness";
 import { errorMessage } from "@/lib/failure-text";
 import { runDspBench } from "@/lib/phone-check/dsp-bench";
 import { speechLikePcm } from "@/lib/phone-check/speech";
@@ -182,6 +188,24 @@ function answer(request: EncodeRequest): Answer {
       return null;
     case "dsp-bench":
       return benchAnswer(request.seconds);
+    case "normalize": {
+      const processing = normalizePcm(
+        new Int16Array(request.buffer, request.byteOffset, request.length),
+        request.sampleRate,
+        heartbeat()
+      );
+      const { buffer, byteOffset, length } = request;
+      return {
+        response: {
+          kind: "normalized",
+          buffer,
+          byteOffset,
+          length,
+          processing,
+        },
+        transfer: [buffer],
+      };
+    }
     default: {
       // Inside the handler's `catch`, so an unknown kind is the same typed
       // `error` answer as an unknown version, and ends the session.

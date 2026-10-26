@@ -9,6 +9,7 @@ import {
 } from "./licenses";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { QrCode } from "./qr-code";
 import { reportFailure } from "@/hooks/report-failure";
 import { readSharePlatform } from "@/hooks/share-target";
 import { strings } from "@/lib/strings";
@@ -20,6 +21,13 @@ import { strings } from "@/lib/strings";
  */
 const PRIVACY_POLICY_URL =
   "https://github.com/unfoldingWord/tc-mobile/blob/main/PRIVACY.md";
+
+/**
+ * The Play listing the Android build's QR code opens (#1250): the `appId` in
+ * `capacitor.config.ts`. It works for other people once the listing is public.
+ */
+const PLAY_LISTING_URL =
+  "https://play.google.com/store/apps/details?id=org.unfoldingword.tcmobile";
 
 interface AboutPanelProps {
   open: boolean;
@@ -131,7 +139,7 @@ export function AboutPanel({
                   onView(text);
                 }}
                 aria-label={strings.aboutReadText(text.label)}
-                className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
+                className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-start text-[13px] underline"
               >
                 {text.label}
               </button>
@@ -159,6 +167,16 @@ export function AboutPanel({
               {strings.aboutPrivacyLink}
             </ExternalLink>
           </div>
+
+          {/* Android only (#1250): the store link, drawn on the phone with no
+              network call, for passing the app on. After the buttons and links
+              so the open-edge focus is unchanged. */}
+          {readSharePlatform() === "android" && (
+            <figure className="m-0 flex w-fit flex-col items-center gap-[6px]">
+              <QrCode text={PLAY_LISTING_URL} label={strings.aboutQrCaption} />
+              <figcaption>{strings.aboutQrCaption}</figcaption>
+            </figure>
+          )}
 
           <section className="flex flex-col gap-[10px]">
             <h3 className="t-title">{strings.aboutThirdParty}</h3>
@@ -200,6 +218,7 @@ export function AboutPanel({
                 </ExternalLink>
               </span>
             ))}
+            <span className="text-ink-muted">{strings.aboutLanguageCodes}</span>
           </section>
 
           <BuildStamp />

@@ -22,7 +22,7 @@
     justify-content: flex-end;
     gap: 8px;
     height: 56px;
-    padding: 0 12px 0 10px;
+    padding-inline: 10px 12px;
   }
   /* 44 × 48 r12: no shared wrapper has this shape (o4-controls.tsx carries
      52, 56, 72 and the pill), so it stays local. */
@@ -110,7 +110,7 @@
     border-radius: var(--p-radius-12);
     background: transparent;
     color: var(--s-ink);
-    text-align: left;
+    text-align: start;
   }
   :root .books-cover {
     position: relative;
@@ -131,7 +131,9 @@
   :root .books-cover::before {
     content: "";
     position: absolute;
-    inset: 0 auto 0 0;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inset-inline-end: auto;
     width: 7px;
     background: inherit;
     filter: brightness(0.84);
@@ -164,12 +166,13 @@
        and a chapter whose dots wrap past the room under the title grows the
        row instead of clipping them. */
     min-height: 68px;
-    padding: 12px 16px 12px 12px;
+    padding-block: 12px;
+    padding-inline: 12px 16px;
     border: 0;
     border-radius: var(--p-radius-12);
     background: var(--s-floor);
     color: var(--s-ink);
-    text-align: left;
+    text-align: start;
   }
   :root .books-chapter-num {
     display: grid;
@@ -216,10 +219,68 @@
     font-weight: var(--p-weight-heavy);
     color: var(--s-ink);
   }
+  /* The room the play control takes, in the row's own flow (#1469): the slot
+     the chevron held, now 44 wide. The control is not in it; it is laid over
+     it (.books-play below), so the row button stays one hit area with the
+     control a sibling. The dots' column is derived from this width
+     (DOT_COLUMN in books-screen.tsx), so it is the one place to change it. */
   :root .books-chapter-go {
-    display: grid;
+    display: block;
     flex: none;
-    color: var(--s-ink-muted);
+    width: 44px;
+    height: 44px;
+  }
+
+  /* --- the play control and its ring (#1469, Q8 pause-progress) ----------
+     Laid over the row's end slot: the row's padding-inline-end is 16, so the
+     control's inset is the same 16 and it covers exactly .books-chapter-go.
+     Centred on the item, so a row grown by wrapped dots keeps it level.
+     The fill is --play-progress (0..1), written by the control's frame loop
+     while it plays and held by the markup otherwise. Colour is layer-2 roles
+     only: --s-voice fills, --s-mark-empty is the track, --s-warn marks a
+     failed play. Never the guide ring's role, which is the next step. */
+  :root .books-chapters > li {
+    position: relative;
+  }
+  :root .books-play {
+    position: absolute;
+    inset-inline-end: 16px;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    width: 44px;
+    height: 44px;
+  }
+  :root .books-play-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: conic-gradient(
+      var(--s-voice) calc(var(--play-progress, 0) * 1turn),
+      var(--s-mark-empty) 0
+    );
+    /* Keeps a 3px band: transparent inside, opaque from the band's inner edge. */
+    -webkit-mask: radial-gradient(
+      farthest-side,
+      transparent calc(100% - 3px),
+      var(--s-ink) calc(100% - 3px)
+    );
+    mask: radial-gradient(
+      farthest-side,
+      transparent calc(100% - 3px),
+      var(--s-ink) calc(100% - 3px)
+    );
+  }
+  :root .books-play[data-status="failed"] .books-play-ring {
+    background: var(--s-warn);
+  }
+  :root .books-play-btn {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--p-radius-full);
+    background: transparent;
+    color: var(--s-ink);
   }
 
   /* --- press-and-hold reorder (#953, §3 lifted row, §4 reorder) ----------
@@ -336,9 +397,9 @@
   :root .books-sheet-name {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wraps, never elides: the book menu is where a long name is read whole
+       (#1284, U3). */
+    overflow-wrap: anywhere;
     font-size: var(--p-text-20);
     font-weight: var(--p-weight-bold);
     color: var(--s-ink);
@@ -431,5 +492,121 @@
     box-shadow:
       0 0 0 3px var(--s-surface),
       0 0 0 6px var(--s-ink);
+  }
+
+  /* The language ask (#1492). The rows scroll so the field stays in view; with
+     focus inside, the sheet docks at the top above the keyboard (sheets.css).
+     Its own title class: this sheet hides .t-title (o4/menus.css). */
+  :root .menu-scrim:has(.language-ask:focus-within) {
+    align-items: flex-start;
+  }
+  :root .language-ask {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--p-space-3);
+    min-width: 0;
+  }
+  :root .language-ask-title {
+    font-size: var(--p-text-20);
+    font-weight: var(--p-weight-bold);
+  }
+  :root .language-ask-lead,
+  :root .language-row [lang],
+  :root .language-row-tag {
+    color: var(--s-ink-muted);
+    font-size: var(--p-text-15);
+  }
+  :root .language-search {
+    flex: none; /* selectable as a .name-input (3-components.css) */
+  }
+  :root .language-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p-space-1);
+    max-height: 34vh;
+    overflow-y: auto;
+  }
+  :root .language-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--p-space-2);
+    width: 100%;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    border-radius: var(--p-radius-12);
+    background: var(--s-well);
+    color: var(--s-ink);
+    text-align: start;
+  }
+  :root .language-row-name,
+  :root .language-ask-quiet {
+    font-size: var(--p-text-17);
+    font-weight: var(--p-weight-strong);
+  }
+  :root .language-row-tag {
+    margin-inline-start: auto;
+  }
+  :root .language-ask-quiet {
+    align-self: flex-start;
+    min-height: var(--c-control-md);
+    padding: 0 var(--p-space-3);
+    color: var(--s-ink);
+  }
+
+  /* The licence ask (#1455): four rows in the language ask's shape, the
+     chosen one marked by a border and a check, not by colour alone. */
+  :root .licence-ask {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--p-space-3);
+    min-width: 0;
+  }
+  :root .licence-ask-title {
+    font-size: var(--p-text-20);
+    font-weight: var(--p-weight-bold);
+  }
+  :root .licence-ask-lead {
+    color: var(--s-ink-muted);
+    font-size: var(--p-text-15);
+  }
+  :root .licence-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p-space-1);
+  }
+  :root .licence-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--p-space-2);
+    width: 100%;
+    min-height: var(--c-control-md);
+    padding: var(--p-space-2) var(--p-space-3);
+    border: 2px solid transparent;
+    border-radius: var(--p-radius-12);
+    background: var(--s-well);
+    color: var(--s-ink);
+    text-align: start;
+  }
+  :root .licence-row[aria-checked="true"] {
+    border-color: var(--s-select);
+  }
+  :root .licence-row-name,
+  :root .licence-ask-quiet {
+    font-size: var(--p-text-17);
+    font-weight: var(--p-weight-strong);
+  }
+  :root .licence-ask-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-3);
+  }
+  :root .licence-ask-quiet {
+    min-height: var(--c-control-md);
+    padding: 0 var(--p-space-3);
+    color: var(--s-ink);
   }
 }

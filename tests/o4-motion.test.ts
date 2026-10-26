@@ -150,7 +150,10 @@ describe("every O4 loop carries the :root prefix (#950)", () => {
     ],
     [
       "shake",
-      [`${O4} .books-delete-ask > .o4-sheet-head`],
+      [
+        `${O4} .books-delete-ask > .o4-sheet-head`,
+        `${O4} .o4-err-body[data-refused]`,
+      ],
       "shake var(--p-ambient-shake, 0.35s) ease-in-out 2",
     ],
   ])("pins %s to its target and its #967 duration", (name, sels, value) => {

@@ -23,6 +23,7 @@
     flex: 1;
   }
   :root .o4-tile {
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 76px auto;
     row-gap: 8px;
     width: 76px;
@@ -46,7 +47,17 @@
     color: var(--s-ink-muted);
     font-size: 14px; /* #939 token */
     font-weight: 400;
-    white-space: nowrap;
+    /* #1665: a caption wraps to a second line rather than run into its
+       neighbour (es, fr, pt, ru at 360px). It may be as wide as its tile plus
+       the row's gap, so two captions never share a pixel; a word longer than
+       that is hyphenated, and only then broken, rather than overlap. */
+    white-space: normal;
+    justify-self: center;
+    width: max-content;
+    max-width: calc(100% + 10px);
+    text-wrap: balance;
+    hyphens: auto;
+    overflow-wrap: break-word;
   }
 
   /* #1119 round 5, George Medium 1: four REAL tiles (Done, Edit, Clear,
@@ -77,6 +88,9 @@
   :root .o4-tiles--compact .o4-tile {
     grid-template-rows: 64px auto;
     width: 64px;
+  }
+  :root .o4-tiles--compact .o4-tile > .control-caption {
+    max-width: calc(100% + 6px);
   }
   :root .o4-tiles--compact .o4-tile::before {
     width: 64px;
@@ -178,6 +192,16 @@
     gap: 12px;
     min-width: 0;
   }
+  /* The chapter's name whole, under the crumbs (#1284, U3): wraps onto as many
+     lines as it needs and is never elided. */
+  :root .o4-sheet-name {
+    margin: 8px 0 0;
+    color: var(--s-ink);
+    font-size: 20px; /* #939 token */
+    font-weight: 700; /* #939 token */
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
   :root .o4-crumbs {
     display: flex;
     align-items: center;
@@ -200,8 +224,9 @@
     max-width: max-content;
     height: 40px;
     min-width: 0;
-    margin-left: -6px;
-    padding: 0 20px 0 24px;
+    margin-inline-start: -6px;
+    padding-block: 0;
+    padding-inline: 24px 20px;
     background: var(--s-well);
     color: var(--s-ink);
     font-size: 16px; /* #939 token */
@@ -220,9 +245,10 @@
     clip-path: var(--o4-crumb-shape);
   }
   :root .o4-crumb:first-child {
-    margin-left: 0;
-    padding-left: 12px;
-    border-radius: 10px 0 0 10px; /* #939 token */
+    margin-inline-start: 0;
+    padding-inline-start: 12px;
+    border-start-start-radius: 10px; /* #939 token */
+    border-end-start-radius: 10px; /* #939 token */
     --o4-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
@@ -230,6 +256,21 @@
       calc(100% - 13px) 100%,
       0 100%
     );
+  }
+  /* Right-to-left (#1552): the chevron's tip points at the END edge, so the
+     polygon is the mirror image and the chips nest the other way. */
+  :root[dir="rtl"] .o4-crumb {
+    --o4-crumb-shape: polygon(
+      100% 0,
+      13px 0,
+      0 50%,
+      13px 100%,
+      100% 100%,
+      calc(100% - 13px) 50%
+    );
+  }
+  :root[dir="rtl"] .o4-crumb:first-child {
+    --o4-crumb-shape: polygon(100% 0, 13px 0, 0 50%, 13px 100%, 100% 100%);
   }
   :root .o4-crumb > span {
     overflow: hidden;
@@ -315,7 +356,8 @@
     align-items: center;
     gap: 12px;
     min-height: 78px;
-    padding: 8px 8px 8px 10px;
+    padding-block: 8px;
+    padding-inline: 10px 8px;
     border-radius: 14px; /* #939 token */
     background: var(--s-floor);
   }
@@ -348,12 +390,12 @@
     min-width: 0;
   }
   :root .o4-menu-title {
-    overflow: hidden;
     color: var(--s-ink);
     font-size: 16px; /* #939 token */
     font-weight: 800; /* #939 token */
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wraps, never elides: the menu is where a long segment name is read
+       whole (#1284, U3). */
+    overflow-wrap: anywhere;
   }
 
   /* D20 (#949): the segment menu as the workbench draws 07. Rename is a
@@ -430,5 +472,99 @@
     gap: 18px;
     border: 1px solid var(--s-card-edge);
     border-radius: 26px; /* #939 token */
+  }
+
+  /* === #1575: the Settings screen ==========================================
+     A full-width panel (the gear's destination is a screen, not the About
+     drawer's 320px side sheet), keyed on the list it holds, like the tile
+     sheets above. Its header is the Menu's own: the back chevron and title.
+
+     A row is the glyph, the words, and for an on/off setting a switch drawn
+     on the row. Off is an outlined track with the knob at the start; on is
+     the done fill with the knob at the end, so the state is told by position
+     as well as colour. Logical properties throughout, so it mirrors at RTL. */
+  :root .menu-panel:has(.settings-list) {
+    width: 100%;
+    border-inline-start: 0;
+  }
+  :root .settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  :root .setting-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-height: 56px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: var(--p-radius-12);
+    background: var(--s-well);
+    color: var(--s-ink);
+    font: inherit;
+    font-size: var(--p-text-md);
+    text-align: start;
+  }
+  :root .setting-row-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  :root .setting-switch {
+    position: relative;
+    flex: none;
+    width: 46px;
+    height: 28px;
+    box-sizing: border-box;
+    border: 2px solid var(--s-ink-faint);
+    border-radius: 14px;
+    background: var(--s-raised);
+  }
+  :root .setting-switch::after {
+    content: "";
+    position: absolute;
+    inset-block: 3px;
+    inset-inline-start: 3px;
+    width: 18px;
+    border-radius: 50%;
+    background: var(--s-ink-faint);
+  }
+  :root .setting-row.is-on .setting-switch {
+    border-color: var(--s-done);
+    background: var(--s-done);
+  }
+  :root .setting-row.is-on .setting-switch::after {
+    inset-inline-start: auto;
+    inset-inline-end: 3px;
+    background: var(--s-done-ink);
+  }
+
+  /* === #246: the Template Library list =====================================
+     The plainest list: a thumbnail, the title, one licence line. A row is a
+     settings row (same well, same 56px floor), taller for the thumbnail. */
+  :root .template-row {
+    min-height: 72px;
+  }
+  :root .template-row-thumb {
+    flex: none;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--p-radius-12);
+    object-fit: cover;
+  }
+  :root .template-row-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  :root .template-row-licence {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--s-ink-faint);
+    font-size: var(--p-text-sm);
   }
 }

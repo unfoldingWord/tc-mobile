@@ -64,6 +64,11 @@
        both themes — `tests/contrast.test.ts` scores each one. */
     --s-guide: var(--p-blue-500);
 
+    /* The trim selection's band, edges, stems and knobs (#1471). Not the voice
+       amber, which is the waveform under it, and not the guide or hear blue.
+       `tests/contrast.test.ts` scores the distances and the contrast. */
+    --s-select: var(--p-sky-400);
+
     --s-focus: var(--p-amber-500);
     --s-scrim: rgba(6, 9, 13, 0.92);
 
@@ -115,6 +120,11 @@
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
     --s-cover-plum: var(--p-plum-700);
+
+    /* The QR code (#1250). Fixed in BOTH themes: a scanner reads dark modules
+       on a light quiet zone, so the dark theme must not invert it. */
+    --s-qr-light: var(--p-cool-000);
+    --s-qr-dark: var(--p-cool-950);
   }
 
   :root[data-theme="light"] {
@@ -158,6 +168,9 @@
     /* Unchanged from the dark theme — see its comment. */
     --s-guide: var(--p-blue-500);
 
+    /* A darker sky in the light theme — see the dark theme's comment. */
+    --s-select: var(--p-sky-700);
+
     --s-focus: var(--p-amber-600);
     --s-scrim: rgba(255, 255, 255, 0.94);
 
@@ -189,5 +202,10 @@
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
     --s-cover-plum: var(--p-plum-700);
+
+    /* The QR code (#1250). Fixed in BOTH themes: a scanner reads dark modules
+       on a light quiet zone, so the dark theme must not invert it. */
+    --s-qr-light: var(--p-cool-000);
+    --s-qr-dark: var(--p-cool-950);
   }
 }

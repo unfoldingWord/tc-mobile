@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 import type { SegmentAudio } from "@/lib/storage/segment-audio";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * The Finished sweep and a STALLED encoder (#166, R2 P2-1).
@@ -49,6 +51,8 @@ function segment(): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
+    audioRevision: 0,
   };
 }
 
@@ -66,6 +70,7 @@ function pcmClip(id: ClipId, samples: Int16Array): Clip {
       byteLength: samples.length * 2,
       transcodeStallCount: 0,
       peaks: null,
+      processing: null,
     },
     samples,
   };
@@ -247,7 +252,8 @@ describe("requestTranscodeSweep — a stalled encoder", () => {
         sid("s2"),
         cid("c2"),
         expect.any(Uint8Array),
-        expect.anything()
+        expect.anything(),
+        NO_STAGES_RUN
       );
       expect(errorSpy).toHaveBeenCalledTimes(1);
     } finally {

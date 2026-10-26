@@ -125,17 +125,31 @@ function O4Circle({
       : strings.sharePreparingLabel;
   return (
     <span className="share-o4-frame">
-      {view.ring !== null && (
+      {(view.ring !== null || view.read !== undefined) && (
         <svg className="share-o4-ring" viewBox="0 0 176 176" aria-hidden="true">
           <circle className="share-o4-track" cx="88" cy="88" r={RING_RADIUS} />
-          <circle
-            className="share-o4-fill"
-            cx="88"
-            cy="88"
-            r={RING_RADIUS}
-            strokeDasharray={RING_LENGTH}
-            strokeDashoffset={RING_LENGTH * (1 - view.ring)}
-          />
+          {view.ring !== null && (
+            <circle
+              className="share-o4-fill"
+              cx="88"
+              cy="88"
+              r={RING_RADIUS}
+              strokeDasharray={RING_LENGTH}
+              strokeDashoffset={RING_LENGTH * (1 - view.ring)}
+            />
+          )}
+          {/* The joined-chapter read (#1078): its own thin arc, never the
+              count's fill, so the count can start from empty after it. */}
+          {view.read !== undefined && (
+            <circle
+              className="share-o4-read"
+              cx="88"
+              cy="88"
+              r={RING_RADIUS}
+              strokeDasharray={RING_LENGTH}
+              strokeDashoffset={RING_LENGTH * (1 - view.read)}
+            />
+          )}
         </svg>
       )}
       <span

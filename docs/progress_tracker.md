@@ -11,6 +11,246 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-23 to 10-24 (day) — Sprint 5 day 5: eight lane waves, schema v14 normalize-on-Finished, the licence ask at Share Book, Simplified Chinese, and two pending-take data-loss fixes, 40 PRs merged
+
+One coordinator session in orchestrator mode, running lanes in waves of up to six. The coordinator refilled each lane slot as soon as it freed rather than waiting for a wave to finish. Every merge followed the DRI's standing rule for the day: both bench lenses clean at the exact head and every check green. Each round got a hand-written triage comment. No device results reached this session.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Merge authority for the day:** "approved to merge on clean and green, use the bench reviews / fix / approval system".
+- **"PR Body" check:** "Make it required (Recommended)". It is now a required check in the ruleset, alongside Secret Scan, Commit Messages, Code Quality and Build.
+- **Expo (#1520):** "I'll run the proof first (Recommended)".
+- **Next tester build:** "Not yet, no date".
+- **Round 6:** "Wait for the answers (Recommended)".
+- **Chapter number conflict (#1272):** "Confirm with Tim first (Recommended)". The A/B question went to the requirements owner on Zulip.
+- **#1616:** "Add the guard (Recommended)", built in #1658.
+- **#1433 schema:** "Yes, v14 as proposed (Recommended)". **Target:** "Use -19 / -1.5 for now (Recommended)".
+- **#1670 at its review cap:** "One more round (Recommended)". The stop rule is on the PR: a new P1 or P2 in round 5 would park it for a split. Round 5 came back clean.
+- **#163 S-11:** "Close as superseded (Recommended)".
+
+### Requirements owner
+
+- Round 6 is answered on the project site. V1, the Export project file name, is "phone-language" and was built in #1646. #1627 stays open for the dataset book-name half. V2, a typed chapter number, is "no-field", with a note that seems to reverse U2a. The A/B question is open on Zulip and recorded on #1272.
+
+### Completed
+
+- **Merged to develop (40):** #1643 through #1685, except #1656, #1665 and #1674, which are issues.
+- **Audio, #1433:**
+  - A segment marked Finished is normalized before encode, to -19 LUFS and -1.5 dBTP, at schema v14 (#1679). The preference is on when unset. Settings has a switch for it (#1685); its label is a proposal for the requirements owner.
+  - A segment that was Finished before the upgrade, with its transcode still owed, is encoded from its original samples whatever schema the phone starts from. Treating that backlog as covered by U6c is the coordinator's reading, recorded on #1679.
+- **Pending takes (#38):**
+  - The replay's conditional commit (#1652, #1660) closed #1557. Draft #1546 is closed as superseded.
+  - A recording finished while the replay holds the save slot now waits for the slot instead of being lost (#1683, closes #1549). It is held in memory only while it waits; the PR records that residual.
+- **Share and licences (#1455):**
+  - `setBookLicence` (#1651), with aborts on its refusals (#1676) and the same abort sweep across `books.ts` (#1681).
+  - The ask at Share Book (#1670), with CC BY-SA 4.0 pre-selected.
+  - Changing a licence later, Share Chapter on an unlicensed book, and U1a ("Other") stay open on #1455.
+- **Library and UI:**
+  - A minimal Template Library picker (#1655).
+  - The recorder menu shows the full chapter name (#1673).
+  - The mic-refused card shakes on each repeated refusal (#1672).
+  - Book-menu tile captions wrap at 360 px (#1682, closes #1665). This changes every tile grid.
+  - Two #460 token batches (#1675, #1684).
+- **About:** a pure QR encoder (#1663) and the Play listing QR on the Android About screen (#1668, closes #1250).
+- **Translations:** Simplified Chinese is AI-drafted and complete (#1667). It merged last, after taking every key added today. One number formatter forces Latin digits (#1650). The Export project file name follows the app language (#1646). No reader has checked any of these.
+- **Storage:** an upgrade step that faults after commit now fails the open (#1647); the half-migrated case is #1656. The recorder reports a zero-sample decode after a thrown stop as unfinished (#1677).
+- **Tests and gates:**
+  - A locale-fit sweep at 360 px over every complete language (#1664).
+  - The embeds walk over every complete locale (#1666, #1678).
+  - The Export project zip read back in real Chromium (#1661).
+  - A Template Library retry test (#1680).
+  - The share ring's separate read phase (#1659); #1078 stays open for the DRI's call on how the arc looks.
+- **Release and CI:** a native lane skips its upload when its commit already uploaded (#1658, closes #1616; follow-ups in #1674). The rollback docs (#1648, #1654, #1669).
+- **Closed (19):**
+  - Completed: #1527, #1557, #1549, #1616, #1250, #1665, #1435, #1467, #1474.
+  - With `needs-device`: #272, #1294, #1333, #1387, #1569, and also #1250, #1549 and #1665.
+  - Not planned, settled by recorded decisions: #595, #1212, #1271, #1431, #1434.
+- **Filed:** #1656, #1665 (closed the same day), #1674.
+
+### Not run
+
+- **No device run of anything merged today.** Normalization also owes a listening test of -19 / -1.5. The licence ask owes a check that the OS share sheet still opens after the write. The waiting recording (#1549), the tile caption hyphenation (#1665) and the QR (#1250) are each verified only in Node, render tests or headless Chromium.
+- **Schema v14 is on develop.** A phone that opens a v14 build cannot open a schema-13 build again; AGENTS.md, "A rollback is not free". The next promotion is the DRI's call.
+
+### In progress
+
+- **For the DRI:** how the #1078 read arc looks, and #163 A-14, which needs a v15 schema step.
+- **For the requirements owner:** the #1272 A/B question, #1627's book-name half, #1638, and the #1685 switch label.
+- **Next:**
+  - #1455's change-licence tile.
+  - #1078 once its look is decided.
+  - The #1674 native-lane follow-ups.
+  - Arabic, after the right-to-left device pass.
+
+---
+
+## 2026-10-22 to 10-23 (day) — Sprint 5 day 4: Capacitor-or-Expo research, a Settings screen, Export project with a language list, five more AI-drafted languages, the issue pipeline in CI, and a tested release re-dispatch check, 31 PRs merged
+
+One coordinator session in orchestrator mode. No device results reached this session.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Capacitor or Expo (#1520):** "Research + ADR + throwaway proof (Recommended)", and "Hold native plugins, keep #38 (Recommended)". The research note and ADR 0016 (Proposed) are in (#1605). The note recommends staying on Capacitor. The DRI decides after the #1612 proof app runs on a phone.
+- **Trademark notice (#1581):** "Separate notice, outside the grant (Recommended)" (#1598).
+- **Release re-dispatch (#1613):** "Both", and #1316 item 2, "Never dispatch an RC after prod". At #1613's review cap: "Park; replace with a tested script (Recommended)". The script is #1636 (#1640, #1641), and #1613 is closed as superseded.
+- **Settings (#1575):** "Gear icon on Books header", and the theme tiles: "Remove, Settings only".
+- **Export project row (#1457):** "Book's own menu, below Share (Recommended)".
+- **Language list (#1492):** "Bundled searchable list (Recommended)", then "MIT grant is enough, bundle langtags". The ISO 639-3 attribution clause is met in About & licenses; ADR 0017 records it.
+- **Issue pipeline (#1442):** a close rule, "Close with a device label"; session links, "Keep on commits/PRs, drop from skills text (Recommended)". At #1615's cap: "Fix it, one more round (Recommended)".
+- **#1617 at its cap:** "Fix it, one more round (Recommended)".
+- **The Export project file name:** first "Localized suffix", then: "Actually, I'm not sure on that one: fixed English versus localized export name." and "Let's check with Tim, maybe." The code follows ADR 0014 point 8 (fixed English) until the requirements owner answers. Filed as #1627.
+- **A typed chapter number (#1272):** "Ask Tim (Recommended)".
+
+### Requirements owner
+
+- Round 5 on the project site's Review page is fully answered. The answers built today: U2a ("The chapter's own number (22 if someone typed 22)"), U3 ("When tapping the kebab to open the menu, show the full chapter name at the top of that menu"), U4a ("Leave existing duplicates alone and block only new ones") and U4b ("The app refuses and asks for a different name").
+- Round 6 is on the Review page and was posted on Zulip: V1, the Export project file name (#1627), and V2, whether a chapter's number can be typed (#1272). Both are open.
+
+### Completed
+
+- **Merged to develop (31):** #1599, #1600, #1598, #1601, #1602, #1609, #1611, #1614, #1607, #1610, #1620, #1621, #1622, #1604, #1626, #1605, #1618, #1623, #1615, #1631, #1632, #1634, #1629, #1637, #1633, #1617, #1640, #1624, #1641, #1630 and #1639.
+- **Settings:** a gear on the Books header opens Settings, with the theme and "Always show chapter numbers" (#1623). The theme tiles left the Books ≡ menu.
+- **Library:**
+  - A chapter keeps its own number when it is moved, and the move is announced as "Chapter N moved to place M." (#1634).
+  - A new or renamed book cannot take a name another book already has; existing duplicates are left alone (#1633). The store enforces it in the write's own transaction.
+  - A row's ⋮ menu shows the full book, chapter or segment name at its top, and screen readers get it (#1617). The recorder's own menu and the header crumbs still cut long names (#1284 stays open).
+- **Export:**
+  - Export project in a book's menu (#1624), with the book's language asked once at the first export (#1630).
+  - The language list is SIL's langtags, bundled and searchable: 9,354 entries, precached and lazily loaded (#1629).
+  - The Scripture Bundle gather step (#1614) and the 66-book Bible table (#1611).
+  - Share Book's files carry the book's licence (#1599).
+- **Pending takes (#38):** PR 1, schema v13 with audio revisions and take dispositions (#1618), and PR 2, segment and book deletes drop their pending rows (#1632). #1548 is closed under the design note's rule; its required tests passed 16/16 locally. #1557 and #1549 wait for PR 3.
+- **Translations:** Portuguese (#1602), Indonesian (#1622), Swahili (#1626), Hindi (#1631), and Russian (#1639) are AI-drafted and complete on develop, under the standing language rule. No reader of any of them has checked the text. Every PR that added a string after a language became complete had to add that language too; the coordinator held Russian (#1635, PR #1639) until last for that reason. #1639 covers every key on develop.
+- **Issue pipeline (#1442, closed):** the collateral script (#1610), the seven stage skills dev1–dev7 (#1615), and a "PR Body" CI check on every pull request (#1637). The check is advisory until the DRI makes it a required check in the ruleset.
+- **Release tooling:** `npm run check:redispatch` decides whether a native lane may be re-dispatched (#1640, #1641; #1636 closed). It was run read-only against real run data; it has not been used in a real release. The release bump is proved by its diff (#1607).
+- **Audio:** the loudness chain is hardened against a wrapped index and non-finite input (#1600).
+- **Closed:** #1442, #1454, #1468, #1477, #1481, #1485, #1492, #1528, #1538, #1542, #1548, #1552, #1559, #1579, #1582, #1585, #1594, #1595, #1597, #1603, #1606, #1619, #1625, #1628, #1635 and #1636; PR #1613 closed as superseded. #1538 closed with `needs-device` under the DRI's close rule.
+- **Filed and still open:** #1608 (trademark follow-ups), #1616 (native concurrency group), #1627 (export file name, for the requirements owner), #1638 (change a book's language later, for the requirements owner).
+
+### Not run
+
+- **No device run of anything merged today.** Export, the language ask, Settings, the menus, the translations and the pending-take changes are verified only in Node, jsdom render tests and headless Chromium.
+- **The 1.1.1 device check** still has no results here. #1518 and #1521 wait on them.
+- **The #1612 Expo proof app** has not been run on a phone.
+
+### In progress
+
+- **The open questions:** Round 6 V1 and V2, and #1638, all with the requirements owner.
+- **#38 PR 3:** `judgePending`. It closes #1557, after which #1549 follows. It also folds in a disposition record that can outlive its deleted segment, and corrects a stale line in note §6.
+- **Next languages:** zh-Hans. Arabic waits for the right-to-left device pass.
+- **#1455:** the licence choice when sharing, Sprint 7. It shares the export files, so it starts after today's export work settles.
+- **The DRI's ruleset call:** whether "PR Body" becomes a required check.
+
+---
+
+## 2026-10-21 (day) — Sprint 5 day 3: the 2.0 roadmap and its first waves, Spanish and French AI drafts live on develop, Scripture Bundle export end to end in tests, 39 PRs merged
+
+One coordinator session in orchestrator mode. The tester group ran 1.1.1 today; no device results are recorded here.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **2.0 roadmap** (from the requirements owner's 65 answers): launch waves A–F, accept ADR 0014, put Round 5 to the requirements owner on the project site, and update the sprint goal. Plan: `v2-roadmap-2026-10-21` (coordinator notes, not in the repo). The Sprint 5 milestone description carries the new goal.
+- **Standing direction:** "no need ot wait on me, come to me with strategic questions, but try to handle tactical issues and the review bench so i dont need to handle copy paste or other small tasks." And: "note that technical questions are for me". Technical questions go to the DRI, not the requirements owner.
+- **ADR 0014:** "Accept, Open 1 'no answer by 10-21' (Recommended)".
+- **U1b, the licence statement when none is chosen:** "Say nothing", refined to "\"No licence chosen.\"" because the bundle schema requires a `copyright` object.
+- **U2b:** "we have about and light/dark mode. lets add a settings screen as we will have new settings controls coming soon with v2 im sure". Filed as #1575.
+- **U3:** "we will have to discussi this, make it a question on the review artifact".
+- **U6c:** "Leave them as they are (Recommended)".
+- **Spanish:** "On, in the next tester build (Recommended)".
+- **Languages, standing rule:** "Yes, each goes on like Spanish (Recommended)". An AI draft that passes the machine gates goes live in the next tester build. Production waits for a promotion the DRI approves. Arabic waits for the right-to-left device pass.
+- **#1571 layout:** "Compact header, steps first (Recommended)".
+- **#1570 at the cap:** "Fix + round 5, hard stop (Recommended)".
+- **#1571 past the cap:** "Native apps only, round 6 hard stop (Recommended)". Browser steps are #1589.
+
+### Completed
+
+- **Merged to develop (39):** #1509, #1494, #1497, #1530, #1529, #1535, #1531, #1536 (#38 slice 1), #1534, #1441 (v2 plan), #1533, #1539, #1541, #1540 (#38 slice 2), #1543, #1537, #1544, #1506, #1554, #1555, #1550, #1547, #1561, #1558, #1560, #1563, #1573, #1577, #1553, #1572 (supersedes #1498), #1574, #1576, #1583, #1586, #1570, #1588, #1591, #1571 and #1592.
+- **Translations:**
+  - The locale registry, runtime language choice (ADR 0015) and the machine gates for AI drafts (#1553) are in.
+  - Spanish (#1586) and French (#1592) are AI-drafted and complete on develop. They turn on in the next tester build for a phone set to either language, and production waits for a promotion the DRI approves. No reader of either language has checked any of the text.
+  - #1571's 7 new mic-step sentences broke Spanish coverage in CI. Its head carried Spanish for them, and French carried them when it merged.
+- **Scripture Bundle export, built and tested in Node:**
+  - streaming MD5 (#1530);
+  - metadata against the pinned v1.0.0 schema (#1537, #1574);
+  - the licence tag in file names (#1573) and ID3 tags (#1577, #1583);
+  - the zip writer, read back in a test (#1588).
+  - Not run on a phone.
+- **Audio:** the chapter play queue and hook (#1506, #1550), and play a chapter from its row (#1561). The loudness chain is shared with the phone-check bench (#1576). #1591 reports a rejected resume of the in-tap audio context to the failure log.
+- **Templates:** Open Bible Stories as the first template package (#1533), the package contract v0 (#1539), plan a book from a package (#1554), and create a book from that plan in one transaction (#1558).
+- **Closed:** #1465, #1466, #1471, #1476, #1478, #1479, #1482, #1483, #1484, #1556, #1565, #1566, #1567, #1568, #1587 and #1590. #1565–#1568, #1587 and #1590 were filed today and closed today.
+- **Filed and still open:** #1564 (pending-take lifecycle design note), #1575 (Settings screen), #1578 (installed-web-app mic steps), #1579 (licence follow-ups), #1580, #1582, #1584 (loudness edge cases), #1585, #1589 (browser mic steps), #1594 (English zoom labels promise a visible extent) and #1595 (French Lows from review).
+- **Project site:** Round 5 is on the Review page. The questions the DRI answered today (U1b, U2b, U6a, U6c) are recorded there as final, so the requirements owner does not see them as open. U3 is not final: it is a discussion card for the DRI and the requirements owner.
+
+### Not run
+
+- **The 1.1.1 device check.** No results reached this session. #1518 and #1521 wait on them.
+- **No export, translation, template or play-queue path from today has run on a phone.**
+
+### In progress
+
+- **#1593:** the design note for the #38 slice 3 rebuild (#1546 is parked under its round-7 hard stop). Frank round 3 found that a pending row's stored base clip can be deleted by cleanup. The fix lane widens the clip-keeping rule to pending rows. Earlier rounds added a durable per-take disposition record, with fail-safe keep when the reason is unknown.
+- **#1581** (a contributor's trademark text in `LICENSE`): George round 1 has two Mediums, placement inside the MIT grant and over-broad wording. It needs the DRI's call on legal wording.
+- **#1521** is bench-clean and held for the 1.1.1 device check.
+
+### Next steps
+
+1. Merge #1593 when both lenses are clean at its head, then start rebuild PR 1 (the v13 step and the compatibility rules).
+2. Put #1581's wording to the DRI.
+3. When the 1.1.1 device check passes: merge #1521 and close #1518.
+4. Next language drafts under the standing rule: pt, id, sw, hi, ru, zh-Hans. Arabic waits for the right-to-left device pass.
+5. #1575 Settings and the #1579 Books-shelf item.
+
+## 2026-10-20 (day) — Sprint 5 day 2: v1.1.1 to TestFlight and the APK for the iOS silent switch, the v12 schema and its write paths on develop, 19 PRs merged
+
+One coordinator session in orchestrator mode.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **v12 and 1.1.x patches (#1522):** "Release branch for patches". #1522 merges to develop when bench-clean; 1.1.x patches ship from `release/v1.1.1`, cut at v1.1.0 on staging; no develop → staging promotion before the 1.2 cut without the DRI's go.
+- **1.1.1 red team F1:** "Accept + add a test case (Recommended)". A cold Record before any Play is now case 7 of the device check.
+- **1.1.1 red team F2:** "Exempt, reason recorded (Recommended)".
+- **Expo:** "lets definitely have an issue to research where the line is for us to move to expo". Filed as #1520 (Sprint 6).
+
+### Completed
+
+- **v1.1.1, the iOS silent-switch fix (#1518).** Field report on 1.1: recording worked and playback was silent with the ring/silent switch on. #1521 makes Play declare playback inside the iOS shell, and Record reset the session before the mic opens. #1523 cherry-picked it onto `release/v1.1.1` with the version bump (DB_VERSION stays 11), and the DRI merged #1523 and the promotion #1524.
+  - `PROMO_SHA` `a87c2f6f1d44d020f096b9cf1b6028853b1121a6`, parents `e3a4313f` (v1.1.0 on staging) then `99f6b88d` (#1523).
+  - `check:deploy` PASS: staging serves `1.1.1` at `a87c2f6f`.
+  - TestFlight run 39457261751 succeeded: version 1.1.1, build 1792516368.
+  - APK run 39457261742 succeeded. Signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as 1.1.0; the embedded `version.json` reads 1.1.1; APK SHA-256 `e928c14342a826189b9603720fea52bf5b85e82d0b523686a3f44b2adfb5ac51`.
+  - Build record: https://github.com/unfoldingWord/tc-mobile/pull/1524
+  - Release red team: no BLOCK items; F1 and F2 settled by the picks above.
+- **Merged to develop (19):** #1490 (v12 freeze, closed #1461), #1499, #1500, #1501, #1502, #1503, #1504, #1507, #1508, #1510 (closed #962), #1511, #1512 (closed #1379), #1514, #1515, #1516, #1517, #1519, #1522 (v12 schema, closed #1462) and #1525 (v12 write stamps and tombstones, closed #1463).
+- **Develop CI** is green at `f2ee059a`, #1525's merge.
+- **#1525's CI catch.** Its first head failed CI in `tests/storage.test.ts`: two whole-row "nothing else changed" tests passed only when setup and write landed in the same millisecond. Both now run under a controlled clock and assert that `modifiedAt` moved. A one-off suite run with every clock read on a new millisecond found no other case.
+- **Filed:** #1518 (iOS silent playback) and #1520 (where the line is for moving from Capacitor to Expo).
+- **Zulip:** the call follow-up with the requirements owner and the PM, an explanation of Expo versus Capacitor, and a reply on Capacitor 9 and silent-mode detection.
+
+### Not run
+
+- **The 1.1.1 device check.** The seven cases (silent switch on and off, speaker or earpiece, Record then Play, Play/Record/Play, lock and unlock then Play, Bluetooth, a cold Record) wait on the DRI's TestFlight run. #1518 stays open until then.
+- **The v12 device check** belongs to #1464, on the v1.2.0 tester build.
+
+### In progress
+
+- **#1521** (the silent-switch fix on develop) is bench-clean and held for the 1.1.1 device check.
+- **Findings open, no fix lane yet:** #1441 (George round 4, at the cap: needs the DRI's call), #1494, #1497, #1498, #1506, #1509.
+
+### Next steps
+
+1. When the 1.1.1 device check passes: merge #1521 into develop, close #1518, and record the results here. Develop needs a version above 1.1.1 before its next promotion.
+2. Start fix lanes for #1494, #1497, #1498, #1506 and #1509. #1468 slice b waits on #1506.
+3. Put #1441 to the DRI at the cap.
+4. Record the requirements owner's Round 3 and Round 4 answers as they arrive.
+
 ## 2026-10-19 (day, ran into 10-20 UTC) — Sprint 5 day 1: v2 Round 2 applied, all open issues triaged, five lane waves, 20 PRs merged, Round 3 to the requirements owner
 
 One coordinator session in orchestrator mode.

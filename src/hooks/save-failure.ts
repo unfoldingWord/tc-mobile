@@ -103,6 +103,7 @@ export function saveFailureKind(cause: unknown): SaveFailureKind {
 export type FailureKey =
   | "loadFailed"
   | "saveFailed"
+  | "bookNameTaken"
   | "eraseFailed"
   | "deleteSegmentFailed"
   | "noRoom";
@@ -115,5 +116,13 @@ export type FailureKey =
  * "a write failed" / "an erase failed") otherwise.
  */
 export function failureKey(cause: unknown, fallback: FailureKey): FailureKey {
-  return isQuotaExceeded(cause) ? "noRoom" : fallback;
+  if (isQuotaExceeded(cause)) return "noRoom";
+  // The one refusal a translator can fix by typing something else (#1272).
+  if (isBookNameTaken(cause)) return "bookNameTaken";
+  return fallback;
+}
+
+/** A book write refused because another book has the name (#1272). */
+export function isBookNameTaken(cause: unknown): boolean {
+  return readFailureShape(cause).name === "BookNameTakenError";
 }

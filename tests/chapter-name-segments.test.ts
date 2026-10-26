@@ -26,9 +26,21 @@ import { restingErase } from "./support";
 
 const mocks = vi.hoisted(() => ({
   chapterName: null as string | null,
+  alwaysNumber: false,
   renameChapter: vi.fn(),
   prepare: vi.fn(),
 }));
+// The S12 preference (#1575), driven per test. The real hook caches the stored
+// value at module scope, so it is replaced by the same composition over the
+// real `lib` table rather than seeded through `localStorage`.
+vi.mock("@/hooks/use-settings", async () => {
+  const { chapterNameShown } = await import("@/lib/settings");
+  const { strings: table } = await import("@/lib/strings");
+  return {
+    useChapterHeading: (name: string | null, n: number) =>
+      table.chapterHeading(chapterNameShown(name, mocks.alwaysNumber), n),
+  };
+});
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: () => ({
     bookName: "Mark",
@@ -68,6 +80,7 @@ const erase = restingErase();
 
 beforeEach(() => {
   mocks.chapterName = null;
+  mocks.alwaysNumber = false;
   mocks.renameChapter.mockReset();
   mocks.renameChapter.mockResolvedValue(true);
   mocks.prepare.mockReset();
@@ -197,6 +210,16 @@ describe("the chapter rename sheet (#1219)", () => {
     await click(strings.saveName);
     expect(mocks.renameChapter).toHaveBeenCalledWith("The sower");
   });
+
+  it("with Always show chapter numbers on, opens on the stored name and keeps it (#1623)", async () => {
+    mocks.chapterName = "The sower";
+    mocks.alwaysNumber = true;
+    await openRename();
+    expect(field().value).toBe("The sower");
+    await click(strings.saveName);
+    expect(mocks.renameChapter).toHaveBeenCalledTimes(1);
+    expect(mocks.renameChapter).toHaveBeenCalledWith("The sower");
+  });
 });
 
 describe("Share Chapter's MP3 name (#1218)", () => {
@@ -205,9 +228,13 @@ describe("Share Chapter's MP3 name (#1218)", () => {
     await mount();
     await click(strings.chapterMenuOpen);
     await click(strings.shareChapter);
-    expect(mocks.prepare).toHaveBeenCalledWith(
-      "chapter",
-      strings.shareFilename("Mark", 3, "The sower")
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    const [chapter, nameFile] = mocks.prepare.mock.calls[0]!;
+    expect(chapter).toBe("chapter");
+    // The hook supplies the book's highest chapter number (#1233).
+    expect(nameFile(3)).toBe(strings.shareFilename("Mark", 3, "The sower"));
+    expect(nameFile(150)).toBe(
+      strings.shareFilename("Mark", 3, "The sower", 150)
     );
   });
 });

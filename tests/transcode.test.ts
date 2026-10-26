@@ -34,6 +34,7 @@ import {
 } from "@/lib/storage/transcode";
 import type { ClipId, SegmentId } from "@/types/domain";
 import { clearAllStores, samplesOf, storeOrphanClip } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * Transcode on Finished (B8, D3) — the storage half, T1.
@@ -50,7 +51,7 @@ const samples = (n: number, value = 1000): Int16Array =>
 
 /** A recorded segment: the ids to address it and the PCM it holds. */
 async function recordedSegment(frames = 2000, value = 1000) {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   const clipId = newClipId();
@@ -80,7 +81,7 @@ describe("listPcmFinishedSegments", () => {
     // Recorded but not finished: PCM is the right encoding for it — not owed.
     const draft = await recordedSegment();
     // Never recorded: nothing to transcode.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const empty = await addSegment(chapter.id);
     void draft;
@@ -95,7 +96,7 @@ describe("listPcmFinishedSegments", () => {
     const { segmentId, clipId, pcm } = await recordedSegment();
     await setSegmentFinished(segmentId, true);
     const { mp3, peaks } = encoded(pcm);
-    await commitTranscode(segmentId, clipId, mp3, peaks);
+    await commitTranscode(segmentId, clipId, mp3, peaks, NO_STAGES_RUN);
 
     expect(await listPcmFinishedSegments()).toEqual([]);
   });
@@ -137,9 +138,9 @@ describe("commitTranscode", () => {
     const before = await getClipMeta(clipId);
     const { mp3, peaks } = encoded(pcm);
 
-    expect(await commitTranscode(segmentId, clipId, mp3, peaks)).toBe(
-      "committed"
-    );
+    expect(
+      await commitTranscode(segmentId, clipId, mp3, peaks, NO_STAGES_RUN)
+    ).toBe("committed");
 
     // The bytes under the clip id ARE the MP3 now — the PCM is gone with them.
     const db = await getDb();
@@ -175,6 +176,25 @@ describe("commitTranscode", () => {
     expect(mp3.byteLength).toBeLessThan(pcm.length * 2);
   });
 
+  it("writes the chain's record in the same transaction as the MP3 (#1433)", async () => {
+    const { segmentId, clipId, pcm } = await recordedSegment();
+    await setSegmentFinished(segmentId, true);
+    expect((await getClipMeta(clipId))?.processing).toBeNull();
+    const { mp3, peaks } = encoded(pcm);
+    const record = {
+      stages: [{ id: "hpf", version: 1 }],
+      measuredLufs: -25,
+      measuredTruePeakDbtp: -6,
+      appliedGainDb: 6,
+    } as const;
+
+    await commitTranscode(segmentId, clipId, mp3, peaks, record);
+
+    const meta = await getClipMeta(clipId);
+    expect(meta?.encoding).toBe("mp3");
+    expect(meta?.processing).toEqual(record);
+  });
+
   it("is stale, and writes nothing, when the segment was un-finished meanwhile", async () => {
     // D3: PCM while a segment is being worked on. A translator who un-ticks
     // Finished during the encode must keep the PCM.
@@ -183,7 +203,9 @@ describe("commitTranscode", () => {
     const { mp3, peaks } = encoded(pcm);
     await setSegmentFinished(segmentId, false);
 
-    expect(await commitTranscode(segmentId, clipId, mp3, peaks)).toBe("stale");
+    expect(
+      await commitTranscode(segmentId, clipId, mp3, peaks, NO_STAGES_RUN)
+    ).toBe("stale");
 
     expect((await getClipMeta(clipId))?.encoding).toBe("pcm");
     expect(Array.from((await storedPcm(clipId))!)).toEqual(Array.from(pcm));
@@ -203,7 +225,9 @@ describe("commitTranscode", () => {
       finished: true,
     });
 
-    expect(await commitTranscode(segmentId, clipId, mp3, peaks)).toBe("stale");
+    expect(
+      await commitTranscode(segmentId, clipId, mp3, peaks, NO_STAGES_RUN)
+    ).toBe("stale");
 
     expect((await getClipMeta(newClip))?.encoding).toBe("pcm");
     expect(Array.from((await storedPcm(newClip))!)).toEqual(Array.from(newer));
@@ -230,7 +254,9 @@ describe("commitTranscode", () => {
     );
     await storeOrphanClip(clipId, pcm); // the old clip, back as an orphan
 
-    expect(await commitTranscode(segmentId, clipId, mp3, peaks)).toBe("stale");
+    expect(
+      await commitTranscode(segmentId, clipId, mp3, peaks, NO_STAGES_RUN)
+    ).toBe("stale");
 
     expect((await getClipMeta(clipId))?.encoding).toBe("pcm");
     expect(Array.from((await storedPcm(clipId))!)).toEqual(Array.from(pcm));
@@ -240,7 +266,13 @@ describe("commitTranscode", () => {
     const { pcm } = await recordedSegment();
     const { mp3, peaks } = encoded(pcm);
     expect(
-      await commitTranscode("gone" as SegmentId, newClipId(), mp3, peaks)
+      await commitTranscode(
+        "gone" as SegmentId,
+        newClipId(),
+        mp3,
+        peaks,
+        NO_STAGES_RUN
+      )
     ).toBe("stale");
   });
 
@@ -250,11 +282,23 @@ describe("commitTranscode", () => {
     const { segmentId, clipId, pcm } = await recordedSegment();
     await setSegmentFinished(segmentId, true);
     const first = encoded(pcm);
-    await commitTranscode(segmentId, clipId, first.mp3, first.peaks);
+    await commitTranscode(
+      segmentId,
+      clipId,
+      first.mp3,
+      first.peaks,
+      NO_STAGES_RUN
+    );
     const second = encoded(samples(2000, 7)); // different bytes, on purpose
 
     expect(
-      await commitTranscode(segmentId, clipId, second.mp3, second.peaks)
+      await commitTranscode(
+        segmentId,
+        clipId,
+        second.mp3,
+        second.peaks,
+        NO_STAGES_RUN
+      )
     ).toBe("already");
 
     const meta = await getClipMeta(clipId);
@@ -272,7 +316,8 @@ describe("commitTranscode", () => {
         segmentId,
         clipId,
         new Uint8Array(0),
-        computePeaks(pcm, 4)
+        computePeaks(pcm, 4),
+        NO_STAGES_RUN
       )
     ).rejects.toThrow(/empty/);
 
@@ -290,7 +335,7 @@ describe("commitTranscode", () => {
     backing.set(mp3, 5000);
     const view = backing.subarray(5000, 5000 + mp3.length);
 
-    await commitTranscode(segmentId, clipId, view, peaks);
+    await commitTranscode(segmentId, clipId, view, peaks, NO_STAGES_RUN);
 
     const data = await (await getDb()).get("clipData", clipId);
     expect(data!.byteLength).toBe(mp3.length);
@@ -308,7 +353,7 @@ describe("the lossy-generation count (Q5)", () => {
 
     await setSegmentFinished(segmentId, true);
     let enc = encoded(pcm);
-    await commitTranscode(segmentId, clipId, enc.mp3, enc.peaks);
+    await commitTranscode(segmentId, clipId, enc.mp3, enc.peaks, NO_STAGES_RUN);
     expect((await getClipMeta(clipId))?.generation).toBe(1);
 
     // The recorder's edit-save: a replacement take, PCM, new clip id. It
@@ -326,7 +371,7 @@ describe("the lossy-generation count (Q5)", () => {
 
     await setSegmentFinished(segmentId, true);
     enc = encoded(samples(2500, 900));
-    await commitTranscode(segmentId, edited, enc.mp3, enc.peaks);
+    await commitTranscode(segmentId, edited, enc.mp3, enc.peaks, NO_STAGES_RUN);
     expect((await getClipMeta(edited))?.generation).toBe(2);
 
     // Erase clears the take; the next recording has no prior to inherit from.

@@ -14,6 +14,7 @@ import {
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * Quiescing a pass that is ALREADY walking the backlog (#205, George R5 P2-3).
@@ -47,6 +48,8 @@ function segment(): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
+    audioRevision: 0,
   };
 }
 
@@ -74,6 +77,7 @@ function resolvedPcm(clipId: ClipId, samples: Int16Array): SegmentAudio<Clip> {
         byteLength: samples.length * 2,
         transcodeStallCount: 0,
         peaks: null,
+        processing: null,
       },
       samples,
     },

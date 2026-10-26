@@ -25,7 +25,6 @@ afterEach(() => installStrings(stringsEn));
 const S = {
   chapterName: "CHAPTER-SENTINEL",
   segmentHeading: "SEGMENT-SENTINEL",
-  failuresMarker: "FAILURES-SENTINEL",
   shareMissing: "SHAREMISSING-SENTINEL",
   shareBookMissing: "BOOKMISSING-SENTINEL",
   takeRecoverDiscard: "DISCARD-SENTINEL",
@@ -37,7 +36,6 @@ const sentinelTable: Strings = {
   ...stringsEn,
   chapterName: () => S.chapterName,
   segmentHeading: () => S.segmentHeading,
-  failuresMarker: () => S.failuresMarker,
   shareMissing: () => S.shareMissing,
   shareBookMissing: () => S.shareBookMissing,
   takeRecoverDiscard: S.takeRecoverDiscard,
@@ -50,8 +48,6 @@ const EMBEDDERS: ReadonlyArray<
   readonly [string, (t: Strings) => string, string]
 > = [
   ["chapterHeading", (t) => t.chapterHeading(null, 3), S.chapterName],
-  ["chapterReorderMoved", (t) => t.chapterReorderMoved(1, 2), S.chapterName],
-  ["chapterReorderStayed", (t) => t.chapterReorderStayed(1), S.chapterName],
   ["editSegment", (t) => t.editSegment(1, null), S.segmentHeading],
   [
     "editSegmentFinished",
@@ -64,7 +60,6 @@ const EMBEDDERS: ReadonlyArray<
     (t) => t.recorderBreadcrumb("Book", "Chapter", 1, null),
     S.segmentHeading,
   ],
-  ["menuOpenWithFailures", (t) => t.menuOpenWithFailures(2), S.failuresMarker],
   ["shareFilename", (t) => t.shareFilename("Book", 4), S.chapterName],
   ["shareBookPartial", (t) => t.shareBookPartial(2), S.shareMissing],
   [
@@ -130,7 +125,7 @@ describe("an entry that embeds another resolves it within its own table (#169)",
   );
 
   it("covers every entry the self-reference pin lists as reaching `this`", () => {
-    expect(EMBEDDERS).toHaveLength(14);
+    expect(EMBEDDERS).toHaveLength(11);
   });
 
   it("follows a table that is not the installed one", () => {

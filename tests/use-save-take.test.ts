@@ -43,9 +43,10 @@ import { storeOrphanClip } from "./support";
  * whole of the two operations minus React, against fake-indexeddb through the
  * real store helpers. Same split as `performErase` in `use-erase-segment.ts`.
  *
- * These tests do not mount the hook or exercise its `useState` slot,
- * `savingRef` double-tap guard or `onSaved` latest-ref. The static render
- * harness does not run hook effects or interactions.
+ * These tests do not mount the hook or exercise its `useState` slot or
+ * `onSaved` latest-ref. The slot's double-tap guard and its waiting
+ * recordings are `createTakeSlot`, covered in `tests/take-slot.test.ts`. The
+ * static render harness does not run hook effects or interactions.
  * The transcode sweep is injected here rather
  * than run: it starts the MP3 encoder in a Web Worker, which does not exist in
  * Node — so what these tests assert about it is whether it is ASKED for, which
@@ -58,7 +59,7 @@ const samples = (length: number, value = 1000): Int16Array =>
 
 /** A book → chapter → one never-recorded segment. */
 const freshSegment = async (): Promise<SegmentId> => {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   return segment.id;
@@ -98,6 +99,7 @@ const heldTake = (over: {
     offset: over.offset ?? 0,
     finished: over.finished ?? false,
     editOnly: over.editOnly ?? false,
+    baseRevision: 0,
   });
 
 beforeEach(async () => {

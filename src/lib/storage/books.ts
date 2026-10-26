@@ -19,9 +19,11 @@
 
 import type { IDBPDatabase } from "idb";
 
+import type { PlaylistCandidate } from "@/lib/audio/chapter-queue";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
+import { deleteClipIfUnreferenced, type ClipUseTx } from "./clips";
 import { isFinished } from "./takes";
 import type {
   Book,
@@ -53,8 +55,8 @@ const uuid = (): string => crypto.randomUUID();
  * **First unused, not `count + 1`** (#360). The count-based namer this replaces
  * assumed books are only ever added. Once a book can be deleted, deleting
  * "Book 001" leaves one book and makes the next one "Book 002" as well — two
- * identical rows. Names have never been unique keys (rename already allows two
- * "Mark"s), but the delete confirm puts the book's name in its accessible name,
+ * identical rows. Names were not unique keys then (new writes are held to
+ * one since #1272, but a phone may still hold two "Mark"s, U4a), and the delete confirm puts the book's name in its accessible name,
  * so a duplicate leaves a destructive, irreversible dialog unable to say which
  * book it is about to destroy — on a screen built for people who may not read,
  * where discarding practice books is the normal training workflow.
@@ -85,6 +87,49 @@ export function nextBookNumber(
 }
 
 /**
+ * Thrown when a name is already another book's (#1272, S13: "require unique
+ * names for the books"). Matched by `name` in `hooks/save-failure.ts`, so the
+ * New Book and Rename sheets can ask for a different name in place.
+ */
+export class BookNameTakenError extends Error {
+  override readonly name = "BookNameTakenError";
+  constructor() {
+    super("Another book already has this name");
+  }
+}
+
+/**
+ * The key two book names are compared by: Unicode NFC, trimmed, runs of
+ * whitespace collapsed to one space, lower-cased. So "Mark", " mark " and
+ * "MARK" are one name, and a name typed with a combining accent equals the
+ * same name typed precomposed. Not locale-sensitive (`toLowerCase`, not
+ * `toLocaleLowerCase`), so the answer does not change with the phone's
+ * language. Pure; the one definition, used by the writes below.
+ */
+export function bookNameKey(name: string): string {
+  return name.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Refuse `name` if a book other than `exceptId` already holds it (#1272).
+ * Unnamed books (`name === null`) hold nothing. Existing duplicates are left
+ * alone (U4a): this only looks at the name being written, never at the rest of
+ * the shelf. Called inside the write's own transaction, with the shelf that
+ * transaction read.
+ */
+export function assertBookNameFree(
+  shelf: readonly Pick<Book, "id" | "name">[],
+  name: string,
+  exceptId?: BookId
+): void {
+  const key = bookNameKey(name);
+  for (const book of shelf) {
+    if (book.id === exceptId || book.name === null) continue;
+    if (bookNameKey(book.name) === key) throw new BookNameTakenError();
+  }
+}
+
+/**
  * Create a book, named by the translator (#314) or by the placeholder.
  *
  * The name is trimmed, exactly as {@link renameBook} trims it — one validation
@@ -108,9 +153,10 @@ export function nextBookNumber(
  * born named; and the read is a `getAll` over a metadata-only store (no clip
  * bytes live here) at the frequency a person taps Create.
  *
- * A supplied name is never made unique: a facilitator may deliberately have two
- * books called "Mark", and {@link renameBook} has always allowed it. That is
- * also why the New Book dialog sends `""` rather than the placeholder string it
+ * A supplied name that another book already has is refused with
+ * {@link BookNameTakenError} (#1272, S13; compared by {@link bookNameKey}); it
+ * is never silently altered to be unique. Books already on a phone that share a
+ * name are left alone (U4a). That is also why the New Book dialog sends `""` rather than the placeholder string it
  * displayed when the field is untouched — a supplied "Book 001" would bypass the
  * derivation below, and two documents open on the same shelf would both write it
  * (George R1 P2-3).
@@ -126,6 +172,9 @@ export async function createBook(
   const trimmed = name.trim();
   try {
     const shelf = await tx.store.getAll();
+    // Names are unique for NEW books (#1272, S13). Checked on the shelf this
+    // same transaction read, so two overlapping creates cannot both pass.
+    if (trimmed !== "") assertBookNameFree(shelf, trimmed);
     const book: Book = {
       id: uuid() as BookId,
       name: trimmed === "" ? null : trimmed,
@@ -143,11 +192,20 @@ export async function createBook(
       // A new book lands at the TOP of the shelf (#338), as it always has; the
       // books already there move down one, in the order the user left them.
       shelfPosition: 0,
+      // v12 (#1462): made blank, licence not chosen yet (R20: the share step
+      // pre-selects CC BY-SA 4.0 without storing it), written now.
+      provenance: { kind: "blank" },
+      licence: null,
+      modifiedAt: now,
     };
     await tx.store.put(book);
     for (const [index, row] of byShelfPosition(shelf).entries()) {
       if (row.shelfPosition !== index + 1) {
-        await tx.store.put({ ...row, shelfPosition: index + 1 });
+        await tx.store.put({
+          ...row,
+          shelfPosition: index + 1,
+          modifiedAt: now,
+        });
       }
     }
     await tx.done;
@@ -168,7 +226,7 @@ export async function createBook(
  * could hold — falls back to the pre-#338 rule, newest created first, and
  * then to key order (`getAll`'s order; the sort is stable).
  */
-function byShelfPosition(books: readonly Book[]): Book[] {
+export function byShelfPosition(books: readonly Book[]): Book[] {
   return books
     .slice()
     .sort(
@@ -224,7 +282,11 @@ export async function renameBook(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const book = await tx.store.get(id);
-  if (!book) throw new Error(`No such book: ${id}`);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${id}`);
+  }
 
   const trimmed = name.trim();
   // Blank keeps the current value — a named book keeps its name, and an
@@ -235,8 +297,24 @@ export async function renameBook(
     await tx.done; // idempotent no-op: no write, no recency bump.
     return book;
   }
+  // A real rename to a name another book holds is refused (#1272, S13). Not
+  // reached for the no-op above, so renaming one of two existing duplicates to
+  // its own current name stays what it was (U4a). Same transaction as the put.
+  if (nextName !== null) {
+    try {
+      assertBookNameFree(await tx.store.getAll(), nextName, id);
+    } catch (cause) {
+      await abortQuietly(() => tx.abort(), tx.done);
+      throw cause;
+    }
+  }
 
-  const updated: Book = { ...book, name: nextName, updatedAt: now };
+  const updated: Book = {
+    ...book,
+    name: nextName,
+    updatedAt: now,
+    modifiedAt: now,
+  };
   await tx.store.put(updated);
   await tx.done;
   return updated;
@@ -278,14 +356,58 @@ export async function setBookCoverColour(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const book = await tx.store.get(id);
-  if (!book) throw new Error(`No such book: ${id}`);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${id}`);
+  }
 
   if (key === (book.coverColourKey ?? null)) {
     await tx.done; // idempotent no-op: no write, no recency bump.
     return book;
   }
 
-  const updated: Book = { ...book, coverColourKey: key, updatedAt: now };
+  const updated: Book = {
+    ...book,
+    coverColourKey: key,
+    updatedAt: now,
+    modifiedAt: now,
+  };
+  await tx.store.put(updated);
+  await tx.done;
+  return updated;
+}
+
+/**
+ * Write the language a book's recordings are in, once (#1492, R12).
+ * Get-or-create in ONE readwrite transaction: a book that already has a
+ * language keeps it and nothing is written, so a second ask (another tab, a
+ * stale card) never replaces the first answer. Returns the stored book, whose
+ * language is the one to export. `tag` is trimmed and a blank one refused; it
+ * is not checked against the bundled list, so a stored tag keeps loading if a
+ * later list drops it. Stamps `modifiedAt`, not `updatedAt`: naming the
+ * language is not shelf activity.
+ */
+export async function setBookLanguageOnce(
+  id: BookId,
+  tag: string,
+  now: number = Date.now()
+): Promise<Book> {
+  const trimmed = tag.trim();
+  if (trimmed === "") throw new Error("A blank language tag is not a language");
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  const book = await tx.store.get(id);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${id}`);
+  }
+  if (book.languageCode !== null && book.languageCode.trim() !== "") {
+    await tx.done; // already answered: no write.
+    return book;
+  }
+  const updated: Book = { ...book, languageCode: trimmed, modifiedAt: now };
   await tx.store.put(updated);
   await tx.done;
   return updated;
@@ -329,8 +451,11 @@ export function isStaleBookFailure(
 }
 
 /**
- * The stores a book delete touches: the tree, and both halves of every clip
- * that goes with it.
+ * The stores a book delete touches: the tree, both halves of every clip that
+ * goes with it, and the tombstone it leaves (#1463). v13 (#38): the pending
+ * rows of the segments it deletes (deleted with them, rebuild PR 2) and the
+ * rows a clip's use is counted from, and the disposition records of the
+ * segments it deletes.
  */
 const DELETE_BOOK_STORES = [
   "books",
@@ -339,6 +464,9 @@ const DELETE_BOOK_STORES = [
   "takes",
   "clipMeta",
   "clipData",
+  "tombstones",
+  "pendingTakes",
+  "takeDispositions",
 ] as const;
 
 /**
@@ -382,6 +510,8 @@ type DeleteBookTx = ReturnType<typeof openDeleteBookTx>;
  *     clips at once, so an unconditional delete would, the day an import
  *     dedupes, punch a book's worth of holes in another book's audio. Same
  *     guard `clearSegmentTake` already holds; the take write's is #68.
+ *   - **Pending rows go with their segments** (#38 rebuild PR 2), and the
+ *     clips their `stored` bases named are released by the same check.
  *
  * **The walk goes by the parent links, not the ordering arrays.** `chapterIds`
  * and `segmentIds` are denormalised order; `chapter.bookId` and
@@ -466,24 +596,81 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
   }
 
   for (const take of doomedTakes) await takes.delete(take.id);
-  for (const segmentId of doomedSegments) await segments.delete(segmentId);
+  // The clips this delete lets go of: every doomed take's, and the `stored`
+  // base of every doomed segment's pending row (#38 rebuild PR 2).
+  const released = new Set(doomedTakes.map((take) => take.clipId));
+  for (const segmentId of doomedSegments) {
+    await segments.delete(segmentId);
+    await deleteDispositionsOf(tx, segmentId);
+    for (const clipId of await deletePendingRowOf(tx, segmentId)) {
+      released.add(clipId);
+    }
+  }
   for (const chapter of ownedChapters) await chapters.delete(chapter.id);
   // `delete` on an absent key is a no-op in IndexedDB, so the orphan case needs
-  // no branch here: the row goes if it is there, and nothing is written if not.
+  // no branch for the delete: the row goes if it is there, and nothing is
+  // written if not. The tombstone (#1463) does branch: it records that THIS
+  // call removed a book, so a book row already gone (an orphaned tree, or a
+  // repeated delete) gets none. One row for the book, not one per segment in
+  // its tree: the book's tombstone covers everything under it.
+  const book = await books.get(bookId);
   await books.delete(bookId);
+  if (book) {
+    await tx.objectStore("tombstones").add({
+      entity: "book",
+      entityId: bookId,
+      parentId: null,
+      deletedAt: Date.now(),
+    });
+  }
 
-  // The take rows are gone, so what `getAll` returns now is exactly the set of
-  // references that survive this delete. A clip nothing in that set names is
-  // unreachable audio and goes with the book; a clip something still names is
-  // another segment's only copy and stays.
-  const survivingClipIds = new Set(
-    (await takes.getAll()).map((take) => take.clipId)
-  );
-  const doomedClipIds = new Set(doomedTakes.map((take) => take.clipId));
-  for (const clipId of doomedClipIds) {
-    if (survivingClipIds.has(clipId)) continue;
-    await tx.objectStore("clipMeta").delete(clipId);
-    await tx.objectStore("clipData").delete(clipId);
+  // The take rows and the pending rows are gone, so the clip-use check sees
+  // only the references that survive this delete. A clip nothing uses is
+  // unreachable audio and goes with the book; a clip another segment's take,
+  // or another segment's pending row's stored base, still names stays (v13,
+  // #38). The surviving take rows are read once, after the last take delete,
+  // and nothing below deletes a take, so the set stays exact for every clip.
+  const takeClips = new Set((await takes.getAll()).map((take) => take.clipId));
+  for (const clipId of released) {
+    await deleteClipIfUnreferenced(tx, clipId, takeClips);
+  }
+}
+
+/**
+ * Delete a segment's pending row (#38 rebuild PR 2,
+ * docs/design/pending-take-lifecycle.md §3 and cell RP-D), on the transaction
+ * that deletes the segment, and return the clip its `stored` base named, for
+ * the caller to release once every row it is deleting is gone. A row ends
+ * only in the owning transaction or with its segment; this is the second.
+ * No disposition is written: the segment's records go in the same
+ * transaction, because a deleted segment is final. A row of any take goes,
+ * this copy's or another's, refused or not: nothing can install audio on a
+ * deleted segment, and the replay would only delete the row as `gone`.
+ * Idempotent: a segment with no row returns `[]` and writes nothing.
+ */
+async function deletePendingRowOf(
+  tx: ClipUseTx,
+  segmentId: SegmentId
+): Promise<ClipId[]> {
+  const rows = tx.objectStore("pendingTakes");
+  const row = await rows.get(segmentId);
+  if (!row) return [];
+  await rows.delete(segmentId);
+  return row.base.kind === "stored" ? [row.base.sourceClipId] : [];
+}
+
+/**
+ * Delete a segment's disposition records (v13, #38), on the transaction that
+ * deletes the segment: the records' only deletion, because a deleted segment
+ * is final and nothing can install audio there again.
+ */
+async function deleteDispositionsOf(
+  tx: ClipUseTx,
+  segmentId: SegmentId
+): Promise<void> {
+  const records = tx.objectStore("takeDispositions");
+  for (const clipId of await records.index("bySegment").getAllKeys(segmentId)) {
+    await records.delete(clipId);
   }
 }
 
@@ -568,7 +755,7 @@ function planReorder<Id extends string, R extends { readonly id: Id }>(
  * holds inline above. (A failed *request* already aborts on its own; this
  * covers the thrown case.)
  */
-async function abortQuietly(
+export async function abortQuietly(
   abort: () => void,
   done: Promise<void>
 ): Promise<void> {
@@ -598,9 +785,9 @@ async function abortQuietly(
  *
  * **`max + 1`, deliberately NOT {@link nextBookNumber}'s first-unused rule.** A
  * book's placeholder is a label and reusing a freed one is the point (#360); a
- * chapter's `number` is its position in the export concatenation, so filling a
- * hole left by a removed chapter would drop the new recording into the middle
- * of the book rather than at the end.
+ * chapter's `number` is its own (#1272) and a new chapter goes at the end of
+ * the book, so filling a hole left by a removed chapter would give it a number
+ * that sits among the earlier ones rather than after them.
  */
 export function nextChapterNumber(existingNumbers: Iterable<number>): number {
   let max = 0;
@@ -631,7 +818,11 @@ export async function addChapter(
   const db = await getDb();
   const tx = db.transaction(["books", "chapters"], "readwrite");
   const book = await tx.objectStore("books").get(bookId);
-  if (!book) throw new Error(`No such book: ${bookId}`);
+  if (!book) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such book: ${bookId}`);
+  }
 
   let resolvedNumber = number;
   if (resolvedNumber === undefined) {
@@ -644,6 +835,7 @@ export async function addChapter(
   }
 
   const trimmed = name.trim();
+  const now = Date.now();
   const chapter: Chapter = {
     id: uuid() as ChapterId,
     bookId,
@@ -653,12 +845,17 @@ export async function addChapter(
     // Rename (#264).
     name: trimmed === "" ? null : trimmed,
     segmentIds: [],
+    // v12 (#1462): the write time, and no template behind a hand-made chapter.
+    createdAt: now,
+    modifiedAt: now,
+    templateKey: null,
   };
   await tx.objectStore("chapters").put(chapter);
   await tx.objectStore("books").put({
     ...book,
     chapterIds: [...book.chapterIds, chapter.id],
-    updatedAt: Date.now(),
+    updatedAt: now,
+    modifiedAt: now,
   });
   await tx.done;
   return chapter;
@@ -699,7 +896,11 @@ export async function renameChapter(
   const db = await getDb();
   const tx = db.transaction(["chapters", "books"], "readwrite");
   const chapter = await tx.objectStore("chapters").get(id);
-  if (!chapter) throw new Error(`No such chapter: ${id}`);
+  if (!chapter) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such chapter: ${id}`);
+  }
 
   const trimmed = name.trim();
   // Blank clears back to the default "Chapter N" (chapters, unlike books, have
@@ -710,13 +911,17 @@ export async function renameChapter(
     return chapter;
   }
 
-  const updated: Chapter = { ...chapter, name: nextName };
+  const updated: Chapter = { ...chapter, name: nextName, modifiedAt: now };
   await tx.objectStore("chapters").put(updated);
   // Bump the parent book's `updatedAt`, in this same transaction. A dangling
   // parent is skipped rather than failing a rename that otherwise succeeded.
   const book = await tx.objectStore("books").get(chapter.bookId);
   if (book) {
-    await tx.objectStore("books").put({ ...book, updatedAt: now });
+    await tx.objectStore("books").put({
+      ...book,
+      updatedAt: now,
+      modifiedAt: now,
+    });
   }
   await tx.done;
   return updated;
@@ -740,13 +945,13 @@ export async function renameChapter(
  *     aborted on a thrown error (the `deleteBook` guard) — the array and the
  *     numbers commit together or not at all. A crash between the two would
  *     leave badges and export file names that disagree with the order.
- *   - **Dense renumbering** (DRI pick, #953 scope Q1): every resolvable
- *     chapter's `number` becomes its visible position + 1, so the badges read
- *     1..N and the export's `nameChapter(number)` follows the order. Only rows
- *     whose number changes are written. A dangling id is not numbered — it has
- *     no record — and export still counts it as missing.
- *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6"; only the
- *     number badge and the file name follow position.
+ *   - **No renumbering** (#1272, owner answer U2a, 2026-10-21: "The chapter's
+ *     own number (22 if someone typed 22)", not "Its place in the list (1, 2,
+ *     3)"). A chapter keeps the `number` the template gave or a person typed;
+ *     only `book.chapterIds` changes, so no chapter row is written. This
+ *     replaces #953's dense renumbering (its scope Q1). A dangling id has no
+ *     record, and export still counts it as missing.
+ *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6".
  *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
  *     activity on the book. This is the one tree edit that differs from
  *     `renameChapter` here, on purpose. (The shelf order does not depend on
@@ -754,8 +959,8 @@ export async function renameChapter(
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
- * Returns the book's resolvable chapters in their new order, with the numbers
- * they now hold — what a caller patches its rows from.
+ * Returns the book's resolvable chapters in their new order, each with the
+ * number it keeps — what a caller patches its rows from.
  */
 export async function moveChapter(
   chapterId: ChapterId,
@@ -783,21 +988,12 @@ export async function moveChapter(
       return plan.order;
     }
 
-    // No `updatedAt`: a reorder is not activity on the book (scope Q4).
-    await books.put({ ...book, chapterIds: plan.ids });
-    const renumbered: Chapter[] = [];
-    for (const [position, row] of plan.order.entries()) {
-      const number = position + 1;
-      if (row.number === number) {
-        renumbered.push(row);
-        continue;
-      }
-      const updated: Chapter = { ...row, number };
-      await chapters.put(updated);
-      renumbered.push(updated);
-    }
+    // No `updatedAt`: a reorder is not activity on the book (scope Q4). It
+    // is still a write, so `modifiedAt` moves (J6).
+    const now = Date.now();
+    await books.put({ ...book, chapterIds: plan.ids, modifiedAt: now });
     await tx.done;
-    return renumbered;
+    return plan.order;
   } catch (cause) {
     await abortQuietly(() => tx.abort(), tx.done);
     throw cause;
@@ -841,14 +1037,20 @@ export async function moveBook(
       await tx.done; // idempotent no-op: no write.
       return shelf;
     }
+    const now = Date.now();
     const placed: Book[] = [];
     for (const [position, book] of order.entries()) {
       if (book.shelfPosition === position) {
         placed.push(book);
         continue;
       }
-      // No `updatedAt`: a reorder is not activity on the book.
-      const updated: Book = { ...book, shelfPosition: position };
+      // No `updatedAt`: a reorder is not activity on the book. `modifiedAt`
+      // moves: the row is written (J6).
+      const updated: Book = {
+        ...book,
+        shelfPosition: position,
+        modifiedAt: now,
+      };
       await tx.store.put(updated);
       placed.push(updated);
     }
@@ -880,6 +1082,21 @@ export async function resolveBookChapters(
   return { chapters, missing: resolved.length - chapters.length };
 }
 
+/**
+ * The highest chapter number in the book that holds `chapterId`, or 0 when
+ * the chapter or its book is gone. Share Chapter pads its file's number to
+ * this width (#1233), the same width Share Book uses for that book, so one
+ * chapter's file name does not depend on what else is being shared.
+ */
+export async function highestChapterNumber(
+  chapterId: ChapterId
+): Promise<number> {
+  const chapter = await getChapter(chapterId);
+  if (!chapter) return 0;
+  const { chapters } = await resolveBookChapters(chapter.bookId);
+  return Math.max(chapter.number, ...chapters.map((c) => c.number));
+}
+
 // ── Segments ─────────────────────────────────────────────────────────────
 
 /**
@@ -892,8 +1109,13 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
   const db = await getDb();
   const tx = db.transaction(["chapters", "segments"], "readwrite");
   const chapter = await tx.objectStore("chapters").get(chapterId);
-  if (!chapter) throw new Error(`No such chapter: ${chapterId}`);
+  if (!chapter) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such chapter: ${chapterId}`);
+  }
 
+  const now = Date.now();
   const segment: Segment = {
     id: uuid() as SegmentId,
     chapterId,
@@ -904,11 +1126,17 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
     label: null,
     activeTakeId: null,
     status: "not-started",
+    // v12 (#1462): as addChapter.
+    createdAt: now,
+    modifiedAt: now,
+    templateKey: null,
+    audioRevision: 0,
   };
   await tx.objectStore("segments").put(segment);
   await tx.objectStore("chapters").put({
     ...chapter,
     segmentIds: [...chapter.segmentIds, segment.id],
+    modifiedAt: now,
   });
   await tx.done;
   return segment;
@@ -921,9 +1149,10 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
  * The chapter-name rules, deliberately ({@link renameChapter}): get-then-put in
  * ONE readwrite transaction, the label trimmed, a blank/whitespace-only rename
  * CLEARS it back to `null` (a segment has a default — its ordinal), and a
- * rename to the current label writes nothing. Only `label` changes: the
- * ordinal, the chapter's order, the take pointer and the status are the audio's
- * identity and progress, and a label is neither.
+ * rename to the current label writes nothing. Only `label` changes, with the
+ * `modifiedAt` every put stamps (#1463): the ordinal, the chapter's order,
+ * the take pointer and the status are the audio's identity and progress, and
+ * a label is neither.
  *
  * Unlike a chapter rename it does not bump the book's `updatedAt`: the store is
  * `segments` alone, matching `addSegment` and `setSegmentFinished`, the other
@@ -936,7 +1165,11 @@ export async function renameSegment(
   const db = await getDb();
   const tx = db.transaction("segments", "readwrite");
   const segment = await tx.store.get(id);
-  if (!segment) throw new Error(`No such segment: ${id}`);
+  if (!segment) {
+    // A thrown error does not roll the transaction back; abort it first.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw new Error(`No such segment: ${id}`);
+  }
 
   const trimmed = label.trim();
   const nextLabel = trimmed === "" ? null : trimmed;
@@ -945,7 +1178,11 @@ export async function renameSegment(
     return segment;
   }
 
-  const updated: Segment = { ...segment, label: nextLabel };
+  const updated: Segment = {
+    ...segment,
+    label: nextLabel,
+    modifiedAt: Date.now(),
+  };
   await tx.store.put(updated);
   await tx.done;
   return updated;
@@ -994,8 +1231,9 @@ export async function moveSegment(
       return plan.order;
     }
 
-    await chapters.put({ ...chapter, segmentIds: plan.ids });
-    const renumbered = await renumberSegments(segments, plan.order);
+    const now = Date.now();
+    await chapters.put({ ...chapter, segmentIds: plan.ids, modifiedAt: now });
+    const renumbered = await renumberSegments(segments, plan.order, now);
     await tx.done;
     return renumbered;
   } catch (cause) {
@@ -1013,7 +1251,8 @@ export async function moveSegment(
  */
 async function renumberSegments(
   store: { put(value: Segment): Promise<SegmentId> },
-  order: readonly Segment[]
+  order: readonly Segment[],
+  now: number
 ): Promise<Segment[]> {
   const renumbered: Segment[] = [];
   for (const [position, row] of order.entries()) {
@@ -1022,7 +1261,7 @@ async function renumberSegments(
       renumbered.push(row);
       continue;
     }
-    const updated: Segment = { ...row, index };
+    const updated: Segment = { ...row, index, modifiedAt: now };
     await store.put(updated);
     renumbered.push(updated);
   }
@@ -1031,8 +1270,9 @@ async function renumberSegments(
 
 /**
  * The stores a segment delete touches: the tree link (the chapter it hangs
- * off), the segment itself, its take, both halves of its clip, and the book
- * whose `updatedAt` it bumps (#590).
+ * off), the segment itself, its take, both halves of its clip, the book
+ * whose `updatedAt` it bumps (#590), and the tombstone it leaves (#1463).
+ * v13 (#38): as {@link DELETE_BOOK_STORES}.
  */
 const DELETE_SEGMENT_STORES = [
   "books",
@@ -1041,6 +1281,9 @@ const DELETE_SEGMENT_STORES = [
   "takes",
   "clipMeta",
   "clipData",
+  "tombstones",
+  "pendingTakes",
+  "takeDispositions",
 ] as const;
 
 /**
@@ -1063,6 +1306,9 @@ const DELETE_SEGMENT_STORES = [
  *     nothing shares a clip in the shipped app, but a future
  *     content-addressed import could dedupe, and an unconditional delete
  *     would then punch a hole in another segment's only copy.
+ *   - **The segment's pending row goes with it** (#38 rebuild PR 2), and the
+ *     clip its `stored` base named is released by the same check, unless
+ *     another segment's row still names it.
  *   - **Dense renumbering**, reusing {@link renumberSegments} — the same
  *     write `moveSegment` makes, not a second copy of it. A dangling id
  *     already in `chapter.segmentIds` (unrelated to this delete) keeps its
@@ -1122,37 +1368,49 @@ export async function deleteSegment(
     if (!chapter) throw new Error(`No such chapter: ${segment.chapterId}`);
 
     // The take and its clip, reference-counted exactly as `clearSegmentTake`
-    // deletes them (takes.ts). The take row goes first so the survivor scan
-    // below sees only the takes that are left.
+    // deletes them (takes.ts), and the segment's pending row with the clip
+    // its `stored` base names (v13, #38 rebuild PR 2). Both rows go first,
+    // so the clip-use check below sees only the uses that are left: a row
+    // whose base is this segment's own active clip would otherwise keep it.
+    const released: ClipId[] = [];
     const priorTakeId = segment.activeTakeId;
     if (priorTakeId !== null) {
       const priorTake = await takes.get(priorTakeId);
       await takes.delete(priorTakeId);
-      if (priorTake) {
-        const survivors = await takes.getAll();
-        const stillReferenced = survivors.some(
-          (t) => t.clipId === priorTake.clipId
-        );
-        if (!stillReferenced) {
-          await tx.objectStore("clipMeta").delete(priorTake.clipId);
-          await tx.objectStore("clipData").delete(priorTake.clipId);
-        }
-      }
+      if (priorTake) released.push(priorTake.clipId);
+    }
+    released.push(...(await deletePendingRowOf(tx, segmentId)));
+    for (const clipId of new Set(released)) {
+      await deleteClipIfUnreferenced(tx, clipId);
     }
 
+    const now = Date.now();
     await segments.delete(segmentId);
+    await deleteDispositionsOf(tx, segmentId);
+    // The tombstone (#1463), in this transaction: the row was here and is
+    // removed, so the delete and its record land together or not at all.
+    // The already-gone path above returned before this, so a repeated delete
+    // adds no second row.
+    await tx.objectStore("tombstones").add({
+      entity: "segment",
+      entityId: segmentId,
+      parentId: chapter.id,
+      deletedAt: now,
+    });
     const nextIds = chapter.segmentIds.filter((id) => id !== segmentId);
-    await chapters.put({ ...chapter, segmentIds: nextIds });
+    await chapters.put({ ...chapter, segmentIds: nextIds, modifiedAt: now });
 
     const records = await Promise.all(nextIds.map((id) => segments.get(id)));
     const visible = records.filter((r): r is Segment => r !== undefined);
-    const renumbered = await renumberSegments(segments, visible);
+    const renumbered = await renumberSegments(segments, visible, now);
 
     // Deleting a segment discards its recording (or its empty row) — activity
     // on the book, the same bump `clearSegmentTake`/`writeTakeInTx` make.
     const book = await tx.objectStore("books").get(chapter.bookId);
     if (book) {
-      await tx.objectStore("books").put({ ...book, updatedAt: Date.now() });
+      await tx
+        .objectStore("books")
+        .put({ ...book, updatedAt: now, modifiedAt: now });
     }
 
     await tx.done;
@@ -1250,4 +1508,42 @@ export async function resolveChapterClipIds(
     else missing++;
   }
   return { clipIds, missing };
+}
+
+/**
+ * A chapter's members as chapter-play candidates (#1468): every id in
+ * `chapter.segmentIds`, in that order, each probed with `resolveSegmentAudio`
+ * the way `resolveChapterClipIds` probes it — a key lookup, never the
+ * samples. `buildChapterPlaylist` turns the list into the playlist; this only
+ * reads.
+ *
+ * A member nobody has recorded is `unrecorded`. Every other unresolved walk is
+ * `broken`, so the playlist skips exactly the set the export skips, and a
+ * member with no segment row counts as broken in this chapter (it has no
+ * start chapter of its own to name). `frames` is the clip's original PCM
+ * length whatever it is stored as, so progress is exact for MP3 clips too.
+ */
+export async function chapterPlayCandidates(
+  chapterId: ChapterId
+): Promise<PlaylistCandidate[]> {
+  const db = await getDb();
+  const chapter = await db.get("chapters", chapterId);
+  if (!chapter) return [];
+
+  const candidates: PlaylistCandidate[] = [];
+  for (const segmentId of chapter.segmentIds) {
+    const audio = await resolveSegmentAudio(segmentId);
+    candidates.push({
+      segmentId,
+      startChapterId:
+        audio.kind === "no-segment" ? chapterId : audio.segment.chapterId,
+      audio:
+        audio.kind === "resolved"
+          ? { kind: "playable", frames: audio.clip.frameCount }
+          : audio.kind === "no-active-take"
+            ? { kind: "unrecorded" }
+            : { kind: "broken" },
+    });
+  }
+  return candidates;
 }

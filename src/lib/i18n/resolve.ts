@@ -1,9 +1,9 @@
 /**
  * Which supported UI language a phone's language list asks for (#1482).
  *
- * Pure and DOM-free: the caller reads `navigator.languages` (in `hooks/`, per
- * ADR 0015 (b)) and passes the list in. Nothing calls this yet; applying the
- * result is the runtime-apply issue under epic #1458.
+ * Pure and DOM-free: the caller, `hooks/phone-locale.ts` (ADR 0015 (b)), reads
+ * `navigator.languages` and passes the list in, with the complete locales as
+ * `candidates`.
  *
  * The rules, each pinned by `tests/locale-resolve.test.ts`:
  *

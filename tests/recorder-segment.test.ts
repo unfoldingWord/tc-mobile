@@ -2,14 +2,23 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  noteObservedRevision,
+  withObservedRevision,
+} from "@/hooks/observed-revision";
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
+import { writePendingTake } from "@/lib/storage/pending-takes";
 import {
   addChapter,
   addSegment,
   createBook,
   renameSegment,
 } from "@/lib/storage/books";
-import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
+import {
+  clearSegmentTake,
+  saveTake,
+  setSegmentFinished,
+} from "@/lib/storage/takes";
 import { newClipId } from "@/lib/storage/clips";
 import { commitTranscode } from "@/lib/storage/transcode";
 import { closeDb, getDb } from "@/lib/storage/db";
@@ -18,6 +27,7 @@ import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
 import * as peaksModule from "@/lib/audio/peaks";
 import type { SegmentId } from "@/types/domain";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * `loadRecorderSegmentView` is the React-free core of `useRecorderSegment` —
@@ -140,7 +150,8 @@ describe("loadRecorderSegmentView", () => {
       segmentId,
       clipId,
       encodeMp3(pcm),
-      computePeaks(pcm, 4)
+      computePeaks(pcm, 4),
+      NO_STAGES_RUN
     );
     expect(outcome).toBe("committed");
 
@@ -151,5 +162,70 @@ describe("loadRecorderSegmentView", () => {
     // environment noise (no Web Audio in Node), so this asserts only that it
     // throws rather than resolving with a clip.
     await expect(loadRecorderSegmentView(segmentId)).rejects.toThrow();
+  });
+});
+
+describe("the revision a recording's base was read at (cell HM, George r1 on #1618)", () => {
+  const recording = (segmentId: SegmentId, existing: Int16Array) =>
+    withObservedRevision({
+      segmentId,
+      ordinal: 1,
+      clipId: newClipId(),
+      existing,
+      recorded: samples(10, 7),
+      offset: existing.length,
+      finished: false,
+      editOnly: false,
+    });
+
+  it.each([
+    ["erases", (id: SegmentId) => clearSegmentTake(id)],
+    [
+      "saves",
+      (id: SegmentId) =>
+        saveTake(id, newClipId(), samples(30, 5), CANONICAL_SAMPLE_RATE).then(
+          () => {}
+        ),
+    ],
+  ])(
+    "a take recorded over the loaded view keeps the view's revision when another copy %s first",
+    async (_name, move) => {
+      const segmentId = await freshSegment();
+      await saveTake(
+        segmentId,
+        newClipId(),
+        samples(20),
+        CANONICAL_SAMPLE_RATE
+      );
+      const view = await loadRecorderSegmentView(segmentId);
+      // What `useRecorderSegment` does when it adopts the view
+      // (tests/hold-revision-hooks.test.ts pins that it does).
+      noteObservedRevision(segmentId, view.audioRevision);
+      await move(segmentId);
+
+      const take = recording(segmentId, view.samples!);
+      expect(take.baseRevision).toBe(1);
+      expect(await writePendingTake(take)).toEqual({
+        ok: true,
+        outcome: "written",
+      });
+      const row = await (await getDb()).get("pendingTakes", segmentId);
+      expect(row?.baseRevision).toBe(1);
+      const segment = await (await getDb()).get("segments", segmentId);
+      expect(segment?.audioRevision).toBe(2);
+    }
+  );
+
+  it("a view carries the revision read with its samples, and loading notes nothing", async () => {
+    const segmentId = await freshSegment();
+    await saveTake(segmentId, newClipId(), samples(20), CANONICAL_SAMPLE_RATE);
+    const before = await loadRecorderSegmentView(segmentId);
+    expect(before.audioRevision).toBe(1);
+    noteObservedRevision(segmentId, before.audioRevision);
+    await clearSegmentTake(segmentId);
+    const after = await loadRecorderSegmentView(segmentId);
+    expect(after.audioRevision).toBe(2);
+    // Only the hook's adoption notes (George r2 on #1618).
+    expect(recording(segmentId, samples(0)).baseRevision).toBe(1);
   });
 });

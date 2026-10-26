@@ -1,0 +1,17 @@
+{
+  "correct": [
+    { "en": "{n} chapters", "value": "{n} فصول" },
+    { "en": "{name}, {n} chapters", "value": "{n} فصول، {name}" },
+    { "en": "No placeholders", "value": "بلا متغيرات" }
+  ],
+  "defect": [
+    { "en": "{n} chapters", "value": "فصول", "why": "dropped placeholder" },
+    {
+      "en": "{n} chapters",
+      "value": "{n} {name} فصول",
+      "why": "invented placeholder"
+    },
+    { "en": "{n} chapters", "value": "{n} {فصول", "why": "unbalanced brace" },
+    { "en": "{n} chapters", "value": "{n} فصول null", "why": "null text" }
+  ]
+}

@@ -20,6 +20,7 @@ import type {
   SegmentId,
   TakeId,
 } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 vi.mock("@/hooks/mp3-codec");
 vi.mock("@/lib/storage/segment-audio");
@@ -37,6 +38,8 @@ function segment(id: SegmentId): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
+    audioRevision: 0,
   };
 }
 
@@ -54,6 +57,7 @@ function pcmClip(id: ClipId, samples: Int16Array): Clip {
       byteLength: samples.length * 2,
       transcodeStallCount: 0,
       peaks: null,
+      processing: null,
     },
     samples,
   };

@@ -332,55 +332,34 @@ freeze note on every new PR to `develop`.
    which uploads a **draft** to the internal track. Record its release name.
    The DRI releases that draft in the Play Console if wanted.
 7. **Native builds from one commit.** The staging push starts
-   [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
-   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) on its
-   own (#1281): confirm that both runs started at `PROMO_SHA`
-   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch staging --json databaseId,headSha,event,status`),
-   with `event` `push` and no dispatch. A green run is not a build: a push
-   the preflight did not read as a promotion still makes a successful run,
-   with the signing job `skipped`. So read each run's signing job
-   (`Build release APK`, `Build and upload to TestFlight`) with
-   `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
-   `skipped` means the lane did not start, and only `success` is a build.
-   A run at `PROMO_SHA` that is `cancelled` was replaced while pending
-   (one signing job runs at a time across both branches; a later push or
-   dispatch took the single pending slot) and did not start. Read the tip
-   before deciding: if `origin/staging` has moved past `PROMO_SHA`, stop.
-   **Before any dispatch of a lane** (a `cancelled` run, or a lane that did
-   not start), make both reads. (1) **Already built?** List the lane's runs
-   at that commit, on any branch and from any event:
-   `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`.
-   Read each one's signing job as above; the run's `conclusion` is not the
-   signing job's (a run whose signing job was `skipped` still concludes
-   `success`). A `success` counts only if it is an ordinary build: for the
-   APK lane, the run's artifact must be `android-apk-<PROMO_SHA>`, not
-   `android-apk-diagnostic-<PROMO_SHA>`
-   (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
-   a diagnostic APK is not a training build. If an ordinary build concluded
-   `success`, `PROMO_SHA` is already built: stop, and record that run
-   instead. (2) **Lane free?** The group carries no branch, so a `main` run,
-   which the `--commit` read does not list, can hold the slot or replace a
-   pending dispatch. List the lane's recent runs on every branch
-   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
-   and wait until every one is `completed`. A run that was still open at the
-   first read may have built `PROMO_SHA` while you waited, so repeat read (1)
-   now; if an ordinary build has since concluded `success`, stop and record
-   that run. The wait can move the tip, and `--ref staging` builds the tip
-   at dispatch, so immediately before dispatching re-read the canonical tip
-   (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`);
-   if it is not exactly `PROMO_SHA`, stop. Only if (1) still finds none and
-   the tip is still `PROMO_SHA` does the DRI dispatch it, and
-   the agent re-reads the new run until its signing job has started (an
-   empty conclusion on an open run). A dispatch `cancelled` while pending
-   goes back to the two reads. While `release-signing` still has a
-   required reviewer (#1281's transition window), each signing job waits for
-   the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
-   equal `PROMO_SHA`, and so do the web and Play builds: every channel must
-   come from that one commit. If not, stop and re-promote. Do not mix refs.
-   If a lane did not start, the DRI dispatches it from `staging` by hand
-   after the two reads above
-   (`gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`) —
-   human-only — and the cause is a finding.
+   [`android-apk.yml`](../../.github/workflows/android-apk.yml),
+   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) and
+   [`android-play.yml`](../../.github/workflows/android-play.yml) on its own
+   (#1281). Whether each lane built `PROMO_SHA`, and whether a lane may be
+   dispatched again by hand, is decided by one read-only script and nowhere
+   else, [`scripts/check-redispatch.mjs`](../../scripts/check-redispatch.mjs)
+   (#1636): for each lane,
+   `npm run check:redispatch -- --lane <apk|play|testflight> --sha <PROMO_SHA>`
+   with the full oid. Its lines name each run at `PROMO_SHA` `built`,
+   `not built`, `started` or `unknown`; record the `built` run. The DRI
+   dispatches a lane (human-only) only after its last line reads
+   `OK to dispatch <lane>`, with that lane's own workflow file — `apk` is
+   `gh workflow run android-apk.yml --repo unfoldingWord/tc-mobile --ref staging`,
+   `play` is
+   `gh workflow run android-play.yml --repo unfoldingWord/tc-mobile --ref staging`,
+   `testflight` is
+   `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`;
+   then the agent reruns it with `--known=<the ids the OK line lists>` until
+   it prints `STARTED`. An OK line with no `(runs at the commit before: …)`
+   lists no ids: the rerun is then `--known=`, with nothing after the `=`.
+   That rerun is the `STARTED` / `WAIT` / `STOP` follow-up; never rerun the
+   form without `--known` after a dispatch, which can print
+   `OK to dispatch` again before GitHub lists the new run. Any `STOP:` line means no dispatch: tell the DRI its
+   reason. A lane that did not start on its own is a finding. While
+   `release-signing` still has a required reviewer (#1281's transition
+   window), each signing job waits for the DRI's approval; once it is
+   removed, no approval either. Every channel, web included, must come from
+   that one commit. If not, stop and re-promote. Do not mix refs.
 8. **Check the APK before publishing.**
    - The signer certificate SHA-256 equals the previous RC's. If not, stop and tell the DRI. Do not publish. Uninstall is not the remedy: uninstalling deletes recordings.
    - The embedded `assets/public/version.json` shows version `1.0.0-rc.N` and
@@ -432,21 +411,74 @@ The `tc-release` skill tags each step the same way.
 rc.1 (#1205, #1206) and rc.2 (#1228, #1236) are worked examples. Their PR
 threads hold the red-team summaries and publish records.
 
+## 3b. What the native lanes enforce on their own
+
+Each native lane has one concurrency group, on the job that signs and
+uploads, keyed on the lane alone (#1616): `android-apk` on
+[`android-apk.yml`](../../.github/workflows/android-apk.yml)'s build job,
+`ios-testflight` on
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml)'s
+TestFlight job, and `android-play` on
+[`android-play.yml`](../../.github/workflows/android-play.yml)'s upload job.
+`tests/native-lane-concurrency.test.ts` pins all three. What that gives:
+
+- Two uploads of one lane never run at once, on either branch, so build
+  numbers follow queue order and a second Play edit cannot invalidate the
+  first. An in-flight upload is never cancelled.
+- A run that ends at preflight (not a promotion merge, or the Play lane
+  disabled) never enters the group, so it cannot replace a pending upload.
+- A re-run after a failed run, a different commit and the other lane are not
+  held back: a failed run has left the group, a different commit waits its
+  turn, and each lane has its own group.
+
+The group serializes uploads; it does not refuse one. Refusing is the
+**upload guard**'s job: a step in each upload job, before the upload (#1616).
+It runs the same check as §3a step 7, in the form that reads one run (the
+`guardUpload` rule in `scripts/redispatch-core.mjs`). Because it runs inside
+the group, no other upload of the lane runs while it reads.
+
+- **Already uploaded.** If any attempt of a run of this lane at this commit,
+  or an earlier attempt of this run, already uploaded, the step prints a
+  `SKIP:` notice and
+  the job ends green without uploading. So a second dispatch of a commit, or
+  a re-run of a run that succeeded, cannot upload it twice.
+- **Earlier run failed.** A failed or cancelled earlier run does not count,
+  and neither does a run that ended at preflight. A re-run after a failed run
+  uploads. So does a different commit, and so does the other lane: the guard
+  reads only this lane's runs at this commit.
+- **Read failed.** If a read fails, or returns something the check cannot
+  settle, the step prints `STOP:` and the job fails before any upload. That
+  follows the core's rule: anything the reads cannot settle is a stop, never
+  a guess. Run step 7's script for that lane and commit, and tell the DRI.
+- **Not guarded.** A diagnostic APK and a Play `build_only` run are not
+  checked, because neither is a tester upload.
+
+`tests/upload-guard.test.ts` tests the rule.
+`tests/native-lane-upload-guard.test.ts` runs each lane's guard step against
+a stand-in `gh`. Neither has run on GitHub's runners: the first real
+promotion after this lands is the first real run.
+
+When two runs wait behind one upload, GitHub keeps only the newer one and
+cancels the older (#1308). The guard is a backstop; it does not replace step 7. The DRI still dispatches a lane only after step 7's script prints its OK
+line.
+
 ## 4. Native candidate and durable delivery
 
-The `staging → main` merge starts the
-[iOS](../../.github/workflows/ios-testflight.yml) and
-[Android](../../.github/workflows/android-apk.yml) lanes on `main` on its own
-(#1281); the `release-signing` environment admits them because they run on
-`main`. Confirm both runs started at the production merge commit (the one
-`v1.0.0` tags) with `event` `push`, and that each run's signing job
-concluded `success`, not `skipped` (the §3a step 7 check, with `PROD_SHA`
-for `PROMO_SHA` and `main` for `staging`; a success at `PROMO_SHA` is the
-RC, not this build). Record each run's resolved SHA and
+The `staging → main` merge starts three lanes on `main` on its own:
+[`android-apk.yml`](../../.github/workflows/android-apk.yml) and
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) (#1281;
+the `release-signing` environment admits them because they run on `main`),
+and [`android-play.yml`](../../.github/workflows/android-play.yml) (its
+`play-upload` environment, to the closed-testing track). Confirm all three
+runs started at the production merge commit (the one `v1.0.0` tags) with
+`event` `push`, and that each run
+is `built` (§3a step 7's script, with `--sha <PROD_SHA> --branch main`; a
+build at `PROMO_SHA` is the RC, not this build). Record each run's resolved SHA and
 require it to equal `v1.0.0` before accepting its artifact. If `main` moved,
 stop and select an explicitly approved ref strategy; do not label a different
 build as the tagged release. A manual rebuild, if one is ever needed, is the
-DRI's dispatch from the `main` branch.
+DRI's dispatch from the `main` branch: §3a step 7's command for that lane,
+with `--ref main` in place of `--ref staging`.
 
 The lanes build `staging` and `main` only, never an arbitrary tag: both
 preflights refuse a tag and any other branch, and the environment's branch
@@ -483,11 +515,14 @@ the same way on `https://tcmobile.app` and
   set -o pipefail
   rc=0
   for origin in https://tcmobile.app https://tc-mobile.unfoldingword.workers.dev; do
-    if rec=$(curl -fsS --connect-timeout 10 --max-time 30 "$origin/version.json?t=$(date +%s)" |
-      jq -enr 'input | select([.sha, .version] | all(type=="string" and length>0 and (test("[[:cntrl:]]")|not))) | "sha=\(.sha|@json) version=\(.version|@json)"'); then
+    if ! body=$(curl -fsS --connect-timeout 10 --max-time 30 "$origin/version.json?t=$(date +%s)"); then
+      echo "FAIL: $origin did not answer with a 2xx"
+      rc=1
+    elif rec=$(printf '%s' "$body" |
+      jq -enr 'input | select([.sha, .version] | all(type=="string" and length>0 and (test("[[:cntrl:][:space:]\u200e\u200f\u202a-\u202e\u2066-\u2069]")|not))) | "sha=\(.sha) version=\(.version)"'); then
       echo "OK: $origin $rec"
     else
-      echo "FAIL: $origin gave no deploy record"
+      echo "FAIL: $origin answered but the body is not a deploy record"
       rc=1
     fi
   done
@@ -498,18 +533,21 @@ the same way on `https://tcmobile.app` and
 plus the available Cloudflare rollback target. A failed origin is recorded and
 the subshell exits 1 after both origins have been tried, so the step fails as
 a whole (a bare `|| echo` leaves the exit status 0, and `pipefail` does not
-imply `errexit`); the subshell keeps `exit` from closing your terminal. Write
-down only the `sha=… version=…` it prints after `OK:` (each value in JSON
-quotes, so a space cannot shift it; drop the quotes when you pass it on), and
-read every line, because `FAIL:` goes to stdout beside `OK:`. `-f` makes an
-HTTP error exit non-zero instead of printing an error page, and `pipefail`
-keeps that exit. The timeouts make a silent origin fail instead of hanging.
-A `sha` or `version` holding a control character (CR, LF, ESC) fails too, so
-a bad record cannot print a second `OK:` line or overwrite the one shown.
-`jq -en 'input | …'` exits non-zero on an empty body (a redirect `curl`
-does not follow, or an empty 200), on a body that is not JSON, and unless
-`sha` and `version` are both non-empty strings; plain `jq -e` on an empty
-body exits 0. A read that fails any of these is not a deploy record, so do
+imply `errexit`); the subshell keeps `exit` from closing your terminal. Two
+different `FAIL:` lines say which failure it was: `did not answer with a 2xx`
+is an origin that timed out, refused the connection or returned an HTTP error
+(`-f` makes an HTTP error exit non-zero instead of printing an error page);
+`answered but the body is not a deploy record` is a 2xx whose body is empty,
+is not JSON, or lacks a non-empty string `sha` and `version`. Write down only
+the `sha=… version=…` it prints after `OK:`. The values are decoded by `jq -r`,
+not quoted, and the block rejects any value holding whitespace, a control
+character (CR, LF, ESC) or a bidi control, so a value cannot shift the fields
+or print a second `OK:` line. Read every line, because `FAIL:` goes to stdout
+beside `OK:`. The timeouts make a silent origin fail instead of hanging.
+`jq -en 'input | …'` exits non-zero on an empty body, where plain `jq -e`
+exits 0. [`tests/rollback-read-block.test.ts`](../../tests/rollback-read-block.test.ts)
+runs this block against local servers in both states.
+A read that prints `FAIL:` is not a deploy record, so do
 not write it down as the rollback target. Do not take it from the bare
 `npm run check:deploy:prod`: that command prints the `origin/main` tip first
 as its expectation, prints the served `Deployed:` line only after that, and
@@ -520,18 +558,14 @@ wrong one to record. If you do read it from the checker, record only the
 run again". That served build is the rollback target. It equals `MAIN_SHA`
 (§3 step 3) only when that read says so: a commit on `main` is not a deployed
 build (#143).
+
 **Before you roll back, check whether the build you would undo raised the
 IndexedDB schema** (`DB_VERSION` in `src/lib/storage/db.ts`, compared between
-the rollback target and the served build). If it did, a rollback is not free:
-IndexedDB refuses to open a database at a lower version, so every phone that
-has opened the newer build cannot run the older code against its recordings.
-The recordings are not deleted, but they are unreachable until a build at the
-newer schema or later is served or installed again. v1.1.0 moves the schema
-from 9 to 11. In that case **roll forward with a fix** instead. If a rollback
-is unavoidable, know that those phones are locked out until the newer schema
-is served again, and tell facilitators not to uninstall, because uninstalling
-deletes the recordings (AGENTS.md, "What rollback does not do"). This was
-established by a Node run and a code read, not on a device.
+the rollback target and the served build). If it did, a rollback is not free
+for any phone that has opened the newer build: read AGENTS.md, "A rollback is
+not free once a phone has opened a build with a newer database schema", which
+states the condition and the exit once. Roll forward with a fix instead; if a
+rollback is unavoidable, tell facilitators not to uninstall.
 
 Follow AGENTS.md's **Confirming a deploy and rolling one back** procedure:
 dashboard rollback or

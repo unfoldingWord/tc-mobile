@@ -236,6 +236,9 @@ test("running share progress, then closing the book ≡ menu, restores focus in 
 
   const shareButton = page.getByRole("button", { name: "Share book" });
   await shareButton.click();
+  // A new book has no licence, so Share book asks first (#1455); confirm the
+  // pre-selected one and the share goes on.
+  await page.getByRole("button", { name: "Share", exact: true }).click();
 
   // `data-outcome` mirrors the hook's own `progress` union exactly
   // (`share-progress.tsx`): "nothing" is reached only once the busy phase's
