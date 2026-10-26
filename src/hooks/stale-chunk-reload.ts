@@ -44,7 +44,7 @@ export interface StaleChunkDeps {
   /** This build's stamp. */
   readonly build: string;
   /** `sessionStorage`, or `null` where it cannot be reached. */
-  readonly storage: Pick<Storage, "getItem" | "setItem"> | null;
+  readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
   readonly holdsUnsavedAudio: () => boolean;
   readonly report: (cause: unknown, context: string) => void;
   readonly flush: () => Promise<void>;
@@ -58,7 +58,8 @@ export interface StaleChunkDeps {
 
 /**
  * The handler for one page. Once it has scheduled a reload, every later
- * failure on the page is ignored: the page is going away.
+ * failure on the page is ignored: the page is going away, unless unsaved audio
+ * calls the reload off at the last moment, which re-arms the handler.
  */
 export function createStaleChunkHandler(
   deps: StaleChunkDeps
@@ -96,8 +97,30 @@ export function createStaleChunkHandler(
     }
     reloading = true;
     deps.report(cause, "stale-chunk-reload");
+    // Audio can become unsaved while the reload waits on the defer and the
+    // flush (a recorder opened, a take landed), so ask again in the same turn
+    // as the reload. If it is held now, the reload is called off: the mark is
+    // put back so a later failure may still reload once, and the chunk
+    // failure is reported the way any other refusal is.
+    const previousMark = reloadedBuild;
+    const reloadUnlessUnsaved = (): void => {
+      if (!deps.holdsUnsavedAudio()) {
+        deps.reload();
+        return;
+      }
+      reloading = false;
+      try {
+        if (typeof previousMark === "string") {
+          storage.setItem(RELOADED_BUILD_KEY, previousMark);
+        } else storage.removeItem(RELOADED_BUILD_KEY);
+      } catch {
+        // The mark stays consumed, so this build will not reload for a chunk
+        // again in this tab: the safe direction. The row below records it.
+      }
+      deps.report(cause, "stale-chunk");
+    };
     deps.defer(() => {
-      void restartAfterFlush(false, () => {}, deps.flush, deps.reload);
+      void restartAfterFlush(false, () => {}, deps.flush, reloadUnlessUnsaved);
     });
   };
 }

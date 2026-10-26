@@ -37,6 +37,9 @@ class MemoryStorage {
   setItem(key: string, value: string): void {
     this.items.set(key, value);
   }
+  removeItem(key: string): void {
+    this.items.delete(key);
+  }
 }
 
 interface Page {
@@ -173,6 +176,33 @@ describe("a chunk that will not load", () => {
     expect(storage.items.size).toBe(0);
   });
 
+  it("calls the reload off when audio becomes unsaved while it waits", async () => {
+    const storage = new MemoryStorage();
+    let unsaved = false;
+    const page = openPage(storage, { unsaved: () => unsaved });
+    await expect(
+      page.load(rejecting(ENGINE_MESSAGES.chromium))
+    ).rejects.toThrow();
+    // A recorder opens between the failure and the deferred reload.
+    unsaved = true;
+    await page.settle();
+    expect(page.reloads).toBe(0);
+    expect(page.reports.map((r) => r.context)).toEqual([
+      "stale-chunk-reload",
+      "stale-chunk",
+    ]);
+    // The mark is put back, so the retry is not spent.
+    expect(storage.items.size).toBe(0);
+
+    // Once the audio is saved, the next failure in this build reloads once.
+    unsaved = false;
+    await expect(
+      page.load(rejecting(ENGINE_MESSAGES.chromium))
+    ).rejects.toThrow();
+    await page.settle();
+    expect(page.reloads).toBe(1);
+  });
+
   it("schedules one reload for several failures on one page", async () => {
     const page = openPage(new MemoryStorage());
     const a = page.load(rejecting(ENGINE_MESSAGES.chromium));
@@ -214,15 +244,18 @@ describe("a chunk that will not load", () => {
 });
 
 describe("chooseChunkRecovery", () => {
-  it("puts unsaved audio ahead of every other answer", () => {
-    expect(
-      chooseChunkRecovery({
-        build: "b",
-        reloadedBuild: null,
-        holdsUnsavedAudio: true,
-      })
-    ).toEqual({ kind: "report", reason: "unsaved-audio" });
-  });
+  it.each([null, undefined, "b"])(
+    "puts unsaved audio ahead of every other answer (mark %s)",
+    (reloadedBuild) => {
+      expect(
+        chooseChunkRecovery({
+          build: "b",
+          reloadedBuild,
+          holdsUnsavedAudio: true,
+        })
+      ).toEqual({ kind: "report", reason: "unsaved-audio" });
+    }
+  );
 });
 
 describe("setUnsavedAudioCheck", () => {
