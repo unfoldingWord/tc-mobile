@@ -1,4 +1,4 @@
-import { type CSSProperties, type Ref } from "react";
+import { type CSSProperties, type Ref, useId } from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
@@ -43,6 +43,7 @@ export function O4BookDeleteAsk({
   onKeep,
   onDelete,
 }: O4BookDeleteAskProps) {
+  const questionId = useId();
   return (
     <div
       className="books-delete-ask"
@@ -51,6 +52,13 @@ export function O4BookDeleteAsk({
       // hears which book is about to go.
       aria-label={strings.deleteBookConfirmTitle(name)}
     >
+      {/* Focus lands on Keep, not on the group, and a group's label is not
+          reliably spoken when focus is moved into it from script (inference,
+          not run with a screen reader). Keep points at this text through
+          aria-describedby, so the question is read with the button. */}
+      <p id={questionId} className="sr-only">
+        {strings.deleteBookConfirmTitle(name)}
+      </p>
       <div className="o4-sheet-head">
         <span
           className="books-cover is-sm"
@@ -75,6 +83,7 @@ export function O4BookDeleteAsk({
           // would empty the trap. The screen guards its action instead.
           onClick={onKeep}
           className="confirm-cancel"
+          describedBy={questionId}
         />
         <Control
           icon="trash"
