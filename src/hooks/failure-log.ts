@@ -128,10 +128,10 @@ let logCount = 0;
 let logGeneration = 0;
 /**
  * How many of those rows light the Books ≡ marker (#1005): all of them except
- * the informational contexts `lightsFailureMarker` names, today only
+ * the contexts `lightsFailureMarker` leaves plain, such as
  * `"recorder-take-cap"`. The DRI's decision on #1076, verbatim: "Log it, don't
  * light ≡ (Recommended)". `logCount` still gates the menu's problem report, so
- * a log holding only that row can still be sent. Kept beside `logCount` and
+ * a log holding only such rows can still be sent. Kept beside `logCount` and
  * moved at every one of its write sites, so the two cannot drift apart.
  */
 let markedCount = 0;

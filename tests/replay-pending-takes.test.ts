@@ -168,7 +168,7 @@ afterEach(() => {
 });
 
 describe("the launch replay saves a row it finds (RP-P, in the app)", () => {
-  it("saves a held first take quietly: active, row gone, slot clear, the screen reloads, no log row", async () => {
+  it("saves a held first take quietly: active, row gone, slot clear, the screen reloads, one informational log row", async () => {
     const segmentId = await freshSegment();
     const t = { ...firstTake(segmentId), finished: true };
     await heldRow(t);
@@ -181,7 +181,9 @@ describe("the launch replay saves a row it finds (RP-P, in the app)", () => {
     expect(await recordOf(t.clipId)).toBe("saved");
     expect(a.held()).toBeNull();
     expect(a.calls).toEqual({ saved: 1, sweep: 1 });
-    expect(reports).toEqual([]);
+    // Quiet on screen; the one record is an informational row that does not
+    // light ≡ (#38, PR #1706's pick; tests/pending-take-replayed-row.test.ts).
+    expect(contexts()).toEqual(["pending-take-replayed"]);
   });
 
   it("goes oldest first and saves every row, one at a time", async () => {
