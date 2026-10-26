@@ -17,6 +17,7 @@ its body and empties it.
 
 - A recording that was being saved when the app closed is saved on the next launch, and one another copy already saved is not saved twice (#38, #1557).
 - A recording finished in the first moments after the app opens, while that save is still running, is saved once it is done instead of being lost (#1549, #1683).
+- On iPhone, the app declares playback again on each Play, so the silent switch should not mute it; not yet checked on a phone (#1518, #1521).
 
 ## Removed
 
