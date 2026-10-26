@@ -11,6 +11,97 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-26 (day) — Sprint 5 day 8: the "Screen reader only" pick and its label work, pending takes that keep their base, the licence asks finished, a failure log with no console-only sinks left, 40 PRs merged
+
+One coordinator session in orchestrator mode, running lane waves and refilling each slot as it freed. Every merge met the standing rule: both bench lenses clean at the exact head and every check green, with a hand-written triage comment each round. No device results reached this session.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **#1521:** "Fold into 1.2". The hold was lifted and it merged, closing #1518 with `needs-device`.
+- **#1078, how the read arc looks:** "Keep as built (Recommended)". Closed with `needs-device`.
+- **#163 A-14:** "Scope v15, then ask (Recommended)", then "Build without v15 (Recommended)". Built in #1694, with no schema step.
+- **Licence ask at Share Chapter:** "Ask at Share Chapter too (Recommended)" (#1703).
+- **Chapter-play ring track:** "Decorative, pin fill only (Recommended)" (#1691).
+- **Failure-log rows for the remaining sinks:** "Log only, no ≡ (Recommended)" (#1692).
+- **S21:** "Nothing for now (Recommended)".
+- **#1421 O1:** "Reload once, then fail (Recommended)" (#1713).
+- **S4, speech in the app (#1344):** "Screen reader only". Then: "No, recorded audio stays (Recommended)", and "Yes, menu Move up/down (Recommended)". All three are recorded under S4 in v2-plan and in D11 (#1719). Move up / Move down for chapters: "Defer chapters (Recommended)".
+- **#1706 at its cap:**
+  - Round 4: "A: one text round + log row (Recommended)". The log row is #1725.
+  - After round 5: "Wait for #1725, then rewrite (Recommended)".
+  - After round 7: "One more wording round (Recommended)". Stop rule: if round 8 has any blocking finding, the PR merges with that finding named as a residual, and the rounds stop.
+
+### Completed
+
+- **Merged to develop (40):** #1521, #1686, #1687, #1690 to #1705, #1707 to #1726 and #1728. #1706 is still open, #1688 is a Dependabot PR closed as superseded, and #1727 is an issue.
+- **Screen reader (#1344, under the S4 pick):**
+  - **Spoken names:**
+    - Full licence names on the licence radios, and a language result count (#1718).
+    - The Template Library row's name carries its licence (#1717).
+    - Keep describes the delete-book question (#1716, for #1032).
+    - A failed chapter play is named as a failure (#1721).
+    - Settings on/off rows are switches with a checked state (#1722).
+    - The selection handles speak a time position (#1723).
+    - Language rows are named by the text they draw (#1728).
+  - **A Node gate:** accessible names carry the visible text (#1720). The language ask is now under its rule 3.
+  - **Removed:** the unused in-app speech scaffold, `SpeakerButton` (#1726).
+  - **Hold to reveal:** a cut-off book name can be held to read it whole (#1711, S14, #1284).
+  - **Trimming:** a trim pass posted on #1032, #1028, #1031, #91, #952 and #1344 says which halves of each the pick supersedes. Nothing was trimmed or closed.
+- **Pending takes (#38):**
+  - A held take over an unchanged loaded clip stores its base (#1704, closes #1545).
+  - A saved take is stamped with the generation it was cut from (#1694, #163 A-14).
+  - An informational failure-log row, `pending-take-replayed`, is written when the launch replay saves a waiting take (#1725). It does not light ≡. Before it, the replay was silent, so no tester could confirm one.
+  - Browser tests cover relaunch replay of a held take (#1710).
+- **Failure log:** every remaining `console.error`-only sink AGENTS.md listed is routed into the funnel (#1692, #1712, #1723).
+- **Share and licences (#1455):**
+  - A Licence tile in the book menu changes a licence later (#1707).
+  - Share Chapter asks for a licence when the book has none (#1703).
+- **App:** a lazy chunk that is gone after an update reloads once, then fails (#1713, Part-of #1421).
+- **iOS:**
+  - Play is declared inside the shell again (#1521).
+  - The microphone prompt follows the app language (#1705).
+  - The `ion-ios-filesystem` 2.0.1 notice is in (#1690, superseding the red Dependabot #1688).
+- **Tests and gates:**
+  - Template Library browser tests (#1693).
+  - Normalize-on-Finished through the real worker (#1696).
+  - The zh-Hans and ask-screen sweep at 360 px (#1708).
+  - QR byte boundaries (#1698).
+  - The chapter-play ring contrast pin (#1691).
+  - Native-lane hardening (#1695, closing #783).
+- **Docs and cleanup:**
+  - Research on re-encode loss and WebView codecs (#1702).
+  - The runbook's "What changed since 1.0.1" (#1701).
+  - The release notes brought level with develop (#1724).
+  - Stale tags and claims removed (#1699, #1700, #1709, #1714, #1715).
+  - Token batch 5 (#1697).
+- **Closed:**
+  - Completed: #1545, #1584 (shipped by #1600), #783.
+  - With `needs-device`: #1518 and #1078. `needs-device` was also added to #1469.
+  - Superseded: Dependabot #1688.
+- **Filed:**
+  - #1727 (Backlog): the device-pass sheet's deferred Lows.
+  - A chapters Move up / Move down follow-up, filed by the lane building #1344's books-and-segments slice.
+
+### Not run
+
+- **No device run of anything merged today.** Every screen-reader change owes a TalkBack and a VoiceOver pass. Those are names read through the render harness, not speech heard on a phone.
+- **The replay log row (#1725)** is tested in Node only.
+- **The stale-chunk reload (#1713)** has not run against a real service-worker update.
+
+### In progress
+
+- **#1706 (the next tester build's device-pass sheet):** round 8 at `3533de8b` is the last under the DRI's stop rule. Clean, it merges. A blocking finding, it merges with that finding named as a residual.
+- **Move up / Move down for books and segments:** a lane is building it (`feat/1344-menu-move-up-down`). Chapters are deferred by the pick above.
+- **Next:**
+  - Row 33: announce chapter Play, Pause, finish and failure in the Books status region, after the Move up / Move down PR, since both edit `books-screen.tsx` and the string table.
+  - Close #1032 after #1716's device check, and #1344 once its children close.
+  - #779 is still open: two bare `forEach` calls at `use-recorder.ts:808` and `:944`, not re-read today.
+- **Bench note:** on #1711, a George re-run queued twice on an unchanged head never posted. Merging develop in for a new head started a fresh round, and both lenses came back clean.
+
+---
+
 ## 2026-10-23 to 10-24 (day) — Sprint 5 day 5: eight lane waves, schema v14 normalize-on-Finished, the licence ask at Share Book, Simplified Chinese, and two pending-take data-loss fixes, 40 PRs merged
 
 One coordinator session in orchestrator mode, running lanes in waves of up to six. The coordinator refilled each lane slot as soon as it freed rather than waiting for a wave to finish. Every merge followed the DRI's standing rule for the day: both bench lenses clean at the exact head and every check green. Each round got a hand-written triage comment. No device results reached this session.
