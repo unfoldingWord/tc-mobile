@@ -14,11 +14,11 @@ import {
 } from "@/hooks/report-failure";
 
 /**
- * The two `window` listeners the entry installs, and only the filtering they do.
+ * The `window` listeners the entry installs, and only the filtering they do.
  *
  * The module registers its listeners as an import-time side effect on `window`,
  * which the Node test environment has no equivalent of. A minimal `window` stub
- * installed BEFORE the dynamic import captures the two handlers, so the real
+ * installed BEFORE the dynamic import captures the handlers, so the real
  * wiring — event field to sink `context` — is exercised, not a re-implementation.
  * `reportFailure` itself is covered in tests/report-failure.ts; what is asserted
  * here is what reaches it: a benign ResizeObserver notice is dropped, a real
@@ -28,6 +28,7 @@ type WindowHandler = (event: {
   error?: unknown;
   message?: string;
   reason?: unknown;
+  payload?: unknown;
 }) => void;
 
 const handlers: Record<string, WindowHandler> = {};
@@ -38,7 +39,7 @@ const handlers: Record<string, WindowHandler> = {};
  * the call needs no non-null assertion.
  */
 const fire = (
-  type: "error" | "unhandledrejection",
+  type: "error" | "unhandledrejection" | "vite:preloadError",
   event: Parameters<WindowHandler>[0]
 ): void => {
   const handler = handlers[type];
@@ -47,6 +48,8 @@ const fire = (
 };
 
 beforeAll(async () => {
+  vi.stubGlobal("__APP_VERSION__", "0.0.0");
+  vi.stubGlobal("__BUILD_SHA__", "abc1234");
   (globalThis as unknown as { window: unknown }).window = {
     addEventListener: (type: string, handler: WindowHandler) => {
       handlers[type] = handler;
@@ -73,6 +76,18 @@ describe("install-failure-listeners", () => {
   it("registered both window handlers on import", () => {
     expect(typeof handlers.error).toBe("function");
     expect(typeof handlers.unhandledrejection).toBe("function");
+  });
+
+  it("reports a lazy chunk that will not load when no reload can be guarded (#1421 O1)", () => {
+    // This stub has no sessionStorage, so the once-per-build mark cannot be
+    // kept and the handler must report rather than reload. What this pins is
+    // the wiring: Vite's event carries the error on `payload`.
+    const cause = new TypeError(
+      "Failed to fetch dynamically imported module: https://example.test/a.js"
+    );
+    fire("vite:preloadError", { payload: cause });
+
+    expect(seen).toEqual([{ context: "stale-chunk", cause }]);
   });
 
   it("drops Chromium's ResizeObserver loop notice — either wording", () => {

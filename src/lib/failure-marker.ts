@@ -11,9 +11,17 @@
  * already stored on a phone therefore read exactly as before, and any context
  * not listed here — including one from an older or newer build — lights the
  * marker, which is the safe default for a failure channel.
+ *
+ * `"stale-chunk-reload"` (#1421 O1) is the second: the app reloaded itself
+ * once because a lazily loaded file from an older build was gone. The reload
+ * is the recovery, so it is recorded but leaves ≡ plain; the action that hit
+ * it writes its own row as before. `"stale-chunk"`, the same failure when no
+ * reload is allowed (it already reloaded once for this build, or audio is
+ * unsaved), is a failure and lights ≡ by the default.
  */
 const INFORMATIONAL_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-take-cap",
+  "stale-chunk-reload",
 ]);
 
 /**
