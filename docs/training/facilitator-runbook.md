@@ -477,6 +477,79 @@ your other notes (§5).
      item 3: gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
      Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->
 
+## What changed since 1.0.1
+
+Everything below is on `develop` after the last tester-build tag
+(`tester-build-v1.1.0`) and has not been in any tester build or release.
+**None of it has been run on a phone.** The tracker for 2026-10-23 to 10-24
+says "No device run of anything merged today", and no later entry reports one.
+Where this list says what a screen does, it says what the code is written to
+do, not what anyone saw. When a build carries these, treat each item as
+unconfirmed until you or a tester see it work. The next tester build has no
+date. <!-- source: git tag --contains on PRs #1623, #1561, #1541, #1630 returned no tag, so none is in tester-build-v1.1.0; docs/progress_tracker.md 2026-10-23 to 10-24 "Not run" and "Decisions (DRI)", "Next tester build: Not yet, no date" -->
+
+This section does not replace "Known limits" below, which is still as of build
+1.0.1. A phone that opens a build with these changes cannot go back to an
+older build: it holds schema v14, and an older build cannot open it. Do not
+uninstall to clear a problem, because uninstalling deletes the recordings.
+<!-- source: docs/progress_tracker.md 2026-10-23 to 10-24 "Not run" ("Schema v14 is on develop"); AGENTS.md "A rollback is not free" -->
+
+- **A Settings screen.** A gear in the Books header opens it. It holds the
+  light and dark theme choice, a switch to always show chapter numbers, and
+  the volume switch below. <!-- source: PR #1623 (gear in the Books header, #1575); src/lib/strings.ts settingsOpen, settingsChapterNumbers, settingsNormalizeOnFinished; "Always show chapter numbers" is the requirements owner's option S12 per the comment in src/lib/strings.ts -->
+- **Play a whole chapter from its row.** A play control on a chapter row on
+  the Books screen plays the chapter's segments one after another. It was
+  built in slices (#1506, #1550, #1561). Not run on a phone, and not run on
+  iPhone, where audio start-up rules are the likeliest thing to differ.
+  <!-- source: PR #1561 "play a whole chapter from its row (#1469)"; src/lib/strings.ts playChapter; AGENTS.md "Device testing" on iOS audio contexts -->
+- **Even out the volume when done.** Marking a segment Finished now evens out
+  its loudness before the MP3 is made. The Settings switch is named "Even out
+  the volume when done" and is on when nothing has been chosen. The label is
+  the developers' proposal and the requirements owner has not confirmed it.
+  A segment that was Finished before the upgrade, with its MP3 still owed, is
+  made from its original audio. Nobody has listened to the result on a phone.
+  <!-- source: PR #1679 (normalize on Finished, #1433, schema v14), PR #1685 (the switch); docs/progress_tracker.md 2026-10-23 to 10-24 "Completed" and "Not run" ("Normalization also owes a listening test") -->
+- **Export project.** The book's menu has a new "Export project" row below
+  "Share book". It shares one zip in the Scripture Bundle format. This is
+  export only: there is no import, so a project cannot be brought back in
+  from the zip. The file is named `<book> - project.zip`, with "project" in
+  the app's language. A real Chromium test read the zip back; no phone has
+  produced one. <!-- source: PR #1624 (the row, #1457), PR #1646 (file name follows the app language, #1627), PR #1661 (read back in Chromium); AGENTS.md Known open items 5 (export only, import later); src/lib/strings.ts exportProject, exportProjectFilename -->
+- **A language question at a book's first Export project.** The first time a
+  book is exported, a screen asks what language the recordings are in, with a
+  search by name or code. You choose once and every export of that book uses
+  the answer. <!-- source: PR #1630 (#1492); PR #1629 (SIL language list bundled); src/lib/strings.ts languageAskTitle, languageAskLead -->
+- **A licence question at Share Book.** When a book has no licence chosen,
+  Share Book asks which licence, with "CC BY-SA 4.0" already selected, and
+  then shares. Shared file names carry the licence. Changing a licence later,
+  and Share Chapter on a book with no licence, are not done. The check that
+  the phone's share sheet still opens after the licence is saved has not been
+  run. <!-- source: PR #1670 (the ask, #1455), PR #1599 and #1573 (licence in file names); docs/progress_tracker.md 2026-10-23 to 10-24 "Share and licences" and "Not run" -->
+- **A Template Library.** A "Templates" tile in the global menu opens a list
+  with one package, Open Bible Stories. Tapping it asks for the new book's
+  name, pre-filled with the title, then creates the book with its chapters.
+  A name another book already has is refused. <!-- source: PR #1655 (#246, #1450); PR #1633 (name refused, #1272 part); src/lib/strings.ts templatesOpen, templatesTitle -->
+- **The app follows the phone's language.** The app opens in the phone's
+  language when it is one of the complete app languages, and follows a change,
+  but never in the middle of a recording. Other languages fall back to
+  English. <!-- source: PR #1541 (#1482); src/lib/i18n/resolve.ts header ("Which supported UI language a phone's language list asks for") -->
+  The non-English app text is an **AI draft that no reader has checked**:
+  Spanish (#1586), French (#1592), Portuguese (#1602), Indonesian (#1622),
+  Swahili (#1626), Hindi (#1631) and Simplified Chinese (#1667). Expect
+  wording a speaker would fix, and write it down.
+  <!-- source: those PRs; docs/progress_tracker.md 2026-10-23 to 10-24 "Translations" ("No reader has checked any of these") -->
+- **The Share ring shows a separate read phase.** When a chapter's pieces are
+  joined for sharing, the read now shows as its own phase of the progress
+  ring. How the arc should look is still an open call for the DRI (#1078).
+  <!-- source: PR #1659 (#1078); docs/progress_tracker.md 2026-10-23 to 10-24 "Tests and gates" and "In progress" -->
+- **Also in this span, smaller.** A recording finished while an earlier save
+  is still being replayed now waits for it instead of being lost (#1683; it
+  is held in memory only while it waits, so closing the app in that moment
+  can still lose it). Book-menu captions wrap at a narrow screen width
+  (#1682). The recorder menu shows the full chapter name (#1673). The
+  mic-refused card shakes on each repeated refusal (#1672). A chapter keeps its
+  own number when moved (#1634). <!-- source: those PRs; the in-memory residual is stated in PR #1683 per docs/progress_tracker.md 2026-10-23 to 10-24 "Pending takes (#38)" -->
+
 ## 4. Known limits (as of 2026-10-02, build 1.0.1)
 
 - **The iPhone app is iPhone-only.** There is no iPad version, and the app
