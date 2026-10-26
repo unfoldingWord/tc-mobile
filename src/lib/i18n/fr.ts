@@ -609,6 +609,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Mettre ${heading} en pause`,
   resumeChapter: (heading: string, percent: number): string =>
     `Reprendre ${heading}, en pause à ${percent} pour cent`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} n'a pas pu être lu. Touchez pour réessayer`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} n'a rien d'enregistré à lire`,
 };

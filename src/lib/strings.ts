@@ -1631,6 +1631,11 @@ export const stringsEn = {
   pauseChapter: (heading: string): string => `Pause ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Resume ${heading}, paused at ${percent} percent`,
+  // A failed play's whole name (#1344): it says the chapter did not play and
+  // that a tap tries again, because the ring's failure colour is not spoken.
+  // English is a proposal for the requirements owner.
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} did not play. Tap to try again`,
   // The disabled control's whole name: it stays focusable, so the reason is
   // what it says.
   chapterNothingToPlay: (heading: string): string =>

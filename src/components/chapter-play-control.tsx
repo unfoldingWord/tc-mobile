@@ -74,7 +74,9 @@ export function ChapterPlayControl({
             heading,
             Math.round((pausedFraction ?? 0) * 100)
           )
-        : strings.playChapter(heading);
+        : status === "failed"
+          ? strings.chapterPlayFailed(heading)
+          : strings.playChapter(heading);
   const fill = moving ? undefined : status === "paused" ? pausedFraction : 0;
 
   return (
