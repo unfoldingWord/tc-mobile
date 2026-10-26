@@ -174,17 +174,6 @@ What closes both, learned on that pin family one hole at a time:
   `uniqueIndexOf` in `tests/support.ts` throw on a missing, duplicated or
   empty anchor, which is what turned #529's capture into a visible failure.
 
-Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
-at all; that sentence is stale and is tracked in #525, which is where it gets
-fixed. Four places lean on it today, not one:
-`tests/contrast.test.ts:12`, `tests/style-bridge.test.ts:18-19` and
-`tests/notice-bridge.test.ts:21-23` cite it as their stated reason for existing,
-and `src/app/globals.css:29` paraphrases it as the reason an orphaned alias
-fails no check. No two quote it identically — notice-bridge elides the knip
-parenthetical, style-bridge elides with an ellipsis, contrast lowercases it —
-so #525 is a grep (`grep -rn "reads CSS at all" src tests AGENTS.md`), not a
-one-line edit, which is why it is its own change and not a clause in this one.
-
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
 `eslint.config.mjs`, not by convention.
 
@@ -574,11 +563,11 @@ is stored as `@pivot` — which would silently ignore _any_ future export tagged
    lines of timing seam plus 494 lines of its tests survived to be deleted by
    hand. knip cannot tell that from `lib/audio/edit.ts`, which is the engine
    B5 will consume — so the judgement stays human.
-2. **Nothing in this repo reads CSS at all.** knip says so itself
-   (`.css — Compiled extension excluded by project`). There is no stylelint and
-   no CSS plugin. An orphaned custom property or component token is invisible
-   to every check, which matters most in B2 and B3 — the largest UI deletion
-   this repo will do.
+2. **No linter or dead-code check reads CSS.** knip excludes it
+   (`.css — Compiled extension excluded by project`) and there is no stylelint.
+   An orphaned custom property or component token is invisible to both; only
+   the tests that read the stylesheets (see "Architecture — onion layers")
+   can catch one, and only for what they pin.
 
 What it does catch, on its first run: an unused `zustand`, an unused
 `lucide-react` that this document itself claimed was the icon library, and three
