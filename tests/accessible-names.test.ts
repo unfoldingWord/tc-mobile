@@ -440,7 +440,7 @@ describe("the gate itself, in both states", () => {
     expect(findings(srOnly)).toEqual([]);
   });
 
-  it("reads a native image: no alt is red, alt or alt=\"\" or presentation is clean", () => {
+  it('reads a native image: no alt is red, alt or alt="" or presentation is clean', () => {
     const img = (props: Record<string, string>) =>
       render(createElement("div", null, createElement("img", props)));
     expect(findings(img({ src: "a.png" })).map((f) => f.rule)).toEqual([1]);
