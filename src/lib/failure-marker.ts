@@ -16,7 +16,26 @@ const INFORMATIONAL_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-take-cap",
 ]);
 
+/**
+ * PENDING DRI QUESTION: should a failed in-tap audio resume light ≡?
+ *
+ * The default is `false`: these two rows are logged and go out with Send, but
+ * do not mark ≡, because a refused resume can happen routinely on iOS and a
+ * marker that lights on routine events stops meaning anything. Flipping this
+ * one constant to `true` makes both light it; no other file changes except the
+ * two assertions in `tests/failure-marker.test.ts` that name it. (`"playback-tap-resume"`
+ * and `"chapter-play"` predate this and light it; they are not in this set.)
+ */
+const RESUME_FAILURES_LIGHT_MARKER = false;
+
+const RESUME_CONTEXTS: readonly string[] = [
+  "playback-buffer-tap-resume",
+  "sheet-open-resume",
+];
+
 /** True when a row with this context should mark the Books ≡ control. */
 export function lightsFailureMarker(context: string): boolean {
-  return !INFORMATIONAL_CONTEXTS.has(context);
+  if (INFORMATIONAL_CONTEXTS.has(context)) return false;
+  if (RESUME_CONTEXTS.includes(context)) return RESUME_FAILURES_LIGHT_MARKER;
+  return true;
 }
