@@ -1,0 +1,203 @@
+# Device pass for the next tester build
+
+This sheet replaces the checklist on [#974](https://github.com/unfoldingWord/tc-mobile/issues/974),
+which still describes the v8 to v9 upgrade and the "New look (O4)" switch, both long gone. It
+gathers every device check that the work merged since `tester-build-v1.1.0` (cut 2026-10-14) says
+it owes, so a phone owner can run it without reading the PRs.
+
+**Nothing on this sheet has been run.** Every "Result" cell is blank on purpose. Each row's
+"Expected" column is what the source PR or issue says should happen, not an observed result.
+Where a source says a behaviour is inference, the row says so.
+
+Gathered on 2026-10-26 from the Device checks section of each PR merged after the v1.1.0 tag,
+from the open and closed `needs-device` issues, and from the "Not run" sections of the three newest
+entries in [the progress tracker](../progress_tracker.md). The sheet describes what is on
+`develop`. Cutting the tester build, and the number it gets, is the DRI's call.
+
+## How to run it
+
+- Use one low-end Android phone with the installed app and one iPhone on TestFlight. Rows marked
+  "Both" run on each. A row marked "Android" or "iOS" runs on that platform only.
+- Run the section 1 rows first, on a phone that already holds recordings made on v1.1.x. Do not
+  uninstall to clear a screen: uninstalling deletes the recordings. A phone that has opened a
+  newer database schema cannot open an older build again
+  ([AGENTS.md](../../AGENTS.md), "A rollback is not free").
+- Report one comment per phone on the tracking issue: platform, device, OS version, the build
+  version shown in the app's footer, and who you are by role. Write pass, fail or "could not reach"
+  against each row. A failed row also gets an evidence comment on its source issue or PR.
+- The dated run record belongs in `docs/progress_tracker.md`, never in a docblock or a test name.
+- Whatever comes back, quote it as seen. Do not round a "could not reach" up to a pass.
+
+Result codes: P = pass, F = fail, N = could not reach.
+
+## 1. Upgrade in place (first, on a phone holding v1.1.x data)
+
+Needs at least two books, several chapters, finished (MP3) and unfinished segments, a renamed
+chapter and a renamed segment, all made on v1.1.x.
+
+| #   | Platform | Action                                                                               | Expected                                                                                                                      | Source                                   | Result |
+| --- | -------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------ |
+| 1.1 | Both     | Install the candidate build over the old one, without uninstalling. Open the app.    | It opens. Every book, chapter and segment is still there.                                                                     | #1464, #1462, #1463, #1522, #1525, #1618 |        |
+| 1.2 | Both     | Play several segments, finished and unfinished, across both books.                   | Every segment plays.                                                                                                          | #1464                                    |        |
+| 1.3 | Both     | Compare the shelf with what you wrote down before the update.                        | Shelf order, book names and colours, chapter names and Finished marks are unchanged.                                          | #1464                                    |        |
+| 1.4 | Both     | Record a new segment and save it.                                                    | It saves and plays.                                                                                                           | #1464, #1618                             |        |
+| 1.5 | Both     | Delete a segment, including one that was recorded just before the update if you can. | The delete works and nothing else moves.                                                                                      | #1464, #1632                             |        |
+| 1.6 | Both     | Close the app and open it again.                                                     | Nothing changes. Books has no failure mark.                                                                                   | #1464                                    |        |
+| 1.7 | Both     | Time how long the first open after the update takes on a large shelf.                | Record the time. The sources name upgrade time as unmeasured, so there is no expected value.                                  | #1522                                    |        |
+| 1.8 | Web      | With an old tab open, open the new build in a second tab.                            | Record what each tab shows and whether any recording is lost. The issue names the two-copy case and gives no expected screen. | #1464                                    |        |
+
+Also read the sources' note that the schema is now v14 on `develop` (v12 and v13 above, v14 for
+normalize-on-Finished): a phone that opens this build cannot go back.
+
+## 2. iPhone audio: Play, silence switch, Record
+
+Source for the whole section: #1521 (the fix for #1518; the tracker says the device check has no results yet). The PR says Android needs no check for these rows, because its WebView has no `navigator.audioSession` and both setters are no-ops there.
+
+| #   | Platform | Action                                                                    | Expected                                                                                            | Source       | Result |
+| --- | -------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------ | ------ |
+| 2.1 | iOS      | Play a recording with the silent switch ON, then OFF.                     | Audible both times.                                                                                 | #1521, #1518 |        |
+| 2.2 | iOS      | Play while holding the phone away from your ear.                          | Sound comes from the loudspeaker, not the earpiece.                                                 | #1521        |        |
+| 2.3 | iOS      | Record, then Play.                                                        | The take plays.                                                                                     | #1521        |        |
+| 2.4 | iOS      | Cold Record: open the app, record before any Play, then Play it.          | The waveform has shape and Play is audible.                                                         | #1521        |        |
+| 2.5 | iOS      | Play, then Record a new take, then Play it.                               | The new take's waveform has shape, the level meter moves while recording, and Play is audible.      | #1521        |        |
+| 2.6 | iOS      | Lock, unlock, then Play. Repeat three times.                              | Audible each time.                                                                                  | #1521        |        |
+| 2.7 | iOS      | Connect and disconnect Bluetooth headphones, then Play and Record.        | Both work after each change.                                                                        | #1521        |        |
+| 2.8 | iOS      | After any failure above, look at the Books menu mark and the failure log. | Note whether a `playback-clock-stalled` row appears. A row is what to report, not an expected pass. | #1521, #1251 |        |
+
+## 3. Recording, saving and the launch replay (Android and iOS)
+
+| #   | Platform | Action                                                                                                                    | Expected                                                                                                               | Source              | Result |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
+| 3.1 | Both     | Record a take, stop, edit it, save it. Then force-close the app (swipe it away) and reopen.                               | The recording is on the segment, saved once, with nothing shown.                                                       | #1694, #1660, #1540 |        |
+| 3.2 | Both     | Record and tap Stop, then force-close the app straight away, before the sheet closes. Reopen.                             | The take is saved quietly on launch ("Finish the save quietly"). It is not saved a second time after a further reopen. | #1660, #1540, #38   |        |
+| 3.3 | Both     | Reopen after a kill where another copy of the app already finished the same take (hard to arrange; mark N if you cannot). | Nothing is shown and the take is not duplicated.                                                                       | #1660               |        |
+| 3.4 | Both     | Open the app with a waiting recording still on disk, then record and tap Stop straight away.                              | The new recording is saved once the replay finishes. It is not lost.                                                   | #1683, #1549        |        |
+| 3.5 | Both     | Edit and save a recording, then edit and save it again, then reopen after a kill.                                         | The saved audio matches the last save, not an earlier one.                                                             | #1694               |        |
+| 3.6 | Both     | Delete a segment and a book that hold a waiting recording, then reopen.                                                   | No recording comes back.                                                                                               | #1632               |        |
+| 3.7 | Both     | Tap Record again, and fail to start it on purpose (deny the microphone, or start a call).                                 | The screen is usable afterwards. Note whether a second tap works.                                                      | #1489               |        |
+| 3.8 | Both     | Open the recorder. Check the menu while a take records.                                                                   | Stop is first in the menu.                                                                                             | #1513               |        |
+| 3.9 | Both     | Open the microphone and close it a few times, including after a refusal.                                                  | The microphone opens each time. Note anything that fails or stays held.                                                | #1499, #1508        |        |
+
+## 4. Alarm, interruption and silence
+
+| #   | Platform | Action                                                                                          | Expected                                                                                                                                                                                                    | Source              | Result |
+| --- | -------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
+| 4.1 | Both     | Record a normal take with a pause of about 6 seconds of silence.                                | The take is not sealed.                                                                                                                                                                                     | #1511, #1294        |        |
+| 4.2 | Both     | Record, and let an alarm or an incoming call interrupt the take.                                | The screen leaves recording on its own and the partial take is saved. Note which failure-log row appears (`recorder-interrupted-active` or `recorder-capture-stalled`). Any row is a report, not a verdict. | #1511, #1294, #1447 |        |
+| 4.3 | Both     | Start recording while the microphone is already taken by another app.                           | A take whose capture track was already ended stops at once, not with a running timer.                                                                                                                       | #1447               |        |
+| 4.4 | Both     | Background the app mid-take.                                                                    | The take is sealed and saved. Nothing restarts on return. (Decided in #836; never run on a device.)                                                                                                         | #836, AGENTS.md     |        |
+| 4.5 | Both     | Refuse the microphone twice.                                                                    | The second refusal shows the phone's own Settings steps, and they match the real Settings screens. The card shakes on each repeated refusal.                                                                | #1571, #1569, #1672 |        |
+| 4.6 | Both     | Open the permission dialog and read its button labels against the facilitator's runbook advice. | The labels the runbook names are the labels on the real dialog. Record any mismatch.                                                                                                                        | #1653, #248         |        |
+
+## 5. Chapter play (Android and iOS)
+
+Needs a chapter of at least four segments mixing unfinished (PCM) and Finished (MP3) ones. Run on
+the low-end Android phone and the iPhone. Source for the section: #1470 (the device pass for
+#1468 and #1469), plus the PRs named in each row.
+
+| #    | Platform | Action                                                                                       | Expected                                                                                                           | Source       | Result |
+| ---- | -------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------ | ------ |
+| 5.1  | Both     | Tap a chapter row's play control, tap again, tap a third time.                               | Play, pause with the ring held at the point reached, resume.                                                       | #1561, #1469 |        |
+| 5.2  | Both     | Listen across the join between two clips.                                                    | Record the audible gap. The target is 0.5 seconds.                                                                 | #1470, #1550 |        |
+| 5.3  | iOS      | Let the chapter run past its first clip without touching the screen.                         | The second and later clips start without a tap. (The issue marks this as inference until now.)                     | #1470, #1550 |        |
+| 5.4  | Both     | Pause in the middle of a clip, and pause in a gap, then resume each.                         | Resumes where it stopped.                                                                                          | #1468, #1550 |        |
+| 5.5  | Both     | Lock and unlock mid-chapter.                                                                 | Note what plays and what stops.                                                                                    | #1470, #1550 |        |
+| 5.6  | Both     | Take an incoming call mid-clip.                                                              | Note what happens and whether play can start again.                                                                | #1470, #1550 |        |
+| 5.7  | Both     | Connect headphones mid-chapter.                                                              | Note what happens.                                                                                                 | #1470        |        |
+| 5.8  | Both     | Play a chapter long enough to test memory (low-end Android especially).                      | It plays to the end, or note where it stops.                                                                       | #1470, #1550 |        |
+| 5.9  | Both     | Check whether the waveform or playback stall in #1251 appears on a resume.                   | Record yes or no. Do not assume #1251 is fixed.                                                                    | #1470, #1251 |        |
+| 5.10 | Both     | Hold a chapter row, then try to hold and tap the play control.                               | A hold on the row lifts it for reorder. A tap on the control does not lift it. A tap on the row opens the chapter. | #1469, #1561 |        |
+| 5.11 | Both     | Reach the 44 px play control with one hand.                                                  | It is easy to hit and not mistaken for the row.                                                                    | #1469, #1470 |        |
+| 5.12 | Both     | Look at the ring on the light theme in sun, then on the dark theme.                          | The ring's fill reads against its track in both. (Contrast was computed from token values only, #1691.)            | #1469, #1691 |        |
+| 5.13 | Both     | Check a row whose dots wrap, at a narrow width or with the phone's text size at 200 percent. | The row grows to fit and nothing overlaps.                                                                         | #1469        |        |
+| 5.14 | Both     | Use a screen reader on a chapter row.                                                        | The control is named for its state (play, pause, resume with the percent).                                         | #1469, #1561 |        |
+| 5.15 | Both     | Collapse the book, delete a book, or start a share while a chapter plays.                    | Play stops.                                                                                                        | #1561        |        |
+
+## 6. Volume evening on Finished (Android and iOS)
+
+| #   | Platform | Action                                                                                                                                    | Expected                                                                                                                                                                        | Source              | Result |
+| --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
+| 6.1 | Both     | Open Settings and find the "Even out the volume when done" switch. Leave it on. Record a quiet and a loud segment and mark each Finished. | The switch looks like a normal button in the list. Listen to both after: they sound more even, without clipping or pumping. The target is -19 LUFS and -1.5 dBTP. Judge by ear. | #1679, #1685, #1433 |        |
+| 6.2 | Both     | Time the Finished step on the low-end phone.                                                                                              | Record how long it takes. The sources call this unmeasured, so there is no expected value.                                                                                      | #1679               |        |
+| 6.3 | Both     | Turn the switch off and mark another segment Finished.                                                                                    | The audio is not changed by the chain.                                                                                                                                          | #1685               |        |
+
+## 7. Sharing and export (Android and iOS)
+
+| #    | Platform | Action                                                                          | Expected                                                                                                                                        | Source              | Result |
+| ---- | -------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
+| 7.1  | Both     | Share a chapter. Open the file in a player.                                     | The OS share sheet opens. The file plays. Note what the player shows from the file's tag.                                                       | #1577, #1583        |        |
+| 7.2  | Both     | Share a book. Read the file names in the receiving app.                         | The names carry the chapter number before the chapter name, and the licence tag when set. Try a book with 100 or more chapters if you have one. | #1516, #1573, #1599 |        |
+| 7.3  | Both     | Name a book `///` and share it.                                                 | The share works and the file is named with the fallback label.                                                                                  | #1504               |        |
+| 7.4  | Both     | On a book with no licence chosen, tap Share book, pick a licence, and continue. | The OS share sheet opens after the licence is written, and the file names carry the tag.                                                        | #1670, #1455        |        |
+| 7.5  | Both     | Watch the share ring while a chapter is joined.                                 | The joined-chapter read shows as its own phase. Record how long it takes on a training phone.                                                   | #1659, #1078, #974  |        |
+| 7.6  | Both     | Use Export project on a book that has no language set.                          | The language ask opens. The soft keyboard does not cover the sheet. Typing in the search works. A screen reader reads the rows.                 | #1630, #1629, #1492 |        |
+| 7.7  | Both     | Finish Export project.                                                          | The OS share sheet opens. The file name ends in the project suffix in the app's language. Another app can open the zip.                         | #1624, #1614, #1646 |        |
+| 7.8  | Both     | Update, then share a chapter and a book from the updated build.                 | Both work. (A patch update to the filesystem plugin and to React shipped in #1690.)                                                             | #1690               |        |
+| 7.9  | Android  | Share Book in the installed app (not the web build).                            | The share works. (The old failure was #272.)                                                                                                    | #272, #1333         |        |
+| 7.10 | Web      | Share Book or Export project on a browser that refuses a zip.                   | The message points to the app.                                                                                                                  | #1624, #1333        |        |
+
+## 8. Library, shelf and menus (Android and iOS)
+
+| #   | Platform | Action                                                                                                       | Expected                                                                                                                           | Source              | Result |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
+| 8.1 | Both     | Open Templates from Books. Look at the picker, with the phone offline.                                       | The Open Bible Stories picker opens, its thumbnails draw offline from the precache.                                                | #1655, #1533        |        |
+| 8.2 | Both     | Create a book from a template, record in it, and share it.                                                   | The book is created in one step, then records and shares like any book. (The whole run is #1450's device pass.)                    | #1655, #1558        |        |
+| 8.3 | Both     | Create a book, or rename one, with a name another book already has.                                          | It is refused with "Another book has this name. Type a different name." and nothing is created.                                    | #1633               |        |
+| 8.4 | Both     | Move a chapter with the press-and-hold reorder.                                                              | The moved chapter keeps its own number. A screen reader reads the move line.                                                       | #1634               |        |
+| 8.5 | Both     | Open the Settings gear on Books.                                                                             | The gear is easy to hit, the back chevron works, the rows are 56 px tall and the theme control is there.                           | #1623, #1575        |        |
+| 8.6 | Both     | Switch "Always show chapter numbers" on and off. Open a chapter menu and the recorder menu with a long name. | The full name shows at the top of each menu, with and without the number. A screen reader reads the chapter menu in both settings. | #1623, #1617, #1673 |        |
+| 8.7 | Both     | Open a book's menu with a long book name in es, fr, pt and ru (or at a narrow width).                        | The tile captions wrap and do not overflow. Check hyphenation on the phone.                                                        | #1682, #1665        |        |
+| 8.8 | Both     | Look at the trim selection in the recorder, in light and dark, outdoors if you can.                          | The selection has its own blue, distinct from the playhead and the guide. Record what you saw.                                     | #1535               |        |
+| 8.9 | Both     | Check the recorder zoom controls with a screen reader.                                                       | The names say the magnification, not the extent.                                                                                   | #1621               |        |
+
+## 9. Languages, fonts and text
+
+| #   | Platform | Action                                                                                                                                                                | Expected                                                                                                                                                                                                              | Source                                                               | Result |
+| --- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------ |
+| 9.1 | Both     | Change the phone's language to Spanish, then French, Portuguese, Indonesian, Swahili, Hindi, Russian and Simplified Chinese, one at a time. Reopen the app each time. | The app opens in that language and follows the change, never in the middle of a take. Check that the text fits the screen.                                                                                            | #1541, #1538, #1586, #1592, #1602, #1622, #1626, #1631, #1639, #1667 |        |
+| 9.2 | Both     | With the phone in a language the app does not have, open the app.                                                                                                     | Inference: it opens in English, the fallback. (Arabic waits for the right-to-left device pass and is not on this sheet.)                                                                                              | #1541                                                                |        |
+| 9.3 | Both     | Open the Spanish and French refusal card at the narrowest width.                                                                                                      | The titles fit.                                                                                                                                                                                                       | #1609                                                                |        |
+| 9.4 | Both     | Open the Phone check, run the font check on the sample lines.                                                                                                         | Record, for each script (Arabic, Devanagari, Han, Cyrillic, and the others on the screen), real text or boxes. Record the phone's `navigator.language` and `navigator.languages` after changing the phone's language. | #1486, #1662, #1667, #1639, #1631                                    |        |
+| 9.5 | Both     | Check the numerals in Hindi and Arabic-script phones.                                                                                                                 | Digits are Latin.                                                                                                                                                                                                     | #1650                                                                |        |
+| 9.6 | Both     | A reader of each language reads a screen or two.                                                                                                                      | Record whether the meaning is right. No reader has checked any AI draft.                                                                                                                                              | #1586, #1592, #1602, #1622, #1626, #1631, #1639, #1667, #1620        |        |
+| 9.7 | Both     | Open a book with a right-to-left script in its name, and record in it.                                                                                                | Record what the live waveform and playback do. This is the open report in #1251. The cause is a hypothesis.                                                                                                           | #1251                                                                |        |
+
+## 10. About screen and the phone check
+
+| #    | Platform | Action                                                                                    | Expected                                                                                                                     | Source              | Result |
+| ---- | -------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------ |
+| 10.1 | Android  | Open Menu, then About and licences. Scan the QR code from a second phone, in both themes. | The camera reads it. The link opens the Play listing page. It only works for other people once the listing is public (#874). | #1668, #1663, #1250 |        |
+| 10.3 | Both     | Run the Phone check, including the loudness benchmark step.                               | It completes. Record the numbers (T5 of the loudness plan).                                                                  | #1502, #1519, #1512 |        |
+| 10.4 | Both     | Run the Phone check twice in a row.                                                       | The second run starts after the first finishes.                                                                              | #1512               |        |
+
+## 11. Re-tests carried from earlier issues
+
+| #    | Platform | Action                                                                                             | Expected                                                                                                 | Source       | Result |
+| ---- | -------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------ | ------ |
+| 11.1 | Android  | On the Moto G, record a long take and one with a loud moment, then save. Watch the waveform scale. | The scale does not shrink progressively. If it does, the DRI's pick was to look at the refit after save. | #1201, #1189 |        |
+| 11.2 | iOS      | VoiceOver on the book sheet: close the sheet over its delete ask.                                  | One focus move, not two (item 2 of #1387, not run)                                                       | #1387, #1495 |        |
+
+## Dropped or deferred, with the reason
+
+- **Hold-to-reveal on a cut-off name** and **the iOS microphone prompt in the phone's language**:
+  neither is built (they are rows in the 2026-10-26 queue). Add their rows to this sheet in the PR
+  that builds each one.
+- **Right-to-left layout on a phone** (#1555, #1494, #1541): waits for a complete Arabic table
+  and its own device pass.
+- **Android tablet that did not load** (#1253): the tester's details are still missing. A tablet row
+  needs make, model, WebView version and the install route first.
+- **Scripture Bundle export in another app** (#1614, #1588): the bundle is built in tests only and
+  has no UI. Nothing to do on a phone yet.
+- **Schema rollback on a device** (#1464): out of scope there, and forbidden in practice.
+- **#1294 T4** (seal on a `muted` track at bind): waits on the result of row 4.2.
+- **#1235 / #1233 items 5, 6, 35, A1, A5** (does `close()` settle on an interrupted context): needs
+  a specific device run under #245 and #1213, and has no expected value until the
+  first result lands.
+- **Pure Node, docs, CI and dependency PRs** merged since the tag: no device row. They state
+  "not needed" or "not run" and have no phone behaviour.
+
+## Where to write the result
+
+One dated entry per platform in `docs/progress_tracker.md`, naming the build and OS, with what was
+and was not seen. List every row not run as not run. Close the source issue only with that entry in
+place.
