@@ -42,9 +42,6 @@ import { templateRef } from "./validate";
 
 /**
  * A chapter or segment title for a template key, or `undefined` for none.
- *
- * @pivotpending #246: supplied by the template picker, which plans a package
- * with {@link planBookFromTemplate}.
  */
 export type TitleResolver = (
   kind: "chapter" | "segment",
@@ -87,9 +84,9 @@ export interface BookPlan extends Stamped<
 }
 
 /**
- * @pivotpending #246: the template picker calls this and hands the plan to
- * `createBookFromPlan` (`lib/storage/template-book.ts`, #253), which writes
- * the book, its chapters and its segments in one transaction.
+ * Plan a book from a template package; `createBookFromPlan`
+ * (`lib/storage/template-book.ts`) writes the plan, with its chapters and
+ * segments, in one transaction.
  */
 export function planBookFromTemplate(
   pkg: TemplatePackage,
