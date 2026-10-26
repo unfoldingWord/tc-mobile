@@ -10,7 +10,7 @@
  *
  * Why it stops at version 6: version 7 is where the standard adds the version
  * information blocks and a second ring of alignment patterns. Version 6-M holds
- * 106 bytes, and the link #1250 encodes is 70, so the extra structure would be
+ * 106 bytes, and the link #1250 encodes is 72, so the extra structure would be
  * code with no caller. A longer text throws rather than producing a symbol.
  *
  * Text is encoded as UTF-8 with no ECI header, which is what common phone

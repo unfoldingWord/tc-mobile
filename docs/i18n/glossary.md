@@ -70,9 +70,10 @@ proposal has been written for them, no human has reviewed any, and no native
 reader has been asked.
 
 The two level-3 tables carry an `English` column beside `#`, copied from the
-English table in this section. Join a drafted cell to its English term on that
+English table in section 5. Join a drafted cell to its English term on that
 column, not on the row number, so a reorder of the table cannot pair a cell with
-the wrong word.
+the wrong word. A gloss edit to the English table lands in both level-3 tables
+in the same change, so the copies never disagree.
 
 | Code  | Language   | Script | Direction     |
 | ----- | ---------- | ------ | ------------- |
