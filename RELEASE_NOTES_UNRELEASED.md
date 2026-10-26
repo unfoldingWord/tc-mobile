@@ -8,6 +8,7 @@ its body and empties it.
 ## Added
 
 - Export project asks once what language a book is in, from a searchable list of languages, and writes it into the book and its export (#1630).
+- Share Chapter on a book with no licence chosen asks which licence first, with the same four choices as Share Book, then shares; a book is asked once, whichever share comes first (#1455).
 
 ## Changed
 

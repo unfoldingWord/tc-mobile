@@ -12,6 +12,7 @@ import { Control } from "./control";
 import { EmptyState } from "./empty-state";
 import { guidedStep } from "./guided-step";
 import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
+import { LicenceAsk } from "./licence-ask";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
@@ -31,6 +32,7 @@ import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
+import { needsLicenceAsk, useLicenceAsk } from "@/hooks/use-licence-ask";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
@@ -42,7 +44,9 @@ import { reorderShift } from "@/lib/view/reorder-gesture";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import { firstNotFinished } from "@/lib/view/segment-rows";
-import type { ChapterId, SegmentId } from "@/types/domain";
+import { getChapter } from "@/lib/storage/books";
+import type { Book, BookId, ChapterId, SegmentId } from "@/types/domain";
+import type { LicenceId } from "@/types/template";
 import type { RecorderEntry } from "@/types/view";
 
 /**
@@ -277,6 +281,60 @@ export const SegmentsScreen = forwardRef<
   const pendingRenameFocus = useRef(false);
   const renameChapterControlRef = useRef<HTMLButtonElement | null>(null);
   const share = useChapterShare();
+  // #1455: Share Chapter asks the book's licence first when none is chosen,
+  // with the ask Share Book uses, once per book whichever share comes first
+  // (the DRI, 2026-10-26). The ask writes against the book, whose id the
+  // chapter view does not carry, so it is read here. `undefined` while that
+  // read is pending; `null` when the chapter or the read is gone. Keyed by
+  // chapter, so an id read for another chapter is never the one written to.
+  const [chapterBook, setChapterBook] = useState<{
+    chapterId: ChapterId;
+    bookId: BookId | null;
+  } | null>(null);
+  useEffect(() => {
+    let live = true;
+    getChapter(chapterId).then(
+      (chapter) => {
+        if (live)
+          setChapterBook({ chapterId, bookId: chapter?.bookId ?? null });
+      },
+      (cause: unknown) => {
+        // The chapter view reads the same chapter and reports a failed read
+        // ("chapter-load"); all this copy loses is the ask.
+        console.error("Reading the chapter's book failed", cause);
+        if (live) setChapterBook({ chapterId, bookId: null });
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [chapterId]);
+  const bookId =
+    chapterBook?.chapterId === chapterId ? chapterBook.bookId : undefined;
+  // The licence the ask stored, kept here so the gate and the file name do
+  // not wait on the chapter view reading it back: a re-read that fails or
+  // lags must not ask again and overwrite the pick (#1670, round 4).
+  const [chosenLicence, setChosenLicence] = useState<{
+    bookId: BookId;
+    licence: LicenceId;
+  } | null>(null);
+  const onLicenceCommitted = useCallback((stored: Book) => {
+    const { licence } = stored;
+    if (licence) setChosenLicence({ bookId: stored.id, licence });
+  }, []);
+  const {
+    askingFor: askingLicenceFor,
+    saving: savingLicence,
+    failed: licenceFailed,
+    ask: askLicence,
+    cancel: cancelLicenceAsk,
+    choose: chooseLicence,
+    isSaving: licenceSaving,
+  } = useLicenceAsk(onLicenceCommitted);
+  const licence =
+    chosenLicence && chosenLicence.bookId === bookId
+      ? chosenLicence.licence
+      : bookLicence;
   // This screen's own record of "the erase I asked for failed", as the
   // `strings`-mapped KEY it failed with (#172 — `noRoom` on a full disk). NOT
   // the hook's:
@@ -385,13 +443,24 @@ export const SegmentsScreen = forwardRef<
    */
   const closeChapterMenuState = useCallback(() => {
     if (shareOwnsScreen()) return false;
+    // A licence write in flight cannot be cancelled, so the menu stays up
+    // until it settles: closing now would drop the share after the licence
+    // committed (#1455, as Share Book's `closeBookMenuState`).
+    if (licenceSaving()) return false;
     chapterMenuSession.current += 1;
     setChapterMenuOpen(false);
     setRenamingChapter(false);
     setSavingName(false);
+    cancelLicenceAsk();
     resetShare();
     return true;
-  }, [resetShare, shareOwnsScreen, setSavingName]);
+  }, [
+    resetShare,
+    shareOwnsScreen,
+    setSavingName,
+    licenceSaving,
+    cancelLicenceAsk,
+  ]);
 
   /**
    * Cancel / Escape / scrim / a system Back take the erase confirm down. The
@@ -432,7 +501,10 @@ export const SegmentsScreen = forwardRef<
       // alone, so a rename in flight refuses a system Back and does not refuse
       // Menu's Close/scrim/Escape. Named, not closed — closing it decides open
       // question 7 for Close, which is the requirements owner's call.
-      busy: () => savingChapterNameRef.current || shareOwnsScreen(),
+      // A licence write in flight (#1455) refuses `closeChapterMenuState`, so
+      // Back must see it as busy too, or the adapter unregisters the layer.
+      busy: () =>
+        savingChapterNameRef.current || shareOwnsScreen() || licenceSaving(),
       dismiss: () => {
         closeChapterMenuState();
       },
@@ -489,11 +561,12 @@ export const SegmentsScreen = forwardRef<
     // A still-pending rename from the last time this menu was open must not
     // show the freshly reopened Confirm as busy before it has been tapped.
     setSavingName(false);
+    cancelLicenceAsk();
     // Registered in the SAME handler that opens it (invariant 6), and after the
     // state above for the reason `use-nav-stack.ts`'s `openChapter` documents:
     // the layer is on the stack before this gesture returns either way.
     layers.open("segments:chapter-menu");
-  }, [menuFocusRestore, layers, setSavingName]);
+  }, [menuFocusRestore, layers, setSavingName, cancelLicenceAsk]);
   // Menu's actual `onClose`, and the one close every caller uses.
   //
   // The Menu-level guard that blocked this while `savingChapterName` was true
@@ -661,46 +734,84 @@ export const SegmentsScreen = forwardRef<
   // over the chapter's PCM. The menu stays open across both gestures, so the
   // header and list stay `inert` (see listInert) for the whole flow — that is
   // what keeps Record, append, and erase out of an in-flight share.
+  //
+  // The prepare itself, handed the licence its file name carries: the stored
+  // one, or the one the ask just wrote (#1455), which the render this closure
+  // belongs to has not seen yet.
+  const runChapterShare = useCallback(
+    (shareLicence: LicenceId | null) => {
+      // On the native route `prepare()` chains straight into `send()` (#860,
+      // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so this
+      // tap alone must close the menu on `sent`/`dismissed` the same way
+      // `onSendShare` below already does for the web route's own second tap.
+      // On the web route (still `ready`, waiting for that second tap) and on
+      // every non-chained ending (nothing to share, a prepare error, a
+      // superseded run) this resolves `null`, and the guard below leaves the
+      // menu exactly as every one of those already did.
+      void share
+        .prepare(chapterId, (highest) =>
+          strings.shareFilename(
+            bookName,
+            chapterNumber,
+            chapterName,
+            highest,
+            shareLicence
+          )
+        )
+        .then((outcome) => {
+          if (outcome === "sent" || outcome === "dismissed")
+            onCloseChapterMenu();
+        });
+    },
+    [share, chapterId, bookName, chapterNumber, chapterName, onCloseChapterMenu]
+  );
+  // No licence chosen: the tap asks first (#1455). While the book's id is
+  // still being read (a window shorter than the chapter view's own load,
+  // which the ⋮ waits for) no ask can be raised, and sharing would skip it,
+  // so the tap does nothing — the one bail allowed ahead of the capture.
+  const asksLicence = needsLicenceAsk({ licence });
   const onPrepareShare = useCallback(() => {
+    if (asksLicence && bookId === undefined) return;
     focusRestore.capture();
     audio.leave();
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
     setSavingName(false);
-    // On the native route `prepare()` chains straight into `send()` (#860,
-    // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so this
-    // tap alone must close the menu on `sent`/`dismissed` the same way
-    // `onSendShare` below already does for the web route's own second tap.
-    // On the web route (still `ready`, waiting for that second tap) and on
-    // every non-chained ending (nothing to share, a prepare error, a
-    // superseded run) this resolves `null`, and the guard below leaves the
-    // menu exactly as every one of those already did.
-    void share
-      .prepare(chapterId, (highest) =>
-        strings.shareFilename(
-          bookName,
-          chapterNumber,
-          chapterName,
-          highest,
-          bookLicence
-        )
-      )
-      .then((outcome) => {
-        if (outcome === "sent" || outcome === "dismissed") onCloseChapterMenu();
-      });
+    // No licence chosen: ask first, and share from the ask once the pick is
+    // stored (#1455). A book that cannot be read has nothing to store
+    // against, so it shares as it did before, untagged.
+    if (asksLicence && bookId !== null && bookId !== undefined) {
+      askLicence(bookId);
+      return;
+    }
+    runChapterShare(licence);
   }, [
     focusRestore,
     audio,
-    share,
     setSavingName,
-    chapterId,
-    bookName,
-    bookLicence,
-    chapterNumber,
-    chapterName,
-    onCloseChapterMenu,
+    asksLicence,
+    licence,
+    bookId,
+    askLicence,
+    runChapterShare,
   ]);
+  // The pick is stored once, then the share goes on with it; a failed write
+  // stays in the ask, and a closed ask resolves null and shares nothing.
+  const onPickLicence = useCallback(
+    (picked: LicenceId) => {
+      void chooseLicence(picked).then((stored) => {
+        if (!stored) return;
+        runChapterShare(stored.licence);
+      });
+    },
+    [chooseLicence, runChapterShare]
+  );
+  // Cancel goes back to the tiles with nothing written and focus on Share.
+  const onCancelLicence = useCallback(() => {
+    cancelLicenceAsk();
+    requestAnimationFrame(() => shareControlRef.current?.focus());
+  }, [cancelLicenceAsk]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
   // as its first call inside this gesture (`navigator.share` in a browser, the
   // Share plugin in the native shell, whose file tap 1 already wrote to the
@@ -1498,35 +1609,44 @@ export const SegmentsScreen = forwardRef<
               chapter={chapterHeading}
               fullName={renameSeed}
             />
-            <ShareMenuSection
-              status={share.status}
-              sendUnconfirmed={share.sendUnconfirmed}
-              error={share.error}
-              scope="chapter"
-              controlRef={shareControlRef}
-              idleLabel={strings.shareChapter}
-              preparingLabel={strings.sharePreparing}
-              unconfirmedLabel={strings.shareChapterUnconfirmed}
-              hasGap={share.missing > 0}
-              gapText={shareGapText(
-                { missing: share.missing, partial: 0, partialChapters: 0 },
-                "chapter"
-              )}
-              onPrepare={onPrepareShare}
-              onSend={onSendShare}
-              tiles={{
-                before: (
-                  <Tile
-                    ref={renameChapterControlRef}
-                    tone="name"
-                    icon="pencil"
-                    label={strings.renameChapter}
-                    caption={strings.tileRename}
-                    onClick={() => setRenamingChapter(true)}
-                  />
-                ),
-              }}
-            />
+            {askingLicenceFor !== null ? (
+              <LicenceAsk
+                onContinue={onPickLicence}
+                onCancel={onCancelLicence}
+                saving={savingLicence}
+                error={licenceFailed ? strings[licenceFailed] : null}
+              />
+            ) : (
+              <ShareMenuSection
+                status={share.status}
+                sendUnconfirmed={share.sendUnconfirmed}
+                error={share.error}
+                scope="chapter"
+                controlRef={shareControlRef}
+                idleLabel={strings.shareChapter}
+                preparingLabel={strings.sharePreparing}
+                unconfirmedLabel={strings.shareChapterUnconfirmed}
+                hasGap={share.missing > 0}
+                gapText={shareGapText(
+                  { missing: share.missing, partial: 0, partialChapters: 0 },
+                  "chapter"
+                )}
+                onPrepare={onPrepareShare}
+                onSend={onSendShare}
+                tiles={{
+                  before: (
+                    <Tile
+                      ref={renameChapterControlRef}
+                      tone="name"
+                      icon="pencil"
+                      label={strings.renameChapter}
+                      caption={strings.tileRename}
+                      onClick={() => setRenamingChapter(true)}
+                    />
+                  ),
+                }}
+              />
+            )}
           </>
         )}
       </Menu>
