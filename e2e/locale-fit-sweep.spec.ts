@@ -401,7 +401,9 @@ export async function sweep(
       await openAsk(page, tag, "Export project");
       await expect(page.locator('input[type="search"]')).toBeVisible();
       await expect(
-        page.getByRole("button", { name: /[,，]\s?apq$/ }).first()
+        page
+          .getByRole("button", { name: "A-Pucikwar apq", exact: true })
+          .first()
       ).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');

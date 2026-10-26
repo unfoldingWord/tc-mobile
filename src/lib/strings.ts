@@ -946,7 +946,6 @@ export const stringsEn = {
     "What language are the recordings in? You choose once, and every export of this book uses it.",
   languageSearch: "Search languages",
   languageSearchHint: "Name or code",
-  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
   languageLoading: "Loading the languages.",
   languageLoadFailed: "Could not load the languages.",
   languageNoMatch: "No language matches. Try another name or code.",

@@ -294,7 +294,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     "Rekaman ini dalam bahasa apa? Kamu memilihnya sekali, dan setiap ekspor buku ini memakainya.",
   languageSearch: "Cari bahasa",
   languageSearchHint: "Nama atau kode",
-  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
   languageLoading: "Memuat daftar bahasa.",
   languageLoadFailed: "Daftar bahasa tidak dapat dimuat.",
   languageNoMatch: "Tidak ada bahasa yang cocok. Coba nama atau kode lain.",
