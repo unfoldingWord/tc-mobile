@@ -343,7 +343,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     "这些录音是什么语言？只需选择一次，这本书之后的每次导出都会使用它。",
   languageSearch: "搜索语言",
   languageSearchHint: "名称或代码",
-  languageRow: (name: string, tag: string): string => `${name}，${tag}`,
   languageLoading: "正在加载语言。",
   languageLoadFailed: "未能加载语言。",
   languageNoMatch: "没有找到语言。请输入其他名称或代码。",

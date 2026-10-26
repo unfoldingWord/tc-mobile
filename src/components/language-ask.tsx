@@ -127,7 +127,6 @@ export function LanguageAsk(props: {
               <button
                 type="button"
                 className="language-row"
-                aria-label={strings.languageRow(entry.name, entry.tag)}
                 aria-disabled={saving || undefined}
                 onClick={() => !saving && props.onPick(entry.tag)}
               >
