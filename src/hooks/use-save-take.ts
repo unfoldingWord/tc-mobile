@@ -22,6 +22,7 @@ import {
   type PendingTake,
 } from "@/lib/takes/pending-take";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { loadedClipSource } from "./loaded-clip";
 import { withObservedRevision } from "./observed-revision";
 import {
   notSaved,
@@ -94,7 +95,11 @@ function reportPendingResult(
  * true.
  */
 function holdPendingTake(take: PendingTake): void {
-  void writePendingTake(take, { isDiscardRequested }).then((result) => {
+  // The stored clip behind `existing` when it is the loaded buffer unchanged
+  // (#1545), so the row names the clip instead of copying it. The hold checks
+  // the clip again in its own transaction and writes `inline` otherwise.
+  const source = loadedClipSource(take.existing);
+  void writePendingTake(take, { isDiscardRequested, source }).then((result) => {
     if (result.ok && result.outcome === "kept-foreign") {
       reportPendingResult("pending-take-write")({
         ok: false,
