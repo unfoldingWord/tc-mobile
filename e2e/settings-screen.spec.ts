@@ -142,3 +142,32 @@ test("always show chapter numbers: off keeps the name, on shows the number, and 
     .click();
   await expect(page.locator(".books-chapter-title")).toHaveText("The sower");
 });
+
+test("even out the volume: on by default, off is stored as 0, and it survives a reload", async ({
+  page,
+}) => {
+  const KEY = "tc-mobile.normalize-on-finished";
+  const stored = () => page.evaluate((k) => localStorage.getItem(k), KEY);
+  const row = () =>
+    settings(page).getByRole("button", {
+      name: "Even out the volume when done",
+    });
+
+  await page.goto("/");
+  await gear(page).click();
+  await expect(row()).toHaveAttribute("aria-pressed", "true");
+  // Never written until the person chooses.
+  expect(await stored()).toBeNull();
+
+  await row().click();
+  await expect(row()).toHaveAttribute("aria-pressed", "false");
+  expect(await stored()).toBe("0");
+
+  await page.reload();
+  await gear(page).click();
+  await expect(row()).toHaveAttribute("aria-pressed", "false");
+
+  await row().click();
+  await expect(row()).toHaveAttribute("aria-pressed", "true");
+  expect(await stored()).toBe("1");
+});
