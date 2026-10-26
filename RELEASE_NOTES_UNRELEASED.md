@@ -45,6 +45,7 @@ its body and empties it.
 - A recording the phone could not finish no longer says no sound was recorded (#1677).
 - Sharing a book whose name is only symbols names the file "Book.zip" instead of ".zip" (#1504).
 - Long button captions in the book menu wrap instead of overlapping in Spanish, French, Portuguese and Russian (#1682); the Spanish and French microphone-off titles fit the refusal card at a small width (#1609).
+- After an update, an action that needs a part of the app loaded later (such as Share Book or Export project) no longer just fails: the app restarts once to pick up the new version, unless a recording is open or unsaved. If it fails again, it is written to the problem log; not yet checked on a phone (#1421).
 
 ## Removed
 

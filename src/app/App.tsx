@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { BooksScreen } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
@@ -19,6 +25,7 @@ import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
 import { isPhoneCheckRunning } from "@/hooks/use-phone-check";
 import { usePhoneLocale } from "@/hooks/phone-locale";
 import { useSaveTake } from "@/hooks/use-save-take";
+import { setUnsavedAudioCheck } from "@/hooks/stale-chunk-reload";
 import {
   holdsUnsavedAudio,
   ordinalForTake,
@@ -158,6 +165,13 @@ export function App() {
     [pendingTake, recorder, clipboard]
   );
   const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
+  // The same question decides whether a lazy chunk that will not load may
+  // reload the page (#1421 O1): a reload loses exactly this work. A layout
+  // effect, so the answer is current before any tap can be handled.
+  useLayoutEffect(
+    () => setUnsavedAudioCheck(holdsUnsavedWork),
+    [holdsUnsavedWork]
+  );
 
   // The condition above is reported as it happens; this is where it is allowed
   // to take the screen over. The wait is the whole reason the hook reports

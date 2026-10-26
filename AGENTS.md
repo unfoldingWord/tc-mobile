@@ -526,8 +526,12 @@ clock still stopped, `"audio-clock-stalled-on-return"`), the tester-only phone c
 breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
 allocation is the measurement, not a failure, and is not reported), a
 licence text in Menu → About & licenses that fails to load or comes back as
-HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), and
-the log's own share and clear paths. `SaveFailed` now
+HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), a lazy
+chunk that would not load after an update (`hooks/stale-chunk-reload.ts`,
+#1421 O1: `"stale-chunk-reload"` when the page reloads once for it — not a
+failure, so it does not light ≡ — and `"stale-chunk"` when no reload is
+allowed: already reloaded once for this build, or audio held only in memory),
+and the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
