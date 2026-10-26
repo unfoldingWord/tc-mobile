@@ -724,7 +724,12 @@ recording) and `audio-clock-stalled-on-return` (found when the app came back
 to the screen). Each one also puts the red mark on Books **≡**. A
 recording that failed to start for a reason other than the microphone
 refusing, and a share that failed at the moment of sending, are also written
-down (`recorder-start` and `share-send`) and also put the red mark there. The
+down (`recorder-start` and `share-send`) and also put the red mark there.
+Right after an update, the app may restart once by itself when an action such
+as Share Book or Export project needs a part of the app it had not loaded yet;
+that restart is written down (`stale-chunk-reload`) without the red mark. If
+the same thing fails again, or a recording was open or unsaved so the app did
+not restart, it is written down as `stale-chunk` with the red mark. <!-- source: src/hooks/stale-chunk-reload.ts; src/lib/failure-marker.ts (#1421 O1) --> The
 app failing to wake its sound engine as a recording sheet opens, or as a
 recording is played back, is written down too (`sheet-open-resume`,
 `playback-buffer-tap-resume`) but, for now, does **not** put the red mark
