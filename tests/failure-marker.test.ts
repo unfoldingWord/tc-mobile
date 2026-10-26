@@ -68,7 +68,11 @@ describe("lightsFailureMarker", () => {
     }
   );
 
-  it.each(["recorder-finished-flag", "recorder-edit-apply"])(
+  it.each([
+    "recorder-finished-flag",
+    "recorder-edit-apply",
+    "recorder-segment-resume-retry",
+  ])(
     "the routine, recoverable recorder-sheet row %j is logged but does not light the marker",
     (context) => {
       expect(lightsFailureMarker(context)).toBe(false);
@@ -82,6 +86,7 @@ describe("lightsFailureMarker", () => {
     "recorder-close-rejected",
     "recorder-recovered-save",
     "recorder-recovered-share",
+    "recorder-back-no-handle",
   ])(
     "the recorder-sheet row %j, where a recording could be lost or stranded, lights the marker",
     (context) => {

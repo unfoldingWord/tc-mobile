@@ -622,6 +622,12 @@ export const stringsEn = {
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
   selectionEndHandle: "Selection end",
+  // A selection handle's spoken position (#1344), the slider's
+  // `aria-valuetext`: seconds into the clip, to a tenth. `n` arrives already
+  // rounded to a tenth, so the count in the phrase is the one that is said.
+  // English is a proposal for the requirements owner (lib/plural.ts).
+  selectionHandleTime: (n: number): string =>
+    plural(n, { one: "{n} second", other: "{n} seconds" }),
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not reset the audio. Try again.",
   // ── Why a capture produced no take (#169) ────────────────────────────────

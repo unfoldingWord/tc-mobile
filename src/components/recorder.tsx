@@ -92,7 +92,11 @@ import {
   buildCaptureContext,
   type CaptureContext,
 } from "@/lib/audio/capture-context";
-import { framesToMs, msToFrames } from "@/lib/audio/format";
+import {
+  framesToMs,
+  framesToSpokenSeconds,
+  msToFrames,
+} from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { panForZoom, playbackStrip, seedSelection } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
@@ -1918,6 +1922,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // A handle drag moves the span the audition is OF, so it silences it too.
     // `stopBuffer` returns immediately when nothing is sounding, so this costs a
     // predicate per pointermove, not a stop.
+    // A handle's spoken position (#1344), at the canonical rate like the rest
+    // of this screen's frame-to-time maths.
+    const selectionHandleText = useCallback(
+      (sample: number): string =>
+        strings.selectionHandleTime(framesToSpokenSeconds(sample)),
+      []
+    );
     const onSelectionChange = useCallback(
       (range: SampleRange) => {
         stopPlayback();
@@ -4030,6 +4041,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         onChange={onSelectionChange}
                         startLabel={strings.selectionStartHandle}
                         endLabel={strings.selectionEndHandle}
+                        valueText={selectionHandleText}
                       />
                     )}
                 </div>
