@@ -765,12 +765,13 @@ export const SegmentsScreen = forwardRef<
     },
     [share, chapterId, bookName, chapterNumber, chapterName, onCloseChapterMenu]
   );
+  // No licence chosen: the tap asks first (#1455). While the book's id is
+  // still being read (a window shorter than the chapter view's own load,
+  // which the ⋮ waits for) no ask can be raised, and sharing would skip it,
+  // so the tap does nothing — the one bail allowed ahead of the capture.
+  const asksLicence = needsLicenceAsk({ licence });
   const onPrepareShare = useCallback(() => {
-    const asks = needsLicenceAsk({ licence });
-    // The book's id is still being read (a window shorter than the chapter
-    // view's own load, which the ⋮ waits for): no ask can be raised yet, and
-    // sharing would skip it, so the tap does nothing.
-    if (asks && bookId === undefined) return;
+    if (asksLicence && bookId === undefined) return;
     focusRestore.capture();
     audio.leave();
     // Arming a share ends the current rename-close session: a rename resolving
@@ -780,7 +781,7 @@ export const SegmentsScreen = forwardRef<
     // No licence chosen: ask first, and share from the ask once the pick is
     // stored (#1455). A book that cannot be read has nothing to store
     // against, so it shares as it did before, untagged.
-    if (asks && bookId !== null && bookId !== undefined) {
+    if (asksLicence && bookId !== null && bookId !== undefined) {
       askLicence(bookId);
       return;
     }
@@ -789,6 +790,7 @@ export const SegmentsScreen = forwardRef<
     focusRestore,
     audio,
     setSavingName,
+    asksLicence,
     licence,
     bookId,
     askLicence,
