@@ -10,6 +10,8 @@ its body and empties it.
 - Export project asks once what language a book is in, from a searchable list of languages, and writes it into the book and its export (#1630).
 - Share Chapter on a book with no licence chosen asks which licence first, with the same four choices as Share Book, then shares; a book is asked once, whichever share comes first (#1455).
 
+- On the Books screen, holding a book name or chapter title that is cut short shows the whole name above it until you let go; a name that fits still holds to reorder as before; not yet checked on a phone (#1284).
+
 - A book's menu has a Licence tile that reopens the licence choice with the saved licence selected and saves a new pick without sharing; books made from a template do not have it, because their licence is fixed; not yet checked on a phone (#1455).
 - A Settings screen, opened by a gear in the Books header, holds the light and dark choice, an "Always show chapter numbers" switch, and a switch to even out the volume when a segment is done (on by default); not yet checked on a phone (#1623, #1685).
 - Each book's menu has an Export project row that shares the book as a Scripture Bundle zip; its file name suffix follows the app language; not yet checked on a phone (#1624, #1646).

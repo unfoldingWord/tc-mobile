@@ -23,6 +23,7 @@ import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
+import { NameReveal } from "./name-reveal";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
 import { CoverPicker } from "./cover-picker";
 import { LanguageAsk } from "./language-ask";
@@ -64,6 +65,7 @@ import {
   useLibraryShare,
   type UseLibraryShare,
 } from "@/hooks/use-library-share";
+import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { useReorderGesture } from "@/hooks/use-reorder-gesture";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
@@ -2895,6 +2897,9 @@ function BookItem({
   // The facilitator's name (#264), else the placeholder its slot renders
   // (#169) — `ChapterItem`'s `heading` one level up the tree.
   const heading = strings.bookHeading(book.name, book.number);
+  // Hold a cut-off book name to read it whole (S14, #1284). A name that fits
+  // leaves the press to the book's own reorder hold (#338).
+  const nameReveal = useHoldReveal();
   return (
     <li
       className={cn("books-card", lifted && "books-card-lifted")}
@@ -2950,9 +2955,14 @@ function BookItem({
                 size={expanded ? 36 : 34}
               />
             </span>
-            <span className="books-name" dir="auto">
+            <span
+              className="books-name"
+              dir="auto"
+              onPointerDown={nameReveal.holdStart}
+            >
               {heading}
             </span>
+            <NameReveal text={heading} place={nameReveal.place} />
           </>
         </button>
         <Control
@@ -3112,6 +3122,9 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
   const heading = useChapterHeading(chapter.name, chapter.number);
   const dots = dotStates(chapter);
   const [size, gap] = dotFit(dots.length, TITLED_DOT_ROOM);
+  // Hold a cut-off title to read it whole (S14, #1284). A title that fits
+  // leaves the press to the row's reorder hold (#953).
+  const nameReveal = useHoldReveal();
   return (
     <>
       <span className="books-chapter-num is-dim" aria-hidden="true">
@@ -3123,9 +3136,11 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
           dir={
             heading === strings.chapterName(chapter.number) ? undefined : "auto"
           }
+          onPointerDown={nameReveal.holdStart}
         >
           {heading}
         </span>
+        <NameReveal text={heading} place={nameReveal.place} />
         <span
           className="books-dots"
           style={
