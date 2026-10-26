@@ -52,8 +52,8 @@ describe("LanguageAsk", () => {
       false,
     ]);
     expect(rows.map((r) => r.textContent)).toEqual([
-      "Englishen",
-      "Frenchfrançaisfr",
+      "English en",
+      "French français fr",
     ]);
     const autonym = one(root, ".language-row [lang]");
     expect(autonym.textContent).toBe("français");

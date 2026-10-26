@@ -130,12 +130,15 @@ export function LanguageAsk(props: {
                 aria-disabled={saving || undefined}
                 onClick={() => !saving && props.onPick(entry.tag)}
               >
+                {/* The spaces are text nodes so the accessible name has word
+                    breaks; a flex gap is not part of the name. */}
                 <span className="language-row-name">{entry.name}</span>
+                {entry.autonym && " "}
                 {entry.autonym && (
                   <span lang={entry.tag} dir="auto">
                     {entry.autonym}
                   </span>
-                )}
+                )}{" "}
                 <span className="language-row-tag">{entry.tag}</span>
               </button>
             </li>
