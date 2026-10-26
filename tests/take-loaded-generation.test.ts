@@ -3,6 +3,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
+import { performSaveTake } from "@/hooks/use-save-take";
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { NO_STAGES_RUN } from "@/lib/audio/loudness";
@@ -21,7 +22,11 @@ import {
   setSegmentFinished,
 } from "@/lib/storage/takes";
 import { commitTranscode } from "@/lib/storage/transcode";
-import type { NewTake } from "@/lib/takes/pending-take";
+import {
+  startSave,
+  type NewTake,
+  type PendingTake,
+} from "@/lib/takes/pending-take";
 import type { ClipId, SegmentId, StoredPendingTake } from "@/types/domain";
 import { clearAllStores, ramp } from "./support";
 
@@ -111,6 +116,24 @@ describe("an ordinary save after a transcode under the recorder (A-14 interleavi
     });
 
     expect(result.outcome).toBe("saved");
+    expect(await activeGeneration(segmentId)).toBe(0);
+  });
+
+  it("the save hook's commit passes the take's baseGeneration through", async () => {
+    const { segmentId, clipId, pcm } = await finishedPcmSegment();
+    await transcode(segmentId, clipId, pcm);
+    let held: PendingTake | null = startSave(null, appendOnto(segmentId, pcm));
+
+    const ok = await performSaveTake(held, {
+      update: (transition) => {
+        held = transition(held);
+      },
+      onSaved: () => {},
+      requestSweep: () => {},
+    });
+
+    expect(ok).toBe(true);
+    expect(held).toBeNull();
     expect(await activeGeneration(segmentId)).toBe(0);
   });
 
