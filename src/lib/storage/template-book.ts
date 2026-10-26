@@ -141,9 +141,6 @@ function segmentRow(
  * book already has throws `BookNameTakenError` before anything is written, and
  * blank leaves the book unnamed. Returns the book row written, or the stored one when
  * this is a replay of the same create.
- *
- * @pivotpending #246: the template picker plans a package and writes it with
- * this; until it lands, only `tests/template-book-write.test.ts` calls it.
  */
 export async function createBookFromPlan(
   plan: BookPlan,
