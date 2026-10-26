@@ -35,7 +35,13 @@ describe("TemplateList", () => {
     expect(rows).toHaveLength(1);
     const row = rows[0] as Element;
     expect(row.getAttribute("type")).toBe("button");
-    expect(row.getAttribute("aria-label")).toBe("Open Bible Stories");
+    // The name carries what a sighted person reads: title, then licence.
+    expect(row.getAttribute("aria-label")).toBe(
+      strings.sentences(
+        "Open Bible Stories",
+        strings.templateLicenceLabel("CC BY-SA 4.0")
+      )
+    );
     expect(one(row, ".template-row-title").textContent).toBe(
       "Open Bible Stories"
     );
@@ -47,9 +53,9 @@ describe("TemplateList", () => {
     // Icon first, then the tag.
     expect(licence.firstElementChild?.tagName.toLowerCase()).toBe("svg");
     expect(licence.textContent).toBe("CC BY-SA 4.0");
-    expect(licence.getAttribute("aria-label")).toBe(
-      strings.templateLicenceLabel("CC BY-SA 4.0")
-    );
+    // A roleless span's aria-label is not spoken (inference); the row's name
+    // carries the licence instead.
+    expect(licence.hasAttribute("aria-label")).toBe(false);
   });
 
   it("resolves the thumbnail against a non-root base, not the route", async () => {
