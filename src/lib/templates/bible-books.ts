@@ -117,9 +117,6 @@ export const BIBLE_BOOKS: readonly BibleBook[] = [
 
 /**
  * The row for a USFM code, or undefined for a code outside the 66.
- *
- * @pivotpending Read by the Bible-book template builder and the picker
- * (#1450); only tests import it until they land.
  */
 export function bibleBookByCode(code: string): BibleBook | undefined {
   return BIBLE_BOOKS.find((book) => book.code === code);
