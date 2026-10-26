@@ -52,8 +52,8 @@ test("the gear opens Settings, Back to books closes it, and focus returns to the
     settings(page).getByRole("button", { name: /light screen/i })
   ).toBeVisible();
   await expect(
-    settings(page).getByRole("button", { name: "Always show chapter numbers" })
-  ).toHaveAttribute("aria-pressed", "false");
+    settings(page).getByRole("switch", { name: "Always show chapter numbers" })
+  ).toHaveAttribute("aria-checked", "false");
 
   await settings(page)
     .getByRole("button", { name: "Back to books", exact: true })
@@ -116,11 +116,11 @@ test("always show chapter numbers: off keeps the name, on shows the number, and 
   await expect(title).toHaveText("The sower");
 
   await gear(page).click();
-  const row = settings(page).getByRole("button", {
+  const row = settings(page).getByRole("switch", {
     name: "Always show chapter numbers",
   });
   await row.click();
-  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row).toHaveAttribute("aria-checked", "true");
   await settings(page)
     .getByRole("button", { name: "Back to books", exact: true })
     .click();
@@ -132,10 +132,10 @@ test("always show chapter numbers: off keeps the name, on shows the number, and 
   await expect(page.locator(".books-chapter-title")).toHaveText("Chapter 1");
   await gear(page).click();
   await expect(
-    settings(page).getByRole("button", { name: "Always show chapter numbers" })
-  ).toHaveAttribute("aria-pressed", "true");
+    settings(page).getByRole("switch", { name: "Always show chapter numbers" })
+  ).toHaveAttribute("aria-checked", "true");
   await settings(page)
-    .getByRole("button", { name: "Always show chapter numbers" })
+    .getByRole("switch", { name: "Always show chapter numbers" })
     .click();
   await settings(page)
     .getByRole("button", { name: "Back to books", exact: true })
@@ -149,25 +149,25 @@ test("even out the volume: on by default, off is stored as 0, and it survives a 
   const KEY = "tc-mobile.normalize-on-finished";
   const stored = () => page.evaluate((k) => localStorage.getItem(k), KEY);
   const row = () =>
-    settings(page).getByRole("button", {
+    settings(page).getByRole("switch", {
       name: "Even out the volume when done",
     });
 
   await page.goto("/");
   await gear(page).click();
-  await expect(row()).toHaveAttribute("aria-pressed", "true");
+  await expect(row()).toHaveAttribute("aria-checked", "true");
   // Never written until the person chooses.
   expect(await stored()).toBeNull();
 
   await row().click();
-  await expect(row()).toHaveAttribute("aria-pressed", "false");
+  await expect(row()).toHaveAttribute("aria-checked", "false");
   expect(await stored()).toBe("0");
 
   await page.reload();
   await gear(page).click();
-  await expect(row()).toHaveAttribute("aria-pressed", "false");
+  await expect(row()).toHaveAttribute("aria-checked", "false");
 
   await row().click();
-  await expect(row()).toHaveAttribute("aria-pressed", "true");
+  await expect(row()).toHaveAttribute("aria-checked", "true");
   expect(await stored()).toBe("1");
 });

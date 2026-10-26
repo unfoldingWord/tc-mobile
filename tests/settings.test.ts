@@ -85,12 +85,19 @@ describe("a Settings row (#1575)", () => {
     );
 
   it("a switch row names its state in place and to AT; an action row has neither", () => {
-    expect(row(true).getAttribute("aria-pressed")).toBe("true");
+    expect(row(true).getAttribute("role")).toBe("switch");
+    expect(row(true).getAttribute("aria-checked")).toBe("true");
+    expect(row(true).hasAttribute("aria-pressed")).toBe(false);
     expect(row(true).querySelector(".setting-switch")).not.toBeNull();
     expect(row(true).classList).toContain("is-on");
-    expect(row(false).getAttribute("aria-pressed")).toBe("false");
+    expect(row(false).getAttribute("role")).toBe("switch");
+    expect(row(false).getAttribute("aria-checked")).toBe("false");
+    expect(row(false).hasAttribute("aria-pressed")).toBe(false);
     expect(row(false).classList).not.toContain("is-on");
-    // An absent `aria-pressed` and a false one say different things.
+    // An absent `aria-checked` and a false one say different things, and an
+    // action row is a plain button: no switch role, no pressed state.
+    expect(row(undefined).hasAttribute("aria-checked")).toBe(false);
+    expect(row(undefined).hasAttribute("role")).toBe(false);
     expect(row(undefined).hasAttribute("aria-pressed")).toBe(false);
     expect(row(undefined).querySelector(".setting-switch")).toBeNull();
   });
