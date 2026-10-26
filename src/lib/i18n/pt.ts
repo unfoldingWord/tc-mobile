@@ -251,6 +251,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading} agora está na posição ${to} da estante.`,
   bookReorderStayed: (heading: string): string =>
     `${heading} ficou onde estava.`,
+  moveUp: "Subir",
+  moveDown: "Descer",
+  alreadyFirst: "Já está no início",
+  alreadyLast: "Já está no fim",
   eraseConfirmTitle: "Redefinir segmento e começar de novo",
   eraseConfirm: "Redefinir gravação",
   eraseCancel: "Cancelar",

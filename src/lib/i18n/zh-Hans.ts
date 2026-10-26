@@ -233,6 +233,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `“${heading}”现在在书架第 ${to} 位。`,
   bookReorderStayed: (heading: string): string =>
     `“${heading}”在书架上的位置没有变化。`,
+  moveUp: "上移",
+  moveDown: "下移",
+  alreadyFirst: "已在最前",
+  alreadyLast: "已在最后",
   eraseConfirmTitle: "重置段落并重新开始",
   eraseConfirm: "重置录音",
   eraseCancel: "取消",

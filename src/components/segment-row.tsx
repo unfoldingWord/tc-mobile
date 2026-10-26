@@ -136,6 +136,18 @@ interface SegmentRowProps {
    * released before the hold still reaches the open button's click.
    */
   onHoldStart?: (e: React.PointerEvent) => void;
+  /**
+   * Move this row one place up (`-1`) or down (`1`) — the menu's Move up /
+   * Move down tiles (#1344, the DRI's "Yes, menu Move up/down" pick), the tap
+   * path to reorder for screen-reader and motor users. The screen owns the
+   * write and the spoken line, the same ones a drop uses. Absent, the menu
+   * draws no Move tiles.
+   */
+  onMove?: (step: -1 | 1) => void;
+  /** This row is first in the chapter, so Move up is greyed with its reason. */
+  isFirst?: boolean;
+  /** This row is last in the chapter, so Move down is greyed with its reason. */
+  isLast?: boolean;
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
@@ -213,6 +225,9 @@ export function SegmentRow({
   bookCoverHex,
   chapterHeading,
   onHoldStart,
+  onMove,
+  isFirst = false,
+  isLast = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -791,6 +806,39 @@ export function SegmentRow({
                 }}
               />
             </TileGrid>
+            {onMove && (
+              // Move up / Move down (#1344): their own row under the
+              // actions, so the four-tile row keeps its fit. The first
+              // row's Move up and the last row's Move down are greyed with
+              // their reason (#135), as Done and Edit are on an empty
+              // segment. A move closes the menu the way its Close does —
+              // focus back on this row's ⋮ — so the next move is one more
+              // open away; the screen says where the row landed.
+              <TileGrid>
+                {(
+                  [
+                    [-1, "arrow-up", strings.moveUp, isFirst, "alreadyFirst"],
+                    [1, "arrow-down", strings.moveDown, isLast, "alreadyLast"],
+                  ] as const
+                ).map(([step, icon, label, blocked, reason]) => (
+                  <Tile
+                    key={step}
+                    tone="plain"
+                    icon={icon}
+                    label={label}
+                    caption={label}
+                    disabled={blocked}
+                    hint={blocked ? { label: strings[reason] } : null}
+                    onClick={() => {
+                      if (blocked) return;
+                      pendingFocus.current = "menu";
+                      closeMenu();
+                      onMove(step);
+                    }}
+                  />
+                ))}
+              </TileGrid>
+            )}
           </>
         )}
       </Menu>

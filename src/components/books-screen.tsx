@@ -2112,11 +2112,45 @@ export function BooksScreen({
   // One write, on the drop: `moveBook` patches the shelf optimistically, does
   // not count as activity on the book, and on failure puts the stored order
   // back and reports "book-reorder", with nothing extra on screen (#172).
-  // Every cancel writes nothing. Like the chapter reorder, there is no
-  // keyboard or switch path to move a book (D11); the live region only says
-  // what a drag did.
+  // Every cancel writes nothing. Unlike the chapter reorder, a book has a
+  // tap path too: Move up / Move down in its ⋮ menu (#1344, the DRI's "Yes,
+  // menu Move up/down" pick, revisiting D11 for this case), through the same
+  // write and the same spoken line (`commitBookMove`).
   const bookHeadingOf = (book: BookCard) =>
     strings.bookHeading(book.name, book.number);
+  // The one write and the one spoken line for a book's move, from a drop or
+  // from the menu. The landing is the book's new place on the shelf, counted
+  // from 1. A write that did not land puts the book back (`moveBook`
+  // resolves false, having reported it), so the spoken line must not keep
+  // saying it moved. Only if nothing newer has been said since.
+  const commitBookMove = (book: BookCard, toIndex: number) => {
+    const heading = bookHeadingOf(book);
+    const moved = strings.bookReorderMoved(heading, toIndex + 1);
+    setReorderStatus(moved);
+    void moveBook(book.bookId, toIndex).then((landed) => {
+      if (!landed) {
+        setReorderStatus((s) =>
+          s === moved ? strings.bookReorderStayed(heading) : s
+        );
+      }
+    });
+  };
+  // Move up / Move down from the book menu (#1344): one place, to the
+  // neighbour's index on the shelf. The menu closes the way its Close does,
+  // so focus goes back to this book's ⋮ (the restore effect above), and the
+  // row is scrolled into view if the move took it out. The menu greys the
+  // tile that would leave the shelf, and this refuses it again.
+  const moveBookFromMenu = (step: -1 | 1) => {
+    const from = books.findIndex((b) => b.bookId === shareMenuBookId);
+    const book = books[from];
+    const toIndex = from + step;
+    if (!book || toIndex < 0 || toIndex >= books.length) return;
+    if (!closeBookMenuState()) return;
+    layers.close("books:book-menu");
+    rowReveal.armScroll(book.bookId);
+    commitBookMove(book, toIndex);
+  };
+  const bookMenuIndex = books.findIndex((b) => b.bookId === shareMenuBookId);
   const bookGesture = useReorderGesture<BookId>({
     enabled: !shelfInert && !loading,
     ids: books.map((book) => book.bookId),
@@ -2130,7 +2164,6 @@ export function BooksScreen({
     onDrop: (bookId, _fromIndex, toIndex) => {
       const book = books.find((b) => b.bookId === bookId);
       if (!book) return;
-      const heading = bookHeadingOf(book);
       // Keep focus with the book that moved — on its row, which is what the
       // hand-off lands on — only when focus was on that row or nowhere, so a
       // drop never pulls focus off something else.
@@ -2139,19 +2172,7 @@ export function BooksScreen({
       if (active === document.body || (hit && hit === active)) {
         rowReveal.armFocus(bookId);
       }
-      // The landing is the book's new place on the shelf, counted from 1.
-      const moved = strings.bookReorderMoved(heading, toIndex + 1);
-      setReorderStatus(moved);
-      // A write that did not land puts the book back (`moveBook` resolves
-      // false, having reported it), so the spoken line must not keep saying
-      // it moved. Only if nothing newer has been said since.
-      void moveBook(bookId, toIndex).then((landed) => {
-        if (!landed) {
-          setReorderStatus((s) =>
-            s === moved ? strings.bookReorderStayed(heading) : s
-          );
-        }
-      });
+      commitBookMove(book, toIndex);
     },
     onCancel: (index) => {
       const book = books[index];
@@ -2397,8 +2418,8 @@ export function BooksScreen({
           share it — as on the Segments list: which row was lifted, where it
           landed, or that it went back. Outside the shelf's scroll box, and
           mounted for the screen's whole life so a screen reader hears the
-          first change. D11 leaves no keyboard or switch path to move a
-          chapter or a book; this only tells what a drag did. */}
+          first change. It tells what a drag did, and what a book menu's Move
+          up / Move down did (#1344); a chapter has no tap path to move yet. */}
       <span
         className="sr-only"
         role="status"
@@ -2705,71 +2726,109 @@ export function BooksScreen({
                 error={coverFailed ? strings[coverFailed] : null}
               />
             ) : (
-              <ShareMenuSection
-                status={bookShare.status}
-                sendUnconfirmed={bookShare.sendUnconfirmed}
-                error={bookShare.error}
-                scope="book"
-                controlRef={shareControlRef}
-                idleLabel={strings.shareBook}
-                preparingLabel={
-                  bookShare.kind === "project"
-                    ? strings.exportProjectPreparing
-                    : strings.shareBookPreparing
-                }
-                unconfirmedLabel={strings.shareBookUnconfirmed}
-                hasGap={bookShareHasGap}
-                gapText={bookShareGapText}
-                onPrepare={onPrepareBookShare}
-                onSend={onSendBookShare}
-                // Share, Export, Cover colour and Delete are four tiles: at
-                // the pinned 76 px they run past a 360 px sheet, so the row
-                // takes the compact size the segment menu's four use.
-                compact
-                tiles={{
-                  after: (
-                    <>
-                      {/* Off while a file is armed: Share now sends what was
+              <>
+                <ShareMenuSection
+                  status={bookShare.status}
+                  sendUnconfirmed={bookShare.sendUnconfirmed}
+                  error={bookShare.error}
+                  scope="book"
+                  controlRef={shareControlRef}
+                  idleLabel={strings.shareBook}
+                  preparingLabel={
+                    bookShare.kind === "project"
+                      ? strings.exportProjectPreparing
+                      : strings.shareBookPreparing
+                  }
+                  unconfirmedLabel={strings.shareBookUnconfirmed}
+                  hasGap={bookShareHasGap}
+                  gapText={bookShareGapText}
+                  onPrepare={onPrepareBookShare}
+                  onSend={onSendBookShare}
+                  // Share, Export, Cover colour and Delete are four tiles: at
+                  // the pinned 76 px they run past a 360 px sheet, so the row
+                  // takes the compact size the segment menu's four use.
+                  compact
+                  tiles={{
+                    after: (
+                      <>
+                        {/* Off while a file is armed: Share now sends what was
                           prepared, so Export cannot sit beside it as if it
                           would swap the file in. */}
-                      {bookShare.status !== "ready" && (
+                        {bookShare.status !== "ready" && (
+                          <Tile
+                            ref={exportTileRef}
+                            tone="send"
+                            icon="file-zip"
+                            label={strings.exportProject}
+                            caption={strings.tileExport}
+                            busy={
+                              bookShare.status === "preparing" &&
+                              bookShare.kind === "project"
+                            }
+                            onClick={onPrepareBookExport}
+                          />
+                        )}
+                        <CoverTile
+                          ref={coverTileRef}
+                          coverHex={shareMenuCoverHex}
+                          onClick={onOpenCoverPicker}
+                        />
+                        {canChangeLicence && (
+                          <LicenceTile
+                            ref={licenceTileRef}
+                            onClick={onOpenLicenceTile}
+                          />
+                        )}
+                        <TileSpacer />
                         <Tile
-                          ref={exportTileRef}
-                          tone="send"
-                          icon="file-zip"
-                          label={strings.exportProject}
-                          caption={strings.tileExport}
-                          busy={
-                            bookShare.status === "preparing" &&
-                            bookShare.kind === "project"
-                          }
-                          onClick={onPrepareBookExport}
+                          ref={deleteControlRef}
+                          tone="erase"
+                          icon="trash"
+                          label={strings.deleteBook}
+                          caption={strings.tileDelete}
+                          onClick={onArmDelete}
                         />
-                      )}
-                      <CoverTile
-                        ref={coverTileRef}
-                        coverHex={shareMenuCoverHex}
-                        onClick={onOpenCoverPicker}
-                      />
-                      {canChangeLicence && (
-                        <LicenceTile
-                          ref={licenceTileRef}
-                          onClick={onOpenLicenceTile}
-                        />
-                      )}
-                      <TileSpacer />
-                      <Tile
-                        ref={deleteControlRef}
-                        tone="erase"
-                        icon="trash"
-                        label={strings.deleteBook}
-                        caption={strings.tileDelete}
-                        onClick={onArmDelete}
-                      />
-                    </>
-                  ),
-                }}
-              />
+                      </>
+                    ),
+                  }}
+                />
+                {/* Move up / Move down (#1344): their own row under the
+                  actions, so the compact action row keeps its fit. The first
+                  book's Move up and the last book's Move down are greyed
+                  with their reason (#135), as the segment menu greys Done
+                  and Edit on an empty segment. */}
+                <TileGrid>
+                  {(
+                    [
+                      [
+                        -1,
+                        "arrow-up",
+                        strings.moveUp,
+                        bookMenuIndex <= 0,
+                        "alreadyFirst",
+                      ],
+                      [
+                        1,
+                        "arrow-down",
+                        strings.moveDown,
+                        bookMenuIndex >= books.length - 1,
+                        "alreadyLast",
+                      ],
+                    ] as const
+                  ).map(([step, icon, label, blocked, reason]) => (
+                    <Tile
+                      key={step}
+                      tone="plain"
+                      icon={icon}
+                      label={label}
+                      caption={label}
+                      disabled={blocked}
+                      hint={blocked ? { label: strings[reason] } : null}
+                      onClick={() => moveBookFromMenu(step)}
+                    />
+                  ))}
+                </TileGrid>
+              </>
             )}
           </>
         )}

@@ -227,6 +227,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading} sekarang berada di urutan ${to} di rak.`,
   bookReorderStayed: (heading: string): string =>
     `${heading} tetap di tempatnya.`,
+  moveUp: "Naikkan",
+  moveDown: "Turunkan",
+  alreadyFirst: "Sudah paling atas",
+  alreadyLast: "Sudah paling bawah",
   eraseConfirmTitle: "Setel ulang segmen dan mulai lagi",
   eraseConfirm: "Setel ulang rekaman",
   eraseCancel: "Batal",

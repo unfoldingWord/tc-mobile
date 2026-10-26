@@ -47,7 +47,10 @@ import { firstNotFinished } from "@/lib/view/segment-rows";
 import { getChapter } from "@/lib/storage/books";
 import type { Book, BookId, ChapterId, SegmentId } from "@/types/domain";
 import type { LicenceId } from "@/types/template";
-import type { RecorderEntry } from "@/types/view";
+import type {
+  RecorderEntry,
+  SegmentRow as SegmentRowModel,
+} from "@/types/view";
 
 /**
  * Every overlay this screen can put over the chapter, as a system-Back layer
@@ -1203,6 +1206,34 @@ export const SegmentsScreen = forwardRef<
   // the rows' buttons), the first load has not finished, or the chapter is
   // gone.
   const [reorderStatus, setReorderStatus] = useState("");
+  // The one write and the one spoken line for a move, whether a drop or the
+  // row menu's Move up / Move down (#1344) made it. Segments renumber after a
+  // move (the DRI's "Renumber" pick), so the row's new number is its new
+  // position. A write that did not land puts the row back (`moveSegment`
+  // resolves false, having reported it), so the spoken line must not keep
+  // saying it moved (George round 1 on #1057). Only if nothing newer has been
+  // said since.
+  const commitSegmentMove = (row: SegmentRowModel, toIndex: number) => {
+    const moved = strings.reorderMoved(row.ordinal, toIndex + 1);
+    setReorderStatus(moved);
+    void moveSegment(row.segmentId, toIndex).then((landed) => {
+      if (!landed) {
+        setReorderStatus((s) =>
+          s === moved ? strings.reorderStayed(row.ordinal) : s
+        );
+      }
+    });
+  };
+  // Move up / Move down from a row's menu (#1344): the tap path to the same
+  // move, for screen-reader and motor users. One place, to the neighbour's
+  // index; the menu greys the tile that would leave the list, and this
+  // refuses it again. The row has closed its menu and owns where focus goes.
+  const moveFromMenu = (index: number, step: -1 | 1) => {
+    const row = rows[index];
+    const toIndex = index + step;
+    if (!row || toIndex < 0 || toIndex >= rows.length) return;
+    commitSegmentMove(row, toIndex);
+  };
   const reorder = useReorderGesture<SegmentId>({
     enabled: !listInert && !refreshing && !loading && !staleTarget,
     ids: rows.map((row) => row.segmentId),
@@ -1224,25 +1255,11 @@ export const SegmentsScreen = forwardRef<
       if (active === document.body || (node && node.contains(active))) {
         rowReveal.armFocus(segmentId);
       }
-      // Segments renumber after a move (the DRI's "Renumber" pick), so the
-      // row's new number is its new position.
       if (!row) {
         void moveSegment(segmentId, toIndex);
         return;
       }
-      const moved = strings.reorderMoved(row.ordinal, toIndex + 1);
-      setReorderStatus(moved);
-      // A write that did not land puts the row back (`moveSegment` resolves
-      // false, having reported it), so the spoken line must not keep saying
-      // it moved (George round 1 on #1057). Only if nothing newer has been
-      // said since.
-      void moveSegment(segmentId, toIndex).then((landed) => {
-        if (!landed) {
-          setReorderStatus((s) =>
-            s === moved ? strings.reorderStayed(row.ordinal) : s
-          );
-        }
-      });
+      commitSegmentMove(row, toIndex);
     },
     onCancel: (index) => {
       const row = rows[index];
@@ -1452,6 +1469,9 @@ export const SegmentsScreen = forwardRef<
                   bookCoverHex={bookCoverHex ?? undefined}
                   chapterHeading={chapterHeading}
                   onHoldStart={reorder.holdStart(index)}
+                  onMove={(step) => moveFromMenu(index, step)}
+                  isFirst={index === 0}
+                  isLast={index === rows.length - 1}
                 />
               </li>
             ))}
@@ -1462,8 +1482,8 @@ export const SegmentsScreen = forwardRef<
       {/* The reorder's spoken half (#953 PR2a): which row was
           lifted, where it landed, or that it went back. Outside the list's
           `inert` subtree, and mounted for the screen's whole life so a
-          screen reader hears the first change. D11 leaves no keyboard or
-          switch path to move a row; this only tells what a drag did. */}
+          screen reader hears the first change. It tells what a drag did, and
+          what a row menu's Move up / Move down did (#1344). */}
       <span
         className="sr-only"
         role="status"
