@@ -367,6 +367,32 @@ describe("the O4 roles clear the floors the workbench claimed for them (round 4,
   }
 });
 
+describe("the chapter-play ring fill clears the non-text floor (#1469)", () => {
+  // The ring is the control's progress mark, so its FILL takes 3:1 on both
+  // grounds a chapter row can sit on. The TRACK (`--s-mark-empty`) is not
+  // gated here: it is read as decorative, which is a pending decision, not a
+  // pinned one — nothing below asserts its ratio either way.
+  const booksCss = readFileSync(path.join(STYLES, "o4", "books.css"), "utf8");
+
+  it("the ring paints its fill with --s-voice, so this pin scores the real paint", () => {
+    const ring = cssRule(booksCss, ":root .books-play-ring");
+    const background = declarationValue(ring, "background");
+    expect(background).toMatch(/^conic-gradient\(\s*var\(--s-voice\)\s+calc\(/);
+  });
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const surface of ["--s-floor", "--s-well"]) {
+      it(`${theme}: --s-voice on ${surface} — the chapter-play ring fill`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-voice"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+  }
+});
+
 describe("the O4 colour values #937 decided hold", () => {
   // A floor alone would let either value drift back to what the decision
   // replaced: the old blue Edit tile cleared 5:1 too.
