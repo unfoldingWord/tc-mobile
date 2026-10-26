@@ -89,7 +89,7 @@ async function pickLanguage(page: Page): Promise<void> {
     .getByRole("searchbox", { name: "Search languages" })
     .fill("tok pisin");
   await page
-    .getByRole("button", { name: "Tok Pisin, tpi", exact: true })
+    .getByRole("button", { name: "Tok Pisin tpi", exact: true })
     .click();
 }
 

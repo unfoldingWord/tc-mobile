@@ -121,16 +121,22 @@ test("the first Export project asks the language once and the bundle carries it 
   // Case- and accent-insensitive, and the rows are reached with the arrows.
   await search.fill("FRANCAIS");
   await search.press("ArrowDown");
-  await expect(page.locator(":focus")).toHaveAccessibleName("French, fr");
+  await expect(page.locator(":focus")).toHaveAccessibleName(
+    "French français fr"
+  );
   await page.keyboard.press("ArrowDown");
-  await expect(page.locator(":focus")).toHaveAccessibleName("French, fr-BE");
+  await expect(page.locator(":focus")).toHaveAccessibleName(
+    "French français fr-BE"
+  );
   await page.keyboard.press("ArrowUp");
-  await expect(page.locator(":focus")).toHaveAccessibleName("French, fr");
+  await expect(page.locator(":focus")).toHaveAccessibleName(
+    "French français fr"
+  );
 
   // The tag search, then the pick goes straight on to the export.
   await search.fill("tpi");
   await page
-    .getByRole("button", { name: "Tok Pisin, tpi", exact: true })
+    .getByRole("button", { name: "Tok Pisin tpi", exact: true })
     .click();
   await page.getByRole("button", { name: "Share now" }).click();
   expect(await sharedZip(page)).toMatch(/"tag": *"tpi"/);
@@ -180,7 +186,7 @@ test("the language ask at 360 px, dark and light (#1492)", async ({
     await page.getByRole("button", { name: "Export project" }).click();
     const dialog = page.getByRole("dialog", { name: "Book" });
     await expect(
-      page.getByRole("button", { name: "A-Pucikwar, apq", exact: true })
+      page.getByRole("button", { name: "A-Pucikwar apq", exact: true })
     ).toBeVisible();
     const right = await dialog.evaluate(
       (el) => el.getBoundingClientRect().right
