@@ -933,6 +933,15 @@ export const stringsEn = {
   languageLoadFailed: "Could not load the languages.",
   languageNoMatch: "No language matches. Try another name or code.",
   languageNarrow: "Type more to see other languages.",
+  // The language search's spoken result count (#1344, #1492): a polite status
+  // line, said once the search settles. English is a proposal for the
+  // requirements owner. Each form is a whole phrase (lib/plural.ts).
+  languageCount: (n: number): string =>
+    plural(n, { one: "{n} language matches.", other: "{n} languages match." }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      other: `{n} languages match. Showing the first ${shown}. Type more to narrow your search.`,
+    }),
   languageSaving: "Saving the language.",
   languageAskCancel: "Cancel",
   licenceAskTitle: "Licence of this book",
@@ -952,6 +961,16 @@ export const stringsEn = {
   licenceAskSave: "Save",
   licenceAskSaveLead:
     "Who may share these recordings? You can change this again later.",
+  // Each licence radio's spoken name (#1344, #1455): the full title, then the
+  // short label the row shows, so the name still holds the visible text. The
+  // file-name tag and the ID3 text keep the short label. English is a proposal
+  // for the requirements owner (inference: the standard Creative Commons
+  // titles are what they would choose).
+  licenceNameCcBySa: "Creative Commons Attribution-ShareAlike 4.0",
+  licenceNameCcBy: "Creative Commons Attribution 4.0",
+  licenceNameCc0: "Creative Commons Zero 1.0, public domain",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome
