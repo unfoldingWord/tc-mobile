@@ -449,7 +449,12 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
 delete of the held take's pending row, or a hold that found another take's
 row and so kept no safety copy (same file, `"pending-take-write"`,
 `"pending-take-delete"`, #38), a save refused because the take was already
-discarded (same file, `"pending-take-refused"`, #38), a failed book delete
+discarded (same file, `"pending-take-refused"`, #38), a waiting take the
+launch replay saved (same file, `"pending-take-replayed"`, #38) — not a
+failure, but the one durable record that a waiting take existed and was
+saved, written only when the replay's commit saved its audio, so like the
+take-cap row it goes out with the report and does not light `≡` (DRI on PR
+#1706: "A: one text round + log row (Recommended)"), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a

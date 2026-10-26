@@ -5,14 +5,14 @@
  * when a take is sealed and saved at the 20-minute cap. The DRI's decision on
  * #1076, verbatim: "Log it, don't light ≡ (Recommended)". So that row stays in
  * the log, and goes out with the problem report, but on its own it leaves ≡
- * plain.
+ * plain. `"pending-take-replayed"` is the second such row, on the same rule.
  *
  * Decided by the row's context rather than by a new field on the row. Rows
  * already stored on a phone therefore read exactly as before, and any context
  * not listed here — including one from an older or newer build — lights the
  * marker, which is the safe default for a failure channel.
  *
- * `"stale-chunk-reload"` (#1421 O1) is the second: the app reloaded itself
+ * `"stale-chunk-reload"` (#1421 O1) is the third: the app reloaded itself
  * once because a lazily loaded file from an older build was gone. The reload
  * is the recovery, so it is recorded but leaves ≡ plain; the action that hit
  * it writes its own row as before. `"stale-chunk"`, the same failure when no
@@ -21,6 +21,10 @@
  */
 const INFORMATIONAL_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-take-cap",
+  // A take left waiting when the app closed, saved by the launch replay (#38).
+  // The one record that it existed, so a tester can confirm it through Send
+  // (the DRI's pick on PR #1706: "A: one text round + log row (Recommended)").
+  "pending-take-replayed",
   "stale-chunk-reload",
 ]);
 

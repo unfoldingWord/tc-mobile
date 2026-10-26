@@ -4,9 +4,8 @@ import { cn } from "@/lib/utils";
 import { Control } from "./control";
 
 /**
- * The O4 shared control wrappers (#941, epic #936): the four control shapes
- * O4's screens repeat — speaker 52, square 56 r14, row transport 72 and pill
- * 60 r30 (`docs/design/o4-design-system.md` §3).
+ * The O4 shared control wrappers (#941, epic #936): the three control shapes
+ * O4's screens repeat — square 56 r14, row transport 72 and pill 60 r30 (`docs/design/o4-design-system.md` §3).
  *
  * Each one IS a `Control` with a shape class and a default glyph size, never
  * a second button. `Control` already carries every accessibility guarantee
@@ -18,24 +17,6 @@ import { Control } from "./control";
  * The shapes live in `app/styles/o4/controls.css`.
  */
 type ControlProps = ComponentProps<typeof Control>;
-
-/**
- * The circular "hear this" button: the `hear` glyph on the well.
- */
-export const SpeakerButton = forwardRef<
-  HTMLButtonElement,
-  Omit<ControlProps, "icon" | "variant" | "caption">
->(function SpeakerButton({ className, size = 24, ...rest }, ref) {
-  return (
-    <Control
-      ref={ref}
-      {...rest}
-      icon="hear"
-      size={size}
-      className={cn("o4-speaker", className)}
-    />
-  );
-});
 
 /**
  * The 56 × 56 rounded square (New book, Add a segment). The Books header's

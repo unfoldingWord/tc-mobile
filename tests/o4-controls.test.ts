@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { Control } from "@/components/control";
 import {
   PillButton,
-  SpeakerButton,
   SquareButton,
   TransportButton,
 } from "@/components/o4-controls";
@@ -13,7 +12,7 @@ import { areaRules, declsFor } from "./o4-area-css";
 import { one, render } from "./render";
 
 /**
- * #941: the O4 shared control wrappers (speaker 52, square 56 r14, row
+ * #941: the O4 shared control wrappers (square 56 r14, row
  * transport 72, pill 60 r30), and the one addition to `Control` they need —
  * a visible caption.
  *
@@ -44,14 +43,6 @@ describe("Control's caption (#941)", () => {
 });
 
 describe("the O4 control wrappers (#941)", () => {
-  it("SpeakerButton is a Control wearing the hear glyph and the speaker shape", () => {
-    const el = button(createElement(SpeakerButton, { label: "Hear this" }));
-    expect(el.classList.contains("control")).toBe(true);
-    expect(el.classList.contains("o4-speaker")).toBe(true);
-    expect(el.getAttribute("aria-label")).toBe("Hear this");
-    expect(el.querySelector("svg")?.getAttribute("width")).toBe("24");
-  });
-
   it("SquareButton is a Control wearing the square shape", () => {
     const el = button(
       createElement(SquareButton, { icon: "plus", label: "New book" })
@@ -115,7 +106,7 @@ describe("o4/controls.css (#941)", () => {
 
   it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
     // Non-emptiness floor: an empty parse must not pass the loop vacuously.
-    expect(rules.length).toBeGreaterThanOrEqual(4);
+    expect(rules.length).toBeGreaterThanOrEqual(3);
     for (const rule of rules)
       for (const selector of rule.selectors)
         expect(selector).toMatch(/^:root /);
@@ -130,14 +121,6 @@ describe("o4/controls.css (#941)", () => {
       expect(value, prop).not.toMatch(/--p-/);
       expect(value, prop).toMatch(/var\(--s-/);
     }
-  });
-
-  it("sizes the speaker 52, circle, on the well with the hear glyph", () => {
-    const d = declsFor(rules, ":root .o4-speaker");
-    expect(d.get("width")).toBe("52px");
-    expect(d.get("height")).toBe("52px");
-    expect(d.get("background")).toBe("var(--s-well)");
-    expect(d.get("color")).toBe("var(--s-hear)");
   });
 
   it("sizes the square 56 with radius 14, on the well", () => {

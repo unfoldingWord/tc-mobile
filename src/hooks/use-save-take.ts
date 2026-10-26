@@ -276,12 +276,33 @@ function landed(take: PendingTake, effects: SaveEffects): true {
 }
 
 /**
+ * The one durable record that a waiting take was saved by the launch replay
+ * (#38; the DRI's pick on PR #1706, verbatim: "A: one text round + log row
+ * (Recommended)"). The replay stays quiet on screen, so without this a tester
+ * cannot tell that a take was waiting and was saved. Not a failure: it is in
+ * `lib/failure-marker.ts`'s informational set, so it goes out with Send but
+ * does not light ≡, as `"recorder-take-cap"` does not.
+ *
+ * Written only after a commit that saved this take's audio: never for a
+ * launch with nothing waiting, never for a take another copy already saved,
+ * and never from pagehide. A take parked or refused already has its
+ * `"pending-take-refused"` row, so it gets no second one here.
+ */
+function reportReplayed(): void {
+  reportFailure(
+    new Error("A take left waiting when the app closed was saved (#38)"),
+    "pending-take-replayed"
+  );
+}
+
+/**
  * One attempt at a take the launch replay installed: the conditional commit,
  * and what its outcome does to the slot (docs/design/pending-take-lifecycle.md
  * §4, "What each verdict does"). Never rejects.
  *
  *   - `saved`, `already-saved`: landed, as an ordinary save (#1557: a take
- *     another copy finished frees the slot with nothing written);
+ *     another copy finished frees the slot with nothing written); `saved`
+ *     alone logs one informational `"pending-take-replayed"` row;
  *   - `discarded`, `kept`, and `gone` on the first attempt: nothing saved
  *     over the segment, the take is ended or on disk as a marked row, so the
  *     slot lets it go; logged once under `"pending-take-refused"`;
@@ -317,6 +338,8 @@ async function commitReplayed(
   }
   const { outcome } = result;
   if (outcome === "saved" || outcome === "already-saved") {
+    // Only `saved` wrote this take's audio; `already-saved` wrote none.
+    if (outcome === "saved") reportReplayed();
     replayed.delete(take.clipId);
     return landed(take, effects);
   }
