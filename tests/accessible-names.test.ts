@@ -140,10 +140,15 @@ function accessibleName(el: Element): string {
   return exposedText(el).replace(/\s+/g, " ").trim() || title;
 }
 
-/** `alt=""` with no author label, or a presentational role: not named. */
+/**
+ * `alt=""` with no author label, or a presentational role: not named. A
+ * presentational role is ignored on a focusable `<button>`, which still needs
+ * a name.
+ */
 function decorative(el: Element): boolean {
   const role = el.getAttribute("role");
-  if (role === "presentation" || role === "none") return true;
+  const presentational = role === "presentation" || role === "none";
+  if (presentational && el.tagName !== "BUTTON") return true;
   return (
     el.tagName === "IMG" &&
     el.getAttribute("alt") === "" &&
@@ -450,6 +455,35 @@ describe("the gate itself, in both states", () => {
     expect(findings(img({ src: "a.png", alt: "Cover" }))).toEqual([]);
     expect(findings(img({ src: "a.png", role: "presentation" }))).toEqual([]);
     expect(findings(img({ src: "a.png", role: "none" }))).toEqual([]);
+  });
+
+  it("keeps a presentational role on a button under rules 1 and 3", () => {
+    // Browsers ignore role="none" / "presentation" on a focusable button.
+    const btn = (props: Record<string, string>, text: string) =>
+      render(
+        createElement(
+          "div",
+          null,
+          createElement("button", { type: "button", ...props }, text)
+        )
+      );
+    expect(findings(btn({ role: "none" }, "")).map((f) => f.rule)).toEqual([1]);
+    expect(
+      findings(btn({ role: "presentation" }, "")).map((f) => f.rule)
+    ).toEqual([1]);
+    expect(
+      findings(
+        btn({ role: "none", "aria-label": "Open" }, "Open Bible Stories")
+      ).map((f) => f.rule)
+    ).toEqual([3]);
+    expect(
+      findings(
+        btn(
+          { role: "none", "aria-label": "Open Bible Stories" },
+          "Open Bible Stories"
+        )
+      )
+    ).toEqual([]);
   });
 });
 
