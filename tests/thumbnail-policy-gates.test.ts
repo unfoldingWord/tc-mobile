@@ -12,15 +12,16 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 /**
- * #783: the Android lane and ci.yml check emitted OBS thumbnails against the
- * reader-gated jpg policy, the same two-state check as the iOS lane
- * (`ios-workflow-gates.test.ts`). Each gate is run as the workflow runs it,
+ * #783: the Android lane, the iOS lane and ci.yml check emitted OBS thumbnails
+ * against the reader-gated jpg policy (the iOS lane's own cases are also in
+ * `ios-workflow-gates.test.ts`). Each gate is run as the workflow runs it,
  * in both states the policy allows and both it refuses.
  */
 
 const STEP =
   "OBS thumbnails stay out of the precache (web build; ADR 0006 / #177)";
 const CI_STEP = "OBS thumbnails stay out of the precache manifest";
+const IOS_STEP = "OBS thumbnail precache policy (web build; #177 / ADR 0006)";
 
 function stepScript(file: string, name: string): string {
   const workflow = readFileSync(
@@ -63,6 +64,9 @@ const ambiguous = "More than one globPatterns array in vite.config.ts";
 describe.each([
   ["android-apk.yml", STEP],
   ["ci.yml", CI_STEP],
+  // #1674 (the twin #783 left): the iOS lane read the first match, so a
+  // commented decoy above the live array failed open there.
+  ["ios-testflight.yml", IOS_STEP],
 ])("%s thumbnail gate", (file, name) => {
   it.each([
     {
