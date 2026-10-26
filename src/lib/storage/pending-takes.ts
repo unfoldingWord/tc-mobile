@@ -178,6 +178,9 @@ type HoldTx = ReturnType<typeof openHoldTx>;
  * held with none, so a replay refuses it the way it refuses a row from
  * before v13 (`legacy`), and the audio is kept rather than spliced.
  *
+ * `baseGeneration` is stamped the same way, from the take, and omitted when
+ * it is `null` (#163 A-14): a replay then re-reads it, as it did before.
+ *
  * `source` is the stored clip behind `existing`, passed only when the buffer
  * is that clip unchanged. It becomes a `stored` base only if the clip checks
  * out inside this transaction; otherwise the base is `inline`.
@@ -246,6 +249,9 @@ async function holdInTx(
     editOnly: take.editOnly,
     createdAt: opts.now ?? Date.now(),
     ...(take.baseRevision === null ? {} : { baseRevision: take.baseRevision }),
+    ...(take.baseGeneration === null
+      ? {}
+      : { baseGeneration: take.baseGeneration }),
   };
   await rows.put(row);
   // The put's success turn: no tap can run between this check and the
@@ -380,6 +386,9 @@ async function readRecipe(
       finished: row.finished,
       editOnly: row.editOnly,
       baseRevision: row.baseRevision ?? null,
+      // Absent on a row written before #163 A-14: unknown, so the commit
+      // re-reads, as it did then.
+      baseGeneration: row.baseGeneration ?? null,
     },
   };
 }

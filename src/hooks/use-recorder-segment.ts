@@ -69,6 +69,13 @@ export interface RecorderSegmentView {
    * The hook notes it for the hold only when it adopts this view (cell HM).
    */
   readonly audioRevision: number;
+  /**
+   * The `generation` of the clip `samples` came from, read in the same
+   * transaction, or 0 on an empty segment. Noted with `audioRevision`, so a
+   * save stamps the audio it was cut from rather than a clip a transcode has
+   * moved on since (#163 A-14).
+   */
+  readonly generation: number;
 }
 
 /**
@@ -144,6 +151,7 @@ export async function loadRecorderSegmentView(
       audio.kind === "no-segment"
         ? segment.audioRevision
         : audio.segment.audioRevision,
+    generation: clip?.meta.generation ?? 0,
   };
 }
 
@@ -189,10 +197,10 @@ export function useRecorderSegment(segmentId: SegmentId) {
         // exactly this reason). Here we only re-read/re-decode.
         const next = await loadRecorderSegmentView(segmentId);
         if (cancelled) return;
-        // Only the adopted view notes its revision: a cancelled load may have
-        // read a newer one than the samples the editor holds (George r2 on
-        // #1618). No React commit can run between this and `setView`.
-        noteObservedRevision(segmentId, next.audioRevision);
+        // Only the adopted view notes its revision and generation: a
+        // cancelled load may have read newer ones than the samples the editor
+        // holds (George r2 on #1618). No React commit can run between this and `setView`.
+        noteObservedRevision(segmentId, next);
         setView(next);
         setError(null);
       } catch (cause) {
@@ -247,7 +255,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
   const reload = useCallback(async (): Promise<RecorderSegmentView | null> => {
     try {
       const next = await loadRecorderSegmentView(segmentId);
-      noteObservedRevision(segmentId, next.audioRevision);
+      noteObservedRevision(segmentId, next);
       setView(next);
       setError(null);
       return next;

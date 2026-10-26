@@ -54,6 +54,7 @@ function held(
     finished,
     editOnly,
     baseRevision: 0,
+    baseGeneration: null,
   });
   return { take, recorded };
 }
@@ -89,6 +90,7 @@ describe("startSave", () => {
       finished: false,
       editOnly: false,
       baseRevision: 0,
+      baseGeneration: null,
     });
     expect(second).toBe(take);
   });
@@ -337,6 +339,7 @@ describe("a take that is saved on the second attempt", () => {
       finished: false,
       editOnly: false,
       baseRevision: 0,
+      baseGeneration: null,
     });
     const failed = failSave(started, CLIP, "quota");
     const retried = retrySave(failed);

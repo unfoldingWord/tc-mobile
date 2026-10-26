@@ -79,6 +79,7 @@ const heldTake = (segmentId: SegmentId, clipId: ClipId): PendingTake =>
     finished: false,
     editOnly: false,
     baseRevision: 0,
+    baseGeneration: null,
   });
 
 const slot = (initial: PendingTake | null) => {

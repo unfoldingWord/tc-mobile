@@ -95,6 +95,14 @@ export interface PendingTake {
    * the base read and the hold (George r1 on #1618).
    */
   readonly baseRevision: number | null;
+  /**
+   * The `generation` of the clip `existing` was read from (0 for an empty
+   * segment), or `null` when the caller does not know it. The commit stamps
+   * the saved clip with this, not with the clip it replaces, which a
+   * transcode under the open recorder may have moved on (#163 A-14); `null`
+   * falls back to that re-read.
+   */
+  readonly baseGeneration: number | null;
   readonly state: "saving" | "failed";
   readonly kind: SaveFailureKind | null;
   /** Failures so far. Zero means the first attempt is still in flight. */
@@ -116,6 +124,8 @@ export interface NewTake {
   readonly editOnly: boolean;
   /** The revision `existing` was read at, or `null` (see `PendingTake`). */
   readonly baseRevision: number | null;
+  /** The generation `existing` was read at, or `null` (see `PendingTake`). */
+  readonly baseGeneration: number | null;
 }
 
 /**
@@ -141,6 +151,7 @@ export function startSave(
     finished: take.finished,
     editOnly: take.editOnly,
     baseRevision: take.baseRevision,
+    baseGeneration: take.baseGeneration,
     state: "saving",
     kind: null,
     attempts: 0,

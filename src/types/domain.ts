@@ -320,6 +320,15 @@ export interface StoredPendingTake {
    */
   readonly baseRevision?: number;
   /**
+   * The `generation` of the clip the take's base was read from, carried on
+   * the take from the recorder's load (#163 A-14), so a replay stamps the
+   * saved clip with it rather than re-reading the clip it replaces, which a
+   * transcode since the load has moved on. Optional with no version step, as
+   * `refusal` is: absent on a row written before it and on a take that did
+   * not know it, and the replay then re-reads, as it did before.
+   */
+  readonly baseGeneration?: number;
+  /**
    * Set when a replay refused to save this row and kept it instead (#38, the
    * note's §4 "Keep, exactly"): `superseded` when the segment's audio moved
    * since the base was read, `unexplained` when nothing says who owns it. The

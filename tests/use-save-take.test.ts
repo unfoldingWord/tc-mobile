@@ -100,6 +100,7 @@ const heldTake = (over: {
     finished: over.finished ?? false,
     editOnly: over.editOnly ?? false,
     baseRevision: 0,
+    baseGeneration: null,
   });
 
 beforeEach(async () => {

@@ -579,6 +579,7 @@ async function seed(scenario: Scenario): Promise<World> {
       finished: false,
       editOnly: false,
       baseRevision: observed,
+      baseGeneration: null,
     };
   }
   const live = (letters: string[]): Live => ({
