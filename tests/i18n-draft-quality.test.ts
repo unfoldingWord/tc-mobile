@@ -72,6 +72,8 @@ const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
       "The French word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
     eraseConfirmPreviewPause:
       "The French caption for pausing is spelled the same as the English one (glossary section 5, row 8: `Pause`).",
+    tileLicence:
+      "The French word for a licence is spelled the same as the English one (`Licence`, as `licenceAskTitle` already uses it).",
     coverColourRose:
       "The French colour name is spelled the same as the English one (`Rose`).",
     coverColourOlive:

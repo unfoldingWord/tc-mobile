@@ -1,18 +1,12 @@
 /* O4 — Shared controls. Owner: #941. Every selector is prefixed with :root; see o4/index.css's header before editing this file.
 
-   The four shapes `components/o4-controls.tsx` puts on a `Control`
+   The three shapes `components/o4-controls.tsx` puts on a `Control`
    (docs/design/o4-design-system.md §3). Each is layered onto the base
    control rule, so hover, active, focus-visible, the inert dimming and the
    guide ring are the base rule's own; only size, radius, fill and ink move.
    The row transport takes its fill and ink from the play and record variants
    it wears, so it sets size alone. */
 @layer components {
-  :root .o4-speaker {
-    width: 52px;
-    height: 52px;
-    background: var(--s-well);
-    color: var(--s-hear);
-  }
   :root .o4-square {
     width: 56px;
     height: 56px;

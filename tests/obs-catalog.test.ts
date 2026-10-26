@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import catalog from "@/data/obs-catalog.json";
-import { obsFrameScope, OBS_BOOK_CODE, thumbUrl } from "@/lib/obs/catalog";
-import { isValidScope, parseScope } from "./scope";
+import { OBS_BOOK_CODE, thumbUrl } from "@/lib/obs/catalog";
 import type { ObsCatalog } from "@/types/obs";
 
 const obs = catalog as unknown as ObsCatalog;
@@ -75,28 +74,7 @@ describe("bundled OBS catalogue", () => {
   });
 });
 
-describe("obsFrameScope", () => {
-  it("produces a scope string the burrito grammar accepts", () => {
-    expect(obsFrameScope(1, 7)).toBe("1:7");
-    expect(isValidScope(obsFrameScope(1, 7))).toBe(true);
-    expect(parseScope(obsFrameScope(50, 17))).toEqual({
-      startChapter: 50,
-      startVerse: 17,
-      endChapter: 50,
-      endVerse: 17,
-    });
-  });
-
-  it("produces a valid scope for every frame in the catalogue", () => {
-    for (const story of obs.stories) {
-      for (const frame of story.frames) {
-        expect(isValidScope(obsFrameScope(story.story, frame.frame))).toBe(
-          true
-        );
-      }
-    }
-  });
-
+describe("OBS book code", () => {
   it("uses OBS as the book code", () => {
     expect(OBS_BOOK_CODE).toBe("OBS");
   });

@@ -172,6 +172,42 @@ function arrive(inFlight: Run[], next: Run): Outcome | "enters no group" {
   return mine.cancelInProgress ? "cancels the in-flight upload" : "queued";
 }
 
+/**
+ * GitHub's queue for one group (#1674): at most one running and one pending
+ * entrant. A new entrant runs if the group is free; otherwise it becomes the
+ * pending one, and an already-pending entrant is CANCELLED to make room (the
+ * documented rule, with cancel-in-progress: false). That is why a run that
+ * does not upload must not enter the group: it would take the pending slot
+ * from an upload that then never happens. `arrive` above models one holder;
+ * this models the slot, so a second waiter is counted rather than dropped.
+ * `enter` is the group-entry rule, injectable so the failure state can be run.
+ */
+interface Queue {
+  running: Run | null;
+  pending: Run | null;
+  cancelled: Run[];
+}
+
+function enqueue(
+  arrivals: Run[],
+  enter: (r: Run) => Concurrency | null = entered
+): Queue {
+  const q: Queue = { running: null, pending: null, cancelled: [] };
+  for (const r of arrivals) {
+    const mine = enter(r);
+    if (!mine) continue;
+    if (!q.running) {
+      q.running = r;
+    } else if (q.pending) {
+      q.cancelled.push(q.pending);
+      q.pending = r;
+    } else {
+      q.pending = r;
+    }
+  }
+  return q;
+}
+
 const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 const lane = (file: Lane["file"]) => LANES.find((l) => l.file === file)!;
@@ -255,6 +291,55 @@ describe.each(LANES)("$file: the legitimate states still go through", (l) => {
     }
   );
 });
+
+describe.each(LANES)(
+  "$file: the queue holds the waiting upload (#1674)",
+  (l) => {
+    const holder = run(l);
+    const waiter = run(l, { runId: 1001, sha: SHA_B });
+
+    it("an upload behind a holder is the pending entrant", () => {
+      const q = enqueue([holder, waiter]);
+      expect(q.running).toBe(holder);
+      expect(q.pending).toBe(waiter);
+      expect(q.cancelled).toEqual([]);
+    });
+
+    it("a non-upload run arriving after the waiter does not take its slot", () => {
+      const q = enqueue([
+        holder,
+        waiter,
+        run(l, { runId: 1002, uploads: false }),
+      ]);
+      expect(q.pending).toBe(waiter);
+      expect(q.cancelled).toEqual([]);
+    });
+
+    it("a non-upload run alone enters no group and holds nothing", () => {
+      const q = enqueue([run(l, { uploads: false })]);
+      expect(q).toEqual({ running: null, pending: null, cancelled: [] });
+    });
+
+    it("a third upload cancels the first waiter: two waiters are not both kept", () => {
+      const second = run(l, { runId: 1002 });
+      const q = enqueue([holder, waiter, second]);
+      expect(q.pending).toBe(second);
+      expect(q.cancelled).toEqual([waiter]);
+    });
+
+    it("would drop the waiter if a non-upload run did enter the group", () => {
+      const everyRunEnters = (r: Run): Concurrency | null => {
+        const own = laneConfig(r.lane).byJob.get(r.lane.job) ?? null;
+        return own ? { ...own, group: evaluate(own.group, r) } : null;
+      };
+      const q = enqueue(
+        [holder, waiter, run(l, { runId: 1002, uploads: false })],
+        everyRunEnters
+      );
+      expect(q.cancelled).toEqual([waiter]);
+    });
+  }
+);
 
 describe("the model reads the files, not a constant", () => {
   // The states above depend on what each file says; these pin the model's

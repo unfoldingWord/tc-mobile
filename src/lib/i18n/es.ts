@@ -207,6 +207,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "Más acciones",
   selectionStartHandle: "Inicio de la selección",
   selectionEndHandle: "Fin de la selección",
+  selectionHandleTime: (n: number): string =>
+    plural(n, {
+      one: "{n} segundo",
+      many: "{n} segundos",
+      other: "{n} segundos",
+    }),
   editFailed:
     "No se pudo aplicar ese cambio. Prueba con una selección más corta.",
   clearFailed: "No se pudo restablecer el audio. Intenta de nuevo.",
@@ -316,6 +322,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "No se pudieron cargar los idiomas.",
   languageNoMatch: "Ningún idioma coincide. Prueba otro nombre o código.",
   languageNarrow: "Escribe más para ver otros idiomas.",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "{n} idioma coincide.",
+      many: "{n} idiomas coinciden.",
+      other: "{n} idiomas coinciden.",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `{n} idiomas coinciden. Se muestran los primeros ${shown}. Escribe más para afinar la búsqueda.`,
+      many: `{n} idiomas coinciden. Se muestran los primeros ${shown}. Escribe más para afinar la búsqueda.`,
+      other: `{n} idiomas coinciden. Se muestran los primeros ${shown}. Escribe más para afinar la búsqueda.`,
+    }),
   languageSaving: "Guardando el idioma.",
   languageAskCancel: "Cancelar",
   licenceAskTitle: "Licencia de este libro",
@@ -325,6 +343,17 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Guardando la licencia.",
   licenceAskContinue: "Compartir",
   licenceAskCancel: "Cancelar",
+  licenceTileLabel: "Cambiar licencia",
+  tileLicence: "Licencia",
+  tileTemplates: "Plantillas",
+  licenceAskSave: "Guardar",
+  licenceAskSaveLead:
+    "¿Quién puede compartir estas grabaciones? Puedes cambiarlo de nuevo más tarde.",
+  licenceNameCcBySa: "Creative Commons Atribución-CompartirIgual 4.0",
+  licenceNameCcBy: "Creative Commons Atribución 4.0",
+  licenceNameCc0: "Creative Commons Cero 1.0, dominio público",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   exportProjectSuffix: "proyecto",
   exportProjectFilename(
     this: Strings,
@@ -584,6 +613,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Pausar ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Reanudar ${heading}, en pausa al ${percent} por ciento`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} no se reprodujo. Toca para intentarlo de nuevo`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} no tiene nada grabado para reproducir`,
 };

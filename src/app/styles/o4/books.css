@@ -609,4 +609,22 @@
     padding: 0 var(--p-space-3);
     color: var(--s-ink);
   }
+
+  /* The book menu's fifth tile (#1455, Licence): Share, Export, Cover colour,
+     Licence and Delete. At the compact 64 px they run to 344 px, past the
+     328 px content width of a 360 px sheet, so a row holding the Licence tile
+     takes 54 px boxes and a 4 px gap: 5 x 54 + 4 x 4 = 286 px, inside the
+     288 px content width of a 320 px sheet too. 54 px is above the 44 px
+     touch floor. A template book has no Licence tile and keeps the 64 px row. */
+  :root .o4-tiles--compact:has(.o4-tile--licence) {
+    gap: 4px;
+  }
+  :root .o4-tiles--compact:has(.o4-tile--licence) .o4-tile {
+    grid-template-rows: 54px auto;
+    width: 54px;
+  }
+  :root .o4-tiles--compact:has(.o4-tile--licence) .o4-tile::before {
+    width: 54px;
+    height: 54px;
+  }
 }

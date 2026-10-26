@@ -204,6 +204,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderMenuOpen: "更多操作",
   selectionStartHandle: "所选部分的起点",
   selectionEndHandle: "所选部分的终点",
+  selectionHandleTime: (n: number): string => plural(n, { other: "{n} 秒" }),
   editFailed: "未能应用这次修改。请选择更短的一段。",
   clearFailed: "未能重置音频。请重试。",
   captureSilence: "没有录到声音。请重试。",
@@ -290,6 +291,16 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "正在保存许可证。",
   licenceAskContinue: "分享",
   licenceAskCancel: "取消",
+  licenceTileLabel: "更改许可",
+  tileLicence: "许可",
+  tileTemplates: "模板",
+  licenceAskSave: "保存",
+  licenceAskSaveLead: "谁可以分享这些录音？你以后可以再更改。",
+  licenceNameCcBySa: "知识共享 署名-相同方式共享 4.0",
+  licenceNameCcBy: "知识共享 署名 4.0",
+  licenceNameCc0: "知识共享 零 1.0，公有领域",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "分享这本书之前，请先录一个段落。",
   shareBookFailed: "未能分享这本书。请重试。",
   shareBookFailedWeb: "未能分享这本书。请在 tC Mobile 应用中分享书。",
@@ -337,6 +348,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "未能加载语言。",
   languageNoMatch: "没有找到语言。请输入其他名称或代码。",
   languageNarrow: "请多输入几个字，以查看其他语言。",
+  languageCount: (n: number): string =>
+    plural(n, { one: "{n} 种语言匹配。", other: "{n} 种语言匹配。" }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      other: `{n} 种语言匹配。显示前 ${shown} 种。请多输入几个字，缩小搜索范围。`,
+    }),
   languageSaving: "正在保存语言。",
   languageAskCancel: "取消",
   shareNameFallback: "书",
@@ -526,6 +543,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `暂停：${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `继续：${heading}，已暂停在 ${percent} %`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading}未能播放。点按重试`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}：没有可播放的内容`,
 };

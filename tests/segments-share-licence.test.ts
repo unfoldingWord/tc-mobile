@@ -47,6 +47,12 @@ vi.mock("@/hooks/use-chapter-segments", () => ({
     renameSegment: vi.fn(async () => true),
   }),
 }));
+// The chapter's book cannot be read, so Share Chapter has no book to ask the
+// licence for (#1455) and shares with what the view holds.
+vi.mock("@/lib/storage/books", () => ({
+  getChapter: async () => undefined,
+  getBook: async () => undefined,
+}));
 vi.mock("@/hooks/use-chapter-share", () => ({
   useChapterShare: () => ({
     status: "idle",
@@ -119,7 +125,10 @@ describe("Share Chapter's file name carries the book's licence (#1579)", () => {
     expect(await sharedName()).toBe("Mark - 04 Chapter 4 (CC BY-SA 4.0).mp3");
   });
 
-  it("adds none for a book with no licence", async () => {
+  // A readable book with no licence asks first (#1455,
+  // `tests/segments-chapter-licence-ask.test.ts`); one whose chapter cannot
+  // be read has nothing to store a pick against, so it shares untagged.
+  it("adds none when there is no licence and no book to ask for", async () => {
     expect(await sharedName()).toBe("Mark - 04 Chapter 4.mp3");
   });
 });

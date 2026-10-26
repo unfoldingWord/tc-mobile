@@ -27,7 +27,12 @@ import { O4BookDeleteAsk } from "./o4-book-delete-ask";
 import { CoverPicker } from "./cover-picker";
 import { LanguageAsk } from "./language-ask";
 import { LicenceAsk } from "./licence-ask";
-import { CoverTile, O4BookHead, O4CoverPick } from "./o4-book-menu";
+import {
+  CoverTile,
+  LicenceTile,
+  O4BookHead,
+  O4CoverPick,
+} from "./o4-book-menu";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SquareButton } from "./o4-controls";
@@ -73,7 +78,7 @@ import {
   type CoverColourKey,
 } from "@/lib/cover-colour";
 import type { Layer } from "@/lib/nav/layer-stack";
-import { nextChapterNumber } from "@/lib/storage/books";
+import { getBook, nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import { reorderShift } from "@/lib/view/reorder-gesture";
@@ -269,10 +274,10 @@ export function BooksScreen({
   // instead of it.
   const [failureRetryToken, setFailureRetryToken] = useState(0);
   const failureCount = useFailureCount(failureRetryToken);
-  // The rows that mark ≡: every row except informational ones, today only a
-  // take sealed at the 20-minute cap (#1005; DRI on #1076, verbatim: "Log it,
-  // don't light ≡ (Recommended)"). The panel below still keys on
-  // `failureCount`, so a log holding only that row can still be sent.
+  // The rows that mark ≡: every row except those `lightsFailureMarker` leaves
+  // plain, such as a take sealed at the 20-minute cap (#1005; DRI on #1076,
+  // verbatim: "Log it, don't light ≡ (Recommended)"). The panel below still
+  // keys on `failureCount`, so a log holding only such rows can still be sent.
   const markedFailureCount = useMarkedFailureCount();
   // Both halves of Try again, in one handler so a later edit cannot drop one:
   // re-read the shelf, and hand the failure count's ladder back.
@@ -403,6 +408,10 @@ export function BooksScreen({
     choose: chooseLicence,
     isSaving: licenceSaving,
   } = useLicenceAsk(onLicenceCommitted);
+  // #1455 "change it later": the ask was reopened from the book menu's
+  // Licence tile, so a pick is stored and nothing is shared. Set by both ways
+  // into the ask (the tile and Share), so a stale value cannot outlive either.
+  const [changingLicence, setChangingLicence] = useState(false);
   // A failed cover write, scoped to the picker: the screen's Notice sits
   // behind the sheet's scrim, as rename's does.
   const [coverFailed, setCoverFailed] = useState<FailureKey | null>(null);
@@ -1236,6 +1245,42 @@ export function BooksScreen({
     const chosen = shelfBook ? chosenLicences[shelfBook.bookId] : undefined;
     return shelfBook && chosen ? { ...shelfBook, licence: chosen } : shelfBook;
   }, [shelfBook, chosenLicences]);
+  // Whether the open book was made from a template, read from the store: the
+  // shelf card does not carry provenance. A template book's licence is fixed
+  // (D5 `lock-template`), so its menu has no Licence tile. Keyed by book id,
+  // so one book's answer is never read for another, and unknown until the read
+  // lands, which also hides the tile: the tile is offered only on a positive
+  // "not a template".
+  const [bookKinds, setBookKinds] = useState<Readonly<Record<string, boolean>>>(
+    {}
+  );
+  useEffect(() => {
+    if (shareMenuBookId === null) return;
+    let live = true;
+    void getBook(shareMenuBookId).then(
+      (book) => {
+        if (!live || !book) return;
+        const isTemplate = book.provenance.kind === "template";
+        setBookKinds((m) => ({ ...m, [book.id]: isTemplate }));
+      },
+      (cause: unknown) => {
+        // Unknown provenance keeps the tile away, which is the safe side; the
+        // menu itself is unaffected.
+        console.error("Reading a book's provenance failed", cause);
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [shareMenuBookId]);
+  // Also off unless the share is idle: a prepared file's names carry the
+  // licence it was armed with, and Share now sends that file, so a change
+  // while one is armed or preparing would go out under the old licence — the
+  // Export tile's rule for the same armed file (Frank r1 P2, #1707).
+  const canChangeLicence =
+    shareMenuBook !== null &&
+    bookKinds[shareMenuBook.bookId] === false &&
+    bookShare.status === "idle";
   // The open book's cover colour: its stored key, or #957's id-derived
   // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
   // swatch and the delete ask all read this one value.
@@ -1530,6 +1575,7 @@ export function BooksScreen({
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
     setSavingName(false);
+    setChangingLicence(false);
     if (needsLicenceAsk(shareMenuBook)) {
       askLicence(shareMenuBook.bookId);
       return;
@@ -1546,20 +1592,49 @@ export function BooksScreen({
   // The pick is stored once, then the share goes on with it; a failed write
   // stays in the ask, and a closed or cancelled ask resolves null and shares
   // nothing.
+  const licenceTileRef = useRef<HTMLButtonElement | null>(null);
   const onPickLicence = useCallback(
     (licence: LicenceId) => {
+      // Captured with the tap: the mode is the ask this pick was made in.
+      const change = changingLicence;
       void chooseLicence(licence).then((book) => {
         if (!book) return;
+        if (change) {
+          // Save-only: stored, nothing shared; back to the tiles on Licence.
+          setChangingLicence(false);
+          requestAnimationFrame(() => licenceTileRef.current?.focus());
+          return;
+        }
         runBookShare(book.licence);
       });
     },
-    [chooseLicence, runBookShare]
+    [chooseLicence, runBookShare, changingLicence]
   );
-  // Cancel goes back to the tiles with nothing written and focus on Share.
+  // Cancel goes back to the tiles with nothing written and focus on the
+  // control the ask came from: Share, or the Licence tile.
   const onCancelLicence = useCallback(() => {
     cancelLicenceAsk();
-    requestAnimationFrame(() => shareControlRef.current?.focus());
-  }, [cancelLicenceAsk]);
+    const back = changingLicence ? licenceTileRef : shareControlRef;
+    setChangingLicence(false);
+    requestAnimationFrame(() => back.current?.focus());
+  }, [cancelLicenceAsk, changingLicence]);
+  // The Licence tile (#1455): reopen the ask with the stored licence selected.
+  // Offered only on a book known not to be from a template (`canChangeLicence`),
+  // and re-checked here so a stale tap on a template book still does nothing.
+  const onOpenLicenceTile = useCallback(() => {
+    if (!shareMenuBook || !canChangeLicence) return;
+    focusRestore.capture();
+    bookMenuSession.current += 1;
+    setSavingName(false);
+    setChangingLicence(true);
+    askLicence(shareMenuBook.bookId);
+  }, [
+    shareMenuBook,
+    canChangeLicence,
+    focusRestore,
+    setSavingName,
+    askLicence,
+  ]);
   // Export project (#1457): the same tap-1 handling as Share Book above — the
   // focus capture, the chapter stop, the rename-session bump, the chained
   // close — through the same flow, handed a Scripture Bundle instead of the
@@ -2384,7 +2459,7 @@ export function BooksScreen({
             tone="plain"
             icon="book-open"
             label={strings.templatesOpen}
-            caption={strings.templatesOpen}
+            caption={strings.tileTemplates}
             onClick={openTemplates}
           />
         </TileGrid>
@@ -2608,6 +2683,14 @@ export function BooksScreen({
               />
             ) : askingLicenceFor !== null ? (
               <LicenceAsk
+                // A fresh ask per book and mode, so the seeded selection can
+                // never come from another open (George r1 Low).
+                key={`${askingLicenceFor}:${changingLicence ? "change" : "share"}`}
+                change={
+                  changingLicence
+                    ? { current: shareMenuBook?.licence ?? null }
+                    : undefined
+                }
                 onContinue={onPickLicence}
                 onCancel={onCancelLicence}
                 saving={savingLicence}
@@ -2666,6 +2749,12 @@ export function BooksScreen({
                         coverHex={shareMenuCoverHex}
                         onClick={onOpenCoverPicker}
                       />
+                      {canChangeLicence && (
+                        <LicenceTile
+                          ref={licenceTileRef}
+                          onClick={onOpenLicenceTile}
+                        />
+                      )}
                       <TileSpacer />
                       <Tile
                         ref={deleteControlRef}

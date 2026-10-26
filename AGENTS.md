@@ -174,17 +174,6 @@ What closes both, learned on that pin family one hole at a time:
   `uniqueIndexOf` in `tests/support.ts` throw on a missing, duplicated or
   empty anchor, which is what turned #529's capture into a visible failure.
 
-Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
-at all; that sentence is stale and is tracked in #525, which is where it gets
-fixed. Four places lean on it today, not one:
-`tests/contrast.test.ts:12`, `tests/style-bridge.test.ts:18-19` and
-`tests/notice-bridge.test.ts:21-23` cite it as their stated reason for existing,
-and `src/app/globals.css:29` paraphrases it as the reason an orphaned alias
-fails no check. No two quote it identically — notice-bridge elides the knip
-parenthetical, style-bridge elides with an ellipsis, contrast lowercases it —
-so #525 is a grep (`grep -rn "reads CSS at all" src tests AGENTS.md`), not a
-one-line edit, which is why it is its own change and not a clause in this one.
-
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
 `eslint.config.mjs`, not by convention.
 
@@ -460,7 +449,12 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
 delete of the held take's pending row, or a hold that found another take's
 row and so kept no safety copy (same file, `"pending-take-write"`,
 `"pending-take-delete"`, #38), a save refused because the take was already
-discarded (same file, `"pending-take-refused"`, #38), a failed book delete
+discarded (same file, `"pending-take-refused"`, #38), a waiting take the
+launch replay saved (same file, `"pending-take-replayed"`, #38) — not a
+failure, but the one durable record that a waiting take existed and was
+saved, written only when the replay's commit saved its audio, so like the
+take-cap row it goes out with the report and does not light `≡` (DRI on PR
+#1706: "A: one text round + log row (Recommended)"), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
@@ -496,7 +490,32 @@ missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
 and its in-tap `resumeAudioContext()` rejection, #1468, #1559; the hide-path
 pause is wrapped so a throw is reported under the same context and the context
 drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
-(`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), a shared context that reports `"running"`
+(`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), the same in-tap
+resume on a buffer Play (`"playback-buffer-tap-resume"`) and on sheet open
+(`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker
+(the DRI's pick on #1692, "Log only, no ≡ (Recommended)": a routine iOS event;
+`RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`) —
+`startRecording`'s catch (`"recorder-start"`, which does light it), a share
+whose send failed (`hooks/share-flow.ts`, `"share-send"`), the recorder
+sheet's commit and exit nets and recovery panel (`components/recorder.tsx`: the
+Stop-commit net `"recorder-commit-stop"`, the close-commit net
+`"recorder-commit-close"`, the no-capture tail net `"recorder-close-tail"`, a
+failed save of a recovered take `"recorder-recovered-save"` and a recovered
+take's share refused `"recorder-recovered-share"` — all five light `≡`,
+because a recording could be lost or stranded; and a refused Finished change
+`"recorder-finished-flag"`, which is logged but does **not** light it: the sheet
+says so in place and nothing is lost), the editor's dropped edit
+(`hooks/use-segment-editor.ts`, `"recorder-edit-apply"`, logged and not
+lighting `≡`: the edit is dropped, the saved audio and history are unchanged),
+a system Back whose `requestClose()` rejected (`hooks/use-nav-stack.ts`,
+`"recorder-close-rejected"`, which lights it), a Back that found the recorder
+screen with no recorder handle (same file, `"recorder-back-no-handle"`, which
+lights it: the Back did nothing and whether the take was committed is not known
+from there; the row carries an `Error` built at the site, there being no cause),
+the resume fired by a load panel's "Try again" tap being refused
+(`hooks/use-recorder-segment.ts`, `"recorder-segment-resume-retry"`, logged and
+not lighting `≡`: the re-read goes ahead regardless and a refused resume is a
+routine iOS event), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -522,11 +541,14 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-mic/record-start, the in-tap `resumeAudioContext()` calls on a buffer Play and
-on sheet open (`use-audio-session.ts`), the recorder's preview path, and share _send_
-(`hooks/share-flow.ts`). Routing those is follow-up work — and it is
-not a one-line change, because `SaveFailed` replaces the tree the way the
+the microphone-refusal and start paths inside `hooks/use-recorder.ts` (among
+them its foreground and start-time `resumeAudioContext()` calls and the level
+meter's open). Routing those is follow-up work: they are not a one-line
+change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
+The recorder sheet's own Stop notice (`captureFailureText` in
+`components/recorder.tsx`) is not on this list because it calls neither
+`console.error` nor `reportFailure`: it only sets the on-screen copy.
 Until it lands, do not describe the log as holding "anything that went wrong":
 `docs/training/facilitator-runbook.md` §5 names both halves for facilitators
 and this paragraph is the engineering copy of the same list.
@@ -568,11 +590,11 @@ is stored as `@pivot` — which would silently ignore _any_ future export tagged
    lines of timing seam plus 494 lines of its tests survived to be deleted by
    hand. knip cannot tell that from `lib/audio/edit.ts`, which is the engine
    B5 will consume — so the judgement stays human.
-2. **Nothing in this repo reads CSS at all.** knip says so itself
-   (`.css — Compiled extension excluded by project`). There is no stylelint and
-   no CSS plugin. An orphaned custom property or component token is invisible
-   to every check, which matters most in B2 and B3 — the largest UI deletion
-   this repo will do.
+2. **No linter or dead-code check reads CSS.** knip excludes it
+   (`.css — Compiled extension excluded by project`) and there is no stylelint.
+   An orphaned custom property or component token is invisible to both; only
+   the tests that read the stylesheets (see "Architecture — onion layers")
+   can catch one, and only for what they pin.
 
 What it does catch, on its first run: an unused `zustand`, an unused
 `lucide-react` that this document itself claimed was the icon library, and three

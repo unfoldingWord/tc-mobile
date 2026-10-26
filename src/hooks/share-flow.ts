@@ -799,7 +799,10 @@ export function useShareFlow(): UseShareFlow {
       // A newer run owns the flow: don't touch its state and don't let the caller
       // act on this stale settle.
       if (!current()) return "superseded";
-      if (outcome === "failed") console.error("Sharing failed", cause);
+      if (outcome === "failed") {
+        console.error("Sharing failed", cause);
+        reportFailure(cause, "share-send");
+      }
       // Dismissed or a real failure: end the flow for the run that still owns it.
       // The staged cache file is already gone — `nativeShare.send` removes its
       // own directory on a rejection, because a refused chooser is the one piece

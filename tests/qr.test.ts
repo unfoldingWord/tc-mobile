@@ -93,11 +93,98 @@ describe("version selection (Table 7, byte mode, level M)", () => {
 
   it("throws past version 6-M rather than drawing a symbol", () => {
     expect(() => encodeQr("x".repeat(107))).toThrow(RangeError);
+    // 106 bytes is the last that fits (12 + 848 bits of 864); 107 needs 868.
+    expect(encodeQr("x".repeat(106)).version).toBe(6);
   });
 
   it("refuses a mask outside 0 to 7", () => {
     expect(() => encodeQr("a", { mask: 8 })).toThrow(RangeError);
     expect(() => encodeQr("a", { mask: 1.5 })).toThrow(RangeError);
+  });
+});
+
+/**
+ * Reads the data codewords back out of a symbol drawn with mask 0, so a test
+ * can lock what `encodeQr` wrote and not only which version it picked. Only
+ * versions 1 and 6 are modelled: neither has version-information blocks, and
+ * version 1 has no alignment pattern. The function-module test and the zigzag
+ * order below are written from ISO/IEC 18004:2015 7.7.3 and Figure 3, not
+ * copied from src/lib/qr.ts.
+ */
+function readDataCodewords(text: string, version: 1 | 6): number[] {
+  const { modules, size } = encodeQr(text, { mask: 0 });
+  const isFunction = (r: number, c: number): boolean =>
+    (r < 9 && c < 9) ||
+    (r < 9 && c >= size - 8) ||
+    (r >= size - 8 && c < 9) ||
+    r === 6 ||
+    c === 6 ||
+    (version === 6 &&
+      Math.abs(r - (size - 7)) <= 2 &&
+      Math.abs(c - (size - 7)) <= 2);
+  const out: number[] = [];
+  let bit = 0;
+  let cur = 0;
+  let upward = true;
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let step = 0; step < size; step++) {
+      const r = upward ? size - 1 - step : step;
+      for (const c of [right, right - 1]) {
+        if (isFunction(r, c)) continue;
+        const dark = (modules[r]?.[c] ?? false) !== ((r + c) % 2 === 0);
+        cur = (cur << 1) | (dark ? 1 : 0);
+        if (++bit % 8 === 0) {
+          out.push(cur);
+          cur = 0;
+        }
+      }
+    }
+    upward = !upward;
+  }
+  return out;
+}
+
+/** The byte-mode stream: 0100, an 8-bit count, the bytes, then 0000 and padding. */
+function byteModeStream(bytes: Uint8Array, capacity: number): number[] {
+  const bitString =
+    "0100" +
+    bytes.length.toString(2).padStart(8, "0") +
+    [...bytes].map((b) => b.toString(2).padStart(8, "0")).join("");
+  const padded = (bitString + "0000").padEnd(
+    Math.ceil((bitString.length + 4) / 8) * 8,
+    "0"
+  );
+  const out: number[] = [];
+  for (let i = 0; i < padded.length; i += 8)
+    out.push(parseInt(padded.slice(i, i + 8), 2));
+  for (let pad = 0xec; out.length < capacity; pad ^= 0xec ^ 0x11) out.push(pad);
+  return out.slice(0, capacity);
+}
+
+describe("codewords written by encodeQr (byte mode, mask 0)", () => {
+  it("locks the UTF-8 bytes and the 8-bit count of a non-ASCII text, version 1", () => {
+    const text = "é€"; // C3 A9, E2 82 AC: five bytes for two characters
+    const bytes = new TextEncoder().encode(text);
+    expect([...bytes]).toEqual([0xc3, 0xa9, 0xe2, 0x82, 0xac]);
+    const data = readDataCodewords(text, 1).slice(0, 16);
+    // 0100 00000101 | 11000011 10101001 11100010 10000010 10101100 | 0000
+    expect(data.slice(0, 8)).toEqual([
+      0x40, 0x5c, 0x3a, 0x9e, 0x28, 0x2a, 0xc0, 0xec,
+    ]);
+    expect(data).toEqual(byteModeStream(bytes, 16));
+  });
+
+  it("locks the 106-byte text that exactly fills version 6-M, four blocks interleaved", () => {
+    const text = "é".repeat(53); // 106 bytes
+    const bytes = new TextEncoder().encode(text);
+    expect(bytes.length).toBe(106);
+    const interleaved = readDataCodewords(text, 6).slice(0, 108);
+    const stream = byteModeStream(bytes, 108);
+    const blocks = [0, 1, 2, 3].map((k) => stream.slice(k * 27, (k + 1) * 27));
+    expect(interleaved).toEqual(
+      Array.from({ length: 108 }, (_, i) => blocks[i % 4]?.[Math.floor(i / 4)])
+    );
   });
 });
 

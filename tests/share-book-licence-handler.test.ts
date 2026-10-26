@@ -42,8 +42,10 @@ describe("Share Book's licence ask", () => {
   });
 
   it("shares after the ask only once the pick is stored, with the stored licence", () => {
+    // The Licence tile's save-only branch (#1455) returns before the share;
+    // `books-licence-tile.test.ts` renders that path.
     expect(callbackBody("onPickLicence")).toMatch(
-      /chooseLicence\(licence\)\.then\(\(book\) => \{\s*if \(!book\) return;\s*runBookShare\(book\.licence\);/
+      /chooseLicence\(licence\)\.then\(\(book\) => \{\s*if \(!book\) return;[\s\S]*?return;\s*\}\s*runBookShare\(book\.licence\);/
     );
   });
 

@@ -77,7 +77,8 @@ export default defineConfig({
       // its own should fail to run visibly, not silently join whichever
       // project's baseURL happened to be the catch-all.
       name: "chromium-harness",
-      testMatch: /(browser-boundary-smoke|joined-mp3-decode)\.spec\.ts$/,
+      testMatch:
+        /(browser-boundary-smoke|joined-mp3-decode|normalize-on-finished)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_E2E}` },
     },
     {
@@ -89,7 +90,7 @@ export default defineConfig({
       // by the production minifier or by Tailwind's layer ordering would pass
       // there (#171).
       testMatch:
-        /(service-worker-precache|theme-toggle|recorder-selection|name-sheet-confirm|recorder-discard-clip|recorder-menu-half-screen|recorder-zoom-insertion|recorder-audition-playhead|recorder-edit-stops-audition|recorder-open-in-edit|segment-rename|segment-menu-tile-fit|object-menu-focus|share-book-spool|export-project-row|export-language-ask|edit-history-cue|focus-scroll-measure|books-chapter-dots-fit|books-chapter-play|header-crumbs-fit|sheet-drag-close|books-rtl-name-align|rtl-mirror|book-sheet-one-focus-move|phone-check-dsp|mic-settings-steps-fit|mic-refusal-card-fit|locale-fit-sweep|settings-screen|menu-full-name|template-library)\.spec\.ts$/,
+        /(service-worker-precache|theme-toggle|recorder-selection|name-sheet-confirm|recorder-discard-clip|recorder-menu-half-screen|recorder-zoom-insertion|recorder-audition-playhead|recorder-edit-stops-audition|recorder-open-in-edit|segment-rename|segment-menu-tile-fit|object-menu-focus|share-book-spool|export-project-row|export-language-ask|edit-history-cue|focus-scroll-measure|books-chapter-dots-fit|books-chapter-play|header-crumbs-fit|sheet-drag-close|books-rtl-name-align|rtl-mirror|book-sheet-one-focus-move|phone-check-dsp|mic-settings-steps-fit|mic-refusal-card-fit|locale-fit-sweep|settings-screen|menu-full-name|template-library|pending-take-replay|books-shelf-rules)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

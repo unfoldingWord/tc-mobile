@@ -1,13 +1,18 @@
+import { existsSync } from "node:fs";
+
 import { expect, test, type ElementHandle, type Page } from "@playwright/test";
 
+import { editRecordingButton } from "./recorder-fixtures";
 import { seedToRecorder, seedToSegments } from "./support/seed";
 
 /**
  * A locale-fit sweep at a small phone (#1458, the per-language 360 px pass),
  * against the shipped `dist/` build: for the screens a translator meets first
  * (the Books shelf with a book, the book's ⋮ menu, the Segments screen, the
- * recorder's controls and Settings), in English and every language whose table
- * is complete, no control's label spills out of its own box, no control is
+ * recorder's controls, Settings, the Templates picker, the licence ask at Share
+ * Book and the Export project language ask), in English and every language
+ * whose table is complete (`tests/locale-fit-sweep-list.test.ts` fails when
+ * `LOCALES` and the complete languages differ), no control's label spills out of its own box, no control is
  * cut off at the screen edge, and the page does not scroll sideways.
  *
  * jsdom computes no boxes, so only a browser can measure this. It is a layout
@@ -33,9 +38,35 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  * red too, because `measure()` throws when the screen it was asked to measure
  * is not there.
  */
-test.use({ viewport: { width: 360, height: 740 } });
+test.use({
+  viewport: { width: 360, height: 740 },
+  // The two asks sit behind a book with a recorded segment, so the walk records
+  // one from Chromium's synthetic microphone (as export-language-ask.spec.ts).
+  permissions: ["microphone"],
+  launchOptions: {
+    executablePath:
+      process.env.PLAYWRIGHT_CHROMIUM_PATH ??
+      (existsSync("/opt/pw-browsers/chromium")
+        ? "/opt/pw-browsers/chromium"
+        : undefined),
+    args: [
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+    ],
+  },
+});
 
-const LOCALES = ["en", "es", "fr", "hi", "id", "pt", "ru", "sw"] as const;
+const LOCALES = [
+  "en",
+  "es",
+  "fr",
+  "hi",
+  "id",
+  "pt",
+  "ru",
+  "sw",
+  "zh-Hans",
+] as const;
 
 const SCREENS = [
   "books",
@@ -43,6 +74,9 @@ const SCREENS = [
   "segments",
   "recorder",
   "settings",
+  "templates",
+  "licence-ask",
+  "language-ask",
 ] as const;
 type Screen = (typeof SCREENS)[number];
 
@@ -117,7 +151,7 @@ async function measure(
       if (root === null) throw new Error(`${rootSelector} is missing`);
       const controls = Array.from(
         root.querySelectorAll<HTMLElement>(
-          'button, a[href], [role="button"], [role="switch"], [role="tab"], [role="menuitem"], label, summary, input, select, textarea'
+          'button, a[href], [role="button"], [role="switch"], [role="tab"], [role="menuitem"], [role="radio"], label, summary, input, select, textarea'
         )
       );
       const seen = new Set<Element>();
@@ -249,6 +283,48 @@ async function handle(
   return h!;
 }
 
+/** One chapter with one recorded segment, from the synthetic microphone. */
+async function recordOneSegment(page: Page): Promise<void> {
+  await page.goto("/");
+  await page.getByRole("button", { name: "New book" }).click();
+  await page.getByRole("button", { name: "Create book" }).click();
+  await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page.getByRole("button", { name: "Create chapter" }).click();
+  await page.getByRole("button", { name: "Open Chapter 1" }).click();
+  await page.getByRole("button", { name: "Add segment" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Stop recording", exact: true })
+  ).toBeVisible();
+  await page.waitForTimeout(1200);
+  await page
+    .getByRole("button", { name: "Stop recording", exact: true })
+    .click();
+  await expect(editRecordingButton(page)).not.toHaveAttribute(
+    "aria-busy",
+    "true"
+  );
+  // Back on the shelf (a reload: the book is in IndexedDB).
+  await page.goto("/");
+  await expect(page.locator("#launch-intro")).toBeHidden({ timeout: 10_000 });
+}
+
+/**
+ * Open the book's menu in English, hold the control that starts an ask,
+ * switch the language with the menu open, then take that control.
+ */
+async function openAsk(page: Page, tag: string, name: string) {
+  await recordOneSegment(page);
+  await page.getByRole("button", { name: /^More actions for/ }).click();
+  await settled(page, '[role="dialog"]');
+  const start = await handle(page, "button", name, true);
+  await switchLanguage(page, tag);
+  await start.click();
+}
+
 /** Walk to `screen` in English, switch to `tag`, and return what overflows. */
 export async function sweep(
   page: Page,
@@ -274,6 +350,9 @@ export async function sweep(
       const more = await handle(page, "button", /^More actions for/);
       await switchLanguage(page, tag);
       await more.click();
+      // The Licence tile (#1455) appears once the book's provenance is read, so
+      // the five-tile row is the one measured.
+      await expect(page.locator(".o4-tile--licence")).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }
@@ -292,6 +371,38 @@ export async function sweep(
       const gear = await handle(page, "button", "Settings", true);
       await switchLanguage(page, tag);
       await gear.click();
+      await settled(page, '[role="dialog"]');
+      return measure(page, '[role="dialog"]');
+    }
+    case "templates": {
+      await page.goto("/");
+      await expect(page.locator("#launch-intro")).toBeHidden({
+        timeout: 10_000,
+      });
+      await page.getByRole("button", { name: /^Open menu/ }).click();
+      await settled(page, '[role="dialog"]');
+      const tile = await handle(page, "button", "Templates", true);
+      await switchLanguage(page, tag);
+      await tile.click();
+      // The picker lists the bundled package and its thumbnail.
+      await expect(page.locator('[role="dialog"] img').first()).toBeVisible();
+      await settled(page, '[role="dialog"]');
+      return measure(page, '[role="dialog"]');
+    }
+    case "licence-ask": {
+      // A new book has no licence, so Share book asks first (#1455).
+      await openAsk(page, tag, "Share book");
+      await expect(page.locator('[role="radiogroup"]')).toBeVisible();
+      await settled(page, '[role="dialog"]');
+      return measure(page, '[role="dialog"]');
+    }
+    case "language-ask": {
+      // A book with no language asks first on Export project (#1492).
+      await openAsk(page, tag, "Export project");
+      await expect(page.locator('input[type="search"]')).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /[,，]\s?apq$/ }).first()
+      ).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }

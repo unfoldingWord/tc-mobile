@@ -57,6 +57,50 @@ describe("lightsFailureMarker", () => {
     expect(lightsFailureMarker("recorder-take-cap")).toBe(false);
   });
 
+  // The DRI's pick on #1692, verbatim: "Log only, no ≡ (Recommended)" (see
+  // `RESUME_FAILURES_LIGHT_MARKER`). Routine, recoverable failures are logged
+  // without lighting ≡; a failure that loses or blocks the person's work
+  // lights it.
+  it.each(["playback-buffer-tap-resume", "sheet-open-resume"])(
+    "the in-tap resume row %j is logged but does not light the marker",
+    (context) => {
+      expect(lightsFailureMarker(context)).toBe(false);
+    }
+  );
+
+  it.each([
+    "recorder-finished-flag",
+    "recorder-edit-apply",
+    "recorder-segment-resume-retry",
+  ])(
+    "the routine, recoverable recorder-sheet row %j is logged but does not light the marker",
+    (context) => {
+      expect(lightsFailureMarker(context)).toBe(false);
+    }
+  );
+
+  it.each([
+    "recorder-commit-stop",
+    "recorder-commit-close",
+    "recorder-close-tail",
+    "recorder-close-rejected",
+    "recorder-recovered-save",
+    "recorder-recovered-share",
+    "recorder-back-no-handle",
+  ])(
+    "the recorder-sheet row %j, where a recording could be lost or stranded, lights the marker",
+    (context) => {
+      expect(lightsFailureMarker(context)).toBe(true);
+    }
+  );
+
+  it.each(["recorder-start", "share-send", "playback-tap-resume"])(
+    "the failure row %j lights the marker",
+    (context) => {
+      expect(lightsFailureMarker(context)).toBe(true);
+    }
+  );
+
   it.each([
     "render",
     "save-take",

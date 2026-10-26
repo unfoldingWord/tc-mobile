@@ -770,8 +770,10 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   };
   for (const [screen, prepareFn, closeFn] of [
     [
+      // The same split on Share Chapter (#1455): `onPrepareShare` asks or
+      // calls `runChapterShare`, which holds the prepare.
       "src/components/segments-screen.tsx",
-      "onPrepareShare",
+      "runChapterShare",
       "onCloseChapterMenu",
     ],
     [

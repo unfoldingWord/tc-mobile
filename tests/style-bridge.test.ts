@@ -22,9 +22,8 @@ import {
  * `@layer`, so a component that paints itself cannot have a rule in layer 3 at
  * all.
  *
- * Two things can rot afterwards, and neither is visible to any other check —
- * AGENTS.md: "Nothing in this repo reads CSS at all… an orphaned custom
- * property or component token is invisible to every check."
+ * Two things can rot afterwards, and neither is visible to a linter or to
+ * knip, which both skip CSS:
  *
  *   1. An alias pointing at a role layer 2 no longer defines. It resolves to
  *      nothing, paints nothing, and fails nothing.
@@ -374,5 +373,68 @@ describe("the batch-three pixel bridge stays mapped (#460)", () => {
     expect(primitiveValue(primitives, "--p-space-1")).toBe("4px");
     expect(primitiveValue(primitives, "--p-space-3")).toBe("8px");
     expect(primitiveValue(primitives, "--p-text-20")).toBe("20px");
+  });
+});
+
+/**
+ * The pixel half of the arbitrary-value bridge, batch five (#460).
+ *
+ * Batch five covers `about-panel.tsx`, `save-failed.tsx` and
+ * `recorder-status.tsx`. Exact matches swapped: `gap-[14px]` to
+ * `--p-space-4`, `text-[13px]` to `--p-text-md` and `gap-[6px]` to
+ * `--p-space-2` in the About panel, `gap-[8px]` to `--p-space-3` in the
+ * save-failed screen and `pt-[8px]` to `--p-space-3` in the recorder status.
+ * Equality is asserted below from the token declarations. Left as they are,
+ * because no primitive holds the value: `gap-[3px]`, `gap-[10px]`,
+ * `px-[12px]`, `px-[22px]` and `mt-[10px]`. The two `40px` touch floors in
+ * the About panel stay too: they are a touch-target floor, not a spacing
+ * step (`--c-control-md` is 44px).
+ */
+describe("the batch-five pixel bridge stays mapped (#460)", () => {
+  const SWEPT = [
+    {
+      name: "about-panel.tsx",
+      literals: [/gap-\[14px\]/, /text-\[13px\]/, /gap-\[6px\]/],
+    },
+    { name: "save-failed.tsx", literals: [/gap-\[8px\]/] },
+    { name: "recorder-status.tsx", literals: [/pt-\[8px\]/] },
+  ].map((f) => ({
+    ...f,
+    // None of the three holds `//` or `/*` inside a string.
+    code: stripComments(readFileSync(path.join(COMPONENTS, f.name), "utf8")),
+  }));
+
+  it("sees all three swept files", () => {
+    expect(SWEPT.length).toBe(3);
+    for (const { code } of SWEPT) expect(code.length).toBeGreaterThan(0);
+  });
+
+  for (const { name, code, literals } of SWEPT) {
+    for (const literal of literals) {
+      it(`${name} does not carry the bare ${literal.source} this batch replaced`, () => {
+        expect(code).not.toMatch(literal);
+      });
+    }
+  }
+
+  const USES = [
+    ["about-panel.tsx", /gap-\[var\(--p-space-4\)\]/],
+    ["about-panel.tsx", /text-\[length:var\(--p-text-md\)\]/],
+    ["about-panel.tsx", /gap-\[var\(--p-space-2\)\]/],
+    ["save-failed.tsx", /gap-\[var\(--p-space-3\)\]/],
+    ["recorder-status.tsx", /pt-\[var\(--p-space-3\)\]/],
+  ] as const;
+  for (const [file, pattern] of USES) {
+    it(`${file} still uses ${pattern.source}`, () => {
+      const hit = SWEPT.find((f) => f.name === file);
+      expect(hit?.code).toMatch(pattern);
+    });
+  }
+
+  it("--p-space-2, --p-space-3, --p-space-4 and --p-text-md still resolve to 6px, 8px, 14px and 13px", () => {
+    expect(primitiveValue(primitives, "--p-space-2")).toBe("6px");
+    expect(primitiveValue(primitives, "--p-space-3")).toBe("8px");
+    expect(primitiveValue(primitives, "--p-space-4")).toBe("14px");
+    expect(primitiveValue(primitives, "--p-text-md")).toBe("13px");
   });
 });

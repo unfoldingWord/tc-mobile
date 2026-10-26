@@ -115,11 +115,6 @@ async function build(): Promise<ObsTemplate> {
  * if the adapted package breaks the contract; the caller routes that to the
  * failure log. A rejection is not kept, so a later call tries again (a lazy
  * chunk that failed to load offline can load once the network is back).
- *
- * @pivotpending No caller yet. #246 (Template Library, UI half) reads this to
- * list the stories and seed a book's segments, and restores `jpg` to the
- * precache when it does (`tests/precache-manifest.test.ts` counts an import of
- * this function as the thumbnail reader).
  */
 export function loadObsTemplate(): Promise<ObsTemplate> {
   loading ??= build().catch((cause: unknown) => {

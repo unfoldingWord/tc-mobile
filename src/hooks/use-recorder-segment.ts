@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
+import { noteLoadedClip } from "./loaded-clip";
 import { noteObservedRevision } from "./observed-revision";
 import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
@@ -132,6 +133,9 @@ export async function loadRecorderSegmentView(
             clip.mp3,
             clip.meta.frameCount
           );
+  // A PCM buffer is the stored clip itself, so a take recorded over it
+  // unchanged can name the clip instead of copying it (#1545).
+  if (clip?.encoding === "pcm") noteLoadedClip(clip.samples, clip.meta);
   return {
     bookName: book ? strings.bookHeading(book.name, book.number) : "",
     bookCoverHex: book
@@ -238,6 +242,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
     // context for and even a decode may still complete without.
     void resumeAudioContext().catch((cause) => {
       console.error("Could not resume the AudioContext before retry", cause);
+      reportFailure(cause, "recorder-segment-resume-retry");
     });
     setRetrying(true);
     setAttempt((n) => n + 1);
