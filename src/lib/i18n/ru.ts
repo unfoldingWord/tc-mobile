@@ -400,6 +400,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Сохраняем лицензию.",
   licenceAskContinue: "Поделиться",
   licenceAskCancel: "Отмена",
+  licenceTileLabel: "Изменить лицензию",
+  tileLicence: "Лицензия",
+  tileTemplates: "Шаблоны",
+  licenceAskSave: "Сохранить",
+  licenceAskSaveLead:
+    "Кто может делиться этими записями? Вы можете изменить это позже.",
   shareNameFallback: "Книга",
 
   // Save and recovery

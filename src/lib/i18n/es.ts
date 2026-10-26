@@ -325,6 +325,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Guardando la licencia.",
   licenceAskContinue: "Compartir",
   licenceAskCancel: "Cancelar",
+  licenceTileLabel: "Cambiar licencia",
+  tileLicence: "Licencia",
+  tileTemplates: "Plantillas",
+  licenceAskSave: "Guardar",
+  licenceAskSaveLead:
+    "¿Quién puede compartir estas grabaciones? Puedes cambiarlo de nuevo más tarde.",
   exportProjectSuffix: "proyecto",
   exportProjectFilename(
     this: Strings,

@@ -36,14 +36,25 @@ export function LicenceAsk(props: {
   onCancel: () => void;
   saving: boolean;
   error: string | null;
+  /**
+   * Save-only mode (#1455, "change it later"): the ask reopened from a book's
+   * Licence tile, not from Share. The stored licence is the selected row, the
+   * action says Save, and the lead no longer claims the choice is made once.
+   * Omitted, the ask is Share's, exactly as before.
+   */
+  change?: { readonly current: LicenceId | null };
 }) {
-  const { saving, error } = props;
-  const [selected, setSelected] = useState<LicenceId>("CC-BY-SA-4.0");
+  const { saving, error, change } = props;
+  const [selected, setSelected] = useState<LicenceId>(
+    change?.current ?? "CC-BY-SA-4.0"
+  );
   return (
     <TileGrid>
       <div className="licence-ask">
         <h3 className="licence-ask-title">{strings.licenceAskTitle}</h3>
-        <p className="licence-ask-lead">{strings.licenceAskLead}</p>
+        <p className="licence-ask-lead">
+          {change ? strings.licenceAskSaveLead : strings.licenceAskLead}
+        </p>
         <div
           role="radiogroup"
           aria-label={strings.licenceAskTitle}
@@ -73,8 +84,8 @@ export function LicenceAsk(props: {
         {error && <Notice>{error}</Notice>}
         <div className="licence-ask-actions">
           <Control
-            icon="share"
-            label={strings.licenceAskContinue}
+            icon={change ? "check" : "share"}
+            label={change ? strings.licenceAskSave : strings.licenceAskContinue}
             variant="primary"
             busy={saving}
             onClick={() => props.onContinue(selected)}
