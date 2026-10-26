@@ -185,7 +185,9 @@ describe("a recording finished while the replay holds the slot (#1549)", () => {
     expect(await activeClip(mine.segmentId)).toBe(mine.clipId);
     expect(app.slot.held()).toBeNull();
     expect(app.calls.saved).toBe(2);
-    expect(reports).toEqual([]);
+    // The replayed take's informational row only (#38, PR #1706's pick); the
+    // recording's own ordinary save writes none.
+    expect(reports.map((r) => r.context)).toEqual(["pending-take-replayed"]);
     // React was handed the hand-over too, not only the slot.
     expect(app.published.some((h) => h?.clipId === mine.clipId)).toBe(true);
     expect(app.published.at(-1)).toBeNull();
@@ -280,7 +282,10 @@ describe("a recording finished while the replay holds the slot (#1549)", () => {
       state: "failed",
       attempts: 1,
     });
-    expect(reports.map((r) => r.context)).toEqual(["save-take"]);
+    expect(reports.map((r) => r.context)).toEqual([
+      "pending-take-replayed",
+      "save-take",
+    ]);
   });
 });
 
