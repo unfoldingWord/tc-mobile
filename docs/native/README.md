@@ -258,6 +258,10 @@ TestFlight only; **App Store submission is out of scope** (#262).
    translations."_) — no Mac step is needed to add it. Adjust the copy here if
    the wording changes, but do not remove the key: the recording path is the
    product's whole point (#262 / #86 C1–C2, PR #265).
+   The prompt is localized per app language in `ios/App/App/<tag>.lproj/InfoPlist.strings`
+   (registered in `knownRegions` and `CFBundleLocalizations`; `Info.plist` stays the
+   English fallback). The drafts are unchecked and have not been seen on a phone;
+   `tests/ios-microphone-prompt-localized.test.ts` pins the files, not the wording.
 5. Select **Any iOS Device (arm64)** → _Product → Archive_.
 6. In the Organizer: **Distribute App → TestFlight (Internal/External)** →
    upload to App Store Connect.
