@@ -487,11 +487,23 @@ pause is wrapped so a throw is reported under the same context and the context
 drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
 (`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), the same in-tap
 resume on a buffer Play (`"playback-buffer-tap-resume"`) and on sheet open
-(`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker,
-a **pending DRI question** (the default is a routine iOS event; one constant,
-`RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`, flips it) —
+(`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker
+(the DRI's pick on #1692, "Log only, no ≡ (Recommended)": a routine iOS event;
+`RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`) —
 `startRecording`'s catch (`"recorder-start"`, which does light it), a share
-whose send failed (`hooks/share-flow.ts`, `"share-send"`), a shared context that reports `"running"`
+whose send failed (`hooks/share-flow.ts`, `"share-send"`), the recorder
+sheet's commit and exit nets and recovery panel (`components/recorder.tsx`: the
+Stop-commit net `"recorder-commit-stop"`, the close-commit net
+`"recorder-commit-close"`, the no-capture tail net `"recorder-close-tail"`, a
+failed save of a recovered take `"recorder-recovered-save"` and a recovered
+take's share refused `"recorder-recovered-share"` — all five light `≡`,
+because a recording could be lost or stranded; and a refused Finished change
+`"recorder-finished-flag"`, which is logged but does **not** light it: the sheet
+says so in place and nothing is lost), the editor's dropped edit
+(`hooks/use-segment-editor.ts`, `"recorder-edit-apply"`, logged and not
+lighting `≡`: the edit is dropped, the saved audio and history are unchanged),
+a system Back whose `requestClose()` rejected (`hooks/use-nav-stack.ts`,
+`"recorder-close-rejected"`, which lights it), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -517,9 +529,11 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-the microphone-refusal and start paths inside `hooks/use-recorder.ts` and the
-recorder's preview path. Routing those is follow-up
-work — and it is
+the microphone-refusal and start paths inside `hooks/use-recorder.ts` (among
+them its foreground and start-time `resumeAudioContext()` calls and the level
+meter's open), `hooks/use-recorder-segment.ts`'s resume before a load retry, and
+`hooks/use-nav-stack.ts`'s missing-recorder-handle line on Back. Routing those
+is follow-up work — and it is
 not a one-line change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
 Until it lands, do not describe the log as holding "anything that went wrong":
