@@ -38,7 +38,9 @@ import { render } from "./render";
  * WHAT A RENDER READ CANNOT SEE. This reads attributes in static markup. It is
  * not what TalkBack or VoiceOver speak: it does not run a browser's name
  * algorithm (the one below is a reduced reading of it: `aria-labelledby`, then
- * `aria-label`, then drawn text, then `alt`, then `title`), it sees no CSS (so
+ * `aria-label`, then `alt` on an image or exposed text otherwise, then
+ * `title`; `alt=""` and a presentational role mark a decorative image that
+ * needs no name), it sees no CSS (so
  * `display: none` and the screen-reader-only class are matched by name), and
  * it cannot read a live region's announcement. Spoken form is a device check.
  *
@@ -78,14 +80,24 @@ const LABELLABLE_TAGS = new Set([
 const squash = (text: string): string =>
   text.replace(/\s+/g, " ").trim().toLowerCase();
 
-function drawnText(el: Element): string {
+/**
+ * The text a name is computed from: what is exposed to assistive technology,
+ * not what is drawn. `aria-hidden` text is drawn but not exposed, so it names
+ * nothing; screen-reader-only text is exposed but not drawn, so it does.
+ */
+function exposedText(el: Element): string {
   let out = "";
   for (const node of Array.from(el.childNodes)) {
     if (node.nodeType === 3) out += node.textContent ?? "";
     else if (node.nodeType === 1) {
       const child = node as Element;
-      if (child.hasAttribute("hidden") || child.matches(".sr-only")) continue;
-      out += ` ${drawnText(child)} `;
+      if (
+        child.hasAttribute("hidden") ||
+        child.getAttribute("aria-hidden") === "true"
+      ) {
+        continue;
+      }
+      out += ` ${exposedText(child)} `;
     }
   }
   return out;
@@ -119,9 +131,25 @@ function accessibleName(el: Element): string {
   }
   const label = el.getAttribute("aria-label");
   if (label !== null && label.trim() !== "") return label.trim();
-  const own = el.tagName === "IMG" ? (el.getAttribute("alt") ?? "") : "";
-  const text = own.trim() || drawnText(el).replace(/\s+/g, " ").trim();
-  return text || (el.getAttribute("title") ?? "").trim();
+  const title = (el.getAttribute("title") ?? "").trim();
+  if (el.tagName === "IMG") {
+    // A present `alt`, empty included, is the name; `title` only without one.
+    const alt = el.getAttribute("alt");
+    return alt !== null ? alt.trim() : title;
+  }
+  return exposedText(el).replace(/\s+/g, " ").trim() || title;
+}
+
+/** `alt=""` with no author label, or a presentational role: not named. */
+function decorative(el: Element): boolean {
+  const role = el.getAttribute("role");
+  if (role === "presentation" || role === "none") return true;
+  return (
+    el.tagName === "IMG" &&
+    el.getAttribute("alt") === "" &&
+    !el.hasAttribute("aria-labelledby") &&
+    (el.getAttribute("aria-label") ?? "").trim() === ""
+  );
 }
 
 function site(el: Element): string {
@@ -133,9 +161,10 @@ function site(el: Element): string {
 function findings(root: Element, labelInName = true): Finding[] {
   const out: Finding[] = [];
   const named = root.querySelectorAll(
-    "button, [role=radio], [role=slider], [role=switch], [role=img]"
+    "button, img, [role=radio], [role=slider], [role=switch], [role=img]"
   );
   for (const el of Array.from(named)) {
+    if (decorative(el)) continue;
     const role = el.getAttribute("role");
     if (role !== null && !NAMED_ROLES.has(role) && el.tagName !== "BUTTON") {
       continue;
@@ -391,6 +420,37 @@ describe("the gate itself, in both states", () => {
     );
     expect(findings(root)).toEqual([]);
   });
+
+  it("names from exposed text: aria-hidden is not a name, sr-only text is", () => {
+    const hiddenOnly = render(
+      createElement(
+        "button",
+        { type: "button", "aria-label": "" },
+        createElement("span", { "aria-hidden": "true" }, "Try again")
+      )
+    );
+    expect(findings(hiddenOnly).map((f) => f.rule)).toEqual([1]);
+    const srOnly = render(
+      createElement(
+        "button",
+        { type: "button" },
+        createElement("span", { className: "sr-only" }, "Delete")
+      )
+    );
+    expect(findings(srOnly)).toEqual([]);
+  });
+
+  it("reads a native image: no alt is red, alt or alt=\"\" or presentation is clean", () => {
+    const img = (props: Record<string, string>) =>
+      render(createElement("div", null, createElement("img", props)));
+    expect(findings(img({ src: "a.png" })).map((f) => f.rule)).toEqual([1]);
+    expect(findings(img({ src: "a.png", title: "Cover" }))).toEqual([]);
+    expect(findings(img({ src: "a.png", alt: "" }))).toEqual([]);
+    expect(findings(img({ src: "a.png", alt: "", title: "x" }))).toEqual([]);
+    expect(findings(img({ src: "a.png", alt: "Cover" }))).toEqual([]);
+    expect(findings(img({ src: "a.png", role: "presentation" }))).toEqual([]);
+    expect(findings(img({ src: "a.png", role: "none" }))).toEqual([]);
+  });
 });
 
 describe("every surface the audit touched carries full accessible names", () => {
@@ -398,6 +458,8 @@ describe("every surface the audit touched carries full accessible names", () => 
     it(`${surface.name}, in English and every complete language`, async () => {
       const elements = await surface.build();
       const all: string[] = [];
+      // An empty locale list would make `toEqual([])` below pass vacuously.
+      expect(completeLocales().length).toBeGreaterThan(0);
       for (const locale of completeLocales()) {
         installLocale(locale);
         for (const element of elements) {
