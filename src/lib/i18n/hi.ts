@@ -330,6 +330,16 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "भाषाएँ लोड नहीं हो सकीं।",
   languageNoMatch: "कोई भाषा मेल नहीं खाती। कोई दूसरा नाम या कोड आज़माएँ।",
   languageNarrow: "दूसरी भाषाएँ देखने के लिए और टाइप करें।",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "{n} भाषा मेल खाती है।",
+      other: "{n} भाषाएँ मेल खाती हैं।",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `{n} भाषाएँ मेल खाती हैं। पहली ${shown} दिखाई गई हैं। खोज को सीमित करने के लिए और टाइप करें।`,
+      other: `{n} भाषाएँ मेल खाती हैं। पहली ${shown} दिखाई गई हैं। खोज को सीमित करने के लिए और टाइप करें।`,
+    }),
   languageSaving: "भाषा सहेजी जा रही है।",
   languageAskCancel: "रद्द करें",
   licenceAskTitle: "इस पुस्तक का लाइसेंस",
@@ -339,6 +349,17 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "लाइसेंस सहेजा जा रहा है।",
   licenceAskContinue: "साझा करें",
   licenceAskCancel: "रद्द करें",
+  licenceTileLabel: "लाइसेंस बदलें",
+  tileLicence: "लाइसेंस",
+  tileTemplates: "टेम्पलेट",
+  licenceAskSave: "सहेजें",
+  licenceAskSaveLead:
+    "ये रिकॉर्डिंग कौन साझा कर सकता है? आप इसे बाद में फिर बदल सकते हैं।",
+  licenceNameCcBySa: "क्रिएटिव कॉमन्स एट्रिब्यूशन-शेयरअलाइक 4.0",
+  licenceNameCcBy: "क्रिएटिव कॉमन्स एट्रिब्यूशन 4.0",
+  licenceNameCc0: "क्रिएटिव कॉमन्स ज़ीरो 1.0, सार्वजनिक डोमेन",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "इस पुस्तक को साझा करने से पहले एक खंड रिकॉर्ड करें।",
   shareBookFailed: "यह पुस्तक साझा नहीं हो सकी। फिर से कोशिश करें।",
   shareBookFailedWeb:

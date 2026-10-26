@@ -60,7 +60,10 @@ export function TemplateList({
             key={entry.pkg.id}
             type="button"
             className="setting-row template-row"
-            aria-label={title}
+            aria-label={strings.sentences(
+              title,
+              strings.templateLicenceLabel(licence)
+            )}
             aria-busy={busy}
             onClick={() => {
               if (!busy) onPick(entry);
@@ -77,10 +80,7 @@ export function TemplateList({
             )}
             <span className="template-row-text">
               <span className="template-row-title">{title}</span>
-              <span
-                className="template-row-licence"
-                aria-label={strings.templateLicenceLabel(licence)}
-              >
+              <span className="template-row-licence">
                 <Icon name="copies" size={18} />
                 {licence}
               </span>

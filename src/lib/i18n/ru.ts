@@ -391,6 +391,20 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "Не удалось загрузить языки.",
   languageNoMatch: "Языков не найдено. Введите другое название или код.",
   languageNarrow: "Введите больше, чтобы увидеть другие языки.",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "Подходит {n} язык.",
+      few: "Подходят {n} языка.",
+      many: "Подходят {n} языков.",
+      other: "Подходят {n} языка.",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `Подходит {n} язык. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+      few: `Подходят {n} языка. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+      many: `Подходят {n} языков. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+      other: `Подходят {n} языка. Показаны первые ${shown}. Введите больше, чтобы сузить поиск.`,
+    }),
   languageSaving: "Сохраняем язык.",
   languageAskCancel: "Отмена",
   licenceAskTitle: "Лицензия этой книги",
@@ -400,6 +414,17 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Сохраняем лицензию.",
   licenceAskContinue: "Поделиться",
   licenceAskCancel: "Отмена",
+  licenceTileLabel: "Изменить лицензию",
+  tileLicence: "Лицензия",
+  tileTemplates: "Шаблоны",
+  licenceAskSave: "Сохранить",
+  licenceAskSaveLead:
+    "Кто может делиться этими записями? Вы можете изменить это позже.",
+  licenceNameCcBySa: "Криэйтив Коммонс, Атрибуция, на тех же условиях 4.0",
+  licenceNameCcBy: "Криэйтив Коммонс, Атрибуция 4.0",
+  licenceNameCc0: "Криэйтив Коммонс, ноль 1.0, общественное достояние",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareNameFallback: "Книга",
 
   // Save and recovery

@@ -481,9 +481,11 @@ source clip is intact writes a stored base". Red: the mutation "the hold
 trusts the caller's source metadata" must kill the first two; the mutation
 "the hold always writes inline" must kill the third.
 
-**Today every row is `inline`** (inference: no caller passes `source`,
-above), so this rule changes nothing a person can see until #1545 lands. It
-still ships in PR 1, because it is a rule a v13 writer must obey (§8).
+Until #1545 every row was `inline`, because no caller passed `source`. Since
+#1545 the save hook passes it when the take's `existing` is the PCM buffer the
+recorder loaded, unchanged (`src/hooks/loaded-clip.ts`), so this rule now
+decides real rows. It shipped in PR 1, because it is a rule a v13 writer must
+obey (§8).
 
 ### The owning transaction
 

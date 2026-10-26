@@ -294,6 +294,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "Daftar bahasa tidak dapat dimuat.",
   languageNoMatch: "Tidak ada bahasa yang cocok. Coba nama atau kode lain.",
   languageNarrow: "Ketik lagi untuk melihat bahasa lain.",
+  languageCount: (n: number): string =>
+    plural(n, { one: "{n} bahasa cocok.", other: "{n} bahasa cocok." }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      other: `{n} bahasa cocok. Menampilkan ${shown} yang pertama. Ketik lagi untuk mempersempit pencarian.`,
+    }),
   languageSaving: "Menyimpan bahasa.",
   languageAskCancel: "Batal",
   licenceAskTitle: "Lisensi buku ini",
@@ -303,6 +309,17 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Menyimpan lisensi.",
   licenceAskContinue: "Bagikan",
   licenceAskCancel: "Batal",
+  licenceTileLabel: "Ubah lisensi",
+  tileLicence: "Lisensi",
+  tileTemplates: "Templat",
+  licenceAskSave: "Simpan",
+  licenceAskSaveLead:
+    "Siapa yang boleh membagikan rekaman ini? Anda dapat mengubahnya lagi nanti.",
+  licenceNameCcBySa: "Creative Commons Atribusi-BerbagiSerupa 4.0",
+  licenceNameCcBy: "Creative Commons Atribusi 4.0",
+  licenceNameCc0: "Creative Commons Nol 1.0, domain publik",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   exportProjectSuffix: "proyek",
   exportProjectFilename(
     this: Strings,

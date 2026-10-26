@@ -317,6 +317,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "Impossible de charger les langues.",
   languageNoMatch: "Aucune langue ne correspond. Essayez un autre nom ou code.",
   languageNarrow: "Tapez plus pour voir d’autres langues.",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "{n} langue correspond.",
+      many: "{n} langues correspondent.",
+      other: "{n} langues correspondent.",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `{n} langues correspondent. Les ${shown} premières sont affichées. Tapez plus pour préciser la recherche.`,
+      many: `{n} langues correspondent. Les ${shown} premières sont affichées. Tapez plus pour préciser la recherche.`,
+      other: `{n} langues correspondent. Les ${shown} premières sont affichées. Tapez plus pour préciser la recherche.`,
+    }),
   languageSaving: "Sauvegarde de la langue.",
   languageAskCancel: "Annuler",
   licenceAskTitle: "Licence de ce livre",
@@ -326,6 +338,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Sauvegarde de la licence.",
   licenceAskContinue: "Partager",
   licenceAskCancel: "Annuler",
+  licenceTileLabel: "Changer la licence",
+  tileLicence: "Licence",
+  tileTemplates: "Modèles",
+  licenceAskSave: "Enregistrer",
+  licenceAskSaveLead:
+    "Qui peut partager ces enregistrements ? Vous pouvez le modifier plus tard.",
+  licenceNameCcBySa:
+    "Licence Creative Commons Attribution, Partage dans les mêmes conditions 4.0",
+  licenceNameCcBy: "Licence Creative Commons Attribution 4.0",
+  licenceNameCc0: "Licence Creative Commons Zéro 1.0, domaine public",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   exportProjectSuffix: "projet",
   exportProjectFilename(
     this: Strings,

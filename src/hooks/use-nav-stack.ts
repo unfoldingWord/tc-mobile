@@ -1185,6 +1185,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
               // Surface it. The .finally below is load-bearing for the same
               // reason — do not drop it.
               console.error("Recorder close rejected", cause);
+              reportFailure(cause, "recorder-close-rejected");
             })
             .finally(() => {
               transitionInFlight.current = false;

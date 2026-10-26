@@ -42,10 +42,6 @@ export type ClipId = string & { readonly __brand: "ClipId" };
  * (story:frame as chapter:verse), which the export maps (ADR 0014). The
  * Scripture Bundle scope string is an output the export writes, not a stored
  * value (ADR 0004, amended by v12; docs/design/v12-schema.md).
- *
- * @pivotpending Written by the template writer (#1450); no reader consumes it
- * as an export yet, so it is tagged rather than left to fail CI. The type
- * itself is live — `Segment.reference` is typed on it.
  */
 export type SegmentRef = SegmentSpan;
 

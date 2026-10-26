@@ -98,6 +98,13 @@ interface ControlProps {
    * renders nothing, so no existing call site's markup changes.
    */
   caption?: string;
+  /**
+   * The id of an element whose text describes this control (#1032): sets
+   * `aria-describedby` on the button. For a question the control answers, which
+   * a focus move onto the button would otherwise skip. Omitted, no attribute is
+   * emitted and the markup is unchanged.
+   */
+  describedBy?: string;
 }
 
 const VARIANT_CLASS: Record<ControlVariant, string> = {
@@ -134,6 +141,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
       pressed,
       guided,
       caption,
+      describedBy,
     },
     ref
   ) {
@@ -165,6 +173,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
         aria-pressed={pressed}
         autoFocus={autoFocus}
         aria-label={name}
+        aria-describedby={describedBy}
         title={name}
         className={cn(
           "control",

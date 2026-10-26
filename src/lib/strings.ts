@@ -733,13 +733,13 @@ export const stringsEn = {
   eraseConfirmTitle: "Reset segment and start over",
   eraseConfirm: "Reset recording",
   // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
-  // for every flow it now serves — segment Clear, book Delete and segment
+  // for every flow it now serves — segment Reset, book Delete and segment
   // Delete (#590) — because it is the same control on the same surface
   // saying the same word.
   eraseCancel: "Cancel",
   // The record bar's bin confirm (O4 G5, #1028): the one tap that clears the
   // segment AND starts the next take, and the workbench's own "Keep it" for
-  // the safe answer. The ⋮ menu's Clear keeps Clear / Cancel above.
+  // the safe answer. The ⋮ menu's Reset keeps Reset / Cancel above.
   recordAgainConfirm: "Record again",
   recordAgainKeep: "Keep it",
   eraseFailed: "Could not reset the recording. Try again.",
@@ -749,7 +749,7 @@ export const stringsEn = {
   eraseConfirmPreviewPlay: "Play what will be lost",
   eraseConfirmPreviewPause: "Pause",
   // The clipboard's bin under the line (#862): throws away a cut that was
-  // never pasted, behind the same confirm as the whole-take Clear. "Cut
+  // never pasted, behind the same confirm as the whole-take Reset. "Cut
   // audio", not "clipboard": the translator cut a piece of their recording,
   // and that piece is what is lost.
   discardClip: "Throw away the cut audio",
@@ -778,7 +778,7 @@ export const stringsEn = {
   // ── Delete a segment (#590) ────────────────────────────────────────────────
   // The chapter view's segment-row menu tile/row that deletes the segment
   // itself, not only its audio (reverses G4, `docs/design/pivot-plan.md`'s
-  // Gate 1, for this one entry) — behind the same confirm component Clear and
+  // Gate 1, for this one entry) — behind the same confirm component Reset and
   // book Delete use, mounted a second time on the chapter view
   // (`segments-screen.tsx` keeps a separate `EraseConfirm` for it).
   //
@@ -800,7 +800,7 @@ export const stringsEn = {
   deleteSegmentConfirmTitle: (ordinal: number): string =>
     `Delete segment ${ordinal}?`,
   deleteSegmentConfirm: "Delete",
-  // `eraseCancel`'s own comment already says Clear and book Delete share one
+  // `eraseCancel`'s own comment already says Reset and book Delete share one
   // dialog and one word; this is the third flow on it.
   deleteSegmentFailed: "Could not delete this segment. Try again.",
 
@@ -933,6 +933,15 @@ export const stringsEn = {
   languageLoadFailed: "Could not load the languages.",
   languageNoMatch: "No language matches. Try another name or code.",
   languageNarrow: "Type more to see other languages.",
+  // The language search's spoken result count (#1344, #1492): a polite status
+  // line, said once the search settles. English is a proposal for the
+  // requirements owner. Each form is a whole phrase (lib/plural.ts).
+  languageCount: (n: number): string =>
+    plural(n, { one: "{n} language matches.", other: "{n} languages match." }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      other: `{n} languages match. Showing the first ${shown}. Type more to narrow your search.`,
+    }),
   languageSaving: "Saving the language.",
   languageAskCancel: "Cancel",
   licenceAskTitle: "Licence of this book",
@@ -942,6 +951,26 @@ export const stringsEn = {
   licenceSaving: "Saving the licence.",
   licenceAskContinue: "Share",
   licenceAskCancel: "Cancel",
+  // The book menu's Licence tile (#1455, "change it later"). English is a
+  // proposal for the requirements owner. The tile's name holds its caption
+  // (label-in-name); the Templates tile gets its own caption key here too, so
+  // a language can shorten it without renaming the tile (#1655).
+  licenceTileLabel: "Change licence",
+  tileLicence: "Licence",
+  tileTemplates: "Templates",
+  licenceAskSave: "Save",
+  licenceAskSaveLead:
+    "Who may share these recordings? You can change this again later.",
+  // Each licence radio's spoken name (#1344, #1455): the full title, then the
+  // short label the row shows, so the name still holds the visible text. The
+  // file-name tag and the ID3 text keep the short label. English is a proposal
+  // for the requirements owner (inference: the standard Creative Commons
+  // titles are what they would choose).
+  licenceNameCcBySa: "Creative Commons Attribution-ShareAlike 4.0",
+  licenceNameCcBy: "Creative Commons Attribution 4.0",
+  licenceNameCc0: "Creative Commons Zero 1.0, public domain",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome

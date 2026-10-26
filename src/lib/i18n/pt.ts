@@ -323,6 +323,18 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageLoadFailed: "Não foi possível carregar os idiomas.",
   languageNoMatch: "Nenhum idioma corresponde. Tente outro nome ou código.",
   languageNarrow: "Digite mais para ver outros idiomas.",
+  languageCount: (n: number): string =>
+    plural(n, {
+      one: "{n} idioma corresponde.",
+      many: "{n} idiomas correspondem.",
+      other: "{n} idiomas correspondem.",
+    }),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(n, {
+      one: `{n} idiomas correspondem. Mostrando os primeiros ${shown}. Digite mais para refinar a busca.`,
+      many: `{n} idiomas correspondem. Mostrando os primeiros ${shown}. Digite mais para refinar a busca.`,
+      other: `{n} idiomas correspondem. Mostrando os primeiros ${shown}. Digite mais para refinar a busca.`,
+    }),
   languageSaving: "Salvando o idioma.",
   languageAskCancel: "Cancelar",
   licenceAskTitle: "Licença deste livro",
@@ -332,6 +344,17 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Salvando a licença.",
   licenceAskContinue: "Compartilhar",
   licenceAskCancel: "Cancelar",
+  licenceTileLabel: "Alterar licença",
+  tileLicence: "Licença",
+  tileTemplates: "Modelos",
+  licenceAskSave: "Salvar",
+  licenceAskSaveLead:
+    "Quem pode compartilhar estas gravações? Você pode alterar isso depois.",
+  licenceNameCcBySa: "Creative Commons Atribuição-CompartilhaIgual 4.0",
+  licenceNameCcBy: "Creative Commons Atribuição 4.0",
+  licenceNameCc0: "Creative Commons Zero 1.0, domínio público",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
   exportProjectSuffix: "projeto",
   exportProjectFilename(
     this: Strings,
