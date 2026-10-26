@@ -22,6 +22,8 @@ import {
 import { computePeaks } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
 
+import { reportFailure } from "./report-failure";
+
 /**
  * Waveform resolution of the recorder stage — coarser than a row is wrong.
  *
@@ -183,6 +185,7 @@ export function useSegmentEditor(
         return true;
       } catch (cause) {
         console.error("An edit could not be applied", cause);
+        reportFailure(cause, "recorder-edit-apply");
         setError(true);
         return false;
       }

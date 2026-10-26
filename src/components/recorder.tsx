@@ -61,6 +61,7 @@ import {
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { WaveformScroller } from "./waveform-scroller";
+import { reportFailure } from "@/hooks/report-failure";
 import { classifyShareError } from "@/hooks/share-flow";
 import { readMicSettingsPlatform } from "@/hooks/mic-settings-platform";
 import {
@@ -1551,6 +1552,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // unmounts and the latch releases; the recovery slot carries anything
         // a failed commit held.
         console.error("Committing the recording failed", cause);
+        reportFailure(cause, "recorder-commit-stop");
         onExit(dirty.current);
       });
     }, [
@@ -2350,6 +2352,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // take deleted externally between toggle and close. Surface it
                 // (F5-#1) rather than only the console, and stay open.
                 console.error("Could not change the finished flag", cause);
+                reportFailure(cause, "recorder-finished-flag");
                 // Same trap as the clear above, over a flag rather than audio.
                 // A mark plan carries no edits, so leaving over a missing
                 // segment drops nothing the store still holds (#607). No
@@ -2377,6 +2380,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // cost a recording; exit rather than strand the sheet (the recovery slot
           // carries anything a failed commit held).
           console.error("Committing the recording on close failed", cause);
+          reportFailure(cause, "recorder-close-tail");
           onExit(dirty.current);
           return true;
         }
@@ -2622,6 +2626,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // Neither call rejects by contract; this is the last net on the one path
         // where a failure would cost a recording that cannot be made again.
         console.error("Committing the recording on close failed", cause);
+        reportFailure(cause, "recorder-commit-close");
         onExit(dirty.current);
         // The sheet still exits — `onExit` ran — so a Back gesture is satisfied and
         // must not re-arm; the recovery slot carries anything the failed commit held.
@@ -2762,6 +2767,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // thrown save cannot strand the panel busy with the take still held. A
           // save failure is not a share failure (George R1 G6).
           console.error("Saving the recovered recording failed", cause);
+          reportFailure(cause, "recorder-recovered-save");
           setHeldRetrying(false);
           heldRetryingRef.current = false;
           setHeldRetryError(strings.takeRetryFailed);
@@ -2877,6 +2883,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           const outcome = classifyShareError(cause, hadActivation);
           if (outcome === "dismissed" || outcome === "retry") return;
           console.error("Could not share the recovered recording", cause);
+          reportFailure(cause, "recorder-recovered-share");
           setHeldShareError(strings.takeShareFailed);
         }
       );
