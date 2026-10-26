@@ -604,6 +604,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Sitisha ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Endelea na ${heading}, ulipositisha: asilimia ${percent}`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} haikuchezwa. Gusa ili ujaribu tena`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: hakuna rekodi ya kucheza`,
 };

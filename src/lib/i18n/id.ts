@@ -550,6 +550,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   pauseChapter: (heading: string): string => `Jeda ${heading}`,
   resumeChapter: (heading: string, percent: number): string =>
     `Lanjutkan ${heading}, dijeda di ${percent} persen`,
+  chapterPlayFailed: (heading: string): string =>
+    `${heading} tidak terputar. Ketuk untuk mencoba lagi`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} belum ada rekaman untuk diputar`,
 };
