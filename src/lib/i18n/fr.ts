@@ -318,7 +318,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     "Dans quelle langue sont les enregistrements ? Vous la choisissez une fois, et chaque exportation de ce livre l’utilise.",
   languageSearch: "Rechercher une langue",
   languageSearchHint: "Nom ou code",
-  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
   languageLoading: "Chargement des langues.",
   languageLoadFailed: "Impossible de charger les langues.",
   languageNoMatch: "Aucune langue ne correspond. Essayez un autre nom ou code.",

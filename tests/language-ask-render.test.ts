@@ -39,7 +39,7 @@ function ask(
 }
 
 describe("LanguageAsk", () => {
-  it("names each row by its English name and tag, and draws the autonym in its own language", () => {
+  it("draws each row's name, autonym and tag as its content, with no label over it, and the autonym in its own language", () => {
     const root = ask(
       ready([
         ["en", "English"],
@@ -47,11 +47,14 @@ describe("LanguageAsk", () => {
       ])
     );
     const rows = Array.from(root.querySelectorAll("ul.language-list button"));
-    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual([
-      strings.languageRow("English", "en"),
-      strings.languageRow("French", "fr"),
+    expect(rows.map((r) => r.hasAttribute("aria-label"))).toEqual([
+      false,
+      false,
     ]);
-    expect(strings.languageRow("French", "fr")).toBe("French, fr");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      "English en",
+      "French français fr",
+    ]);
     const autonym = one(root, ".language-row [lang]");
     expect(autonym.textContent).toBe("français");
     expect(autonym.getAttribute("lang")).toBe("fr");

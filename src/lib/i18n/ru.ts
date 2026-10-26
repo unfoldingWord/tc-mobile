@@ -393,7 +393,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     "На каком языке эти записи? Вы выбираете один раз, и каждый экспорт этой книги использует его.",
   languageSearch: "Поиск языков",
   languageSearchHint: "Название или код",
-  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
   languageLoading: "Загружаются языки.",
   languageLoadFailed: "Не удалось загрузить языки.",
   languageNoMatch: "Языков не найдено. Введите другое название или код.",

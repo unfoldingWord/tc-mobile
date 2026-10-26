@@ -327,7 +327,6 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     "Rekodi hizi ziko katika lugha gani? Unaichagua mara moja, na kila uhamishaji wa kitabu hiki unaitumia.",
   languageSearch: "Tafuta lugha",
   languageSearchHint: "Jina au msimbo",
-  languageRow: (name: string, tag: string): string => `${name}, ${tag}`,
   languageLoading: "Inapakia lugha.",
   languageLoadFailed: "Lugha hazikuweza kupakiwa.",
   languageNoMatch: "Hakuna lugha inayolingana. Jaribu jina au msimbo mwingine.",
