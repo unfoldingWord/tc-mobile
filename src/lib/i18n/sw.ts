@@ -339,6 +339,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Inahifadhi leseni.",
   licenceAskContinue: "Shiriki",
   licenceAskCancel: "Ghairi",
+  licenceTileLabel: "Badilisha leseni",
+  tileLicence: "Leseni",
+  tileTemplates: "Violezo",
+  licenceAskSave: "Hifadhi",
+  licenceAskSaveLead:
+    "Nani anaweza kushiriki rekodi hizi? Unaweza kubadilisha hili tena baadaye.",
   shareBookNothing: "Rekodi kipande kimoja kabla ya kushiriki kitabu hiki.",
   shareBookFailed: "Kitabu hiki hakikuweza kushirikiwa. Jaribu tena.",
   shareBookFailedWeb:

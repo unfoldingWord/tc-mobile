@@ -303,6 +303,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Menyimpan lisensi.",
   licenceAskContinue: "Bagikan",
   licenceAskCancel: "Batal",
+  licenceTileLabel: "Ubah lisensi",
+  tileLicence: "Lisensi",
+  tileTemplates: "Templat",
+  licenceAskSave: "Simpan",
+  licenceAskSaveLead:
+    "Siapa yang boleh membagikan rekaman ini? Anda dapat mengubahnya lagi nanti.",
   exportProjectSuffix: "proyek",
   exportProjectFilename(
     this: Strings,

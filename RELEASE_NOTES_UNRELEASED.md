@@ -9,6 +9,8 @@ its body and empties it.
 
 - Export project asks once what language a book is in, from a searchable list of languages, and writes it into the book and its export (#1630).
 
+- A book's menu has a Licence tile that reopens the licence choice with the saved licence selected and saves a new pick without sharing; books made from a template do not have it, because their licence is fixed; not yet checked on a phone (#1455).
+
 ## Changed
 
 - A segment marked Finished has its loudness evened out before it is stored, so finished segments play back at a similar level; segments finished before this change are left as they were (#1679).

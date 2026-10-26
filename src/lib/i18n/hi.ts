@@ -339,6 +339,12 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "लाइसेंस सहेजा जा रहा है।",
   licenceAskContinue: "साझा करें",
   licenceAskCancel: "रद्द करें",
+  licenceTileLabel: "लाइसेंस बदलें",
+  tileLicence: "लाइसेंस",
+  tileTemplates: "टेम्पलेट",
+  licenceAskSave: "सहेजें",
+  licenceAskSaveLead:
+    "ये रिकॉर्डिंग कौन साझा कर सकता है? आप इसे बाद में फिर बदल सकते हैं।",
   shareBookNothing: "इस पुस्तक को साझा करने से पहले एक खंड रिकॉर्ड करें।",
   shareBookFailed: "यह पुस्तक साझा नहीं हो सकी। फिर से कोशिश करें।",
   shareBookFailedWeb:

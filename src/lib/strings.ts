@@ -942,6 +942,16 @@ export const stringsEn = {
   licenceSaving: "Saving the licence.",
   licenceAskContinue: "Share",
   licenceAskCancel: "Cancel",
+  // The book menu's Licence tile (#1455, "change it later"). English is a
+  // proposal for the requirements owner. The tile's name holds its caption
+  // (label-in-name); the Templates tile gets its own caption key here too, so
+  // a language can shorten it without renaming the tile (#1655).
+  licenceTileLabel: "Change licence",
+  tileLicence: "Licence",
+  tileTemplates: "Templates",
+  licenceAskSave: "Save",
+  licenceAskSaveLead:
+    "Who may share these recordings? You can change this again later.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
   // The web build's version (#272). Chromium source indicates Android Chrome
