@@ -41,6 +41,11 @@ One run, deterministic input. Every MP3 is 160 287 bytes.
 | 5           | 8.51                 | 5.50                 | 18.35                           |
 | 10          | 5.76                 | 6.53                 | 17.63                           |
 
+The last column compares each generation with the one immediately before it
+in the chain, not with the row above: generations 4 and 6 to 9 are computed
+and not shown, so row 5 is against generation 4 and row 10 against
+generation 9.
+
 What the numbers say, as measured:
 
 - Loss accumulates and does not converge by 10 generations. SNR against the
@@ -79,7 +84,7 @@ languages.
 - Only MP3 was measured. Opus, AAC and Vorbis encoders are not in the repo, and
   the encoder licence question stays with ADR 0003. Nothing here reopens it.
 
-## Which codecs the WebViews decode natively
+## Which codecs the platforms decode natively (WebView unsourced)
 
 Sourced, with the gaps stated.
 
@@ -100,8 +105,12 @@ macOS, and does not mention WKWebView. WKWebView shares Safari's engine
 (inference). Current support for Opus in other containers was not found in a
 source I could fetch, so it is open.
 
-Both pages say support can differ by device. `canPlayType` on the target
-devices is the check, and nobody has run it.
+Both pages describe the platform media stack and Safari's media support; they
+do not describe `decodeAudioData`, which is how this app decodes
+(`hooks/audio-io.ts`), and both say support can differ by device. The check
+that answers the question is `decodeAudioData` of fixture bytes for each
+candidate codec in the target WebViews. `canPlayType` may be recorded beside
+it; it does not replace it. Nobody has run either.
 
 ## Reproducing
 
