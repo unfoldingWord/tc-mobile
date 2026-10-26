@@ -274,6 +274,9 @@ export async function sweep(
       const more = await handle(page, "button", /^More actions for/);
       await switchLanguage(page, tag);
       await more.click();
+      // The Licence tile (#1455) appears once the book's provenance is read, so
+      // the five-tile row is the one measured.
+      await expect(page.locator(".o4-tile--licence")).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }
