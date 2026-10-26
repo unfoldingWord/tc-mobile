@@ -20,11 +20,7 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * — anything written for it would have lost to the element. Moving the box into
  * the stylesheet fixes the bridge, but it moves three claims the tone table
  * makes (`failure`, `muted`, `glyph`) out of the code path that used to consume
- * them, into CSS that AGENTS.md says nothing in this repo reads:
- *
- *   "Nothing in this repo reads CSS at all. There is no stylelint and no CSS
- *    plugin. An orphaned custom property or component token is invisible to
- *    every check."
+ * them, into CSS that no linter and no knip check reads.
  *
  * So the naive move would have left `tests/notice-tone.test.ts` pinning a table
  * that nothing renders from — a test passing about a fact with no consequence,

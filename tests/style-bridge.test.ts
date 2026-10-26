@@ -22,9 +22,8 @@ import {
  * `@layer`, so a component that paints itself cannot have a rule in layer 3 at
  * all.
  *
- * Two things can rot afterwards, and neither is visible to any other check —
- * AGENTS.md: "Nothing in this repo reads CSS at all… an orphaned custom
- * property or component token is invisible to every check."
+ * Two things can rot afterwards, and neither is visible to a linter or to
+ * knip, which both skip CSS:
  *
  *   1. An alias pointing at a role layer 2 no longer defines. It resolves to
  *      nothing, paints nothing, and fails nothing.
