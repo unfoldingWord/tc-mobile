@@ -8,20 +8,20 @@ import {
   type TemplateBookIds,
 } from "@/lib/storage/template-book";
 import { mintTemplateIds, titleResolverFor } from "@/lib/templates/library";
-import { loadObsTemplate } from "@/lib/templates/obs";
+import {
+  loadTemplateEntries,
+  type TemplateEntry,
+} from "@/lib/templates/packages";
 import { planBookFromTemplate, type BookPlan } from "@/lib/templates/plan";
-import type { TemplatePackage, TemplateTitleTable } from "@/types/template";
 
 /**
- * The Template Library's data and create (#246, part of #1450). The build's
- * package list is one entry today, Open Bible Stories; a package added later
- * is another `loadX()` here and nothing in the picker.
+ * The Template Library's data and create (#246, part of #1450). The entries
+ * are whatever the build's package list holds (`lib/templates/packages.ts`,
+ * #1451); this hook names no package, so a package added to the list reaches
+ * the picker with no change here.
  */
 
-export interface TemplateEntry {
-  readonly pkg: TemplatePackage;
-  readonly titles: readonly TemplateTitleTable[];
-}
+export type { TemplateEntry };
 
 /**
  * One tap's worth of ids and plan. Minted once per intent and reused on a
@@ -98,11 +98,16 @@ export function useTemplateLibrary(
     }
     let live = true;
     // Deferred past the effect body: no state is set before the first await.
-    void loadObsTemplate().then(
-      (entry) => {
+    // A package that fails to load is reported and left out; the library is
+    // failed only when nothing loaded at all.
+    void loadTemplateEntries().then(
+      ({ entries: loaded, failures }) => {
+        for (const cause of failures) reportFailure(cause, "template-load");
         if (!live) return;
-        setEntries([entry]);
-        setStatus("ready");
+        setEntries(loaded);
+        setStatus(
+          loaded.length === 0 && failures.length > 0 ? "failed" : "ready"
+        );
       },
       (cause: unknown) => {
         reportFailure(cause, "template-load");
