@@ -1657,6 +1657,14 @@ export const stringsEn = {
   // what it says.
   chapterNothingToPlay: (heading: string): string =>
     `${heading} has nothing recorded to play`,
+  // What a chapter's play did, said once in the Books screen's polite status
+  // region (#1344): the control's own name changes, and a screen reader does
+  // not reliably re-read a name change. A failed play says `chapterPlayFailed`
+  // above. Whole sentences with the slot, as above; English is a proposal for
+  // the requirements owner.
+  chapterPlayStarted: (heading: string): string => `Playing ${heading}`,
+  chapterPlayPaused: (heading: string): string => `${heading} paused`,
+  chapterPlayFinished: (heading: string): string => `${heading} finished`,
 } as const;
 
 /**

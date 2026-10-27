@@ -622,4 +622,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading} n'a pas pu être lu. Touchez pour réessayer`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} n'a rien d'enregistré à lire`,
+  chapterPlayStarted: (heading: string): string => `Lecture de ${heading}`,
+  chapterPlayPaused: (heading: string): string => `${heading} en pause`,
+  chapterPlayFinished: (heading: string): string => `${heading} terminé`,
 };

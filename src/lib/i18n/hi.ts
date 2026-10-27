@@ -613,4 +613,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading} नहीं चल सका। फिर से कोशिश करने के लिए टैप करें`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: चलाने के लिए कुछ रिकॉर्ड नहीं है`,
+  chapterPlayStarted: (heading: string): string => `${heading} चल रहा है`,
+  chapterPlayPaused: (heading: string): string => `${heading} रुका हुआ है`,
+  chapterPlayFinished: (heading: string): string => `${heading} पूरा हुआ`,
 };

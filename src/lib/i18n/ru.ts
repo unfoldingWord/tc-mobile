@@ -657,4 +657,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading} не воспроизвелось. Нажмите, чтобы повторить`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}: нечего воспроизводить`,
+  chapterPlayStarted: (heading: string): string =>
+    `Воспроизводится: ${heading}`,
+  chapterPlayPaused: (heading: string): string => `Пауза: ${heading}`,
+  chapterPlayFinished: (heading: string): string => `Прослушано: ${heading}`,
 };

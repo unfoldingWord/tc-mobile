@@ -620,4 +620,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading} no se reprodujo. Toca para intentarlo de nuevo`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} no tiene nada grabado para reproducir`,
+  chapterPlayStarted: (heading: string): string => `Reproduciendo ${heading}`,
+  chapterPlayPaused: (heading: string): string => `${heading} en pausa`,
+  chapterPlayFinished: (heading: string): string => `${heading} terminó`,
 };

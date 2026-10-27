@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { AboutPanel } from "./about-panel";
+import { useChapterPlayAnnouncement } from "./chapter-play-announcement";
 import { ChapterPlayControl } from "./chapter-play-control";
 import { chapterRowStatus } from "./chapter-row-status";
 import type { LicenseText } from "./licenses";
@@ -189,7 +190,16 @@ export function BooksScreen({
     moveChapter,
     moveBook,
   } = useBooks();
-  const { chapterPlay, stopChapter } = audio;
+  const { chapterPlay, stopChapter: stopChapterNow } = audio;
+  // What a chapter's play did, said in its own polite region below (#1344).
+  // Every stop this screen asks for goes through `stopChapter`, which hushes
+  // the line first, so a collapse, a share or a delete is not called a finish.
+  const { line: chapterPlayLine, hush: hushChapterPlay } =
+    useChapterPlayAnnouncement(chapterPlay, books);
+  const stopChapter = useCallback(() => {
+    hushChapterPlay();
+    stopChapterNow();
+  }, [hushChapterPlay, stopChapterNow]);
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
   // as empty would show "start a book" and a live New Book over a shelf that
@@ -2427,6 +2437,18 @@ export function BooksScreen({
         data-reorder-status=""
       >
         {reorderStatus}
+      </span>
+      {/* What a chapter's play did (#1344): started, paused, finished or
+          failed, with the chapter's heading. A sibling of the reorder region,
+          so neither overwrites the other's line, and mounted for the screen's
+          whole life for the same reason (`useChapterPlayAnnouncement`). */}
+      <span
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-chapter-play-status=""
+      >
+        {chapterPlayLine}
       </span>
 
       {/* The global menu: the failure-log panel, then About & licenses. The

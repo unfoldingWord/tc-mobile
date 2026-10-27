@@ -7,7 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
-import type { ChapterPlayState } from "@/hooks/chapter-player";
+import { CHAPTER_IDLE, type ChapterPlayState } from "@/hooks/chapter-player";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
@@ -291,6 +291,121 @@ describe("what ends chapter play", () => {
     await click(strings.deleteBookYes);
     expect(mocks.deleteBook).toHaveBeenCalled();
     expect(audio.stopChapter).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("what a chapter's play says (#1344)", () => {
+  // The player's state is the screen's prop, so a state change is a render
+  // with the new state, the way `useChapterPlay` hands it down.
+  const playing = state("playing", chapterId(1, 1));
+  const paused = state("paused", chapterId(1, 1), 0.4);
+  const failed = state("failed", chapterId(1, 1));
+  const loading = state("loading", chapterId(1, 1));
+  let audio = idleChapterAudio();
+  const render = (chapterPlay: ChapterPlayState) =>
+    act(async () => {
+      audio = { ...audio, chapterPlay };
+      root.render(
+        createElement(BooksScreen, {
+          audio,
+          onOpenChapter,
+          pushLayer: (layer: Layer) => layers.set(layer.id, layer),
+          popLayer: (id: string) => {
+            layers.delete(id);
+          },
+        })
+      );
+    });
+  const region = () => {
+    const found = document.querySelectorAll("[data-chapter-play-status]");
+    expect(found).toHaveLength(1);
+    return found[0]!;
+  };
+  beforeEach(() => {
+    audio = idleChapterAudio();
+  });
+
+  it("is a polite status region mounted for the screen's life, empty at rest", async () => {
+    await mount(audio);
+    const live = region();
+    expect(live.getAttribute("role")).toBe("status");
+    expect(live.getAttribute("aria-live")).toBe("polite");
+    expect(live.textContent).toBe("");
+    // Not the reorder region: a move's line and a play's line do not
+    // overwrite each other.
+    expect(live.hasAttribute("data-reorder-status")).toBe(false);
+    await render(loading);
+    await render(playing);
+    expect(region()).toBe(live);
+  });
+
+  it("says the chapter started, paused, started again and finished", async () => {
+    await mount(audio);
+    await openMark();
+    await render(loading);
+    // Still reading its playlist: nothing has sounded yet.
+    expect(region().textContent).toBe("");
+    await render(playing);
+    expect(region().textContent).toBe(strings.chapterPlayStarted(H1));
+    await render(paused);
+    expect(region().textContent).toBe(strings.chapterPlayPaused(H1));
+    await render(loading);
+    await render(playing);
+    expect(region().textContent).toBe(strings.chapterPlayStarted(H1));
+    // The run reached its end on its own.
+    await render(CHAPTER_IDLE);
+    expect(region().textContent).toBe(strings.chapterPlayFinished(H1));
+  });
+
+  it("says a failed play with the control's own failed sentence", async () => {
+    await mount(audio);
+    await render(loading);
+    await render(failed);
+    expect(region().textContent).toBe(strings.chapterPlayFailed(H1));
+  });
+
+  it("says the chapter paused when the page hides it mid-play", async () => {
+    // The hide path calls the player's pause; the screen sees the same
+    // paused state a tap gives.
+    await mount(audio);
+    await render(playing);
+    await render(paused);
+    expect(region().textContent).toBe(strings.chapterPlayPaused(H1));
+  });
+
+  it("does not call a stop the screen asked for a finish", async () => {
+    await mount(audio);
+    await openMark();
+    await render(playing);
+    // Collapsing the book stops its chapter (`stopChapter`), then the
+    // player goes idle.
+    await click(strings.bookRow("Mark", 2, true));
+    expect(audio.stopChapter).toHaveBeenCalledTimes(1);
+    await render(CHAPTER_IDLE);
+    expect(region().textContent).not.toBe(strings.chapterPlayFinished(H1));
+    // A later run that ends on its own is still said.
+    await render(loading);
+    await render(playing);
+    await render(CHAPTER_IDLE);
+    expect(region().textContent).toBe(strings.chapterPlayFinished(H1));
+  });
+
+  it("names the chapter by its heading, a typed name included", async () => {
+    mocks.shelf = [
+      {
+        ...mark,
+        chapters: [
+          chapter(1, 1, { name: "The sower" }),
+          ...mark.chapters.slice(1),
+        ],
+      },
+      ruth,
+    ];
+    await mount(audio);
+    await render(playing);
+    expect(region().textContent).toBe(
+      strings.chapterPlayStarted(strings.chapterHeading("The sower", 1))
+    );
   });
 });
 
