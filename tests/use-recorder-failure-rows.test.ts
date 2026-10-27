@@ -26,7 +26,7 @@ import { lightsFailureMarker } from "@/lib/failure-marker";
  *   - `start()`'s catch, when the microphone could not be opened: a
  *     `NotAllowedError` (a refusal) under `"recorder-mic-refused"`, anything
  *     else (`NotFoundError`, `NotReadableError`, `OverconstrainedError`,
- *     `AbortError`, a non-DOMException) under `"recorder-mic-start"`. The cause
+ *     `SecurityError`, `AbortError`, a non-DOMException) under `"recorder-mic-start"`. The cause
  *     is passed as is, so the row reads "<DOMException name>: <message>".
  *
  * Each case also reads `lightsFailureMarker` for the context the hook used, so
