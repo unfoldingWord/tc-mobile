@@ -41,6 +41,17 @@ default, the text there says to keep using it.
    come from you. The sheet is not a backup for the app's record; it is the
    larger half. <!-- source: gh issue #205; src/components/failure-log-panel.tsx (the menu panel), src/components/books-screen.tsx (the ≡ mark) -->
 4. Charge every phone. Recording drains the battery faster than normal use.
+
+   **Bring an external microphone.** The team recommends an external
+   noise-cancelling microphone, about US$35, for all training events. It helps
+   recordings on low-cost phones: facilitators at an earlier training reported
+   that one worked and helped on cheaper phones, whose built-in microphones
+   pick up too much background noise. The team has tested one. No model or
+   brand is named here, because none has been given. Beyond that, no
+   test result is recorded in this file, and whether a given microphone plugs
+   into a given phone is not checked here, so try it on one phone before the
+   session. <!-- source: gh issue #248, DRI decision 2026-10-27 (https://github.com/unfoldingWord/tc-mobile/issues/248#issuecomment-6441801461: "The team has tested one and we wil be recommending it for all training events going forward.  $35 mic which is relatively inexpensive."); the rationale is the facilitators' report in gh issue #248, comment 2026-10-14 (its "not tested by the development team" is superseded by the decision above) -->
+
 5. **Know which build you are on.** The current build is **1.0.1**, the one
    submitted to the App Store and Google Play; the same name appears in the
    small build stamp at the bottom of every screen (`v1.0.1 · <short code>`;
@@ -480,13 +491,15 @@ your other notes (§5).
 ## What changed since 1.0.1
 
 Everything below is on `develop` after the last tester-build tag
-(`tester-build-v1.1.0`) and has not been in any tester build or release.
-**None of it has been run on a phone.** The tracker for 2026-10-23 to 10-24
-says "No device run of anything merged today", and no later entry reports one.
+(`tester-build-v1.1.0`) and has not been in any tester build or release;
+as of 2026-10-27 no tester build has been cut since that tag. **None of it has
+been run on a phone.** The tracker entries for 2026-10-23 to 10-24 and for
+2026-10-26 both say no device run of anything merged, and none later reports
+one. This list is level with `develop` as of 2026-10-27.
 Where this list says what a screen does, it says what the code is written to
 do, not what anyone saw. When a build carries these, treat each item as
 unconfirmed until you or a tester see it work. The next tester build has no
-date. <!-- source: git tag --contains on PRs #1623, #1561, #1541, #1630 returned no tag, so none is in tester-build-v1.1.0; docs/progress_tracker.md 2026-10-23 to 10-24 "Not run" and "Decisions (DRI)", "Next tester build: Not yet, no date" -->
+date. <!-- source: git tag --contains on PRs #1623, #1561, #1541, #1630 returned no tag, so none is in tester-build-v1.1.0; docs/progress_tracker.md 2026-10-23 to 10-24 "Not run" and "Decisions (DRI)", "Next tester build: Not yet, no date"; gh release list --repo unfoldingWord/tc-mobile on 2026-10-27 shows tester-build-v1.1.0 (2026-10-14) as the newest tester build; docs/progress_tracker.md 2026-10-26 "Not run" ("No device run of anything merged today") -->
 
 This section does not replace "Known limits" below, which is still as of build
 1.0.1. A phone that opens a build with these changes cannot go back to an
@@ -521,10 +534,13 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
   the answer. <!-- source: PR #1630 (#1492); PR #1629 (SIL language list bundled); src/lib/strings.ts languageAskTitle, languageAskLead -->
 - **A licence question at Share Book.** When a book has no licence chosen,
   Share Book asks which licence, with "CC BY-SA 4.0" already selected, and
-  then shares. Shared file names carry the licence. Changing a licence later,
-  and Share Chapter on a book with no licence, are not done. The check that
-  the phone's share sheet still opens after the licence is saved has not been
-  run. <!-- source: PR #1670 (the ask, #1455), PR #1599 and #1573 (licence in file names); docs/progress_tracker.md 2026-10-23 to 10-24 "Share and licences" and "Not run" -->
+  then shares. Share Chapter asks the same question the first time it is used
+  on a book with no licence, so a book is asked once, whichever share comes
+  first. Shared file names carry the licence. The check that the phone's share
+  sheet still opens after the licence is saved has not been run. <!-- source: PR #1670 (the ask, #1455), PR #1703 (the same ask at Share Chapter), PR #1599 and #1573 (licence in file names); docs/progress_tracker.md 2026-10-23 to 10-24 "Share and licences" and "Not run" -->
+- **A Licence tile in a book's menu.** It reopens the licence question with
+  the saved licence selected, and saves a new choice without sharing. A book
+  made from a template has no such tile, because its licence is fixed. <!-- source: PR #1707 (#1455; "A book made from a template shows no tile"); not run on a phone -->
 - **A Template Library.** A "Templates" tile in the global menu opens a list
   with one package, Open Bible Stories. Tapping it asks for the new book's
   name, pre-filled with the title, then creates the book with its chapters.
@@ -542,6 +558,37 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
   joined for sharing, the read now shows as its own phase of the progress
   ring. How the arc should look is still an open call for the DRI (#1078).
   <!-- source: PR #1659 (#1078); docs/progress_tracker.md 2026-10-23 to 10-24 "Tests and gates" and "In progress" -->
+- **Hold a cut-off name to read it whole.** On the Books screen, holding a
+  book name or chapter title that is cut short shows the whole name above it
+  until you let go. The same hold now also works on a cut-off title or chapter name
+  on the chapter screen. A name that fits still holds to reorder, as before; on a
+  cut-off name the reorder hold is not available from the name text itself,
+  only from the cover or the number. <!-- source: PR #1711 (Books screen; "Cost, stated plainly"), PR #1738 (segments, #1284); not run on a phone -->
+- **Move up and Move down.** A book's menu and a segment's menu have Move up
+  and Move down, to reorder without press-and-hold. Each moves the row one
+  place and is greyed on the first or last row. Chapters still move only by
+  holding and dragging. <!-- source: PR #1731 (#1344; "Chapters are out ... #1730 tracks them"); not run on a phone -->
+- **On an iPhone, the microphone permission prompt follows the app language**
+  for Spanish, French, Hindi, Indonesian, Portuguese, Russian, Swahili and
+  Simplified Chinese; Arabic is held for the right-to-left device pass. The
+  texts are AI drafts no reader has checked, and the prompt has never been
+  seen on a phone. <!-- source: PR #1705 (#1458) -->
+- **A recording waiting at launch.** When the app opens and finds a recording
+  that was waiting to be saved, it finishes the save quietly, with no screen.
+  It now also writes one line in the problem record, `pending-take-replayed`,
+  without the red mark on Books **≡**, so Send problem report can show that a
+  waiting recording existed and was saved (§5 lists it). <!-- source: PR #1725 (#38); not run on a phone -->
+- **A reload after an update.** If the app cannot load a part of itself
+  because an update replaced it, it reloads once to pick up the new build,
+  unless a recording or unsaved audio is open; then it does not reload and
+  writes a problem-record line instead (§5 lists both). <!-- source: PR #1713 (#1421 O1: "Reload once, then fail"); not run on a phone -->
+- **Screen-reader names.** Many controls now have names that say what they do
+  for TalkBack and VoiceOver: the Settings on/off rows are switches, a failed
+  chapter play is named as a failure, a chapter's play says what it did, the
+  licence and language questions read full names and a result count, the
+  recorder's selection handles speak their position, and each language row is
+  named by the text it draws. No screen reader was run on a phone for any of
+  these. <!-- source: PRs #1716, #1718, #1721, #1722, #1723, #1728, #1737 (#1344); docs/progress_tracker.md 2026-10-26 "Not run" ("Every screen-reader change owes a TalkBack and a VoiceOver pass") -->
 - **Also in this span, smaller.** A recording finished while an earlier save
   is still being replayed now waits for it instead of being lost (#1683; it
   is held in memory only while it waits, so closing the app in that moment
