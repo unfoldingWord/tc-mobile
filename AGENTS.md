@@ -545,13 +545,15 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 The last `console.error`-only sinks in `hooks/use-recorder.ts` now write a
-row too, with the console line kept beside each: the microphone not opening
+row too: the microphone not opening
 in `start()`'s catch (`"recorder-mic-refused"` for a `NotAllowedError`,
 `"recorder-mic-start"` for anything else, the cause as thrown so the row
 names the DOMException), the level meter failing to open
 (`"recorder-tap-open"`), the foreground resume mid-take
 (`"recorder-foreground-resume"`) and `retryDecode()`'s resume
-(`"recorder-decode-retry-resume"`). Which of them light ≡ is
+(`"recorder-decode-retry-resume"`). The last three keep their existing
+`console.error` beside the row; the start row logs only through
+`reportFailure`'s own console line. Which of them light ≡ is
 `lib/failure-marker.ts`'s, on the #1692 rule: the refusal and the two
 resumes are logged only; `"recorder-mic-start"` and `"recorder-tap-open"`
 light it. What is still **never written down** is the recorder sheet's own

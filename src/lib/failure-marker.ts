@@ -76,8 +76,8 @@ const RESUME_CONTEXTS: readonly string[] = [
  *
  * Two recorder-start rows light ≡ by the default:
  * `"recorder-mic-start"`, every other microphone failure (`NotFoundError`,
- * `NotReadableError`, `OverconstrainedError`, `AbortError`, a non-DOMException
- * throw), because no take can start and nothing the person does in the app
+ * `NotReadableError`, `OverconstrainedError`, `AbortError`, `SecurityError`, a
+ * non-DOMException throw), because no take can start and nothing the person does in the app
  * fixes it; and `"recorder-tap-open"`, the level meter failing to open, because
  * the take then records with no meter and no #1294 silent-capture seal, and it
  * recurs on every take on that phone (inference).

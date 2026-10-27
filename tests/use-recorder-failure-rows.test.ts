@@ -13,8 +13,10 @@ import { lightsFailureMarker } from "@/lib/failure-marker";
 
 /**
  * The last four `console.error`-only sinks in `hooks/use-recorder.ts` now
- * write a failure-log row, each under its own context, with the console line
- * kept beside it:
+ * write a failure-log row, each under its own context. The foreground-resume,
+ * tap-open and decode-retry sinks keep their `console.error` beside the row;
+ * the start row logs only through `reportFailure`'s own console line, so the
+ * hook makes no direct `console.error` call there:
  *
  *   - `armForegroundResume`'s resume on a return to the foreground mid-take:
  *     `"recorder-foreground-resume"`.
@@ -180,7 +182,10 @@ describe("armForegroundResume: a refused resume on return writes a row", () => {
       cause,
       "recorder-foreground-resume"
     );
-    expect(console.error).toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "Could not resume the audio context on foreground",
+      cause
+    );
     expect(lightsFailureMarker("recorder-foreground-resume")).toBe(false);
   });
 });
@@ -201,6 +206,10 @@ describe("retryDecode: a refused resume writes a row", () => {
       cause,
       "recorder-decode-retry-resume"
     );
+    expect(console.error).toHaveBeenCalledWith(
+      "Could not resume the audio context",
+      cause
+    );
     expect(lightsFailureMarker("recorder-decode-retry-resume")).toBe(false);
   });
 });
@@ -220,6 +229,10 @@ describe("start(): the level meter failing to open writes a row", () => {
 
     expect(started).toBe(true);
     expect(reportFailure).toHaveBeenCalledWith(cause, "recorder-tap-open");
+    expect(console.error).toHaveBeenCalledWith(
+      "Could not open the level meter",
+      cause
+    );
     expect(lightsFailureMarker("recorder-tap-open")).toBe(true);
   });
 
@@ -247,6 +260,7 @@ describe("start(): the microphone not opening writes one row", () => {
 
     expect(reportFailure).toHaveBeenCalledTimes(1);
     expect(reportFailure).toHaveBeenCalledWith(cause, "recorder-mic-refused");
+    expect(console.error).not.toHaveBeenCalled();
     expect(lightsFailureMarker("recorder-mic-refused")).toBe(false);
   });
 
@@ -272,6 +286,7 @@ describe("start(): the microphone not opening writes one row", () => {
 
       expect(reportFailure).toHaveBeenCalledTimes(1);
       expect(reportFailure).toHaveBeenCalledWith(cause, "recorder-mic-start");
+      expect(console.error).not.toHaveBeenCalled();
       expect((reportFailure.mock.calls[0]![0] as DOMException).name).toBe(name);
       expect(lightsFailureMarker("recorder-mic-start")).toBe(true);
     }
