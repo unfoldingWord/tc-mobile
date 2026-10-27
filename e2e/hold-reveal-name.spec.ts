@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
- * Hold a cut-off name on the Books screen to read it whole (S14, #1284,
+ * Hold a cut-off name on the Books and Segments screens to read it whole (S14, #1284,
  * #1711), against the shipped `dist/` build.
  *
  * WHY THIS EXISTS. `tests/hold-reveal.test.ts` and
@@ -162,3 +162,84 @@ for (const mode of [
     });
   });
 }
+
+const LONG_SEGMENT =
+  "The healing of the man with the withered hand on the Sabbath";
+const SHORT_SEGMENT = "v 5-6";
+
+/** Rename the segment whose ordinal is `n` through its row menu. */
+async function renameSegment(page: Page, n: number, label: string) {
+  await page
+    .getByRole("button", { name: `More actions for segment ${n}` })
+    .click();
+  await page.getByRole("button", { name: "Rename segment" }).click();
+  await page.getByRole("textbox", { name: "Segment name" }).fill(label);
+  await page.getByRole("button", { name: "Save name" }).click();
+  await expect(page.getByRole("dialog", { name: "More" })).toHaveCount(0);
+}
+
+test.describe("Segments at 360px", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: WIDTH, height: 780 });
+    await page.goto("/");
+    await expect(page.locator("#launch-intro")).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: "New book" }).click();
+    await page.getByRole("button", { name: "Create book" }).click();
+    await page.getByRole("button", { name: /^Add chapter to/ }).click();
+    await page
+      .getByRole("textbox", { name: "Chapter name" })
+      .fill(LONG_CHAPTER);
+    await page
+      .getByRole("button", { name: "Create chapter", exact: true })
+      .click();
+    await page.getByRole("button", { name: `Open ${LONG_CHAPTER}` }).click();
+    for (const n of [1, 2]) {
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await expect(
+        page.getByRole("button", { name: `More actions for segment ${n}` })
+      ).toBeVisible();
+    }
+    await renameSegment(page, 1, LONG_SEGMENT);
+    await renameSegment(page, 2, SHORT_SEGMENT);
+  });
+
+  const rowTitle = (page: Page, text: string) =>
+    page.locator(".row-title", { hasText: text });
+
+  test("a cut-off segment title holds to a bubble, does not lift, and opens nothing on release", async ({
+    page,
+  }) => {
+    const title = rowTitle(page, LONG_SEGMENT);
+    expect(await isCutOff(title)).toBe(true);
+    await holdOn(page, title);
+    await expectBubbleWhole(page, LONG_SEGMENT);
+    await expect(page.locator(".segments-item--lifted")).toHaveCount(0);
+    await page.mouse.up();
+    await expect(page.locator(".name-reveal")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Recorder" })).toHaveCount(0);
+  });
+
+  test("a cut-off chapter name holds to a bubble with the whole name", async ({
+    page,
+  }) => {
+    const name = page.locator(".segments-title");
+    expect(await isCutOff(name)).toBe(true);
+    await holdOn(page, name);
+    await expectBubbleWhole(page, LONG_CHAPTER);
+    await page.mouse.up();
+    await expect(page.locator(".name-reveal")).toHaveCount(0);
+  });
+
+  test("a title that fits shows no bubble and its press still lifts the row", async ({
+    page,
+  }) => {
+    const title = rowTitle(page, SHORT_SEGMENT);
+    expect(await isCutOff(title)).toBe(false);
+    await holdOn(page, title);
+    await expect(page.locator(".name-reveal")).toHaveCount(0);
+    await expect(page.locator(".segments-item--lifted")).toHaveCount(1);
+    await page.mouse.up();
+  });
+});

@@ -1,3 +1,5 @@
+import { NameReveal } from "./name-reveal";
+import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { segmentRowState } from "@/lib/view/segment-rows";
 import type { SegmentRow } from "@/types/view";
 
@@ -20,12 +22,21 @@ interface SegmentsHeadProps {
  * (#952), so it is not.
  */
 export function SegmentsHead({ chapterName, rows }: SegmentsHeadProps) {
+  // Hold a cut-off chapter name to read it whole (S14, #1284).
+  const nameReveal = useHoldReveal();
   return (
     <div className="segments-head" aria-hidden="true">
       {chapterName ? (
-        <p className="segments-title" dir="auto">
-          {chapterName}
-        </p>
+        <>
+          <p
+            className="segments-title"
+            dir="auto"
+            onPointerDown={nameReveal.holdStart}
+          >
+            {chapterName}
+          </p>
+          <NameReveal text={chapterName} place={nameReveal.place} />
+        </>
       ) : null}
       <div className="segments-progress">
         {rows.length === 0 ? (
