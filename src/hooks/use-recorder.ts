@@ -101,6 +101,9 @@ export function armForegroundResume(recording: boolean): () => void {
     if (document.visibilityState !== "visible") return;
     void resumeAudioContext().catch((cause: unknown) => {
       console.error("Could not resume the audio context on foreground", cause);
+      // A row beside the console line. Logged only, no ≡: a refused resume is
+      // routine on iOS and capture is unaffected (`lib/failure-marker.ts`).
+      reportFailure(cause, "recorder-foreground-resume");
     });
   };
   document.addEventListener("visibilitychange", onVisibility);
@@ -845,6 +848,9 @@ export function useRecorder(): UseRecorder {
           setMeterFailed(false);
         } catch (tapCause) {
           console.error("Could not open the level meter", tapCause);
+          // Lights ≡ (`lib/failure-marker.ts`): the take records, but with no
+          // tap there is no meter and no #1294 silent-capture seal.
+          reportFailure(tapCause, "recorder-tap-open");
           tapRef.current = null;
           setMeterFailed(true);
         }
@@ -881,6 +887,17 @@ export function useRecorder(): UseRecorder {
         // in hand yet, so classify as `unknown` (a NotAllowedError → the honest
         // "allow it, or check settings" line). No blank while the query resolves.
         setError(micRefusalMessage(classifyMicRefusal(name, "unknown")));
+        // One row, the cause as thrown, so it reads "<DOMException name>:
+        // <message>". A refusal (`NotAllowedError`) is the person's or the
+        // settings' answer and is logged without ≡; anything else blocked the
+        // take and lights it (`lib/failure-marker.ts`). Behind the generation
+        // check above, so a superseded start writes nothing.
+        reportFailure(
+          cause,
+          name === "NotAllowedError"
+            ? "recorder-mic-refused"
+            : "recorder-mic-start"
+        );
         // Refine once the Permissions API answers, which splits the site block from
         // the OS block (#203/#195). It is async, so re-check the generation before
         // applying — a `cancel()`/newer `start()` may have taken over meanwhile —
@@ -1198,6 +1215,9 @@ export function useRecorder(): UseRecorder {
       // below runs on the same context the resume is waking.
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
+        // Logged only, no ≡: fire-and-forget, the decode goes ahead regardless
+        // (`lib/failure-marker.ts`).
+        reportFailure(cause, "recorder-decode-retry-resume");
       });
       // The empty-vs-throw choice, and why a zero-sample re-decode is not
       // proven silence here the way it is on `stop()`, are `decodeRetry`'s

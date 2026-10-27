@@ -544,16 +544,24 @@ This pause is reversible; the crash screen's `quiesceTranscodeSweep()` remains
 one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
-What still ends at `console.error` and is therefore **never written down** is
-the microphone-refusal and start paths inside `hooks/use-recorder.ts` (among
-them its foreground and start-time `resumeAudioContext()` calls and the level
-meter's open). Routing those is follow-up work: they are not a one-line
-change, because `SaveFailed` replaces the tree the way the
-crash screen does, so that screen needs the Send control the boundary grew.
-The recorder sheet's own Stop notice (`captureFailureText` in
-`components/recorder.tsx`) is not on this list because it calls neither
-`console.error` nor `reportFailure`: it only sets the on-screen copy.
-Until it lands, do not describe the log as holding "anything that went wrong":
+The last `console.error`-only sinks in `hooks/use-recorder.ts` now write a
+row too: the microphone not opening
+in `start()`'s catch (`"recorder-mic-refused"` for a `NotAllowedError`,
+`"recorder-mic-start"` for anything else, the cause as thrown so the row
+names the DOMException), the level meter failing to open
+(`"recorder-tap-open"`), the foreground resume mid-take
+(`"recorder-foreground-resume"`) and `retryDecode()`'s resume
+(`"recorder-decode-retry-resume"`). The last three keep their existing
+`console.error` beside the row; the start row logs only through
+`reportFailure`'s own console line. Which of them light ≡ is
+`lib/failure-marker.ts`'s, on the #1692 rule: the refusal and the two
+resumes are logged only; `"recorder-mic-start"` and `"recorder-tap-open"`
+light it. What is still **never written down** is the recorder sheet's own
+Stop notice (`captureFailureText` in `components/recorder.tsx`), which calls
+neither `console.error` nor `reportFailure`: it only sets the on-screen
+copy, and `start()`'s "recording is not supported" line, which is a
+capability check with no cause. So do not describe the log as holding
+"anything that went wrong":
 `docs/training/facilitator-runbook.md` §5 names both halves for facilitators
 and this paragraph is the engineering copy of the same list.
 
