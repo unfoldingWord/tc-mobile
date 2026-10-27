@@ -14,7 +14,7 @@ import { LicenceAsk } from "@/components/licence-ask";
 import { Menu } from "@/components/menu";
 import { NameEdit } from "@/components/name-edit";
 import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
-import { CoverTile, O4CoverPick } from "@/components/o4-book-menu";
+import { CoverTile, LicenceTile, O4CoverPick } from "@/components/o4-book-menu";
 import { Tile, TileGrid } from "@/components/o4-tile-menu";
 import { PermissionPanel } from "@/components/permission-panel";
 import { RecorderMenu } from "@/components/recorder-menu";
@@ -63,8 +63,7 @@ import { render } from "./render";
  * RecorderToolbar, PermissionPanel, NameEdit, FailureLogPanel and
  * StoragePressureBanner.
  *
- * Not covered, by name: the book menu's `LicenceTile` and the recorder menu's
- * Stop tile (a ru or id name drops its caption, #1732); the app (≡) menu, the
+ * Not covered, by name: the app (≡) menu, the
  * chapter and segment menus and every screen; `ShareProgress` itself (the
  * portal and its focus logic around the panel). A surface that portals
  * (`mounted`) is mounted in jsdom rather than rendered to static markup.
@@ -581,9 +580,8 @@ const SURFACES: Surface[] = [
       createElement(
         TileGrid,
         null,
-        // Not here: `LicenceTile`, whose Russian name drops its caption's
-        // form (#1732). Left out of the entry, not skipped inside it.
-        createElement(CoverTile, { coverHex: "#2a9d8f", onClick: noop })
+        createElement(CoverTile, { coverHex: "#2a9d8f", onClick: noop }),
+        createElement(LicenceTile, { onClick: noop })
       ),
       createElement(O4CoverPick, {
         selected: "teal",
@@ -634,8 +632,11 @@ const SURFACES: Surface[] = [
         chapterHeading: "Chapter 2",
         chapterName: "A long chapter name",
       }),
-      // Not here: the `recording` variant, whose Stop tile name drops its
-      // caption in Indonesian and Russian (#1732).
+      createElement(RecorderMenu, {
+        ...recorderMenuProps,
+        recording: true,
+        onStopTake: noop,
+      }),
     ],
   },
   {

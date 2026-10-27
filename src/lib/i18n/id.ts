@@ -132,7 +132,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     );
   },
   record: "Rekam",
-  stop: "Hentikan rekaman",
+  stop: "Berhenti merekam",
   zoomAtWhole: "Pembesaran: seluruh segmen. Perbesar ke seperempat.",
   zoomAtQuarter: "Pembesaran: seperempat. Perkecil ke seluruh segmen.",
   micOffTitle: "Mikrofon mati",

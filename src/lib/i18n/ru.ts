@@ -156,7 +156,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     );
   },
   record: "Записать",
-  stop: "Остановить запись",
+  stop: "Стоп записи",
   zoomAtWhole: "Масштаб уменьшен. Увеличьте до четверти.",
   zoomAtQuarter: "Масштаб: четверть. Уменьшите.",
   micOffTitle: "Микрофон выключен",
@@ -424,7 +424,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceSaving: "Сохраняем лицензию.",
   licenceAskContinue: "Поделиться",
   licenceAskCancel: "Отмена",
-  licenceTileLabel: "Изменить лицензию",
+  licenceTileLabel: "Лицензия: изменить",
   tileLicence: "Лицензия",
   tileTemplates: "Шаблоны",
   licenceAskSave: "Сохранить",
