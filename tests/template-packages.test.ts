@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,8 @@ import { listBooks } from "@/lib/storage/books";
 import { loadObsTemplate } from "@/lib/templates/obs";
 import { loadTemplateEntries } from "@/lib/templates/packages";
 import { TemplateValidationError } from "@/lib/templates/validate";
-import { clearAllStores, stripComments } from "./support";
+import { stripCodeComments } from "./strip-code-comments";
+import { clearAllStores } from "./support";
 
 /**
  * The build's template package list (#1451's done-when addition, part of
@@ -25,7 +26,7 @@ vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const source = (rel: string) =>
-  stripComments(readFileSync(path.join(ROOT, rel), "utf8"));
+  stripCodeComments(readFileSync(path.join(ROOT, rel), "utf8"), rel);
 
 const hymnal = JSON.parse(
   readFileSync(
@@ -166,8 +167,7 @@ describe("no package is named outside the list", () => {
     expect(picker).not.toMatch(/\bobs\b/i);
   });
 
-  it("packages.ts is the one src module that imports loadObsTemplate", async () => {
-    const { readdirSync } = await import("node:fs");
+  it("packages.ts is the one src module that names loadObsTemplate, comments aside", () => {
     const files = readdirSync(path.join(ROOT, "src"), {
       recursive: true,
       encoding: "utf8",
