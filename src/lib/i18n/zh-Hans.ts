@@ -550,4 +550,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading}未能播放。点按重试`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading}：没有可播放的内容`,
+  chapterPlayStarted: (heading: string): string => `正在播放：${heading}`,
+  chapterPlayPaused: (heading: string): string => `${heading}已暂停`,
+  chapterPlayFinished: (heading: string): string => `${heading}已播放完毕`,
 };

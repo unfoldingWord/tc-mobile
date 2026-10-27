@@ -558,4 +558,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `${heading} tidak terputar. Ketuk untuk mencoba lagi`,
   chapterNothingToPlay: (heading: string): string =>
     `${heading} belum ada rekaman untuk diputar`,
+  chapterPlayStarted: (heading: string): string => `Memutar ${heading}`,
+  chapterPlayPaused: (heading: string): string => `${heading} dijeda`,
+  chapterPlayFinished: (heading: string): string => `${heading} selesai`,
 };

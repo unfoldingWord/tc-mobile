@@ -21,8 +21,10 @@ interface ChapterPlayControlProps {
 /**
  * A chapter row's play control (#1469, Q8 `pause-progress`): a play or pause
  * glyph in a ring that fills as the chapter plays and stays filled while it
- * is paused. State is in the control itself and in its name; nothing is
- * announced and no text appears.
+ * is paused. State is in the control itself and in its name, and no text
+ * appears. The control announces nothing itself: what a play did (started,
+ * paused, finished, failed) is said by the Books screen's polite status
+ * region (`useChapterPlayAnnouncement`, #1344).
  *
  * Not a `Control`: with nothing recorded it is `aria-disabled`, not natively
  * disabled, so it keeps its place in the tab order and its name says why, and
