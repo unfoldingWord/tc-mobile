@@ -10,11 +10,13 @@ import { Control } from "./control";
 import { Menu } from "./menu";
 import { rowHint } from "./menu-row-state";
 import { NameEdit } from "./name-edit";
+import { NameReveal } from "./name-reveal";
 import { Notice } from "./notice";
 import { O4SheetHead } from "./o4-crumbs";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
+import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/lib/view/segment-rows";
@@ -230,6 +232,9 @@ export function SegmentRow({
   isLast = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
+  // Hold a cut-off title to read it whole (S14, #1284). A title that fits
+  // leaves the press to the row's reorder hold (#953).
+  const nameReveal = useHoldReveal();
   const [menuOpen, setMenuOpen] = useState(false);
   // The menu is showing its rename field (#591) rather than its action list,
   // the rename write is in flight, and the last one did not land. All three
@@ -494,6 +499,12 @@ export function SegmentRow({
   const holdArea = onHoldStart
     ? { onPointerDown: onHoldStart, "data-reorder-handle": "" }
     : undefined;
+  // The title's press: a cut-off title claims it (and stops it here); a
+  // title that fits hands it on to the reorder hold, as before.
+  const onTitlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    nameReveal.holdStart(e);
+    if (!e.isPropagationStopped()) onHoldStart?.(e);
+  };
 
   const wave = hasClip ? (
     <div
@@ -563,11 +574,15 @@ export function SegmentRow({
             className="row-title"
             dir="auto"
             aria-hidden="true"
-            {...holdArea}
+            data-reorder-handle={holdArea ? "" : undefined}
+            onPointerDown={onTitlePointerDown}
           >
             {row.label}
           </span>
         )}
+        {titled && row.label ? (
+          <NameReveal text={row.label} place={nameReveal.place} />
+        ) : null}
         {wave}
       </div>
 
