@@ -75,11 +75,18 @@ async function openLibrary(): Promise<Library> {
   await act(async () => {
     root.render(createElement(Probe, { onApi: (a) => (api = a) }));
   });
-  // Let the list settle and the effect's state land.
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 0));
-  });
+  // Let the list settle and the effect's state land. The OBS catalogue is a
+  // lazy chunk, so its first load can take more than one turn: wait for the
+  // status to leave "loading", with a bound so a hang fails rather than spins.
+  for (let turn = 0; turn < 200; turn += 1) {
+    if (api !== null && (api as Library).status !== "loading") break;
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+    });
+  }
   if (api === null) throw new Error("the probe never rendered");
+  if ((api as Library).status === "loading")
+    throw new Error("the library never left loading");
   return api;
 }
 
