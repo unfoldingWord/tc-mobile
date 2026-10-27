@@ -382,7 +382,8 @@ describe("what a chapter's play says (#1344)", () => {
     await click(strings.bookRow("Mark", 2, true));
     expect(audio.stopChapter).toHaveBeenCalledTimes(1);
     await render(CHAPTER_IDLE);
-    expect(region().textContent).not.toBe(strings.chapterPlayFinished(H1));
+    // Nothing new is said: the region keeps the line it last said.
+    expect(region().textContent).toBe(strings.chapterPlayStarted(H1));
     // A later run that ends on its own is still said.
     await render(loading);
     await render(playing);
