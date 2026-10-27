@@ -251,8 +251,10 @@ async function mount(element: ReactElement): Promise<Element> {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   await act(async () => root.render(element));
-  // Read a copy: the unmount below would empty the live tree.
-  const copy = document.createElement("div");
+  // Read a copy: the unmount below would empty the live tree. The copy gets a
+  // document of its own, so `aria-labelledby` still resolves through
+  // `getElementById` (a detached node's owner document cannot see its ids).
+  const copy = document.implementation.createHTMLDocument("").body;
   copy.innerHTML = document.body.innerHTML;
   await act(async () => root.unmount());
   host.remove();
@@ -837,6 +839,20 @@ describe("the gate itself, in both states", () => {
     expect(findings(img({ src: "a.png", role: "none" }))).toEqual([]);
   });
 
+  it("resolves aria-labelledby in a mounted surface: a target names, a missing one is red", async () => {
+    const probe = (target: string) =>
+      createElement(
+        Menu,
+        { open: true, onClose: noop, hamburger: true },
+        createElement("span", { id: "labelledby-probe" }, "Probe"),
+        createElement("button", { type: "button", "aria-labelledby": target })
+      );
+    expect(findings(await mount(probe("labelledby-probe")))).toEqual([]);
+    expect(
+      findings(await mount(probe("labelledby-missing"))).map((f) => f.rule)
+    ).toEqual([1]);
+  });
+
   it("keeps a presentational role on a button under rules 1 and 3", () => {
     // Browsers ignore role="none" / "presentation" on a focusable button.
     const btn = (props: Record<string, string>, text: string) =>
@@ -870,13 +886,14 @@ describe("the gate itself, in both states", () => {
 describe("every surface the audit touched carries full accessible names", () => {
   for (const surface of SURFACES) {
     it(`${surface.name}, in English and every complete language`, async () => {
-      const elements = await surface.build();
       const all: string[] = [];
       // An empty locale list would make `toEqual([])` below pass vacuously.
       expect(completeLocales().length).toBeGreaterThan(0);
       for (const locale of completeLocales()) {
         installLocale(locale);
-        for (const element of elements) {
+        // Built after the install: a prop read from `strings` at build time
+        // must come from the locale this iteration names.
+        for (const element of await surface.build()) {
           const root = surface.mounted ? await mount(element) : render(element);
           for (const f of findings(root, surface.labelInName !== false)) {
             all.push(
