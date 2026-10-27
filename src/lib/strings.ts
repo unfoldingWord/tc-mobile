@@ -736,6 +736,18 @@ export const stringsEn = {
     `${heading} is now position ${to} on the shelf.`,
   bookReorderStayed: (heading: string): string =>
     `${heading} stayed where it was.`,
+  // Move up / Move down in the book and segment row menus (#1344, the DRI's
+  // "Yes, menu Move up/down" pick): the tap path to reorder, for screen-reader
+  // and motor users, beside press-and-hold. Each is the tile's whole name and
+  // its caption too, so the caption is always a word of the name. A move is
+  // then said by the same line a drop is (`reorderMoved`,
+  // `bookReorderMoved`). The two hints are why a tile is greyed: Move up on
+  // the first row, Move down on the last. English is a proposal for the
+  // requirements owner.
+  moveUp: "Move up",
+  moveDown: "Move down",
+  alreadyFirst: "Already first",
+  alreadyLast: "Already last",
   eraseConfirmTitle: "Reset segment and start over",
   eraseConfirm: "Reset recording",
   // The safe action of the confirm dialog (`erase-confirm.tsx`). One string

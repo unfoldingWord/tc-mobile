@@ -244,6 +244,8 @@ describe("the segment menu (07) on the tile grid", () => {
       // on #1119) — NOT the Edit-then-Done order the workbench itself draws,
       // and Delete (#590, moved here by #1104) is new since D20 was drawn.
       // `eraseSegment` is Reset's name ("Reset segment and start over").
+      // Move up / Move down (#1344) follow in their own row; this chapter
+      // holds one segment, so both are greyed with their reason.
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.renameSegment,
@@ -252,6 +254,8 @@ describe("the segment menu (07) on the tile grid", () => {
         strings.editSegment(3, row.label),
         strings.eraseSegment,
         strings.deleteSegment,
+        `${strings.moveUp}. ${strings.alreadyFirst}`,
+        `${strings.moveDown}. ${strings.alreadyLast}`,
       ]);
       expect(focusedName()).toBe(strings.renameSegment);
     }
@@ -330,8 +334,9 @@ describe("the segment menu (07) on the tile grid", () => {
     it("gives the destructive fill to Delete alone in the segment menu", async () => {
       await mount(recorded);
       await openRow();
+      // Four action tiles, then Move up and Move down (#1344).
       const tiles = [...dialog().querySelectorAll(".o4-tiles button.o4-tile")];
-      expect(tiles.length).toBe(4);
+      expect(tiles.length).toBe(6);
       const red = tiles.filter((el) => tone(el) === "erase");
       expect(red.map((el) => el.getAttribute("aria-label"))).toEqual([
         strings.deleteSegment,
@@ -410,6 +415,8 @@ describe("the segment menu (07) on the tile grid", () => {
       done,
       edit,
       strings.deleteSegment,
+      `${strings.moveUp}. ${strings.alreadyFirst}`,
+      `${strings.moveDown}. ${strings.alreadyLast}`,
     ]);
     for (const name of [edit, done]) {
       const el = tile(name);

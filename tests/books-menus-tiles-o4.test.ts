@@ -209,6 +209,9 @@ describe("O4: the book menu on the tile grid (04)", () => {
       strings.exportProject,
       strings.coverColourLabel,
       strings.deleteBook,
+      // Move up / Move down (#1344), in their own row; Mark is first.
+      `${strings.moveUp}. ${strings.alreadyFirst}`,
+      strings.moveDown,
     ]);
     // Delete sits past the spacer, at the far end, as the workbench draws it.
     const kids = [...grid!.children];
@@ -230,8 +233,9 @@ describe("O4: the book menu on the tile grid (04)", () => {
   it("gives every tile a spoken name that contains its caption", async () => {
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
+    // Four action tiles, then Move up and Move down (#1344).
     const tiles = tilesIn(bookSheet()!);
-    expect(tiles.length).toBe(4);
+    expect(tiles.length).toBe(6);
     for (const tile of tiles) {
       const caption = tile.querySelector(".control-caption")?.textContent;
       expect(caption, tile.getAttribute("aria-label") ?? "").toBeTruthy();

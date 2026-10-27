@@ -63,7 +63,11 @@ export type IconName =
   | "person"
   | "open"
   // The Books header's Settings control (#1575).
-  | "gear";
+  | "gear"
+  // Move up / Move down in the book and segment row menus (#1344): the
+  // tap path to reorder a row without press-and-hold.
+  | "arrow-up"
+  | "arrow-down";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -931,6 +935,28 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeWidth="3.4"
       />
     </>
+  ),
+  // Move up / Move down (#1344): a shaft and a head, in the chevrons' stroke.
+  // Vertical, so neither mirrors at RTL.
+  "arrow-up": (
+    <path
+      d="M11 17.5V4.5M5.5 10 11 4.5l5.5 5.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  "arrow-down": (
+    <path
+      d="M11 4.5v13M5.5 12l5.5 5.5 5.5-5.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   ),
 };
 

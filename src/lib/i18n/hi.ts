@@ -251,6 +251,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `शेल्फ़ पर ${heading} की जगह अब ${to} है।`,
   bookReorderStayed: (heading: string): string =>
     `शेल्फ़ पर ${heading} की जगह नहीं बदली।`,
+  moveUp: "ऊपर ले जाएँ",
+  moveDown: "नीचे ले जाएँ",
+  alreadyFirst: "पहले से सबसे ऊपर",
+  alreadyLast: "पहले से सबसे नीचे",
   eraseConfirmTitle: "खंड रीसेट करें और फिर से शुरू करें",
   eraseConfirm: "रिकॉर्डिंग रीसेट करें",
   eraseCancel: "रद्द करें",

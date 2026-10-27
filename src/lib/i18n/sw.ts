@@ -251,6 +251,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Nafasi ya ${heading} kwenye rafu sasa ni ${to}.`,
   bookReorderStayed: (heading: string): string =>
     `Nafasi ya ${heading} kwenye rafu haikubadilika.`,
+  moveUp: "Sogeza juu",
+  moveDown: "Sogeza chini",
+  alreadyFirst: "Tayari iko juu kabisa",
+  alreadyLast: "Tayari iko chini kabisa",
   eraseConfirmTitle: "Weka upya kipande na uanze tena",
   eraseConfirm: "Weka upya rekodi",
   eraseCancel: "Ghairi",

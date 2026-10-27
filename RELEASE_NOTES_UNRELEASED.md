@@ -24,6 +24,7 @@ its body and empties it.
 - On Android, the About screen shows a QR code for the Play listing so another person can scan it; not yet checked on a phone (#1668).
 - When the microphone is refused again after Try again, the Android and iOS apps show the steps to turn it on in the phone's settings, and the refusal card shakes on each repeated refusal; not yet checked on a phone (#1571, #1672).
 - Sharing a chapter shows progress while its recordings are read and joined; not yet checked on a phone (#1659).
+- A book's menu and a segment's menu have Move up and Move down, to reorder without press-and-hold; each moves the row one place, and is greyed on the first or last row. Chapters still move only by holding and dragging. Not yet checked on a phone or with a screen reader (#1344).
 
 ## Changed
 
