@@ -72,6 +72,9 @@ describe("lightsFailureMarker", () => {
     "recorder-finished-flag",
     "recorder-edit-apply",
     "recorder-segment-resume-retry",
+    "recorder-foreground-resume",
+    "recorder-decode-retry-resume",
+    "recorder-mic-refused",
   ])(
     "the routine, recoverable recorder-sheet row %j is logged but does not light the marker",
     (context) => {
@@ -94,12 +97,18 @@ describe("lightsFailureMarker", () => {
     }
   );
 
-  it.each(["recorder-start", "share-send", "playback-tap-resume"])(
-    "the failure row %j lights the marker",
-    (context) => {
-      expect(lightsFailureMarker(context)).toBe(true);
-    }
-  );
+  it.each([
+    "recorder-start",
+    "share-send",
+    "playback-tap-resume",
+    // A microphone that could not be opened for a reason other than a refusal
+    // (no take can start), and a level meter that could not open (the take
+    // records with no meter and no silent-capture seal).
+    "recorder-mic-start",
+    "recorder-tap-open",
+  ])("the failure row %j lights the marker", (context) => {
+    expect(lightsFailureMarker(context)).toBe(true);
+  });
 
   it.each([
     "render",

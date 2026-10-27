@@ -61,6 +61,26 @@ const RESUME_CONTEXTS: readonly string[] = [
  *   "Try again" tap was refused. It is fire-and-forget and never gates the
  *   re-read, so the retry goes ahead regardless; a refused resume is a routine
  *   iOS event (the same reasoning as the two in-tap resume rows above).
+ * - `"recorder-foreground-resume"`: the resume on a return to the foreground
+ *   mid-take was refused. Capture is unaffected; the meter stays hatched until
+ *   the next tap wakes the context. Same reasoning.
+ * - `"recorder-decode-retry-resume"`: `retryDecode()`'s fire-and-forget resume
+ *   was refused. The decode goes ahead regardless, and the bytes are kept on
+ *   every failure. Same reasoning.
+ * - `"recorder-mic-refused"`: the microphone request ended in a
+ *   `NotAllowedError` — the person declined or dismissed the prompt, or the
+ *   site or the phone's settings block the microphone. The screen says so and
+ *   Retry asks again; nothing is lost (inference: on iOS a `NotAllowedError`
+ *   can also mean a request made outside a tap, which is a defect, and this
+ *   row cannot tell the two apart).
+ *
+ * Two recorder-start rows light ≡ by the default:
+ * `"recorder-mic-start"`, every other microphone failure (`NotFoundError`,
+ * `NotReadableError`, `OverconstrainedError`, `AbortError`, a non-DOMException
+ * throw), because no take can start and nothing the person does in the app
+ * fixes it; and `"recorder-tap-open"`, the level meter failing to open, because
+ * the take then records with no meter and no #1294 silent-capture seal, and it
+ * recurs on every take on that phone (inference).
  *
  * Every other recorder-sheet context in the log (`"recorder-commit-stop"`,
  * `"recorder-commit-close"`, `"recorder-close-tail"`, `"recorder-close-rejected"`,
@@ -74,6 +94,9 @@ const ROUTINE_RECOVERABLE_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-finished-flag",
   "recorder-edit-apply",
   "recorder-segment-resume-retry",
+  "recorder-foreground-resume",
+  "recorder-decode-retry-resume",
+  "recorder-mic-refused",
 ]);
 
 /** True when a row with this context should mark the Books ≡ control. */
