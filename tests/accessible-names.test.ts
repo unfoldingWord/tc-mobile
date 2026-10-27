@@ -1,15 +1,36 @@
-import { createElement, type ReactElement } from "react";
+// @vitest-environment jsdom
+import { act, createElement, type ReactElement } from "react";
+import { createRoot } from "react-dom/client";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { ChapterPlayControl } from "@/components/chapter-play-control";
 import type { ChapterRowStatus } from "@/components/chapter-row-status";
 import { Control } from "@/components/control";
 import { CoverPicker } from "@/components/cover-picker";
+import { EraseConfirm } from "@/components/erase-confirm";
+import { FailureLogPanel } from "@/components/failure-log-panel";
 import { LanguageAsk } from "@/components/language-ask";
 import { LicenceAsk } from "@/components/licence-ask";
+import { Menu } from "@/components/menu";
+import { NameEdit } from "@/components/name-edit";
 import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
+import { CoverTile, O4CoverPick } from "@/components/o4-book-menu";
+import { Tile, TileGrid } from "@/components/o4-tile-menu";
+import { PermissionPanel } from "@/components/permission-panel";
+import { RecorderMenu } from "@/components/recorder-menu";
+import { RecorderToolbar } from "@/components/recorder-toolbars";
+import { SelectionOverlay } from "@/components/selection-overlay";
 import { SettingRow } from "@/components/setting-row";
+import { SettingsPanel } from "@/components/settings-panel";
+import { ShareProgressPanel } from "@/components/share-progress-panel";
+import { StoragePressureBanner } from "@/components/storage-pressure-banner";
+import type { UseLibraryShare } from "@/hooks/use-library-share";
 import { TemplateList } from "@/components/template-picker";
+import {
+  CANONICAL_SAMPLE_RATE,
+  framesToSpokenSeconds,
+} from "@/lib/audio/format";
+import { strings } from "@/lib/strings";
 import { indexLanguageList } from "@/lib/languages/list";
 import { completeLocales, installLocale } from "@/lib/i18n/locales";
 import { SHIPPED_LOCALE } from "@/lib/locale";
@@ -34,6 +55,19 @@ import { render } from "./render";
  *
  * Scope is the surfaces listed in `SURFACES`, not a tree sweep. A surface this
  * does not list is not covered; adding one is one entry.
+ *
+ * Covered: Control, SettingRow, TemplateList, LicenceAsk, O4BookDeleteAsk,
+ * ChapterPlayControl, CoverPicker, LanguageAsk, SelectionOverlay,
+ * ShareProgressPanel, EraseConfirm, SettingsPanel, Menu, the book menu's
+ * Cover colour tile and cover pick, Tile and TileGrid, RecorderMenu,
+ * RecorderToolbar, PermissionPanel, NameEdit, FailureLogPanel and
+ * StoragePressureBanner.
+ *
+ * Not covered, by name: the book menu's `LicenceTile` and the recorder menu's
+ * Stop tile (a ru or id name drops its caption, #1732); the app (≡) menu, the
+ * chapter and segment menus and every screen; `ShareProgress` itself (the
+ * portal and its focus logic around the panel). A surface that portals
+ * (`mounted`) is mounted in jsdom rather than rendered to static markup.
  *
  * WHAT A RENDER READ CANNOT SEE. This reads attributes in static markup. It is
  * not what TalkBack or VoiceOver speak: it does not run a browser's name
@@ -208,9 +242,96 @@ function findings(root: Element, labelInName = true): Finding[] {
 
 const noop = () => {};
 
+/** Mount one element in the jsdom window, read the body it portals into. */
+async function mount(element: ReactElement): Promise<Element> {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
+  await act(async () => root.render(element));
+  // Read a copy: the unmount below would empty the live tree.
+  const copy = document.createElement("div");
+  copy.innerHTML = document.body.innerHTML;
+  await act(async () => root.unmount());
+  host.remove();
+  // A floor: a portal that rendered nothing would read as a clean surface.
+  if (copy.querySelector("[role=dialog] button") === null) {
+    throw new Error("a mounted surface drew no dialog with a button in it");
+  }
+  return copy;
+}
+
+const SR = CANONICAL_SAMPLE_RATE;
+const noRef = { current: null };
+const toolbarProps = {
+  mode: "record" as const,
+  recording: false,
+  recordRef: noRef,
+  rerecordRef: noRef,
+  rerecordDisabled: false,
+  rerecordHint: null,
+  recordInert: false,
+  guidedRecord: false,
+  isClosing: false,
+  playingBuffer: false,
+  dragging: false,
+  idleEditable: true,
+  playSource: "whole" as const,
+  playDisabled: false,
+  editToolbarDisabled: false,
+  editToolbarHint: null,
+  undoBlocked: null,
+  redoBlocked: null,
+  zoom: 1,
+  windowControlsInert: false,
+  onRecordButton: noop,
+  onPlayButton: noop,
+  onEnterEdit: noop,
+  onAuditionButton: noop,
+  onToggleZoom: noop,
+  onUndo: noop,
+  onRedo: noop,
+  onExitEdit: noop,
+  onRerecord: noop,
+};
+const recorderMenuProps = {
+  open: true,
+  onClose: noop,
+  mode: "record" as const,
+  ordinal: 3,
+  finishedState: "empty" as const,
+  markReason: null,
+  eraseReason: null,
+  onToggleFinished: noop,
+  onErase: noop,
+};
+const libraryShare: UseLibraryShare = {
+  status: "idle",
+  error: null,
+  sendUnconfirmed: false,
+  missing: 0,
+  incompleteChapters: 0,
+  incompleteBooks: 0,
+  progress: { phase: "hidden" },
+  prepare: () => Promise.resolve(null),
+  send: () => Promise.resolve("sent"),
+  reset: noop,
+  ownsScreen: () => false,
+  dismissProgress: noop,
+};
+
 interface Surface {
   name: string;
   build: () => ReactElement[] | Promise<ReactElement[]>;
+  /**
+   * The surface portals to `document.body` (`Menu`, `EraseConfirm`), which
+   * static markup cannot render. It is mounted with `react-dom/client` in the
+   * file's jsdom window and the body is read instead. Still attributes, no
+   * layout and no cascade.
+   */
+  mounted?: true;
   /** Rule 3 off, with the reason beside the entry. */
   labelInName?: false;
 }
@@ -360,6 +481,270 @@ const SURFACES: Surface[] = [
       }),
     ],
   },
+
+  {
+    name: "SelectionOverlay",
+    build: () => [
+      createElement(SelectionOverlay, {
+        win: {
+          start: 0,
+          end: SR * 10,
+          visibleSamples: SR * 10,
+          centerlineSample: SR * 5,
+        },
+        selection: { start: SR, end: SR * 4 },
+        workingLength: SR * 10,
+        onChange: noop,
+        startLabel: strings.selectionStartHandle,
+        endLabel: strings.selectionEndHandle,
+        valueText: (s: number) =>
+          strings.selectionHandleTime(framesToSpokenSeconds(s)),
+      }),
+    ],
+  },
+  {
+    name: "ShareProgressPanel",
+    build: () => [
+      createElement(ShareProgressPanel, {
+        role: "status",
+        text: "Preparing the chapter to share",
+        o4: {
+          icon: "share",
+          ring: 0.5,
+          meter: { now: 50 },
+          chips: [
+            { state: "finished", label: 1 },
+            { state: "current", label: 2 },
+            { state: "stays", label: 3 },
+          ],
+        },
+      }),
+    ],
+  },
+  {
+    name: "EraseConfirm",
+    mounted: true,
+    build: () => [
+      createElement(EraseConfirm, {
+        open: true,
+        title: "Erase this segment?",
+        confirmLabel: "Erase",
+        cancelLabel: "Cancel",
+        onConfirm: noop,
+        onCancel: noop,
+      }),
+      createElement(EraseConfirm, {
+        open: true,
+        title: "Record again?",
+        confirmLabel: "Record again",
+        cancelLabel: "Cancel",
+        glyph: "record",
+        busy: true,
+        onConfirm: noop,
+        onCancel: noop,
+        preview: {
+          peaks: null,
+          playing: false,
+          onTogglePlay: noop,
+          playLabel: "Play",
+          pauseLabel: "Pause",
+        },
+      }),
+    ],
+  },
+  {
+    name: "SettingsPanel",
+    mounted: true,
+    build: () => [createElement(SettingsPanel, { open: true, onClose: noop })],
+  },
+  {
+    name: "Menu",
+    mounted: true,
+    build: () => [
+      createElement(
+        Menu,
+        { open: true, onClose: noop, hamburger: true },
+        createElement("p", null, "Body")
+      ),
+      createElement(
+        Menu,
+        { open: true, onClose: noop, back: true },
+        createElement("p", null, "Body")
+      ),
+    ],
+  },
+  {
+    name: "O4BookMenu tiles",
+    build: () => [
+      createElement(
+        TileGrid,
+        null,
+        // Not here: `LicenceTile`, whose Russian name drops its caption's
+        // form (#1732). Left out of the entry, not skipped inside it.
+        createElement(CoverTile, { coverHex: "#2a9d8f", onClick: noop })
+      ),
+      createElement(O4CoverPick, {
+        selected: "teal",
+        onSelect: noop,
+        error: null,
+      }),
+    ],
+  },
+  {
+    name: "O4TileMenu Tile",
+    build: () => [
+      createElement(
+        TileGrid,
+        null,
+        createElement(Tile, {
+          tone: "plain",
+          icon: "retry",
+          label: "Try again",
+          caption: "Try again",
+          onClick: noop,
+        }),
+        createElement(Tile, {
+          tone: "plain",
+          icon: "retry",
+          label: "Try again",
+          caption: "Try again",
+          disabled: true,
+          hint: { label: "Nothing to retry" },
+          onClick: noop,
+        })
+      ),
+    ],
+  },
+  {
+    name: "RecorderMenu",
+    mounted: true,
+    build: () => [
+      createElement(RecorderMenu, recorderMenuProps),
+      createElement(RecorderMenu, {
+        ...recorderMenuProps,
+        mode: "edit",
+        finishedState: "finished",
+        markReason: "no-audio",
+        eraseReason: "no-audio",
+        bookName: "Mark",
+        bookCoverHex: "#2a9d8f",
+        chapterNumber: 2,
+        chapterHeading: "Chapter 2",
+        chapterName: "A long chapter name",
+      }),
+      // Not here: the `recording` variant, whose Stop tile name drops its
+      // caption in Indonesian and Russian (#1732).
+    ],
+  },
+  {
+    name: "RecorderToolbar",
+    build: () => [
+      createElement(RecorderToolbar, toolbarProps),
+      createElement(RecorderToolbar, { ...toolbarProps, recording: true }),
+      createElement(RecorderToolbar, {
+        ...toolbarProps,
+        playSource: null,
+        playDisabled: true,
+        rerecordDisabled: true,
+        rerecordHint: { label: "Nothing to erase" },
+        editToolbarDisabled: true,
+        editToolbarHint: { label: "Record first" },
+      }),
+      createElement(RecorderToolbar, { ...toolbarProps, mode: "edit" }),
+      createElement(RecorderToolbar, {
+        ...toolbarProps,
+        mode: "edit",
+        zoom: 4,
+        playSource: "selection",
+        undoBlocked: "nothing-to-undo",
+        redoBlocked: "nothing-to-redo",
+      }),
+      createElement(RecorderToolbar, {
+        ...toolbarProps,
+        mode: "edit",
+        playingBuffer: true,
+        windowControlsInert: true,
+      }),
+    ],
+  },
+  {
+    name: "PermissionPanel",
+    build: () => [
+      createElement(PermissionPanel, {
+        message: null,
+        onRetry: noop,
+        onBack: noop,
+      }),
+      createElement(PermissionPanel, {
+        message: "The microphone is off",
+        onRetry: noop,
+        onBack: noop,
+        settingsPlatform: "ios-app",
+      }),
+      createElement(PermissionPanel, {
+        message: "The microphone is off",
+        onRetry: noop,
+        onBack: noop,
+        settingsPlatform: "android-app",
+      }),
+    ],
+  },
+  {
+    name: "NameEdit",
+    build: () => [
+      createElement(NameEdit, {
+        initialValue: "Mark",
+        fieldLabel: "Book name",
+        onSave: noop,
+        onCancel: noop,
+      }),
+      createElement(NameEdit, {
+        initialValue: "Mark",
+        fieldLabel: "Book name",
+        onSave: noop,
+        onCancel: noop,
+        busy: true,
+        guided: true,
+      }),
+    ],
+  },
+  {
+    name: "FailureLogPanel",
+    mounted: true,
+    build: () => [
+      createElement(
+        Menu,
+        { open: true, onClose: noop, hamburger: true },
+        createElement(FailureLogPanel, {
+          count: 2,
+          onDone: noop,
+          onClearConfirmOpen: noop,
+          onClearConfirmClose: noop,
+        })
+      ),
+    ],
+  },
+  {
+    name: "StoragePressureBanner",
+    build: () => [
+      createElement(StoragePressureBanner, {
+        notice: { tone: "info", text: "Storage is getting full" },
+        share: libraryShare,
+      }),
+      createElement(StoragePressureBanner, {
+        notice: { tone: "alert", text: "Storage is almost full" },
+        share: { ...libraryShare, status: "preparing" },
+      }),
+      createElement(StoragePressureBanner, {
+        notice: { tone: "alert", text: "Storage is almost full" },
+        share: { ...libraryShare, status: "ready", missing: 2 },
+      }),
+      createElement(StoragePressureBanner, {
+        notice: { tone: "alert", text: "Storage is almost full" },
+        share: { ...libraryShare, error: "failed" },
+      }),
+    ],
+  },
 ];
 
 afterAll(() => installLocale(SHIPPED_LOCALE));
@@ -492,10 +877,8 @@ describe("every surface the audit touched carries full accessible names", () => 
       for (const locale of completeLocales()) {
         installLocale(locale);
         for (const element of elements) {
-          for (const f of findings(
-            render(element),
-            surface.labelInName !== false
-          )) {
+          const root = surface.mounted ? await mount(element) : render(element);
+          for (const f of findings(root, surface.labelInName !== false)) {
             all.push(
               `${surface.name} [${locale.tag}] rule ${f.rule} ${f.site}: ${f.detail}`
             );
