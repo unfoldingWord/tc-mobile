@@ -3602,7 +3602,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             where the sheet is already inert — deliberately so: this gate states
             the header's own invariant rather than depending on the sheet's. */}
           <header
-            className="flex items-center gap-[8px] px-[4px] py-[2px]"
+            className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[2px]"
             inert={overlayUp || undefined}
           >
             <Control
@@ -3775,17 +3775,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           ) : (
             <>
               {stopError && (
-                <div className="px-[12px] pt-[8px]">
+                <div className="px-[12px] pt-[var(--p-space-3)]">
                   <Notice>{stopError}</Notice>
                 </div>
               )}
               {editor.error && (
-                <div className="px-[12px] pt-[8px]">
+                <div className="px-[12px] pt-[var(--p-space-3)]">
                   <Notice>{strings.editFailed}</Notice>
                 </div>
               )}
               {eraseFailure && (
-                <div className="px-[12px] pt-[8px]">
+                <div className="px-[12px] pt-[var(--p-space-3)]">
                   {/* strings[key] (#172 part 2), not the fixed eraseFailed
                     sentence for every key — a full disk gets `noRoom`'s
                     actionable copy instead of the generic erase failure. */}
@@ -4118,7 +4118,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 )}
                 {recording && (
                   <div
-                    className="recorder-status flex items-center gap-[8px]"
+                    className="recorder-status flex items-center gap-[var(--p-space-3)]"
                     role="status"
                     // #1005 ("Warn at 15, seal at 20"): the readout itself is
                     // the state-in-place marker — CSS tints the whole cluster
@@ -4510,7 +4510,7 @@ function SaveDecodeFailedPanel({
           />
         </>
       ) : null}
-      <div className="mt-[10px] flex flex-col items-center gap-[8px]">
+      <div className="mt-[10px] flex flex-col items-center gap-[var(--p-space-3)]">
         <Control
           icon="trash"
           label={
@@ -4524,7 +4524,7 @@ function SaveDecodeFailedPanel({
           onClick={() => (showArmed ? onDiscard() : setArmed(true))}
         />
         {showArmed ? (
-          <p className="text-live text-[12px]">
+          <p className="text-live text-[length:var(--p-text-sm)]">
             {strings.takeRecoverDiscardHint}
           </p>
         ) : null}
