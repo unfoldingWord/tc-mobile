@@ -81,7 +81,7 @@ import {
   type CoverColourKey,
 } from "@/lib/cover-colour";
 import type { Layer } from "@/lib/nav/layer-stack";
-import { getBook, nextChapterNumber } from "@/lib/storage/books";
+import { getBook } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import { reorderShift } from "@/lib/view/reorder-gesture";
@@ -1135,10 +1135,12 @@ export function BooksScreen({
   // and the shelf is never left live and un-`inert` across an await, with a
   // row's ⋮ one tap from stacking a second `aria-modal` panel.
   //
-  // `nextChapterNumber` is the same pure function `addChapter`'s own write
-  // transaction calls, so the name the field offers is the ordinal the write
-  // then derives as long as this shelf is current — `onConfirmNewChapter`
-  // says what happens when another copy of the app has moved it.
+  // A new chapter is appended, so it lands in the next slot: the card's
+  // chapter count + 1 (#1272 B). An untouched field stores no name, and an
+  // unnamed chapter's title is derived from its slot, so the name the field
+  // offers is the title the row then shows as long as this shelf is current —
+  // `onConfirmNewChapter` says what happens when another copy of the app has
+  // added one.
   const onNewChapter = useCallback(
     (bookId: BookId) => {
       const card = books.find((b) => b.bookId === bookId);
@@ -1153,9 +1155,7 @@ export function BooksScreen({
       setCreatingChapterBusy(false);
       setNewChapter({
         bookId,
-        seed: strings.chapterName(
-          nextChapterNumber(card.chapters.map((c) => c.number))
-        ),
+        seed: strings.chapterName(card.chapters.length + 1),
       });
       layers.open("books:new-chapter");
     },
@@ -1563,8 +1563,15 @@ export function BooksScreen({
         .prepare(
           shareMenuBook.bookId,
           strings.shareBookFilename(shareMenuBookName, licence),
-          (n, name, highest) =>
-            strings.shareFilename(shareMenuBookName, n, name, highest, licence)
+          // An unnamed chapter's file reads its on-screen title (#1272, Q1 (b)).
+          (n, name, highest, templateNumber) =>
+            strings.shareFilename(
+              shareMenuBookName,
+              n,
+              strings.chapterHeading(name, templateNumber ?? n),
+              highest,
+              licence
+            )
         )
         .then((outcome) => {
           if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
@@ -2067,8 +2074,8 @@ export function BooksScreen({
   // supplies the one write, the words and the focus.
   //
   // One write, on the drop: `moveChapter` (#1053) patches the card
-  // optimistically, keeps each chapter's own number (#1272; names such as
-  // "Mark 6" stay too), leaves the book where it is on the shelf (#953 scope Q4),
+  // optimistically, re-slots every badge so they still read 1..N (#1272 B;
+  // names such as "Mark 6" stay as they are), leaves the book where it is on the shelf (#953 scope Q4),
   // and on failure puts the stored order back and reports "chapter-reorder",
   // with nothing extra on screen (#172). Every cancel writes nothing.
   //
@@ -2091,8 +2098,9 @@ export function BooksScreen({
       if (active === document.body || (node && node.contains(active))) {
         rowReveal.armFocus(row.chapterId);
       }
-      // A chapter keeps its own number (#1272), so the line says the position
-      // it landed in, among the card's rows (the ones `moveChapter` indexes).
+      // Slot to slot (#1272, Q4 (a)): the moved chapter takes the number of
+      // the slot it landed in, among the card's rows (the ones `moveChapter`
+      // indexes), the way a segment's line says it.
       const moved = strings.chapterReorderMoved(row.number, toIndex + 1);
       setReorderStatus(moved);
       // A write that did not land puts the row back (`moveChapter` resolves
@@ -3132,8 +3140,13 @@ function ChapterItem({
   lifted,
   reorderY,
 }: ChapterItemProps) {
-  // The passage label the facilitator set (#264), else "Chapter {number}".
-  const heading = useChapterHeading(chapter.name, chapter.number);
+  // The passage label the facilitator set (#264), else "Chapter {n}" by the
+  // slot or a template's number (#1272, Q1 (b)).
+  const heading = useChapterHeading(
+    chapter.name,
+    chapter.number,
+    chapter.templateNumber
+  );
   const status = chapterRowStatus(audio.chapterPlay, chapter.chapterId);
   return (
     <li
@@ -3195,12 +3208,17 @@ function ChapterItem({
  * New Chapter prompt offered (#609) when it has none. A chapter always has a
  * name to show (#1219), so the line is always drawn and the badge always steps
  * back behind it, as the design reference's §3 and §7 describe for a titled
- * row. The default is derived here at read time rather than stored, from the
- * chapter's own number, which a reorder (#1272) does not change. A title that was only spoken is
+ * row. The default is derived here at read time rather than stored: from the
+ * template's number for a template chapter, else from the slot, which a
+ * reorder changes (#1272, Q1 (b)). The badge is always the slot. A title that was only spoken is
  * tier 2 (after the training) and is not drawn here.
  */
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
-  const heading = useChapterHeading(chapter.name, chapter.number);
+  const heading = useChapterHeading(
+    chapter.name,
+    chapter.number,
+    chapter.templateNumber
+  );
   const dots = dotStates(chapter);
   const [size, gap] = dotFit(dots.length, TITLED_DOT_ROOM);
   // Hold a cut-off title to read it whole (S14, #1284). A title that fits
@@ -3215,7 +3233,13 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
         <span
           className="books-chapter-title"
           dir={
-            heading === strings.chapterName(chapter.number) ? undefined : "auto"
+            // A derived "Chapter N" is the app's own text; only a typed name
+            // carries a direction of its own (#1267).
+            heading === strings.chapterName(chapter.number) ||
+            heading ===
+              strings.chapterName(chapter.templateNumber ?? chapter.number)
+              ? undefined
+              : "auto"
           }
           onPointerDown={nameReveal.holdStart}
         >

@@ -7,8 +7,14 @@ import { noteLoadedClip } from "./loaded-clip";
 import { noteObservedRevision } from "./observed-revision";
 import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
+import { templateChapterNumber } from "@/lib/chapter-slot";
 import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
-import { getBook, getChapter, getSegment } from "@/lib/storage/books";
+import {
+  chapterSlot,
+  getBook,
+  getChapter,
+  getSegment,
+} from "@/lib/storage/books";
 import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import { strings } from "@/lib/strings";
@@ -34,7 +40,13 @@ export interface RecorderSegmentView {
    * (`bookCoverHex={view?.bookCoverHex ?? undefined}`).
    */
   readonly bookCoverHex: string | null;
+  /**
+   * The chapter's slot in its book (#1272 B), as the Segments view reads it
+   * (`chapterSlot`); 0 when the chapter is gone.
+   */
   readonly chapterNumber: number;
+  /** The template's number for a template chapter, else `null` (Q1 (b)). */
+  readonly chapterTemplateNumber: number | null;
   /**
    * The facilitator's passage label for this chapter (#264), or `null` when
    * nobody has renamed it. Carried alongside the number rather than instead of
@@ -143,7 +155,8 @@ export async function loadRecorderSegmentView(
           resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
         )
       : null,
-    chapterNumber: chapter?.number ?? 0,
+    chapterNumber: chapter ? await chapterSlot(chapter) : 0,
+    chapterTemplateNumber: chapter ? templateChapterNumber(chapter) : null,
     chapterName: chapter?.name ?? null,
     ordinal: segment.index,
     segmentLabel: segment.label,

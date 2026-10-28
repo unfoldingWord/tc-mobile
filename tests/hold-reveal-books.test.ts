@@ -85,6 +85,7 @@ function chapter(i: number, extra: Partial<ChapterRow> = {}): ChapterRow {
   return {
     chapterId: `ch${i}` as ChapterId,
     number: i + 1,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 2,

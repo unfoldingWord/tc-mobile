@@ -85,6 +85,7 @@ function chapter(
   return {
     chapterId: chapterId(b, n),
     number: n,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 4,
@@ -406,6 +407,24 @@ describe("what a chapter's play says (#1344)", () => {
     await render(playing);
     expect(region().textContent).toBe(
       strings.chapterPlayStarted(strings.chapterHeading("The sower", 1))
+    );
+  });
+
+  it("names an unnamed template chapter by its template's number, not its slot (#1272, Q1 (b))", async () => {
+    mocks.shelf = [
+      {
+        ...mark,
+        chapters: [
+          chapter(1, 1, { templateNumber: 7 }),
+          ...mark.chapters.slice(1),
+        ],
+      },
+      ruth,
+    ];
+    await mount(audio);
+    await render(playing);
+    expect(region().textContent).toBe(
+      strings.chapterPlayStarted(strings.chapterName(7))
     );
   });
 });

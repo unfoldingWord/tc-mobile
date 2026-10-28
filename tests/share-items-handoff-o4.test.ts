@@ -51,6 +51,7 @@ const chapters: ChapterRow[] = [
   {
     chapterId: bookChapterId(1),
     number: 1,
+    templateNumber: null,
     name: null,
     finishedCount: 1,
     totalCount: 1,
@@ -59,6 +60,7 @@ const chapters: ChapterRow[] = [
   {
     chapterId: bookChapterId(2),
     number: 2,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 1,
@@ -67,6 +69,7 @@ const chapters: ChapterRow[] = [
   {
     chapterId: bookChapterId(3),
     number: 3,
+    templateNumber: null,
     name: null,
     finishedCount: 1,
     totalCount: 1,

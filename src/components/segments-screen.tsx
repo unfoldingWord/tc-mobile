@@ -28,6 +28,7 @@ import { chapterShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { strings } from "@/lib/strings";
 import { useChapterHeading } from "@/hooks/use-settings";
+import { headingNumber } from "@/lib/chapter-slot";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -163,6 +164,7 @@ export const SegmentsScreen = forwardRef<
     bookCoverHex,
     bookLicence,
     chapterNumber,
+    chapterTemplateNumber,
     chapterName,
     rows,
     loading,
@@ -180,12 +182,24 @@ export const SegmentsScreen = forwardRef<
     deleteSegment,
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
-  // "Chapter {number}" (#264). With "Always show chapter numbers" on (S12) it
-  // is the number even for a named chapter, so it is for DISPLAY only.
-  const chapterHeading = useChapterHeading(chapterName, chapterNumber);
+  // "Chapter {n}" (#264), n being the slot or a template's number (#1272,
+  // Q1 (b)). With "Always show chapter numbers" on (S12) it is the slot even
+  // for a named chapter, so it is for DISPLAY only.
+  const chapterHeading = useChapterHeading(
+    chapterName,
+    chapterNumber,
+    chapterTemplateNumber
+  );
+  // The number an unnamed chapter's title reads, the setting aside: what the
+  // rename field and a shared file fall back to.
+  const titleNumber = headingNumber(
+    chapterNumber,
+    chapterTemplateNumber,
+    false
+  );
   // What Rename opens on: the stored name, never the display preference, so
   // confirming untouched with the setting on cannot write "Chapter N" over it.
-  const renameSeed = strings.chapterHeading(chapterName, chapterNumber);
+  const renameSeed = strings.chapterHeading(chapterName, titleNumber);
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -759,7 +773,12 @@ export const SegmentsScreen = forwardRef<
           strings.shareFilename(
             bookName,
             slot,
-            chapterName,
+            // An unnamed chapter's file reads its title (#1272, Q1 (b)), from
+            // the slot the hook just read, not the one this view loaded with.
+            strings.chapterHeading(
+              chapterName,
+              headingNumber(slot, chapterTemplateNumber, false)
+            ),
             chapterCount,
             shareLicence
           )
@@ -769,7 +788,14 @@ export const SegmentsScreen = forwardRef<
             onCloseChapterMenu();
         });
     },
-    [share, chapterId, bookName, chapterName, onCloseChapterMenu]
+    [
+      share,
+      chapterId,
+      bookName,
+      chapterName,
+      chapterTemplateNumber,
+      onCloseChapterMenu,
+    ]
   );
   // No licence chosen: the tap asks first (#1455). While the book's id is
   // still being read (a window shorter than the chapter view's own load,
@@ -918,8 +944,7 @@ export const SegmentsScreen = forwardRef<
       // mapping New Chapter's `onConfirmNewChapter` makes (#609). Compared
       // TRIMMED, for the same stray-space reason given there.
       const typed =
-        chapterName === null &&
-        name.trim() === strings.chapterName(chapterNumber)
+        chapterName === null && name.trim() === strings.chapterName(titleNumber)
           ? ""
           : name;
       void renameChapter(typed)
@@ -934,13 +959,7 @@ export const SegmentsScreen = forwardRef<
           if (chapterMenuSession.current === session) setSavingName(false);
         });
     },
-    [
-      chapterName,
-      chapterNumber,
-      renameChapter,
-      setSavingName,
-      onCloseChapterMenu,
-    ]
+    [chapterName, titleNumber, renameChapter, setSavingName, onCloseChapterMenu]
   );
   // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
   // the session and clears `savingChapterName` like every other exit from

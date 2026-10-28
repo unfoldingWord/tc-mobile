@@ -5,10 +5,12 @@ import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
 import { computePeaks } from "@/lib/audio/peaks";
+import { templateChapterNumber } from "@/lib/chapter-slot";
 import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
 import {
   addSegment as addSegmentToChapter,
   deleteSegment as deleteSegmentInStore,
+  chapterSlot,
   getBook,
   getChapter,
   assertReorderTarget,
@@ -125,8 +127,15 @@ interface ChapterView {
   readonly bookCoverHex: string | null;
   /** The book's licence (#1566), or `null` when none is chosen or the book could not be read. */
   readonly bookLicence: LicenceId | null;
+  /**
+   * The chapter's slot in its book (#1272 B, `lib/chapter-slot.ts`), not the
+   * stored `Chapter.number`. The stored number stands in only when the book
+   * no longer lists the chapter, which leaves it no slot.
+   */
   readonly chapterNumber: number;
-  /** The facilitator's passage label, or null ⇒ show "Chapter {number}" (#264). */
+  /** The template's number for a template chapter, else `null` (Q1 (b)). */
+  readonly chapterTemplateNumber: number | null;
+  /** The facilitator's passage label, or null ⇒ show "Chapter {n}" (#264). */
   readonly chapterName: string | null;
   readonly rows: SegmentRow[];
 }
@@ -155,7 +164,8 @@ export async function loadChapterView(
         )
       : null,
     bookLicence: book?.licence ?? null,
-    chapterNumber: chapter.number,
+    chapterNumber: await chapterSlot(chapter),
+    chapterTemplateNumber: templateChapterNumber(chapter),
     chapterName: chapter.name,
     rows,
   };
@@ -286,6 +296,9 @@ export function useChapterSegments(chapterId: ChapterId) {
   const [bookCoverHex, setBookCoverHex] = useState<string | null>(null);
   const [bookLicence, setBookLicence] = useState<LicenceId | null>(null);
   const [chapterNumber, setChapterNumber] = useState(0);
+  const [chapterTemplateNumber, setChapterTemplateNumber] = useState<
+    number | null
+  >(null);
   const [chapterName, setChapterName] = useState<string | null>(null);
   const [rows, setRows] = useState<SegmentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -414,6 +427,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         setBookCoverHex(view.bookCoverHex);
         setBookLicence(view.bookLicence);
         setChapterNumber(view.chapterNumber);
+        setChapterTemplateNumber(view.chapterTemplateNumber);
         setChapterName(view.chapterName);
         // Retire every override this load started after — including ids it
         // no longer returns — then overlay fields older patches still stamp.
@@ -835,6 +849,7 @@ export function useChapterSegments(chapterId: ChapterId) {
     bookCoverHex,
     bookLicence,
     chapterNumber,
+    chapterTemplateNumber,
     chapterName,
     rows,
     loading,

@@ -55,7 +55,8 @@ export function chapterShareItems(rows: readonly SegmentRow[]): ShareItem[] {
 /**
  * Share Book's items: the shared book's chapters, in `chapterIds` order as
  * the Books screen loads them. A chapter goes out when it holds a recorded
- * take (`recordedCount > 0`), and its chip shows its chapter number. Its key
+ * take (`recordedCount > 0`), and its chip shows its slot, the number its
+ * badge shows (`ChapterRow.number`, #1272 B). Its key
  * is its chapter id, which is what the book export names each chapter by.
  */
 export function bookShareItems(chapters: readonly ChapterRow[]): ShareItem[] {

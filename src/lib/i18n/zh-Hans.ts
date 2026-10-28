@@ -225,8 +225,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `第 ${from} 段现在是第 ${to} 段。`,
   reorderStayed: (n: number): string => `第 ${n} 段留在原位。`,
   chapterReorderLifted: (n: number): string => `正在移动第 ${n} 章。`,
-  chapterReorderMoved: (n: number, to: number): string =>
-    `第 ${n} 章已移到第 ${to} 位。`,
+  chapterReorderMoved: (from: number, to: number): string =>
+    `第 ${from} 章现在是第 ${to} 章。`,
   chapterReorderStayed: (n: number): string => `第 ${n} 章留在原位。`,
   bookReorderLifted: (heading: string): string => `正在移动：“${heading}”。`,
   bookReorderMoved: (heading: string, to: number): string =>

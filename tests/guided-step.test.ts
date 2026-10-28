@@ -27,6 +27,7 @@ const chapterId = (n: number) => `chapter-${n}` as ChapterId;
 const chapter = (n: number, totalCount = 0): ChapterRow => ({
   chapterId: chapterId(n),
   number: n,
+  templateNumber: null,
   name: null,
   finishedCount: 0,
   totalCount,

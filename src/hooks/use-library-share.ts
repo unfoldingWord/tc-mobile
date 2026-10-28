@@ -16,6 +16,7 @@ import {
 } from "./use-storage-pressure";
 import {
   type BookLabel,
+  type ChapterNamer,
   InsufficientStorageError,
   estimateLibraryZipBytes,
   exportLibraryZip,
@@ -139,9 +140,7 @@ export interface UseLibraryShare
     nameBook: (book: BookLabel) => string,
     nameChapter: (
       book: BookLabel,
-      chapterSlot: number,
-      chapterName: string | null,
-      chapterCount: number
+      ...chapter: Parameters<ChapterNamer>
     ) => string
   ) => Promise<ShareOutcome | null>;
 }
@@ -194,9 +193,7 @@ export function useLibraryShare(): UseLibraryShare {
       nameBook: (book: BookLabel) => string,
       nameChapter: (
         book: BookLabel,
-        chapterSlot: number,
-        chapterName: string | null,
-        chapterCount: number
+        ...chapter: Parameters<ChapterNamer>
       ) => string
     ): Promise<ShareOutcome | null> => {
       setStorageShort(false);

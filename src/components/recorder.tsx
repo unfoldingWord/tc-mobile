@@ -83,6 +83,7 @@ import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useChapterHeading } from "@/hooks/use-settings";
+import { headingNumber } from "@/lib/chapter-slot";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
@@ -657,7 +658,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // The chapter's resolved name for the header's chapter crumb (#1230).
     const shownChapterHeading = useChapterHeading(
       view?.chapterName ?? null,
-      view?.chapterNumber ?? 0
+      view?.chapterNumber ?? 0,
+      view?.chapterTemplateNumber ?? null
     );
     const chapterHeading = view ? shownChapterHeading : "";
 
@@ -4249,7 +4251,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           }}
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
-          chapterNumber={view?.chapterNumber}
+          // The number an unnamed chapter's title reads (#1272, Q1 (b)).
+          chapterNumber={
+            view
+              ? headingNumber(
+                  view.chapterNumber,
+                  view.chapterTemplateNumber,
+                  false
+                )
+              : undefined
+          }
           // The typed name, drawn whole at the top of the menu (#1284).
           chapterName={view?.chapterName}
           // The header's own chapter chip text (#1230), so the ⋮ menu's

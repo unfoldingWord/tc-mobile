@@ -33,6 +33,7 @@ const shelf = (): BookCard[] => [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,
         number: 1,
+        templateNumber: null,
         name: "The sower",
         finishedCount: 0,
         totalCount: 1,
@@ -133,4 +134,7 @@ it("names each MP3 in the book's zip from the chapter's own name", async () => {
   expect(zip).toBe(strings.shareBookFilename("Mark"));
   expect(nameChapter(1, "The sower")).toBe("Mark - 01 The sower.mp3");
   expect(nameChapter(2, null)).toBe(`Mark - 02 ${strings.chapterName(2)}.mp3`);
+  // An unnamed template chapter's file reads its title on screen, "Chapter 7",
+  // after its slot (#1272, Q1 (b)).
+  expect(nameChapter(3, null, 4, 7)).toBe("Mark - 03 Chapter 7.mp3");
 });

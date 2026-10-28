@@ -115,6 +115,7 @@ function chapterRow(chapterId: ChapterId, number: number): ChapterRow {
   return {
     chapterId,
     number,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 1,

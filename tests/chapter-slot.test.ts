@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  headingNumber,
   highestSlot,
   slotOf,
   templateChapterNumber,
@@ -47,5 +48,20 @@ describe("the chapter slot (#1272)", () => {
   it("reads the stored number only as a template's", () => {
     expect(templateChapterNumber({ number: 7, templateKey: "07" })).toBe(7);
     expect(templateChapterNumber({ number: 7, templateKey: null })).toBeNull();
+  });
+});
+
+describe("headingNumber: the number in an unnamed chapter's title (#1272, Q1 (b))", () => {
+  it("is the slot for a chapter added by hand", () => {
+    expect(headingNumber(2, null, false)).toBe(2);
+  });
+
+  it("is the template's number for a template chapter, wherever it sits", () => {
+    expect(headingNumber(2, 7, false)).toBe(7);
+  });
+
+  it("is the slot for every chapter with Always show chapter numbers on (S12)", () => {
+    expect(headingNumber(2, 7, true)).toBe(2);
+    expect(headingNumber(2, null, true)).toBe(2);
   });
 });

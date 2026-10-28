@@ -6,7 +6,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
-import { exportBookZip, memoryArchiveSink } from "@/lib/export/book";
+import {
+  type ChapterNamer,
+  exportBookZip,
+  memoryArchiveSink,
+} from "@/lib/export/book";
 import * as chapterExport from "@/lib/export/chapter";
 import {
   addChapter,
@@ -544,6 +548,20 @@ describe("exportBookZip after a chapter move (#953, #1272)", () => {
         solo.get(chapter.id)
       );
     });
+  });
+
+  it("hands the namer a template chapter's own number, and null for a hand-made one (#1272, Q1 (b))", async () => {
+    const bookId = await bookWith([[{ n: 100, v: 100 }], [{ n: 100, v: 150 }]]);
+    const second = (await resolveBookChapters(bookId)).chapters[1]!;
+    await (
+      await getDb()
+    ).put("chapters", { ...second, templateKey: "obs-7", number: 7 });
+    const namer = vi.fn<ChapterNamer>((n) => `Chapter ${n}.mp3`);
+    await exportBookZip(bookId, namer, testCodec(), memoryArchiveSink());
+    expect(namer.mock.calls.map(([n, , , t]) => [n, t])).toEqual([
+      [1, null],
+      [2, 7],
+    ]);
   });
 
   it("pads to the book's chapter count, not to its highest stored number", async () => {

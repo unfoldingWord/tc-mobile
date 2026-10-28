@@ -33,6 +33,7 @@ const shelf = (): BookCard[] => [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,
         number: 3,
+        templateNumber: null,
         name: "Mark 6",
         finishedCount: 0,
         totalCount: 0,

@@ -50,6 +50,7 @@ const shelf = (): BookCard[] => [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 0,
         totalCount: 0,
@@ -58,6 +59,7 @@ const shelf = (): BookCard[] => [
       {
         chapterId: "chapter-0000-4000-8000-000000000002" as ChapterId,
         number: 2,
+        templateNumber: null,
         name: "Mark 6",
         finishedCount: 0,
         totalCount: 0,
@@ -80,6 +82,7 @@ function landChapter() {
         {
           chapterId: made.id,
           number: made.number,
+          templateNumber: null,
           name: made.name,
           finishedCount: 0,
           totalCount: 0,
@@ -230,8 +233,24 @@ it("opens the prompt instead of writing, seeded with the ordinal the chapter wil
   await click(strings.addChapter(bookName));
   // The whole of #609: the `+` is a prompt now, not a write.
   expect(mocks.addChapter).not.toHaveBeenCalled();
-  // Two chapters exist, so the next is 3 — the same ordinal `addChapter`'s own
-  // transaction derives through `nextChapterNumber` (tests/storage.test.ts).
+  // Two chapters exist, so the new one lands in slot 3 (#1272 B).
+  expect(field()?.value).toBe(strings.chapterName(3));
+});
+
+it("seeds the next slot, count + 1, even when the chapters came from a template (#1272)", async () => {
+  // A template's numbers are kept for its own chapters' titles (Q1 (b)), but a
+  // chapter added by hand is appended, so it is named by the slot it lands in.
+  books = [
+    {
+      ...books[0]!,
+      chapters: books[0]!.chapters.map((row, i) => ({
+        ...row,
+        templateNumber: 40 + i,
+      })),
+    },
+  ];
+  await mount();
+  await click(strings.addChapter(bookName));
   expect(field()?.value).toBe(strings.chapterName(3));
 });
 

@@ -1,10 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * The Books shelf rules the requirements owner decided (#1633, #1634), in
+ * The Books shelf rules the requirements owner decided (#1633, #1272), in
  * headless desktop Chromium against the shipped `dist/` build: a book cannot
  * take a name another book has, whether it is being created or renamed, and
- * a chapter that is moved keeps its own number.
+ * a chapter's number is its slot, so a moved chapter takes its new slot's
+ * number and the badges still read 1, 2, 3 (#1272, answer B, which replaced
+ * #1634's "keeps its own number").
  *
  * Reads IndexedDB directly as well as the screen, so "refused" means nothing
  * was written, not only that a line appeared.
@@ -95,22 +97,27 @@ test("a rename to a taken name is refused and the old name stays", async ({
   ).toBeVisible();
 });
 
-test("a moved chapter keeps its own number and the line says where it landed", async ({
+test("a moved chapter takes its new slot's number and the badges still read 1, 2, 3", async ({
   page,
 }) => {
   await page.goto("/");
   await createBook(page, "Mine");
-  for (let i = 0; i < 3; i += 1) {
+  // The first chapter is named, so the move can be seen; the other two keep
+  // the default, so their titles follow their slots.
+  await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page.getByRole("textbox", { name: "Chapter name" }).fill("Intro");
+  await page.getByRole("button", { name: "Create chapter" }).click();
+  for (let i = 0; i < 2; i += 1) {
     await page.getByRole("button", { name: /^Add chapter to/ }).click();
     await page.getByRole("button", { name: "Create chapter" }).click();
   }
-  const open = (n: number) =>
-    page.getByRole("button", { name: `Open Chapter ${n}` });
-  await expect(open(3)).toBeVisible();
+  const open = (title: string) =>
+    page.getByRole("button", { name: `Open ${title}` });
+  await expect(open("Chapter 3")).toBeVisible();
 
-  // Hold Chapter 1 for 450 ms, drag it below Chapter 3, release.
-  const from = (await open(1).boundingBox())!;
-  const to = (await open(3).boundingBox())!;
+  // Hold Intro (slot 1) for 450 ms, drag it below Chapter 3, release.
+  const from = (await open("Intro").boundingBox())!;
+  const to = (await open("Chapter 3").boundingBox())!;
   const x = from.x + from.width / 2;
   await page.mouse.move(x, from.y + from.height / 2);
   await page.mouse.down();
@@ -122,18 +129,38 @@ test("a moved chapter keeps its own number and the line says where it landed", a
   }
   await page.mouse.up();
 
+  // Slot to slot (Q4 (a)).
   await expect(page.locator("[data-reorder-status]")).toHaveText(
-    "Chapter 1 moved to place 3."
+    "Chapter 1 is now chapter 3."
   );
-  // The card now reads 2, 3, 1; each row keeps its own number.
+  // Intro now sits in slot 3. The two unnamed chapters moved up and read
+  // their new slots, and the badges still read 1, 2, 3 top to bottom.
   const order = () =>
     page
-      .getByRole("button", { name: /^Open Chapter \d$/ })
+      .locator("button.books-chapter")
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
-  const moved = ["Open Chapter 2", "Open Chapter 3", "Open Chapter 1"];
+  const badges = () => page.locator(".books-chapter-num").allTextContents();
+  const moved = ["Open Chapter 1", "Open Chapter 2", "Open Intro"];
   await expect.poll(order).toEqual(moved);
-  // Stored, not just painted: the order survives a reload.
+  await expect.poll(badges).toEqual(["1", "2", "3"]);
+  // Stored, not just painted: the order survives a reload, and the move wrote
+  // no chapter row, so every stored number is still the one it was made with
+  // (the DRI's S1, no schema change).
   await page.reload();
   await page.getByRole("button", { name: /^Mine, / }).click();
   await expect.poll(order).toEqual(moved);
+  await expect.poll(badges).toEqual(["1", "2", "3"]);
+  const stored = await storeRows<{ name: string | null; number: number }>(
+    page,
+    "chapters"
+  );
+  expect(
+    stored
+      .map((c) => [c.name, c.number])
+      .sort((a, b) => Number(a[1]) - Number(b[1]))
+  ).toEqual([
+    ["Intro", 1],
+    [null, 2],
+    [null, 3],
+  ]);
 });

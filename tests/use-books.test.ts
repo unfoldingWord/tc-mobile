@@ -208,6 +208,7 @@ describe("patchNewChapter", () => {
       {
         chapterId: chapterId("ch-1"),
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 0,
         totalCount: 0,
@@ -223,6 +224,7 @@ describe("patchNewChapter", () => {
       {
         chapterId: chapterId("ch-0"),
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 2,
         totalCount: 2,
@@ -233,12 +235,14 @@ describe("patchNewChapter", () => {
     const next = patchNewChapter(
       books,
       chapterBookId("b-1"),
-      chapter({ id: chapterId("ch-1"), number: 2 })
+      // Stored as 9 (max + 1 over a moved book): the row still takes the
+      // next slot, 2 (#1272 B).
+      chapter({ id: chapterId("ch-1"), number: 9 })
     );
 
-    expect(next[0]?.chapters.map((c) => c.chapterId)).toEqual([
-      chapterId("ch-0"),
-      chapterId("ch-1"),
+    expect(next[0]?.chapters.map((c) => [c.chapterId, c.number])).toEqual([
+      [chapterId("ch-0"), 1],
+      [chapterId("ch-1"), 2],
     ]);
   });
 
@@ -271,6 +275,7 @@ describe("patchNewChapter", () => {
       {
         chapterId: chapterId("ch-9"),
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 0,
         totalCount: 0,

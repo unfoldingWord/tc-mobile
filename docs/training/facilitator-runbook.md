@@ -595,8 +595,10 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
   is held in memory only while it waits, so closing the app in that moment
   can still lose it). Book-menu captions wrap at a narrow screen width
   (#1682). The recorder menu shows the full chapter name (#1673). The
-  mic-refused card shakes on each repeated refusal (#1672). A chapter keeps its
-  own number when moved (#1634). <!-- source: those PRs; the in-memory residual is stated in PR #1683 per docs/progress_tracker.md 2026-10-23 to 10-24 "Pending takes (#38)" -->
+  mic-refused card shakes on each repeated refusal (#1672). A chapter's number
+  is its place in the book, so a moved chapter takes the number of the place it
+  lands in and the numbers still read 1, 2, 3 (#1272, replacing #1634's "keeps
+  its own number"). <!-- source: those PRs; gh issue #1272 (the requirements owner's answer B, the DRI's Q1 (b) and Q4 (a)); the in-memory residual is stated in PR #1683 per docs/progress_tracker.md 2026-10-23 to 10-24 "Pending takes (#38)" -->
 
 ## 4. Known limits (as of 2026-10-02, build 1.0.1)
 

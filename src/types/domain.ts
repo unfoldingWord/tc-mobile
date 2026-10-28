@@ -161,15 +161,17 @@ export interface Chapter {
    * slot is always 5") a chapter is numbered by its place in the book
    * (`lib/chapter-slot.ts`), and with no schema change (the DRI's S1) this
    * field is meant only as the template's number, read where `templateKey` is
-   * not `null` (`templateChapterNumber`). The shared MP3 names, their track
-   * tag and Export project's `project.json` read it that way. The Books badge,
-   * the chapter headings and the move line still read it as the chapter's
-   * number; #1272 tracks moving them to the slot.
+   * not `null` (`templateChapterNumber`). Export project's `project.json`
+   * reads it that way, and so does an unnamed template chapter's default
+   * title, "Chapter {template number}" (`headingNumber`, the DRI's Q1 (b)).
+   * Everything else a person sees reads the slot: the Books badge, an unnamed
+   * hand-made chapter's title, the move line, the Share Book chips, and the
+   * shared MP3 names and track tag.
    */
   readonly number: number;
   /**
    * Optional passage label the facilitator sets in place — "Mark 6" (#264).
-   * `null` is the default: the UI then shows "Chapter {number}". Clearing the
+   * `null` is the default: the UI then shows "Chapter {n}" (`headingNumber`). Clearing the
    * name reverts to `null`. Every row carries the field (the v5 backfill stamps
    * pre-#264 chapters `null`), so a reader never meets `undefined`.
    */
