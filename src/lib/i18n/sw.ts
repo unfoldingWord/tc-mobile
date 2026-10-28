@@ -43,6 +43,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesOpen: "Violezo",
   templatesTitle: "Violezo",
   templateLicenceLabel: (licence: string): string => `Leseni: ${licence}`,
+  loadingTemplates: "Inapakia violezo.",
   settingsChapterNumbers: "Onyesha daima nambari ya sura",
   settingsNormalizeOnFinished: "Sawazisha sauti ikimalizika",
   booksEmpty: "Anza kitabu chako cha kwanza",

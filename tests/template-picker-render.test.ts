@@ -95,9 +95,15 @@ async function body(
 }
 
 describe("TemplateLibraryBody (#1747)", () => {
-  it("while a (re)load is read: no failure Notice, the list and its rows busy", async () => {
+  it("while a (re)load is read: the loading sentence as a busy status, no failure Notice, the list and its rows busy", async () => {
     const root = await body("loading");
-    expect(root.querySelector(".notice")).toBeNull();
+    const notices = Array.from(root.querySelectorAll(".notice"));
+    expect(notices).toHaveLength(1);
+    const notice = notices[0] as Element;
+    expect(notice.getAttribute("data-tone")).toBe("busy");
+    expect(notice.getAttribute("role")).toBe("status");
+    expect(notice.textContent).toBe("Loading the templates.");
+    expect(notice.textContent).toBe(strings.loadingTemplates);
     expect(one(root, ".settings-list").getAttribute("aria-busy")).toBe("true");
     expect(one(root, "button.template-row").getAttribute("aria-busy")).toBe(
       "true"
