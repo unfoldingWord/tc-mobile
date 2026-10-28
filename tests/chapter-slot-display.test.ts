@@ -7,6 +7,7 @@ import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
 import {
   addChapter,
   addSegment,
+  chapterSlot,
   createBook,
   getBook,
   getChapter,
@@ -97,5 +98,34 @@ describe("the [1, 4, 2, 3] stored case (#1272 B)", () => {
     const recorder = await loadRecorderSegmentView(segment.id);
     expect(recorder.chapterNumber).toBe(3);
     expect(recorder.chapterTemplateNumber).toBe(7);
+  });
+});
+
+describe("a chapter its book no longer lists (#1747, from #1744)", () => {
+  /** Drop one id from the book's list, leaving the chapter row in place. */
+  async function unlist(bookId: BookId, id: ChapterId) {
+    const db = await getDb();
+    const book = (await db.get("books", bookId))!;
+    await db.put("books", {
+      ...book,
+      chapterIds: book.chapterIds.filter((c) => c !== id),
+    });
+  }
+
+  it("has no slot: chapterSlot says null rather than lending its stored number", async () => {
+    const { bookId, ids } = await movedBook();
+    // Stored number 4, listed in slot 2 before it is dropped.
+    await unlist(bookId, ids[3]!);
+    expect(await chapterSlot((await getChapter(ids[3]!))!)).toBeNull();
+    // A listed chapter still reads its slot.
+    expect(await chapterSlot((await getChapter(ids[2]!))!)).toBe(3);
+  });
+
+  it("the loaders still show its stored number, the only one left, by their own choice", async () => {
+    const { bookId, ids } = await movedBook();
+    await unlist(bookId, ids[3]!);
+    expect((await loadChapterView(ids[3]!)).chapterNumber).toBe(4);
+    const segment = await addSegment(ids[3]!);
+    expect((await loadRecorderSegmentView(segment.id)).chapterNumber).toBe(4);
   });
 });

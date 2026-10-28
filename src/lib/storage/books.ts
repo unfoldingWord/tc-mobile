@@ -1104,14 +1104,18 @@ export async function chapterPlacement(
 
 /**
  * The number a chapter's screens show (#1272 B): its slot in its book, over
- * the same list as {@link chapterPlacement}. A chapter its book no longer
- * lists has no slot, and the only number left to show is its stored one.
+ * the same list as {@link chapterPlacement}. `null` when its book no longer
+ * lists it: such a chapter has no slot, and this says so rather than handing
+ * back its stored number in a slot's place (#1747). The stored number is a
+ * template's number or an old max + 1, the same shape as a slot, so a fallback
+ * here would be invisible; a caller that must still show a number borrows the
+ * stored one itself, where the reader can see it.
  */
 export async function chapterSlot(
-  chapter: Pick<Chapter, "id" | "bookId" | "number">
-): Promise<number> {
+  chapter: Pick<Chapter, "id" | "bookId">
+): Promise<number | null> {
   const { chapters } = await resolveBookChapters(chapter.bookId);
-  return slotOf(chapters, chapter.id) ?? chapter.number;
+  return slotOf(chapters, chapter.id);
 }
 
 // ── Segments ─────────────────────────────────────────────────────────────

@@ -35,7 +35,7 @@ import {
   O4BookHead,
   O4CoverPick,
 } from "./o4-book-menu";
-import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { MoveTiles, Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SquareButton } from "./o4-controls";
 import { encoderNotice } from "./encoder-notice";
@@ -46,6 +46,7 @@ import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
 import { shelfNoticeText } from "./shelf-notice-text";
+import { headingNumber } from "@/lib/chapter-slot";
 import { activeLocale } from "@/lib/locale";
 import { strings } from "@/lib/strings";
 import { SettingsPanel } from "./settings-panel";
@@ -1568,7 +1569,10 @@ export function BooksScreen({
             strings.shareFilename(
               shareMenuBookName,
               n,
-              strings.chapterHeading(name, templateNumber ?? n),
+              strings.chapterHeading(
+                name,
+                headingNumber(n, templateNumber, false)
+              ),
               highest,
               licence
             )
@@ -2822,42 +2826,14 @@ export function BooksScreen({
                     ),
                   }}
                 />
-                {/* Move up / Move down (#1344): their own row under the
-                  actions, so the compact action row keeps its fit. The first
-                  book's Move up and the last book's Move down are greyed
-                  with their reason (#135), as the segment menu greys Done
-                  and Edit on an empty segment. */}
-                <TileGrid>
-                  {(
-                    [
-                      [
-                        -1,
-                        "arrow-up",
-                        strings.moveUp,
-                        bookMenuIndex <= 0,
-                        "alreadyFirst",
-                      ],
-                      [
-                        1,
-                        "arrow-down",
-                        strings.moveDown,
-                        bookMenuIndex >= books.length - 1,
-                        "alreadyLast",
-                      ],
-                    ] as const
-                  ).map(([step, icon, label, blocked, reason]) => (
-                    <Tile
-                      key={step}
-                      tone="plain"
-                      icon={icon}
-                      label={label}
-                      caption={label}
-                      disabled={blocked}
-                      hint={blocked ? { label: strings[reason] } : null}
-                      onClick={() => moveBookFromMenu(step)}
-                    />
-                  ))}
-                </TileGrid>
+                {/* Move up / Move down (#1344), the pair the segment menu
+                  draws too: the first book's Move up and the last book's
+                  Move down are greyed with their reason (#135). */}
+                <MoveTiles
+                  isFirst={bookMenuIndex <= 0}
+                  isLast={bookMenuIndex >= books.length - 1}
+                  onMove={moveBookFromMenu}
+                />
               </>
             )}
           </>
@@ -3237,7 +3213,9 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
             // carries a direction of its own (#1267).
             heading === strings.chapterName(chapter.number) ||
             heading ===
-              strings.chapterName(chapter.templateNumber ?? chapter.number)
+              strings.chapterName(
+                headingNumber(chapter.number, chapter.templateNumber, false)
+              )
               ? undefined
               : "auto"
           }

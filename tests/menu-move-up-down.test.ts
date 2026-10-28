@@ -77,28 +77,50 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
-vi.mock("@/hooks/use-chapter-segments", () => ({
-  useChapterSegments: () => ({
-    bookName: "Mark",
-    bookCoverHex: "#11796d",
-    chapterNumber: 1,
-    chapterName: null,
-    rows: state.rows,
-    loading: false,
-    loaded: true,
-    refreshing: false,
-    error: null,
-    staleTarget: false,
-    addSegment: vi.fn(),
-    reload: vi.fn(),
-    setFinished: vi.fn(),
-    eraseRow: vi.fn(),
-    renameChapter: vi.fn(),
-    renameSegment: vi.fn(async () => true),
-    moveSegment: (id: string, toIndex: number) =>
-      state.moveSegment(id, toIndex),
-  }),
-}));
+// The rows live in React state, and a move applies to them the way the real
+// hook's optimistic patch does (`patchMovedSegment`): the row goes to its new
+// place and every row is renumbered by position. So after a move the row's ⋮
+// carries its NEW number, and a focus assertion can tell the moved row from
+// the row that now holds its old number (#1747, from #1731).
+vi.mock("@/hooks/use-chapter-segments", async () => {
+  const { useState } = await import("react");
+  return {
+    useChapterSegments: () => {
+      const [rows, setRows] = useState(state.rows);
+      return {
+        bookName: "Mark",
+        bookCoverHex: "#11796d",
+        chapterNumber: 1,
+        chapterName: null,
+        rows,
+        loading: false,
+        loaded: true,
+        refreshing: false,
+        error: null,
+        staleTarget: false,
+        addSegment: vi.fn(),
+        reload: vi.fn(),
+        setFinished: vi.fn(),
+        eraseRow: vi.fn(),
+        renameChapter: vi.fn(),
+        renameSegment: vi.fn(async () => true),
+        moveSegment: async (id: string, toIndex: number) => {
+          const landed = await state.moveSegment(id, toIndex);
+          if (landed)
+            setRows((current) => {
+              const from = current.findIndex((r) => r.segmentId === id);
+              if (from < 0) return current;
+              const next = [...current];
+              const [moved] = next.splice(from, 1);
+              next.splice(toIndex, 0, moved!);
+              return next.map((r, i) => ({ ...r, ordinal: i + 1 }));
+            });
+          return landed;
+        },
+      };
+    },
+  };
+});
 vi.mock("@/hooks/use-chapter-share", () => ({
   useChapterShare: () => ({
     status: "idle",
@@ -380,7 +402,9 @@ describe("the segment menu's Move up / Move down (#1344)", () => {
     expect(moveSegment).toHaveBeenCalledWith("s1", 0);
     expect(liveText()).toBe(strings.reorderMoved(2, 1));
     expect(dialog(strings.recorderMenuTitle)).toBeNull();
-    expect(document.activeElement).toBe(button(strings.segmentMenu(2)));
+    // The mock renumbered the rows, so the moved row's ⋮ now reads 1 and the
+    // row that took its place reads 2: focus follows the row, not the number.
+    expect(document.activeElement).toBe(button(strings.segmentMenu(1)));
   });
 
   it("Move down writes the segment one place lower and says its new number", async () => {
@@ -389,6 +413,7 @@ describe("the segment menu's Move up / Move down (#1344)", () => {
     await click(strings.moveDown);
     expect(moveSegment).toHaveBeenCalledWith("s0", 1);
     expect(liveText()).toBe(strings.reorderMoved(1, 2));
+    expect(document.activeElement).toBe(button(strings.segmentMenu(2)));
   });
 
   it("says the segment stayed when the write does not land", async () => {
