@@ -46,6 +46,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesOpen: "模板",
   templatesTitle: "模板",
   templateLicenceLabel: (licence: string): string => `许可证：${licence}`,
+  loadingTemplates: "正在加载模板。",
   settingsChapterNumbers: "始终显示章序号",
   settingsNormalizeOnFinished: "标记完成时均衡音量",
   booksEmpty: "开始你的第一本书",

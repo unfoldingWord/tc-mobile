@@ -115,6 +115,9 @@ export const stringsEn = {
   templatesOpen: "Templates",
   templatesTitle: "Templates",
   templateLicenceLabel: (licence: string): string => `Licence: ${licence}`,
+  // The Template Library's wait while its list is read (#1747). English is a
+  // proposal for the requirements owner; the other languages are AI drafts.
+  loadingTemplates: "Loading the templates.",
   // S12: the requirements owner's option. Off, a chapter shows its name when
   // it has one and its number when it does not. On, always the number.
   settingsChapterNumbers: "Always show chapter numbers",

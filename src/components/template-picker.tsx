@@ -95,12 +95,9 @@ export function TemplateList({
 
 /**
  * The list step: the failure Notice when nothing loaded, then the rows
- * (#1747). Every open reads the list again, and while it does the rows are
- * busy in place (marked and inert) instead of the last load's failure staying
- * on screen. No sentence is shown for the wait: a loading line would be a new
- * string, and a key missing from a translated table takes that language out of
- * the resolver (`completeLocales`), so it waits on its translations.
- * Presentational: one render shows it.
+ * (#1747). Every open reads the list again, and while it does a busy Notice
+ * says so and the rows are busy in place (marked and inert) instead of the
+ * last load's failure staying on screen. Presentational: one render shows it.
  */
 export function TemplateLibraryBody({
   status,
@@ -116,6 +113,9 @@ export function TemplateLibraryBody({
 }) {
   return (
     <>
+      {status === "loading" && (
+        <Notice tone="busy">{strings.loadingTemplates}</Notice>
+      )}
       {status === "failed" && <Notice>{strings.loadFailed}</Notice>}
       <TemplateList {...list} busy={creating || status === "loading"} />
     </>
