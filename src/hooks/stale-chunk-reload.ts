@@ -31,14 +31,46 @@
  * it lasts across the reload in this tab and no longer. A reload that lands on
  * a NEW build may reload once more for that build; a reload that lands on the
  * same build (the old service worker still in charge) cannot.
+ *
+ * A `"stale-chunk"` row says why the page did not reload (#1747): the cause
+ * it carries is `refusal(reason, cause)`, whose message names the reason and
+ * whose `cause` is the chunk failure itself, so the log reads
+ * `Stale chunk not reloaded: <reason>` and then `Caused by: <the failure>`.
  */
 
 import { flushFailureLog } from "./failure-log";
 import { reportFailure } from "./report-failure";
-import { chooseChunkRecovery, isChunkLoadError } from "@/lib/chunk-load";
+import {
+  chooseChunkRecovery,
+  isChunkLoadError,
+  type ChunkRecovery,
+} from "@/lib/chunk-load";
 import { restartAfterFlush } from "@/lib/restart-after-flush";
 
 const RELOADED_BUILD_KEY = "tc-stale-chunk-reloaded-build";
+
+/**
+ * Why a chunk failure did not reload: `chooseChunkRecovery`'s reasons, plus
+ * `mark-unwritable`, which only the write below can find out.
+ */
+type RefusalReason =
+  Extract<ChunkRecovery, { kind: "report" }>["reason"] | "mark-unwritable";
+
+/**
+ * The cause a `"stale-chunk"` row carries. It keeps the chunk failure's own
+ * stack where there is one, because the wrapper's would only point here.
+ */
+function refusal(reason: RefusalReason, cause: unknown): Error {
+  const error = new Error(`Stale chunk not reloaded: ${reason}`, { cause });
+  try {
+    const stack = (cause as { stack?: unknown } | null | undefined)?.stack;
+    if (typeof stack === "string" && stack !== "") error.stack = stack;
+  } catch {
+    // A throwing `stack` getter: the wrapper keeps its own, and the message
+    // and the cause chain still carry the reason and the failure.
+  }
+  return error;
+}
 
 export interface StaleChunkDeps {
   /** This build's stamp. */
@@ -83,8 +115,14 @@ export function createStaleChunkHandler(
       reloadedBuild,
       holdsUnsavedAudio: deps.holdsUnsavedAudio(),
     });
-    if (choice.kind === "report" || storage === null) {
-      deps.report(cause, "stale-chunk");
+    if (choice.kind === "report") {
+      deps.report(refusal(choice.reason, cause), "stale-chunk");
+      return;
+    }
+    if (storage === null) {
+      // Unreachable while a `null` store reads as an unreadable mark above;
+      // kept so the write below has a store, with the same answer.
+      deps.report(refusal("no-guard", cause), "stale-chunk");
       return;
     }
     try {
@@ -92,7 +130,7 @@ export function createStaleChunkHandler(
     } catch {
       // A mark that cannot be written cannot stop a loop, so no reload; the
       // chunk failure is the row worth keeping.
-      deps.report(cause, "stale-chunk");
+      deps.report(refusal("mark-unwritable", cause), "stale-chunk");
       return;
     }
     reloading = true;
@@ -117,7 +155,7 @@ export function createStaleChunkHandler(
         // The mark stays consumed, so this build will not reload for a chunk
         // again in this tab: the safe direction. The row below records it.
       }
-      deps.report(cause, "stale-chunk");
+      deps.report(refusal("unsaved-audio", cause), "stale-chunk");
     };
     deps.defer(() => {
       void restartAfterFlush(false, () => {}, deps.flush, reloadUnlessUnsaved);
