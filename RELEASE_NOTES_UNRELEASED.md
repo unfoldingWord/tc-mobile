@@ -11,6 +11,10 @@ its body and empties it.
 
 ## Fixed
 
+- The phone-settings steps after a second microphone refusal fit a small
+  screen: a long word wraps inside its step, and the space above Try again
+  is no longer doubled (#1760).
+
 ## Removed
 
 ## Security
