@@ -25,8 +25,9 @@ entries in [the progress tracker](../progress_tracker.md). The sheet describes w
 - Before you install, write down the shelf: book order, book, chapter and segment names, colours
   and Finished marks. Row 1.3 compares against that note. Start a timer when you open the app in
   row 1.1; row 1.7 records it.
-- Section 12 runs on its own phone, one that holds data from production v1.0.1, not v1.1.x. It
-  must pass before the `staging` → `main` promotion; its setup says how to get that data.
+- Section 12 runs on its own phones, holding data from production v1.0.1 rather than v1.1.x, and
+  on a local web stand-in. It must pass before the `staging` → `main` promotion; its setup says
+  how to get that data.
 - Row 1.8 can lose recordings. Run it after 1.1 to 1.7, in a browser profile whose recordings you
   can lose. A lost recording there is the result to report.
 - Report one comment per phone on the tracking issue: platform, device, OS version, the build
@@ -218,10 +219,14 @@ the low-end Android phone and the iPhone. Source for the section: #1470 (the dev
 
 ## 12. Production upgrade: v1.0.1 straight to 1.2.x (schema 9 → 14)
 
-**This section must pass before the `staging` → `main` promotion**, which the DRI set for
-2026-11-15, Sprint 6's end ([#1706](https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6479102128)).
-Passing means rows 12.1 to 12.9 each have a result on Android and on iOS and none is F. An N is not a pass:
-the promotion PR names each N for the DRI.
+**This section must pass before the `staging` → `main` promotion.** The DRI's pick (verbatim):
+"11-15, Sprint 6 end (Recommended)", recorded on
+[#1706](https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6479102128). Rows 12.1
+to 12.9 are marked "Both, Web": each runs on Android, on iOS and on the web stand-in below (desktop
+Chromium, and iOS Safari through a tunnel where it can be run). Passing means each of those rows
+has a result on all three and none is F; for the web, the Chromium result is the one that
+counts, and a Safari result is written beside it. An N is not a pass: the promotion
+PR names each N for the DRI. Row 12.10 is a confirmation after the promotion and does not gate it.
 
 Production is v1.0.1, and its database is schema 9 (`git show v1.0.1:src/lib/storage/db.ts`, line
 108). This build is schema 14 (`src/lib/storage/db.ts:180`). A phone on production therefore runs
@@ -245,13 +250,38 @@ free"). Plant test recordings only, never real work.
   the installer refuses, the platform is N. Do not uninstall to get past it.
 - **iOS:** install the 1.0.1 build from TestFlight's earlier builds, if TestFlight still offers
   it, then update to the candidate build. Assumption, not checked: that TestFlight still offers
-  1.0.1. If it does not, iOS is N.
-- **Web:** `tcmobile.app` and `tc-mobile.unfoldingword.workers.dev` serve production. Browser data
-  there upgrades only once production itself serves 1.2.x, which is after the promotion. Staging is
-  a different storage origin, so data made there cannot stand in. Row 12.10 runs the web path after
-  the promotion. It is not part of the gate.
+  1.0.1. If it does not, every iOS cell is N. The web stand-in in iOS Safari then covers iOS WebKit
+  only in part: same code and the same engine, but Safari rather than the native shell's WebView,
+  a different origin, and a service worker instead of a native bundle. It does not turn the iOS N
+  into a pass.
+- **Web, the stand-in (gates):** production web users on `tcmobile.app` are the largest group that
+  will go from 9 to 14. Browser storage is per origin, so before the promotion their path can only
+  be run on one fixed origin that serves v1.0.1 first and then the candidate:
+  1. In a checkout of the `v1.0.1` tag (a worktree or a detached checkout), run `npm ci` and
+     `npm run build`, then `npm run preview -- --port <P> --strictPort`. Pick one port and keep it
+     for the whole run.
+  2. Open `http://localhost:<P>` in a fresh desktop Chromium profile, with the browser's language
+     set to English. Check that the footer reads v1.0.1, and plant the shelf below.
+  3. Stop that server. In a checkout of the candidate (its tag, or the head of its `release/v1.2.x`
+     branch), run `npm ci` and `npm run build`, and serve it on the **same port** the same way. The
+     origin is then the same, and so is its IndexedDB.
+  4. Reload until the service worker has updated and the footer shows the candidate's version. That
+     reload is row 12.1's open.
+  5. For iOS Safari, put one tunnel in front of the port before step 2 (`cloudflared tunnel --url`
+     pointed at `http://localhost:<P>`; see [AGENTS.md](../../AGENTS.md), "Device testing"),
+     because a phone can record only over HTTPS. Keep that one tunnel running to the end: a new
+     tunnel is a new URL, so a new origin with empty storage. If the tunnel drops, the Safari run is
+     N.
+
+  **Localhost is not `tcmobile.app`; it is a stand-in.** It runs the same code, but from a
+  different origin with a different service-worker history: none of the worker production has
+  served since v1.0.1 shipped, no Workers static-asset layer, no custom domain. Row 12.10 is the
+  live check, after the promotion.
+
 - Check that the footer reads v1.0.1 before you plant anything. Set the phone's language to
   English for the whole section.
+- On the web stand-in, "install the candidate" below means steps 3 and 4 above, and "close the
+  app" means close the tab.
 - Plant on v1.0.1: at least three books, made at different times so the shelf has an order. Leave
   one with the name the app gives it (it shows as `Book 001` or similar). Give one a typed name, and
   give one a name typed to look like a default with other padding, such as `Book 2`. Set a cover
@@ -286,18 +316,18 @@ Two limits of that evidence:
 
 ### Rows
 
-| #     | Platform | Action                                                                                                                                                                                                                | Expected                                                                                                                                                                                                                   | Source                        | Result |
-| ----- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------ |
-| 12.1  | Both     | Install the candidate over v1.0.1, without uninstalling. Open the app.                                                                                                                                                | It opens to Books, not to a database screen. Every book, chapter and segment you planted is there. The footer shows the candidate's version.                                                                               | #1464, #1462, `db.ts:607-931` |        |
-| 12.2  | Both     | Record how long row 12.1's first open took.                                                                                                                                                                           | Record the time. Nothing has measured a 9 → 14 upgrade, so there is no expected value.                                                                                                                                     | #1522                         |        |
-| 12.3  | Both     | Compare the shelf with what you wrote down.                                                                                                                                                                           | P only if the book order, every heading (the default-named book still reads `Book 001` or as before, the look-alike still reads `Book 2`), the colours, chapter names, segment names and Finished marks are all unchanged. | v10, v11 above; #169, #338    |        |
-| 12.4  | Both     | Play every planted segment, finished and unfinished.                                                                                                                                                                  | P only if every segment plays.                                                                                                                                                                                             | The All step above; #1421     |        |
-| 12.5  | Both     | Close the app and open it again. Look at the Books ≡ control.                                                                                                                                                         | Nothing changes, and Books has no failure mark. If one is lit, send the problem report and quote it.                                                                                                                       | #1464                         |        |
-| 12.6  | Both     | Move a book with the press-and-hold reorder. Close the app and reopen it.                                                                                                                                             | The book stays where you moved it.                                                                                                                                                                                         | v11 above; #338               |        |
-| 12.7  | Both     | Share Book on a planted book.                                                                                                                                                                                         | The licence ask opens first, because the upgrade leaves every book with no licence. After you pick one, the OS share sheet opens, as in row 7.4.                                                                           | v12 above; #1462, #1455       |        |
-| 12.8  | Both     | Record a new segment in a planted chapter, save it, and mark it Finished. Close and reopen.                                                                                                                           | It saves, plays and stays Finished, and the planted segments are unchanged.                                                                                                                                                | v13, v14 above; #38, #1433    |        |
-| 12.9  | Both     | Only if a Finished segment was still waiting for its conversion on v1.0.1 (this happens only after a stalled conversion or a full phone, so you cannot arrange it): listen to it after the upgrade, once it converts. | P only if it sounds as it did before the upgrade, by ear. A volume change is F. With no such segment, mark N.                                                                                                              | v14 above; #1433              |        |
-| 12.10 | Web      | After the promotion only, not part of the gate: in a browser profile that holds v1.0.1 data at `tcmobile.app`, open the site once production serves 1.2.x.                                                            | Record what it shows and whether any recording is lost. The sources give no expected screen for a browser.                                                                                                                 | #1295, #1464                  |        |
+| #     | Platform  | Action                                                                                                                                                                                                                | Expected                                                                                                                                                                                                                   | Source                        | Result |
+| ----- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------ |
+| 12.1  | Both, Web | Install the candidate over v1.0.1, without uninstalling (web: serve it on the same port). Open the app.                                                                                                               | It opens to Books, not to a database screen. Every book, chapter and segment you planted is there. The footer shows the candidate's version.                                                                               | #1464, #1462, `db.ts:607-931` |        |
+| 12.2  | Both, Web | Record how long row 12.1's first open took.                                                                                                                                                                           | Record the time. Nothing has measured a 9 → 14 upgrade, so there is no expected value.                                                                                                                                     | #1522                         |        |
+| 12.3  | Both, Web | Compare the shelf with what you wrote down.                                                                                                                                                                           | P only if the book order, every heading (the default-named book still reads `Book 001` or as before, the look-alike still reads `Book 2`), the colours, chapter names, segment names and Finished marks are all unchanged. | v10, v11 above; #169, #338    |        |
+| 12.4  | Both, Web | Play every planted segment, finished and unfinished.                                                                                                                                                                  | P only if every segment plays.                                                                                                                                                                                             | The All step above; #1421     |        |
+| 12.5  | Both, Web | Close the app and open it again. Look at the Books ≡ control.                                                                                                                                                         | Nothing changes, and Books has no failure mark. If one is lit, send the problem report and quote it.                                                                                                                       | #1464                         |        |
+| 12.6  | Both, Web | Move a book with the press-and-hold reorder. Close the app and reopen it.                                                                                                                                             | The book stays where you moved it.                                                                                                                                                                                         | v11 above; #338               |        |
+| 12.7  | Both, Web | Share Book on a planted book.                                                                                                                                                                                         | The licence ask opens first, because the upgrade leaves every book with no licence. After you pick one, the OS share sheet opens, as in row 7.4.                                                                           | v12 above; #1462, #1455       |        |
+| 12.8  | Both, Web | Record a new segment in a planted chapter, save it, and mark it Finished. Close and reopen.                                                                                                                           | It saves, plays and stays Finished, and the planted segments are unchanged.                                                                                                                                                | v13, v14 above; #38, #1433    |        |
+| 12.9  | Both, Web | Only if a Finished segment was still waiting for its conversion on v1.0.1 (this happens only after a stalled conversion or a full phone, so you cannot arrange it): listen to it after the upgrade, once it converts. | P only if it sounds as it did before the upgrade, by ear. A volume change is F. With no such segment, mark N.                                                                                                              | v14 above; #1433              |        |
+| 12.10 | Web       | After the promotion only, a confirmation that does not gate it: in a browser profile that holds v1.0.1 data at `tcmobile.app`, open the site once production serves 1.2.x.                                            | Record what it shows and whether any recording is lost. The sources give no expected screen for a browser.                                                                                                                 | #1295, #1464                  |        |
 
 ## Dropped or deferred, with the reason
 
