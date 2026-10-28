@@ -320,7 +320,7 @@ indexes the previous build reads a stale latest and uploads a duplicate.) The
 user-facing **marketing version** stays `MARKETING_VERSION` from the project —
 **`1.1.1`** today, the native-shell version, deliberately independent of the PWA's
 `package.json` version ([§6](#6-versioning)); TestFlight therefore shows `1.1.1`, not
-the web `0.x`. Bump it in `ios/App/App.xcodeproj/project.pbxproj` for a user-facing
+the web version. Bump it in `ios/App/App.xcodeproj/project.pbxproj` for a user-facing
 change.
 
 ### One-time setup (human, outside this repo)
