@@ -2206,7 +2206,7 @@ export function BooksScreen({
 
   return (
     <div
-      className="flex h-full flex-col gap-[14px]"
+      className="flex h-full flex-col gap-[var(--p-space-4)]"
       inert={shelfInert || undefined}
     >
       <header className="books-header">
@@ -2787,7 +2787,10 @@ export function BooksScreen({
                       <>
                         {/* Off while a file is armed: Share now sends what was
                           prepared, so Export cannot sit beside it as if it
-                          would swap the file in. */}
+                          would swap the file in. Busy while EITHER prepare
+                          runs, as the Share tile is: the flow drops a second
+                          prepare, so a live tile here would move focus and
+                          stop chapter play and then export nothing (#1747). */}
                         {bookShare.status !== "ready" && (
                           <Tile
                             ref={exportTileRef}
@@ -2795,10 +2798,7 @@ export function BooksScreen({
                             icon="file-zip"
                             label={strings.exportProject}
                             caption={strings.tileExport}
-                            busy={
-                              bookShare.status === "preparing" &&
-                              bookShare.kind === "project"
-                            }
+                            busy={bookShare.status === "preparing"}
                             onClick={onPrepareBookExport}
                           />
                         )}
