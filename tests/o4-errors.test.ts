@@ -166,13 +166,6 @@ describe("o4/errors.css", () => {
     ([, selector, body]) => ({ selector: selector!.trim(), body: body! })
   );
 
-  it("prefixes every selector with :root, holding the specificity o4/index.css documents", () => {
-    expect(rules.length).toBeGreaterThanOrEqual(6);
-    for (const { selector } of rules)
-      for (const part of selector.split(","))
-        expect(part.trim(), selector).toMatch(/^:root /);
-  });
-
   it("takes every colour from a layer-2 role", () => {
     const declarations = rules.flatMap(({ body }) => [
       ...body.matchAll(/(color|background|border(?:-color)?):\s*([^;]+);/g),

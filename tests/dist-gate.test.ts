@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import ts from "typescript";
@@ -272,5 +272,41 @@ describe.each(GATED_FILES)("%s's skip condition", (file) => {
 
   it('no longer tests for "fail", which the resolver can no longer return', () => {
     expect(bare).not.toMatch(/GATE === "fail"/);
+  });
+});
+
+// A gated suite runs only when a sanctioned caller names it: `npm test` skips
+// it, and each runner script passes vitest an explicit file list. A suite
+// left off both lists never runs anywhere, and nothing goes red (#954 found
+// `tests/o4-cascade.test.ts`'s build half in that state). So every suite that
+// calls the resolver must be on one runner's list.
+describe("every gated suite has a runner (#954)", () => {
+  const TESTS = path.resolve(import.meta.dirname);
+  const RUNNERS = ["test-dist.mjs", "test-dist-native.mjs"].map((name) =>
+    withoutComments(
+      readFileSync(path.join(TESTS, "..", "scripts", name), "utf8"),
+      name
+    )
+  );
+  const listed = new Set(
+    RUNNERS.flatMap((runner) =>
+      [...runner.matchAll(/"tests\/([\w.-]+\.test\.ts)"/g)].map((m) => m[1]!)
+    )
+  );
+  const gated = readdirSync(TESTS)
+    .filter((name) => name.endsWith(".test.ts"))
+    .filter((name) =>
+      /resolveDistGate\(/.test(
+        withoutComments(readFileSync(path.join(TESTS, name), "utf8"), name)
+      )
+    )
+    .filter((name) => name !== "dist-gate.test.ts");
+
+  it("finds the gated suites (a floor)", () => {
+    expect(gated.length).toBeGreaterThanOrEqual(GATED_FILES.length);
+  });
+
+  it("names each one in a runner's file list", () => {
+    expect(gated.filter((name) => !listed.has(name))).toEqual([]);
   });
 });

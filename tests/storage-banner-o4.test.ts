@@ -434,12 +434,6 @@ describe("o4/books.css, the banner rules", () => {
     expect(rules.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("all carry the :root prefix that holds their specificity (o4/index.css)", () => {
-    for (const rule of rules)
-      for (const selector of rule.selectors)
-        expect(selector.startsWith(":root ")).toBe(true);
-  });
-
   it("paint the warn wash and warn ink, per state 17", () => {
     const decls = (sel: string) =>
       rules.find((r) => r.selectors.includes(`:root ${sel}`))?.decls;

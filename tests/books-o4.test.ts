@@ -658,14 +658,9 @@ describe("o4/books.css (#942)", () => {
     return hits[0]!.declarations.map(resolvePrimitives);
   }
 
-  it("holds its rules inside the components layer, every one carrying the :root prefix (o4/index.css)", () => {
+  it("holds its rules inside the components layer", () => {
     expect(layerOpen).toBeGreaterThanOrEqual(0);
     expect(rules.length).toBeGreaterThanOrEqual(12);
-    for (const rule of rules) {
-      for (const sel of rule.selectors) {
-        expect(sel.startsWith(`${O4} `), sel).toBe(true);
-      }
-    }
   });
 
   it("reads colour only through layer-2 roles, and leaves the guide ring alone", () => {

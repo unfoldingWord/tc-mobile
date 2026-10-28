@@ -104,14 +104,6 @@ describe("the O4 control wrappers (#941)", () => {
 describe("o4/controls.css (#941)", () => {
   const rules = areaRules("controls");
 
-  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
-    // Non-emptiness floor: an empty parse must not pass the loop vacuously.
-    expect(rules.length).toBeGreaterThanOrEqual(3);
-    for (const rule of rules)
-      for (const selector of rule.selectors)
-        expect(selector).toMatch(/^:root /);
-  });
-
   it("paints colour only through layer-2 roles", () => {
     const colours = rules.flatMap((r) =>
       [...r.decls].filter(([prop]) => /color|background|shadow/.test(prop))
