@@ -47,11 +47,15 @@ export function chapterNameShown(
 export const NORMALIZE_ON_FINISHED_KEY = "tc-mobile.normalize-on-finished";
 
 /**
- * The stored choice, ON unless this app wrote an explicit off: the
- * requirements owner's "switch-on" default (U6b).
+ * The stored choice, OFF unless this app wrote an explicit on. The DRI's
+ * pick for the v1.2.0 tester build (PR #1746): "Turn it off for 1.2
+ * (Recommended)", because evening out cannot be undone for a segment once
+ * it is Finished and nobody has listened to it on a phone yet. This replaces
+ * the earlier "switch-on" default (U6b) until a device pass; a person who
+ * turned the switch on keeps it on.
  */
 export function readStoredNormalizeOnFinished(raw: string | null): boolean {
-  return raw !== "0";
+  return raw === "1";
 }
 
 /** The value written for the choice; `readStoredNormalizeOnFinished` reads it back. */

@@ -119,7 +119,7 @@ export const stringsEn = {
   // it has one and its number when it does not. On, always the number.
   settingsChapterNumbers: "Always show chapter numbers",
   // #1433 (U6b): the switch for the loudness chain the Done transcode runs.
-  // On when nothing is stored. The word is "done", as `markFinished` says (D17).
+  // Off when nothing is stored (PR #1746). The word is "done", as `markFinished` says (D17).
   settingsNormalizeOnFinished: "Even out the volume when done",
   booksEmpty: "Start your first book",
   // #406 item 3 (George round 2 residual, then George round 1 on #423 P2):
