@@ -19,6 +19,7 @@ import {
 } from "@/lib/storage/books";
 import type { Book, BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
+import { getDb } from "@/lib/storage/db";
 import { clearAllStores } from "./support";
 
 /**
@@ -195,6 +196,27 @@ describe("useBooks().moveChapter (#953)", () => {
       [ids[3], 2],
       [ids[1], 3],
       [ids[2], 4],
+    ]);
+  });
+
+  it("carries a template chapter's own number on its row, and null for a hand-made one (#1272, Q1 (b))", async () => {
+    const book = await createBook("Ruth");
+    const hand = await addChapter(book.id);
+    const templated = await addChapter(book.id);
+    const db = await getDb();
+    await db.put("chapters", {
+      ...(await db.get("chapters", templated.id))!,
+      templateKey: "obs-7",
+      number: 7,
+    });
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    await vi.waitFor(() => expect(hook().loaded).toBe(true));
+    const rows = hook().books.find((c) => c.bookId === book.id)!.chapters;
+    expect(rows.map((r) => [r.chapterId, r.number, r.templateNumber])).toEqual([
+      [hand.id, 1, null],
+      [templated.id, 2, 7],
     ]);
   });
 

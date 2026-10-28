@@ -436,6 +436,18 @@ describe("the recorder header (#1105)", () => {
     }
   );
 
+  it("draws an unnamed template chapter's name in the ⋮ menu head as the header does, by its template number (#1272, Q1 (b))", async () => {
+    recorderView.chapterName = null;
+    recorderView.chapterTemplateNumber = 7;
+    await mount();
+    await tap(document, strings.recorderMenuOpen);
+    const panel = document.querySelector(".menu-panel")!;
+    expect(crumbs(panel)).toEqual(crumbs(header()));
+    expect(panel.querySelector(".o4-sheet-name")?.textContent).toBe(
+      strings.chapterName(7)
+    );
+  });
+
   it("sets a typed name's direction on the chips, the menu's head and its spoken place, not on the segment number (#1267)", async () => {
     recorderView.chapterName = "שלום.";
     await mount();
