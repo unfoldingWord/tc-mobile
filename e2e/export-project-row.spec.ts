@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 import { unzipSync } from "fflate";
 
 import { validateBundleMetadata } from "../tests/support/scripture-bundle-schema";

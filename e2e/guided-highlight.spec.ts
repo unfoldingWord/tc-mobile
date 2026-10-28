@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * The guided highlight, actually moving — in a real browser, against the real

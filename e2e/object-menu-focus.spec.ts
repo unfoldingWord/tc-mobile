@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * Closing a book, chapter or segment ≡ menu returns focus to the ⋮ that

@@ -15,6 +15,9 @@ dev-dist/
 # Playwright (#251)
 /test-results/
 /playwright-report/
+# Computed-style diff captures (#954, playwright.style-diff.config.ts). A
+# run's output goes in a PR comment, never in the tree.
+/.style-capture/
 
 # Cloudflare
 .wrangler/

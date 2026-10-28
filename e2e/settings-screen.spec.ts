@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 import { DARK_FLOOR, LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
 

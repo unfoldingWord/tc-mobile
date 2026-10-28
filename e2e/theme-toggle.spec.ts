@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 import { seedToRecorder, seedToSegments } from "./support/seed";
 import { DARK_FLOOR, LIGHT_FLOOR, floorOf, resolved } from "./support/theme";

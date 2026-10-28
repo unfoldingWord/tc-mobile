@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./support/test";
 
 /**
  * Hold a cut-off name on the Books and Segments screens to read it whole (S14, #1284,

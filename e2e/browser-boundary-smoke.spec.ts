@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 /**
  * Headless-Chromium smoke for the browser-only paths (#251), assertions 2-4.

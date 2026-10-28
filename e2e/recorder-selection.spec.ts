@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator } from "./support/test";
 
 import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
 
