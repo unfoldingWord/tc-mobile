@@ -3,7 +3,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { stripCssComments } from "./support";
+import {
+  areaScope,
+  areaSelector,
+  declsFor,
+  scopeDeclarations,
+  scopeRules,
+} from "./o4-area-css";
 
 /**
  * The O4 name sheet (#943, states 02 and G4 of `docs/design/o4-design-system.md`
@@ -18,8 +24,8 @@ import { stripCssComments } from "./support";
  * and segment action lists) out of these rules.
  *
  * HOW IT READS THE FILE. Comments are stripped first, then each rule is found
- * by its exact selector and its declarations are matched — the
- * `share-progress.test.ts` shape AGENTS.md asks a CSS test to copy, not a
+ * by its exact selector in its own block (`areaScope`: the layer's rules, or
+ * its one reduced-motion block) and read a property at a time — not a
  * whole-file regex that a header comment naming a property could satisfy or
  * trip. The declaration-count floor below keeps an emptied file from passing
  * the per-rule checks by having no rules to check.
@@ -29,63 +35,22 @@ import { stripCssComments } from "./support";
  * a given WebView, and how the sheet looks on a phone are all outside a
  * source read.
  */
-const SHEETS_CSS = readFileSync(
-  path.resolve(import.meta.dirname, "..", "src/app/styles/o4/sheets.css"),
-  "utf8"
-);
+const LAYER = areaScope("sheets");
+const REDUCED = areaScope("sheets", "@media (prefers-reduced-motion: reduce)");
+/** The layer's own rules, in source order. */
+const LAYER_RULES = scopeRules(LAYER);
+/** Every rule in both blocks, each with its declarations, for the sweeps. */
+const RULES = [...LAYER_RULES, ...scopeRules(REDUCED)].map((r) => ({
+  selectors: r.selectors,
+  declarations: new Map(scopeDeclarations(r.body)),
+}));
 
-/** The stylesheet without its comments, so prose can never satisfy a match. */
-const CODE = stripCssComments(SHEETS_CSS);
+/** The layer's one rule for `selector`, read a property at a time. */
+const rule = (selector: string) => declsFor(LAYER, selector);
 
-interface Rule {
-  readonly selectors: readonly string[];
-  readonly declarations: ReadonlyMap<string, string>;
-}
-
-/**
- * Every innermost `selector { declarations }` block. The file is one
- * `@layer components { … }` wrapper around flat rules, so a block with no
- * nested brace is a style rule — except the wrapper itself while it is still
- * empty, which is why an at-rule prelude is skipped explicitly.
- */
-function rules(css: string): Rule[] {
-  const found: Rule[] = [];
-  for (const [, prelude = "", body = ""] of css.matchAll(
-    /([^{}]+)\{([^{}]*)\}/g
-  )) {
-    if (prelude.trim().startsWith("@")) continue;
-    const selectors = prelude
-      .split(",")
-      .map((s) => s.trim().replace(/\s+/g, " "))
-      .filter(Boolean);
-    const declarations = new Map<string, string>();
-    for (const decl of body.split(";")) {
-      const colon = decl.indexOf(":");
-      if (colon === -1) continue;
-      declarations.set(
-        decl.slice(0, colon).trim(),
-        decl
-          .slice(colon + 1)
-          .trim()
-          .replace(/\s+/g, " ")
-      );
-    }
-    found.push({ selectors, declarations });
-  }
-  return found;
-}
-
-const RULES = rules(CODE);
-
-function rule(selector: string): ReadonlyMap<string, string> {
-  const hit = RULES.find((r) => r.selectors.includes(selector));
-  expect(hit, `no rule for ${selector} in o4/sheets.css`).toBeDefined();
-  return hit!.declarations;
-}
-
-const O4 = ":root";
-const SCRIM = `${O4} .menu-scrim:has(.name-edit)`;
-const SHEET = `${O4} .menu-panel:has(.name-edit)`;
+const sel = (selector: string) => areaSelector("sheets", selector);
+const SCRIM = sel(".menu-scrim:has(.name-edit)");
+const SHEET = sel(".menu-panel:has(.name-edit)");
 
 describe("o4/sheets.css — the name sheet (02, G4)", () => {
   it("has rules to check (a floor, so an emptied file cannot pass vacuously)", () => {
@@ -127,32 +92,32 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     // sheet under the finger — the sheet sits at the top, clear of the notch.
     // Whether a given phone's keyboard then clears it is a device question
     // this source read cannot answer.
-    const focused = `${O4} .menu-scrim:has(.name-edit:focus-within)`;
+    const focused = sel(".menu-scrim:has(.name-edit:focus-within)");
     expect(rule(focused).get("align-items")).toBe("flex-start");
     expect(
-      rule(`${O4} .menu-panel:has(.name-edit:focus-within)`).get("margin-top")
+      rule(sel(".menu-panel:has(.name-edit:focus-within)")).get("margin-top")
     ).toBe("calc(8px + env(safe-area-inset-top))");
-    const order = (sel: string) =>
-      RULES.findIndex((r) => r.selectors.includes(sel));
+    const order = (selector: string) =>
+      LAYER_RULES.findIndex((r) => r.selectors.includes(selector));
     expect(order(focused)).toBeGreaterThan(order(SCRIM));
     expect(
-      order(`${O4} .menu-panel:has(.name-edit:focus-within)`)
+      order(sel(".menu-panel:has(.name-edit:focus-within)"))
     ).toBeGreaterThan(order(SHEET));
   });
 
   it("draws a 56 × 5 handle above the header, on the grip (#1268)", () => {
-    const bar = rule(`${O4} .menu-grip::before`);
+    const bar = rule(sel(".menu-grip::before"));
     expect(bar.get("content")).toBe('""');
     expect(bar.get("width")).toBe("56px");
     expect(bar.get("height")).toBe("5px");
     expect(bar.get("background")).toBe("var(--s-edge)");
     // Hidden unless the panel is a sheet, and shown on the name sheet.
-    expect(rule(`${O4} .menu-grip`).get("display")).toBe("none");
+    expect(rule(sel(".menu-grip")).get("display")).toBe("none");
     expect(rule(`${SHEET} .menu-grip`).get("display")).toBe("flex");
   });
 
   it("starts a drag only on the grip and the header row, never the body (#1268)", () => {
-    expect(rule(`${O4} .menu-grip`).get("touch-action")).toBe("none");
+    expect(rule(sel(".menu-grip")).get("touch-action")).toBe("none");
     expect(rule(`${SHEET} .menu-head`).get("touch-action")).toBe("none");
     // No other rule here takes the pan from the sheet's body.
     for (const { selectors, declarations } of RULES)
@@ -161,20 +126,15 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
   });
 
   it("springs a released sheet back, with no motion under reduced motion (#1268)", () => {
-    expect(rule(`${O4} [data-sheet-drag]`).get("transform")).toBe(
+    expect(rule(sel("[data-sheet-drag]")).get("transform")).toBe(
       "translateY(var(--sheet-drag-y, 0px))"
     );
-    expect(rule(`${O4} [data-sheet-drag="settling"]`).get("transition")).toBe(
+    expect(rule(sel('[data-sheet-drag="settling"]')).get("transition")).toBe(
       "transform 160ms ease"
     );
-    const media =
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^{}]*\{[^{}]*\})\s*\}/.exec(
-        CODE
-      );
-    expect(media, "no reduced-motion block in o4/sheets.css").not.toBeNull();
-    expect(media![1]).toMatch(
-      /\[data-sheet-drag="settling"\]\s*\{\s*transition:\s*none;\s*\}/
-    );
+    expect(
+      declsFor(REDUCED, sel('[data-sheet-drag="settling"]')).get("transition")
+    ).toBe("none");
   });
 
   it("removes the drag's inline offset only after the spring has finished (#1273)", () => {
@@ -188,7 +148,7 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     );
     const settle = /^const SHEET_SETTLE_MS = (\d+);$/m.exec(menuSource);
     expect(settle, "no SHEET_SETTLE_MS declaration in menu.tsx").not.toBeNull();
-    const transition = rule(`${O4} [data-sheet-drag="settling"]`).get(
+    const transition = rule(sel('[data-sheet-drag="settling"]')).get(
       "transition"
     );
     const spring = /^transform (\d+)ms\b/.exec(transition ?? "");
@@ -206,7 +166,7 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
   });
 
   it("sets the name input at 18/400, radius 12 — and never under iOS's 16px zoom floor", () => {
-    const input = rule(`${O4} .name-input`);
+    const input = rule(sel(".name-input"));
     expect(input.get("font-size")).toBe("18px");
     expect(input.get("font-weight")).toBe("400");
     expect(input.get("border-radius")).toBe("12px");
@@ -225,7 +185,7 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     // The gap band runs past the global focus outline (offset + 2px width,
     // globals.css) plus 2px, so a keyboard user sees focus, a gap, then the
     // guide, as the record exception does.
-    const guided = rule(`${O4} .name-edit > .control.is-guided`);
+    const guided = rule(sel(".name-edit > .control.is-guided"));
     const shadow = guided.get("box-shadow") ?? "";
     expect(shadow).not.toMatch(/inset/);
     expect(shadow).toBe(
@@ -238,18 +198,18 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     // The outset rule above outranks 3-components.css's `[inert] .is-guided`
     // kill on specificity, so it needs its own, later in the file.
     const kill = RULES.find((r) =>
-      r.selectors.includes(`${O4} [inert] .name-edit > .control.is-guided`)
+      r.selectors.includes(sel("[inert] .name-edit > .control.is-guided"))
     );
     expect(kill, "no inert rule for the guided Confirm").toBeDefined();
     expect(kill!.selectors).toContain(
-      `${O4} .name-edit > .control.is-guided[inert]`
+      sel(".name-edit > .control.is-guided[inert]")
     );
     expect(kill!.declarations.get("box-shadow")).toBe("none");
-    const order = (sel: string) =>
-      RULES.findIndex((r) => r.selectors.includes(sel));
+    const order = (selector: string) =>
+      LAYER_RULES.findIndex((r) => r.selectors.includes(selector));
     expect(
-      order(`${O4} [inert] .name-edit > .control.is-guided`)
-    ).toBeGreaterThan(order(`${O4} .name-edit > .control.is-guided`));
+      order(sel("[inert] .name-edit > .control.is-guided"))
+    ).toBeGreaterThan(order(sel(".name-edit > .control.is-guided")));
   });
 
   it("does not touch selection or the iOS callout (#556, #564)", () => {

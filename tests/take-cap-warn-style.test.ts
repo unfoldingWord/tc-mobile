@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { areaScope, areaSelector } from "./o4-area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
@@ -48,8 +49,10 @@ describe("the take-cap tint (#1005)", () => {
   });
 
   it("sizes the remaining-minutes word down from O4's larger timer", () => {
-    const css = read("src/app/styles/o4/recorder.css");
-    const body = cssRule(css, ":root .recorder-status .recorder-take-warn");
+    const body = cssRule(
+      areaScope("recorder"),
+      areaSelector("recorder", ".recorder-status .recorder-take-warn")
+    );
     // A structural primitive (type size), read directly per AGENTS.md's
     // architecture rule — not a colour, so this one is allowed to reach a
     // layer-1 token, unlike the two rules above.

@@ -10,7 +10,7 @@ import {
 import { TILE_GLYPH } from "@/components/o4-tile-look";
 import { strings } from "@/lib/strings";
 
-import { areaRules, declsFor } from "./o4-area-css";
+import { areaScope, areaSelector, declsFor, scopeRules } from "./o4-area-css";
 
 /**
  * The recorder menu on the O4 tile grid (#949 G3, epic #936), including the
@@ -319,11 +319,12 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
 });
 
 describe("o4/menus.css, recorder-menu section (#949 G3)", () => {
-  const rules = areaRules("menus");
-  const panel = `:root ${CAP_PANEL}`;
+  const menus = areaScope("menus");
+  const rules = scopeRules(menus);
+  const panel = areaSelector("menus", CAP_PANEL);
 
   it("keeps the recorder sheet under half the screen", () => {
-    expect(declsFor(rules, panel).get("max-height")).toBe("50dvh");
+    expect(declsFor(menus, panel).get("max-height")).toBe("50dvh");
   });
 
   it("paints no done fill of its own: the half-screen cap is its only rule", () => {

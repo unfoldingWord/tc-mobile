@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { areaScope, areaSelector } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -372,10 +373,10 @@ describe("the chapter-play ring fill clears the non-text floor (#1469)", () => {
   // grounds a chapter row can sit on. The TRACK (`--s-mark-empty`) is not
   // gated here: it is read as decorative, which is a pending decision, not a
   // pinned one — nothing below asserts its ratio either way.
-  const booksCss = readFileSync(path.join(STYLES, "o4", "books.css"), "utf8");
+  const booksCss = areaScope("books");
 
   it("the ring paints its fill with --s-voice, so this pin scores the real paint", () => {
-    const ring = cssRule(booksCss, ":root .books-play-ring");
+    const ring = cssRule(booksCss, areaSelector("books", ".books-play-ring"));
     const background = declarationValue(ring, "background");
     expect(background).toMatch(/^conic-gradient\(\s*var\(--s-voice\)\s+calc\(/);
   });
@@ -647,13 +648,13 @@ describe("the trim selection has its own blue, --s-select (#1471)", () => {
       path.join(STYLES, "3-components.css"),
       "utf8"
     );
-    const recorder = readFileSync(
-      path.join(STYLES, "o4", "recorder.css"),
-      "utf8"
-    );
+    const recorder = areaScope("recorder");
     const band = cssRule(components, ".selection-band");
     const stem = cssRule(components, ".selection-stem");
-    const knob = cssRule(recorder, ":root .selection-handle::after");
+    const knob = cssRule(
+      recorder,
+      areaSelector("recorder", ".selection-handle::after")
+    );
 
     it("the band fill is a 20% wash of --s-select", () => {
       expect(declarationValue(band, "background")).toBe(

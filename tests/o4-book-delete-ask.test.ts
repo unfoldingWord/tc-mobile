@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
 import { strings } from "@/lib/strings";
-import { areaRules } from "./o4-area-css";
+import { areaRule, areaScope, areaSelector, scopeRules } from "./o4-area-css";
+import { declarationValue } from "./support";
 import { one, render } from "./render";
 
 /**
@@ -91,8 +92,11 @@ describe("O4BookDeleteAsk markup (#980)", () => {
 });
 
 describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
-  const O4 = ":root ";
-  const rules = areaRules("books");
+  const books = areaScope("books");
+  const reduced = areaScope("books", "@media (prefers-reduced-motion: reduce)");
+  const sel = (selector: string) => areaSelector("books", selector);
+  const value = (scope: string, selector: string, property: string) =>
+    declarationValue(areaRule(scope, selector), property);
   const added = [
     ".books-delete-ask",
     ".books-cover.is-sm",
@@ -100,52 +104,49 @@ describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
   ];
 
   it("has one rule for each new class, and each matches the rendered ask", () => {
-    expect(rules.length).toBeGreaterThanOrEqual(12);
     const root = ask();
-    for (const sel of added) {
-      const hits = rules.filter((r) => r.selectors.includes(`${O4}${sel}`));
-      expect(hits, sel).toHaveLength(1);
-      expect(root.querySelector(sel), sel).not.toBeNull();
+    for (const selector of added) {
+      // `areaRule` throws on a missing, doubled or empty rule.
+      expect(areaRule(books, sel(selector)), selector).not.toBe("");
+      expect(root.querySelector(selector), selector).not.toBeNull();
     }
   });
 
   it("draws the workbench's small cover: 52 x 64 with a 5px spine", () => {
-    const sm = rules.find((r) =>
-      r.selectors.includes(`${O4}.books-cover.is-sm`)
-    )!;
-    expect(sm.decls.get("width")).toBe("52px");
-    expect(sm.decls.get("height")).toBe("64px");
-    const spine = rules.find((r) =>
-      r.selectors.includes(`${O4}.books-cover.is-sm::before`)
+    expect(value(books, sel(".books-cover.is-sm"), "width")).toBe("52px");
+    expect(value(books, sel(".books-cover.is-sm"), "height")).toBe("64px");
+    expect(value(books, sel(".books-cover.is-sm::before"), "width")).toBe(
+      "5px"
     );
-    expect(spine?.decls.get("width")).toBe("5px");
   });
 
   it("adds no second copy of the menu sheets' head rules (#980)", () => {
     // The head is o4/menus.css's `o4-sheet-head`, which also hides the
     // sheet's own title while it is in the panel. books.css must not restate
-    // either rule under a Books-only name.
+    // either rule under a Books-only name, in either of its blocks.
+    const rules = [...scopeRules(books), ...scopeRules(reduced)];
     expect(rules.length).toBeGreaterThanOrEqual(12);
     for (const r of rules) {
-      for (const sel of r.selectors) {
-        expect(sel, sel).not.toMatch(/sheet-head|menu-panel.*\.t-title/);
+      for (const selector of r.selectors) {
+        expect(selector, selector).not.toMatch(
+          /sheet-head|menu-panel.*\.t-title/
+        );
       }
     }
   });
 
   it("uses o4/menus.css's sheet head, which hides the title and lays out the row", () => {
-    const menus = areaRules("menus");
-    expect(menus.length).toBeGreaterThan(0);
-    const head = menus.filter((r) =>
-      r.selectors.includes(`${O4}.o4-sheet-head`)
-    );
-    expect(head).toHaveLength(1);
-    expect(head[0]!.decls.get("display")).toBe("flex");
-    const hide = menus.filter((r) =>
-      r.selectors.includes(`${O4}.menu-panel:has(.o4-sheet-head) .t-title`)
-    );
-    expect(hide).toHaveLength(1);
-    expect(hide[0]!.decls.get("visibility")).toBe("hidden");
+    const menus = areaScope("menus");
+    expect(
+      value(menus, areaSelector("menus", ".o4-sheet-head"), "display")
+    ).toBe("flex");
+    expect(
+      value(
+        menus,
+        areaSelector("menus", ".menu-panel:has(.o4-sheet-head) .t-title"),
+        "visibility"
+      )
+    ).toBe("hidden");
     expect(
       ask().querySelector(".books-delete-ask > .o4-sheet-head")
     ).not.toBeNull();

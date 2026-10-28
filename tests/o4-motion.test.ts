@@ -1,18 +1,17 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
+import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
-import { stripComments } from "./support";
+import { areaSelector, readAreaCss } from "./o4-area-css";
+import { stripCssComments } from "./support";
 
 /**
  * O4 ambient motion (#950, epic #936): `src/app/styles/o4/motion.css`.
  *
- * Read as a tree of blocks rather than as a raw string, with block comments
- * stripped first, so prose that names a selector or a keyframe cannot be the
- * match (AGENTS.md, the #529 trap). `tests/o4-area-css.ts` is not reused: it
- * is flat by design and cannot see an `@keyframes` or an `@media` block, which
- * are exactly what this file is made of.
+ * Read as a tree of blocks (PostCSS) rather than as a raw string, with block
+ * comments stripped first, so prose that names a selector or a keyframe cannot
+ * be the match (AGENTS.md, the #529 trap). The tree, not one `areaScope`
+ * block, because the gate below compares positions ACROSS blocks: each loop's
+ * `animation: none` must come later than the rule that starts it.
  *
  * The gate: every rule that sets an animation is matched,
  * selector for selector, by an `animation: none` rule inside the file's
@@ -24,11 +23,7 @@ import { stripComments } from "./support";
  * is a cascade in a real engine, and nothing here renders one.
  */
 
-const ROOT = path.resolve(import.meta.dirname, "..");
-const CSS = stripComments(
-  readFileSync(path.join(ROOT, "src/app/styles/o4/motion.css"), "utf8")
-);
-const O4 = ":root";
+const sel = (selector: string) => areaSelector("motion", selector);
 const REDUCE = "@media (prefers-reduced-motion: reduce)";
 
 interface Block {
@@ -37,41 +32,34 @@ interface Block {
   /** Declarations, when the block holds any. */
   readonly decls: ReadonlyMap<string, string>;
   readonly children: readonly Block[];
-  /** Source position of the block's opening brace, for ordering. */
+  /** Source position of the block's start, for ordering. */
   readonly at: number;
 }
 
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
 
-function parse(text: string, from = 0, to = text.length): Block[] {
-  const out: Block[] = [];
-  let i = from;
-  while (i < to) {
-    const open = text.indexOf("{", i);
-    if (open === -1 || open >= to) break;
-    let depth = 0;
-    let close = open;
-    for (; close < to; close++) {
-      if (text[close] === "{") depth++;
-      else if (text[close] === "}" && --depth === 0) break;
-    }
-    const prelude = squash(text.slice(i, open).split(/[;}]/).pop() ?? "");
-    const inner = text.slice(open + 1, close);
-    const children = inner.includes("{") ? parse(text, open + 1, close) : [];
-    const decls = new Map<string, string>();
-    if (children.length === 0)
-      for (const d of inner.split(";")) {
-        const colon = d.indexOf(":");
-        if (colon > 0)
-          decls.set(d.slice(0, colon).trim(), squash(d.slice(colon + 1)));
-      }
-    out.push({ prelude, decls, children, at: open });
-    i = close + 1;
+function toBlock(node: postcss.Rule | postcss.AtRule): Block {
+  const prelude =
+    node.type === "rule"
+      ? squash(node.selector)
+      : squash(`@${node.name} ${node.params}`);
+  const decls = new Map<string, string>();
+  const children: Block[] = [];
+  for (const child of node.nodes ?? []) {
+    if (child.type === "decl") decls.set(child.prop, squash(child.value));
+    else if (child.type === "rule" || child.type === "atrule")
+      children.push(toBlock(child));
   }
-  return out;
+  return { prelude, decls, children, at: node.source!.start!.offset };
 }
 
-const TREE = parse(CSS);
+const TREE = postcss
+  .parse(stripCssComments(readAreaCss("motion")))
+  .nodes.filter(
+    (n): n is postcss.Rule | postcss.AtRule =>
+      n.type === "rule" || n.type === "atrule"
+  )
+  .map(toBlock);
 const LAYER = TREE.find((b) => b.prelude === "@layer components");
 const TOP = LAYER?.children ?? [];
 
@@ -121,32 +109,32 @@ describe("every O4 loop (#950)", () => {
     [
       "guidePulse",
       [
-        `${O4} .control--record.is-guided`,
-        `${O4} .control--mic.is-guided`,
-        `${O4} .record-guide.is-guided`,
+        sel(".control--record.is-guided"),
+        sel(".control--mic.is-guided"),
+        sel(".record-guide.is-guided"),
       ],
       "guidePulse var(--p-ambient-guide-pulse, 1.8s) ease-in-out infinite",
     ],
     [
       "liveEdge",
-      [`${O4} .recorder-stage[data-o4-look="recording"]::after`],
+      [sel('.recorder-stage[data-o4-look="recording"]::after')],
       "liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite",
     ],
     [
       "armedPulse",
-      [`${O4} .o4-tile--send.is-armed`],
+      [sel(".o4-tile--send.is-armed")],
       "armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite",
     ],
     [
       "blink",
-      [`${O4} .recorder-status .rec-dot`],
+      [sel(".recorder-status .rec-dot")],
       "blink var(--p-ambient-blink, 1s) steps(2) infinite",
     ],
     [
       "shake",
       [
-        `${O4} .books-delete-ask > .o4-sheet-head`,
-        `${O4} .o4-err-body[data-refused]`,
+        sel(".books-delete-ask > .o4-sheet-head"),
+        sel(".o4-err-body[data-refused]"),
       ],
       "shake var(--p-ambient-shake, 0.35s) ease-in-out 2",
     ],
@@ -195,10 +183,10 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     const stop = styleRules.find(
       (b) =>
         b.decls.get("animation") === "none" &&
-        selectorsOf(b).includes(`${O4} [inert] .is-guided`)
+        selectorsOf(b).includes(sel("[inert] .is-guided"))
     );
     expect(stop).toBeDefined();
-    expect(selectorsOf(stop!)).toContain(`${O4} .is-guided[inert]`);
+    expect(selectorsOf(stop!)).toContain(sel(".is-guided[inert]"));
     expect(stop!.at).toBeGreaterThan(pulse.at);
   });
 
@@ -211,13 +199,11 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     const stop = styleRules.find(
       (b) =>
         b.decls.get("animation") === "none" &&
-        selectorsOf(b).includes(
-          `${O4} .control--record.is-guided:focus-visible`
-        )
+        selectorsOf(b).includes(sel(".control--record.is-guided:focus-visible"))
     );
     expect(stop).toBeDefined();
     expect(selectorsOf(stop!)).toContain(
-      `${O4} .record-guide.is-guided:has(> .control:focus-visible)`
+      sel(".record-guide.is-guided:has(> .control:focus-visible)")
     );
     expect(stop!.at).toBeGreaterThan(pulse.at);
   });
@@ -228,11 +214,11 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     const pulse = animated.find(
       (b) => animationName(b.decls.get("animation")!) === "guidePulse"
     )!;
-    expect(selectorsOf(pulse)).toContain(`${O4} .control--mic.is-guided`);
+    expect(selectorsOf(pulse)).toContain(sel(".control--mic.is-guided"));
     const stop = styleRules.find(
       (b) =>
         b.decls.get("animation") === "none" &&
-        selectorsOf(b).includes(`${O4} .control--mic.is-guided:focus-visible`)
+        selectorsOf(b).includes(sel(".control--mic.is-guided:focus-visible"))
     );
     expect(stop).toBeDefined();
     expect(stop!.at).toBeGreaterThan(pulse.at);

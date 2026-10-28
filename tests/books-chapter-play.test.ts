@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +11,8 @@ import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
 import { idleChapterAudio } from "./chapter-audio";
-import { cssRule, declarationValue, stripCssComments } from "./support";
+import { areaScope, areaSelector, scopeRules } from "./o4-area-css";
+import { cssRule, declarationValue } from "./support";
 
 /**
  * The Books screen's chapter play control (#1469), mounted whole: the
@@ -506,17 +504,13 @@ describe("the ring's loop", () => {
 });
 
 describe("the stylesheet's promises (#1469)", () => {
-  const css = readFileSync(
-    path.resolve(import.meta.dirname, "..", "src/app/styles/o4/books.css"),
-    "utf8"
-  );
-  const code = stripCssComments(css);
-  const O4 = ":root";
+  const css = areaScope("books");
+  const sel = (selector: string) => areaSelector("books", selector);
   const value = (selector: string, property: string) =>
     declarationValue(cssRule(css, selector), property);
 
   it("fills the ring in the voice role over the empty-mark track", () => {
-    const ring = value(`${O4} .books-play-ring`, "background");
+    const ring = value(sel(".books-play-ring"), "background");
     expect(ring).toContain("var(--s-voice)");
     expect(ring).toContain("var(--s-mark-empty)");
   });
@@ -524,16 +518,23 @@ describe("the stylesheet's promises (#1469)", () => {
   it("marks a failed play in the warn role", () => {
     expect(
       value(
-        `${O4} .books-play[data-status="failed"] .books-play-ring`,
+        sel('.books-play[data-status="failed"] .books-play-ring'),
         "background"
       )
     ).toBe("var(--s-warn)");
   });
 
   it("keeps the guide, hear and primitive colours out of the control's rules", () => {
-    const rules = [...code.matchAll(/([^{}]*\.books-play[^{}]*)\{([^{}]*)\}/g)];
+    // Both blocks of the file: the layer's own rules and the reduced-motion
+    // block, so a colour moved into the second is still read.
+    const rules = [
+      css,
+      areaScope("books", "@media (prefers-reduced-motion: reduce)"),
+    ]
+      .flatMap(scopeRules)
+      .filter((r) => r.selectors.some((s) => s.includes(".books-play")));
     expect(rules.length).toBeGreaterThanOrEqual(4);
-    for (const [, , body] of rules) {
+    for (const { body } of rules) {
       expect(body).not.toMatch(
         /--s-guide|--s-hear|var\(--p-(amber|cool|green|red|warn)/
       );
@@ -541,7 +542,7 @@ describe("the stylesheet's promises (#1469)", () => {
   });
 
   it("places the control with logical properties and gives it 44px", () => {
-    const box = cssRule(css, `${O4} .books-play`);
+    const box = cssRule(css, sel(".books-play"));
     expect(declarationValue(box, "inset-inline-end")).toMatch(/px$/);
     expect(declarationValue(box, "width")).toBe("44px");
     expect(declarationValue(box, "height")).toBe("44px");

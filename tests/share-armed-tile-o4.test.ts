@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { ShareMenuSection } from "@/components/share-menu-section";
 import type { ShareMenuSectionProps } from "@/components/share-menu-section";
-import { cssRule, declarationValue } from "./support";
+import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { declarationValue } from "./support";
 import { render } from "./render";
 
 /**
@@ -51,12 +50,11 @@ describe("the Share now tile is armed only while the file is ready (#1087)", () 
 });
 
 describe("the armed loop is slow and colours through a layer-2 role (#1087)", () => {
-  const css = readFileSync(
-    path.resolve(import.meta.dirname, "../src/app/styles/o4/motion.css"),
-    "utf8"
-  );
   it("runs armedPulse on --p-ambient-armed", () => {
-    const rule = cssRule(css, ":root .o4-tile--send.is-armed");
+    const rule = areaRule(
+      areaScope("motion"),
+      areaSelector("motion", ".o4-tile--send.is-armed")
+    );
     expect(declarationValue(rule, "animation")).toBe(
       "armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite"
     );

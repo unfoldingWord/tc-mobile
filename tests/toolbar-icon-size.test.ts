@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { describe, expect, it } from "vitest";
 
+import { areaScope, areaSelector } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -14,9 +12,7 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * (`tests/render.ts` resolves no cascade, #197). This proves the declared
  * values only, not a computed style in a browser and not a phone.
  */
-const ROOT = path.resolve(import.meta.dirname, "..");
-const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
-const O4 = ":root";
+const sel = (selector: string) => areaSelector("recorder", selector);
 
 /** Prettier wraps long selectors; `cssRule` matches one on the opening line. */
 function flatten(css: string): string {
@@ -26,10 +22,10 @@ function flatten(css: string): string {
       `${end}\n  ${sel.replace(/\s+/g, " ").trim()} {`
   );
 }
-const CSS = flatten(read("src/app/styles/o4/recorder.css"));
+const CSS = flatten(areaScope("recorder"));
 
 describe("the O4 bottom-bar glyph size (#1259)", () => {
-  const bar = cssRule(CSS, `${O4} .recorder-toolbar`);
+  const bar = cssRule(CSS, sel(".recorder-toolbar"));
 
   it("defines each token as the base size times 1.25", () => {
     expect(declarationValue(bar, "--o4-toolbar-icon")).toBe(
@@ -41,7 +37,7 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
   });
 
   it("sizes every bar control's glyph from the default token", () => {
-    const rule = cssRule(CSS, `${O4} .recorder-toolbar .control svg`);
+    const rule = cssRule(CSS, sel(".recorder-toolbar .control svg"));
     expect(declarationValue(rule, "width")).toBe("var(--o4-toolbar-icon)");
     expect(declarationValue(rule, "height")).toBe("var(--o4-toolbar-icon)");
   });
@@ -49,7 +45,7 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
   it("sizes the edit bar's quiet glyphs from the quiet token", () => {
     const rule = cssRule(
       CSS,
-      `${O4} .recorder-toolbar.edit .control--quiet svg`
+      sel(".recorder-toolbar.edit .control--quiet svg")
     );
     expect(declarationValue(rule, "width")).toBe(
       "var(--o4-toolbar-icon-quiet)"
@@ -62,11 +58,13 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
   it("leaves the circles as they were", () => {
     const pair = cssRule(
       CSS,
-      `${O4} .recorder-toolbar.pair .control:not(.control--record):not(.control--play)`
+      sel(
+        ".recorder-toolbar.pair .control:not(.control--record):not(.control--play)"
+      )
     );
     expect(declarationValue(pair, "width")).toBe("64px");
     expect(declarationValue(pair, "height")).toBe("64px");
-    const edit = cssRule(CSS, `${O4} .recorder-toolbar.edit .control`);
+    const edit = cssRule(CSS, sel(".recorder-toolbar.edit .control"));
     expect(declarationValue(edit, "width")).toBe("var(--o4-secondary)");
     expect(declarationValue(edit, "height")).toBe("var(--o4-secondary)");
   });
@@ -79,7 +77,7 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
     // match it (#1262's review, batched in #1278).
     const floor = Number(
       /--o4-secondary:\s*max\(\s*(\d+)px/.exec(
-        cssRule(CSS, `${O4} .recorder-toolbar.edit`)
+        cssRule(CSS, sel(".recorder-toolbar.edit"))
       )?.[1]
     );
     const quiet =
@@ -93,12 +91,12 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
   });
 
   it("adds no colour declaration to the glyph rules", () => {
-    for (const sel of [
-      `${O4} .recorder-toolbar .control svg`,
-      `${O4} .recorder-toolbar.edit .control--quiet svg`,
+    for (const selector of [
+      sel(".recorder-toolbar .control svg"),
+      sel(".recorder-toolbar.edit .control--quiet svg"),
     ]) {
-      const rule = cssRule(CSS, sel);
-      expect(rule, sel).not.toMatch(/color|fill|stroke|background/);
+      const rule = cssRule(CSS, selector);
+      expect(rule, selector).not.toMatch(/color|fill|stroke|background/);
     }
   });
 });

@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { AREA_DIR, readAreaCss } from "./o4-area-css";
 import { stripCssComments } from "./support";
 
 /**
@@ -17,14 +18,10 @@ import { stripCssComments } from "./support";
  * build to answer, so `npm run test` alone catches a lane deleting one of
  * these on purpose or by accident.
  */
-const ROOT = path.resolve(import.meta.dirname, "..");
-const O4_DIR = path.join(ROOT, "src", "app", "styles", "o4");
 // Read without its comments (#822): a commented-out `@import` still holds the
 // exact text the assertion below looks for, so a raw read passed with an area
 // file no longer wired in.
-const INDEX_SOURCE = stripCssComments(
-  readFileSync(path.join(O4_DIR, "index.css"), "utf8")
-);
+const INDEX_SOURCE = stripCssComments(readAreaCss("index"));
 
 const AREA_FILES = [
   "books.css",
@@ -41,7 +38,7 @@ const AREA_FILES = [
 
 describe("the ten pre-created O4 area stylesheets exist and are wired in", () => {
   it.each(AREA_FILES)("%s exists on disk", (name) => {
-    expect(existsSync(path.join(O4_DIR, name)), name).toBe(true);
+    expect(existsSync(path.join(AREA_DIR, name)), name).toBe(true);
   });
 
   it.each(AREA_FILES)("%s is imported from o4/index.css", (name) => {

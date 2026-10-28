@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
-import path from "node:path";
 
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -14,6 +12,7 @@ import { strings } from "@/lib/strings";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
+import { areaScope, areaSelector } from "./o4-area-css";
 import { render } from "./render";
 import { cssRule, declarationValue, restingErase } from "./support";
 
@@ -127,10 +126,6 @@ async function mount() {
   );
 }
 
-const ROOT = path.resolve(import.meta.dirname, "..");
-const css = (file: string) =>
-  readFileSync(path.join(ROOT, "src", "app", "styles", "o4", file), "utf8");
-
 describe("the chapter menu shows the full chapter name at its top (#1284, U3)", () => {
   it("draws the whole typed name as a heading once the kebab opens the menu, and not before", async () => {
     await mount();
@@ -222,12 +217,12 @@ describe("the same pattern on the book and segment menus", () => {
   });
 
   it("declares no nowrap, ellipsis or clip on the three name lines, and wraps them", () => {
-    for (const [file, selector] of [
-      ["menus.css", ".o4-sheet-name"],
-      ["menus.css", ".o4-menu-title"],
-      ["books.css", ".books-sheet-name"],
+    for (const [area, selector] of [
+      ["menus", ".o4-sheet-name"],
+      ["menus", ".o4-menu-title"],
+      ["books", ".books-sheet-name"],
     ] as const) {
-      const rule = cssRule(css(file), `:root ${selector}`);
+      const rule = cssRule(areaScope(area), areaSelector(area, selector));
       expect(rule, selector).not.toMatch(/white-space\s*:\s*nowrap/);
       expect(rule, selector).not.toMatch(/text-overflow/);
       expect(rule, selector).not.toMatch(/overflow\s*:\s*hidden/);

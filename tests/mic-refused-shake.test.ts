@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -12,8 +9,9 @@ import {
 } from "@/lib/audio/mic-retry";
 import { strings } from "@/lib/strings";
 
+import { areaRule, areaScope, areaSelector } from "./o4-area-css";
 import { one, render } from "./render";
-import { cssRule, declarationValue, region, stripCssComments } from "./support";
+import { cssRule, declarationValue } from "./support";
 
 /**
  * #1089: the mic-refused card shakes each time Retry comes back refused.
@@ -21,13 +19,13 @@ import { cssRule, declarationValue, region, stripCssComments } from "./support";
  * hook; the stylesheet reads show the rule and its reduced-motion off switch.
  * Nothing here runs an animation in a browser.
  */
-const SELECTOR = ":root .o4-err-body[data-refused]";
-const CSS = stripCssComments(
-  readFileSync(
-    path.resolve(import.meta.dirname, "../src/app/styles/o4/motion.css"),
-    "utf8"
-  )
+const SELECTOR = areaSelector("motion", ".o4-err-body[data-refused]");
+/** The delete ask's head shakes on the same rule (#1089 reused it). */
+const DELETE_HEAD = areaSelector(
+  "motion",
+  ".books-delete-ask > .o4-sheet-head"
 );
+const REDUCED = "@media (prefers-reduced-motion: reduce)";
 
 const panel = (settingsPlatform: "android-app" | "ios-app" | null) =>
   render(
@@ -73,25 +71,32 @@ describe("the shake hook is on the panel only while refused (#1089)", () => {
 });
 
 describe("the shake rule and its off switch (#1089)", () => {
+  // Each rule read by its selector in its own block (`areaScope`), never as
+  // the text between two anchors.
+  const layer = areaScope("motion");
+
   it("plays the design-system shake on the refused card", () => {
-    const rule = cssRule(
-      region(CSS, {
-        from: CSS.indexOf(":root .books-delete-ask > .o4-sheet-head"),
-        to: CSS.indexOf("@keyframes shake"),
-      }),
-      SELECTOR
-    );
+    const rule = areaRule(layer, SELECTOR);
     expect(declarationValue(rule, "animation")).toBe(
       "shake var(--p-ambient-shake, 0.35s) ease-in-out 2"
+    );
+    // One rule serves both: the delete ask's head is the same rule.
+    expect(areaRule(layer, DELETE_HEAD)).toBe(rule);
+  });
+
+  it("names a shake keyframes block that moves the card", () => {
+    const shake = areaScope("motion", "@keyframes shake");
+    expect(declarationValue(cssRule(shake, "25%"), "transform")).toBe(
+      "translateX(-4px)"
+    );
+    expect(declarationValue(cssRule(shake, "75%"), "transform")).toBe(
+      "translateX(4px)"
     );
   });
 
   it("is switched off inside the reduced-motion block", () => {
-    const guard = region(CSS, {
-      from: CSS.indexOf("@media (prefers-reduced-motion: reduce)"),
-      to: CSS.length,
-    });
-    expect(declarationValue(cssRule(guard, SELECTOR), "animation")).toBe(
+    const guard = areaScope("motion", REDUCED);
+    expect(declarationValue(areaRule(guard, SELECTOR), "animation")).toBe(
       "none"
     );
   });

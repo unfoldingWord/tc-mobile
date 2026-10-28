@@ -18,7 +18,14 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
-import { stripCssComments } from "./support";
+import {
+  areaRule,
+  areaScope,
+  areaSelector,
+  scopeDeclarations,
+  scopeRules,
+} from "./o4-area-css";
+import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
  * The O4 Books screen (#942, epic #936): states 01 (empty shelf) and 03 (the
@@ -162,10 +169,11 @@ function dotGeometry(row: HTMLElement): { size: number; gap: number } {
   return { size, gap };
 }
 
-const read = (file: string) =>
-  readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
 /** A stylesheet with its comments stripped (AGENTS.md, the share-scrim trap). */
-const cssCode = (file: string) => stripCssComments(read(file));
+const cssCode = (file: string) =>
+  stripCssComments(
+    readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8")
+  );
 
 /** Every `--p-*` primitive in layer 1, name → value. */
 const primitives = new Map(
@@ -183,30 +191,13 @@ const resolvePrimitives = (decl: string) =>
     return value ?? whole;
   });
 
-/** One rule's declarations, `property -> value`, primitives resolved. */
-function declarations(file: string, selector: string): Map<string, string> {
-  const code = cssCode(file);
-  const hits = [...code.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) =>
-    m[1]!
-      .split(",")
-      .map((s) => s.trim())
-      .includes(selector)
-  );
-  expect(hits, `${file}: ${selector}`).toHaveLength(1);
-  return new Map(
-    hits[0]![2]!
-      .split(";")
-      .map((d) => d.replace(/\s+/g, " ").trim())
-      .filter(Boolean)
-      .map((d) => {
-        const at = d.indexOf(":");
-        return [
-          d.slice(0, at).trim(),
-          resolvePrimitives(d.slice(at + 1).trim()),
-        ] as const;
-      })
-  );
-}
+/** One rule body's declarations, read one property at a time through
+ *  `declarationValue` (which throws on a missing or doubled one), with the
+ *  value's whitespace collapsed and each primitive resolved. */
+const declarations = (body: string) => ({
+  get: (property: string) =>
+    resolvePrimitives(declarationValue(body, property).replace(/\s+/g, " ")),
+});
 const px = (value: string | undefined) => {
   expect(value, "a px length").toMatch(/^-?\d+(\.\d+)?px$|^0$/);
   return parseFloat(value!);
@@ -228,20 +219,21 @@ const NARROWEST_VIEWPORT = 320;
  * is read from the stylesheets, so a change to any of them moves this number.
  */
 function narrowestDotColumn(): number {
-  const O4 = ":root";
-  const books = "src/app/styles/o4/books.css";
-  const shell = declarations("src/app/styles/3-components.css", ".app-shell")
+  const books = areaScope("books");
+  const rule = (selector: string) =>
+    declarations(areaRule(books, areaSelector("books", selector)));
+  const shell = declarations(
+    cssRule(cssCode("src/app/styles/3-components.css"), ".app-shell")
+  )
     .get("padding")!
     .split(" ");
   const shellSide = px(shell[1] ?? shell[0]);
-  const card = declarations(books, `${O4} .books-card`);
+  const card = rule(`.books-card`);
   const cardBorder = px(card.get("border")!.split(" ")[0]);
-  const row = declarations(books, `${O4} .books-chapter`);
+  const row = rule(`.books-chapter`);
   // Logical since #1552: `padding-inline: <start> <end>`, both summed here.
   const [rowLeft, rowRight] = row.get("padding-inline")!.split(" ");
-  const badge = px(
-    declarations(books, `${O4} .books-chapter-num`).get("width")
-  );
+  const badge = px(rule(`.books-chapter-num`).get("width"));
   return (
     NARROWEST_VIEWPORT -
     2 * shellSide -
@@ -249,7 +241,7 @@ function narrowestDotColumn(): number {
     (px(rowLeft) + px(rowRight)) -
     badge -
     2 * px(row.get("gap")) -
-    px(declarations(books, `${O4} .books-chapter-go`).get("width"))
+    px(rule(`.books-chapter-go`).get("width"))
   );
 }
 
@@ -635,41 +627,30 @@ describe("the guided ring lands on the intended control (#604, #834)", () => {
 });
 
 describe("o4/books.css (#942)", () => {
-  const source = readFileSync(
-    path.resolve(import.meta.dirname, "../src/app/styles/o4/books.css"),
-    "utf8"
-  );
-  // Comments stripped first, so a header naming a selector or a primitive can
-  // neither satisfy nor trip a check below (AGENTS.md, the share-scrim trap).
-  const code = stripCssComments(source);
-  const layerOpen = code.indexOf("@layer components {");
-  const body = code.slice(layerOpen + "@layer components {".length);
-  const rules = [...body.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
-    selectors: m[1]!
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-    declarations: m[2]!
-      .split(";")
-      .map((d) => d.replace(/\s+/g, " ").trim())
-      .filter(Boolean),
-  }));
-  const O4 = ":root";
+  // Read by selector, comments stripped (`areaScope`), so a header naming a
+  // selector or a primitive can neither satisfy nor trip a check below
+  // (AGENTS.md, the share-scrim trap).
+  const layer = areaScope("books");
+  const reduced = areaScope("books", "@media (prefers-reduced-motion: reduce)");
+  const rules = scopeRules(layer);
+  const sel = (selector: string) => areaSelector("books", selector);
 
-  /** A rule's declarations, each `var(--p-*)` resolved to its value. */
-  function block(sel: string): string[] {
-    const hits = rules.filter((r) => r.selectors.includes(sel));
-    expect(hits, sel).toHaveLength(1);
-    return hits[0]!.declarations.map(resolvePrimitives);
-  }
+  /** The value `selector`'s rule declares for `property`, primitives resolved. */
+  const block = (selector: string, property: string) =>
+    resolvePrimitives(
+      declarationValue(areaRule(layer, selector), property).replace(/\s+/g, " ")
+    );
 
   it("holds its rules inside the components layer", () => {
-    expect(layerOpen).toBeGreaterThanOrEqual(0);
     expect(rules.length).toBeGreaterThanOrEqual(12);
   });
 
   it("reads colour only through layer-2 roles, and leaves the guide ring alone", () => {
-    const values = rules.flatMap((r) => r.declarations);
+    // Every declaration in both blocks of the file, one string each.
+    const values = [
+      ...scopeDeclarations(layer),
+      ...scopeDeclarations(reduced),
+    ].map(([property, value]) => `${property}: ${value}`);
     expect(values.length).toBeGreaterThanOrEqual(40);
     // Structural primitives (radius, type, space) are read directly, as
     // `3-components.css`'s header allows; any other `--p-*` is a colour
@@ -686,73 +667,68 @@ describe("o4/books.css (#942)", () => {
     }
     // `.is-guided` is an inset box-shadow; an O4 rule on a guided control's
     // own selector that sets one would out-specify it and erase the ring.
-    for (const sel of [
-      `${O4} .books-card-hit`,
-      `${O4} .books-chapter`,
-      `${O4} .books-ghost`,
+    for (const selector of [
+      sel(".books-card-hit"),
+      sel(".books-chapter"),
+      sel(".books-ghost"),
     ]) {
-      expect(
-        block(sel).some((d) => d.startsWith("box-shadow")),
-        sel
-      ).toBe(false);
+      expect(() => block(selector, "box-shadow"), selector).toThrow(
+        "declarationValue: no box-shadow declaration"
+      );
     }
   });
 
   it("carries the issue's geometry", () => {
-    expect(block(`${O4} .books-header`)).toEqual(
-      expect.arrayContaining(["height: 56px"])
-    );
-    expect(block(`${O4} .books-ghost`)).toEqual(
-      expect.arrayContaining(["width: 44px", "height: 48px"])
-    );
-    expect(block(`${O4} .books-card`)).toEqual(
-      expect.arrayContaining([
-        "border-radius: 18px",
-        "padding: 10px",
-        "background: var(--s-surface)",
-        "border: 1px solid var(--s-card-edge)",
-      ])
-    );
-    expect(block(`${O4} .books-cover`)).toEqual(
-      expect.arrayContaining([
-        "width: 72px",
-        "height: 90px",
-        "border-radius: 9px",
-        "background: var(--book-cover)",
-      ])
-    );
-    expect(block(`${O4} .books-cover::before`)).toEqual(
-      expect.arrayContaining(["width: 7px"])
-    );
-    expect(block(`${O4} .books-chapter`)).toEqual(
-      expect.arrayContaining(["min-height: 68px", "border-radius: 12px"])
-    );
-    expect(block(`${O4} .books-chapter-num`)).toEqual(
-      expect.arrayContaining([
-        "width: 44px",
-        "height: 44px",
-        "background: var(--s-well)",
-      ])
-    );
-    expect(block(`${O4} .books-chapter-num.is-dim`)).toEqual(
-      expect.arrayContaining([
-        "background: transparent",
-        "color: var(--s-ink-faint)",
-      ])
-    );
-    // The column the fit is computed against.
-    expect(block(`${O4} .books-dots`)).toEqual(
-      expect.arrayContaining(["max-width: 206px", "gap: var(--dot-gap)"])
-    );
-    expect(block(`${O4} .books-dots > i`)).toEqual(
-      expect.arrayContaining(["width: var(--dot)", "height: var(--dot)"])
-    );
-    expect(block(`${O4} .books-dots > [data-state="finished"]`)).toContain(
-      "background: var(--s-done)"
-    );
-    expect(block(`${O4} .books-dots > [data-state="recorded"]`)).toContain(
-      "background: var(--s-voice)"
-    );
+    const geometry: [string, Record<string, string>][] = [
+      [".books-header", { height: "56px" }],
+      [".books-ghost", { width: "44px", height: "48px" }],
+      [
+        ".books-card",
+        {
+          "border-radius": "18px",
+          padding: "10px",
+          background: "var(--s-surface)",
+          border: "1px solid var(--s-card-edge)",
+        },
+      ],
+      [
+        ".books-cover",
+        {
+          width: "72px",
+          height: "90px",
+          "border-radius": "9px",
+          background: "var(--book-cover)",
+        },
+      ],
+      [".books-cover::before", { width: "7px" }],
+      [".books-chapter", { "min-height": "68px", "border-radius": "12px" }],
+      [
+        ".books-chapter-num",
+        { width: "44px", height: "44px", background: "var(--s-well)" },
+      ],
+      [
+        ".books-chapter-num.is-dim",
+        { background: "transparent", color: "var(--s-ink-faint)" },
+      ],
+      // The column the fit is computed against.
+      [".books-dots", { "max-width": "206px", gap: "var(--dot-gap)" }],
+      [".books-dots > i", { width: "var(--dot)", height: "var(--dot)" }],
+      [
+        '.books-dots > [data-state="finished"]',
+        { background: "var(--s-done)" },
+      ],
+      [
+        '.books-dots > [data-state="recorded"]',
+        { background: "var(--s-voice)" },
+      ],
+    ];
+    for (const [selector, declared] of geometry) {
+      for (const [property, value] of Object.entries(declared)) {
+        expect(block(sel(selector), property), `${selector} ${property}`).toBe(
+          value
+        );
+      }
+    }
   });
 });
 
