@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { BooksScreen } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
@@ -17,7 +23,9 @@ import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
 import { isPhoneCheckRunning } from "@/hooks/use-phone-check";
+import { usePhoneLocale } from "@/hooks/phone-locale";
 import { useSaveTake } from "@/hooks/use-save-take";
+import { setUnsavedAudioCheck } from "@/hooks/stale-chunk-reload";
 import {
   holdsUnsavedAudio,
   ordinalForTake,
@@ -98,6 +106,9 @@ export function App() {
   );
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
+  // Follow the phone's language (#1538, ADR 0015 (e)): a take is open from
+  // the moment the recorder leaves idle, and no words change under it.
+  usePhoneLocale(audio.recorderState !== "idle");
   // ONE erase for both entry points — the recorder menu and the Segments-row
   // overflow menu (#160, L-12). Held here rather than in each screen so a
   // single in-flight guard covers both, instead of that resting on the sheet
@@ -154,6 +165,13 @@ export function App() {
     [pendingTake, recorder, clipboard]
   );
   const databaseStatus = useDatabaseStatus(holdsUnsavedWork);
+  // The same question decides whether a lazy chunk that will not load may
+  // reload the page (#1421 O1): a reload loses exactly this work. A layout
+  // effect, so the answer is current before any tap can be handled.
+  useLayoutEffect(
+    () => setUnsavedAudioCheck(holdsUnsavedWork),
+    [holdsUnsavedWork]
+  );
 
   // The condition above is reported as it happens; this is where it is allowed
   // to take the screen over. The wait is the whole reason the hook reports
@@ -502,6 +520,7 @@ export function App() {
              sheet keeps its own, older mechanism for now
              (`overlayBlocksClose`/`overlayDismissal`), which PR5 touches. */
           <BooksScreen
+            audio={audio}
             onOpenChapter={openChapter}
             pushLayer={pushLayer}
             popLayer={popLayer}

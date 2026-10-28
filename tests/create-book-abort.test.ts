@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createBook, listBooks } from "@/lib/storage/books";
 import type { Book } from "@/types/domain";
+import { getDb } from "@/lib/storage/db";
 import { clearAllStores } from "./support";
 
 /**
@@ -42,12 +43,20 @@ function failRenumberPut(
     this: IDBObjectStore,
     ...args: Parameters<IDBObjectStore["put"]>
   ) {
-    const row = args[0] as Book;
-    const isTarget =
+    const row: unknown = args[0];
+    // A non-object value falls through to the real `put`, which throws its own
+    // DataError, rather than a TypeError from inside this spy.
+    const isBook = (value: unknown): value is Book =>
+      typeof value === "object" &&
+      value !== null &&
+      "id" in value &&
+      "shelfPosition" in value;
+    const isTarget = (value: unknown): value is Book =>
       this.name === "books" &&
-      row.id === targetId &&
-      priorPositions.get(row.id) !== row.shelfPosition;
-    if (!isTarget) return real.apply(this, args);
+      isBook(value) &&
+      value.id === targetId &&
+      priorPositions.get(value.id) !== value.shelfPosition;
+    if (!isTarget(row)) return real.apply(this, args);
     hits.push(row);
     if (mode === "throw") throw new Error("injected put failure");
     return realAdd.apply(this, args);
@@ -68,22 +77,24 @@ function positions(books: readonly Book[]) {
 describe.each(["throw", "reject"] as const)(
   "createBook: a failed renumber put aborts the transaction (#1369), %s",
   (mode) => {
-    // The rejection arrives as the DOMException the request failed with.
-    const expected =
+    // The throw shape is our own Error; the reject shape is the DOMException
+    // the request failed with, matched by its `name`, not by the engine's
+    // English message.
+    const expectFailure = (p: Promise<unknown>) =>
       mode === "throw"
-        ? "injected put failure"
-        : /constraint was not satisfied/i;
+        ? expect(p).rejects.toThrow("injected put failure")
+        : expect(p).rejects.toMatchObject({ name: "ConstraintError" });
 
     it("leaves the shelf order and every row exactly as before", async () => {
       const t = await seedShelf(["A", "B", "C"]);
       const before = await listBooks();
       expect(before.map((b) => b.name)).toEqual(["C", "B", "A"]);
 
-      // The SECOND renumbered row: the new book and the first row are already
-      // written in the transaction when this one fails.
+      // The target is the middle existing row. How many writes came before it
+      // in the transaction is not asserted.
       const target = before[1]!;
       const hits = failRenumberPut(target.id, positions(before), mode);
-      await expect(createBook("D", null, t + 10)).rejects.toThrow(expected);
+      await expectFailure(createBook("D", null, t + 10));
       vi.restoreAllMocks();
 
       expect(hits).toHaveLength(1);
@@ -95,7 +106,7 @@ describe.each(["throw", "reject"] as const)(
       const before = await listBooks();
 
       const hits = failRenumberPut(before[0]!.id, positions(before), mode);
-      await expect(createBook("B", null, t + 10)).rejects.toThrow(expected);
+      await expectFailure(createBook("B", null, t + 10));
       vi.restoreAllMocks();
 
       expect(hits).toHaveLength(1);
@@ -105,3 +116,18 @@ describe.each(["throw", "reject"] as const)(
     });
   }
 );
+
+it("failRenumberPut passes a non-object put through to the real put", async () => {
+  failRenumberPut("none", new Map(), "throw");
+  try {
+    const db = await getDb();
+    const store = db.transaction("books", "readwrite").objectStore("books");
+    // The real put throws a DataError synchronously for a null value; a spy
+    // that cast first would throw a TypeError instead.
+    expect(() => store.put(null as never)).toThrow(
+      expect.objectContaining({ name: "DataError" })
+    );
+  } finally {
+    vi.restoreAllMocks();
+  }
+});

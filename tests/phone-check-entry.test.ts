@@ -56,6 +56,7 @@ describe("the build-stamp reveal gesture", () => {
 const IDLE: PhoneCheckState = {
   device: null,
   encode: null,
+  dsp: null,
   storage: null,
   allocation: null,
   activity: null,
@@ -116,6 +117,7 @@ describe("PhoneCheckView", () => {
     expect(close(view(IDLE))).toBe(false);
     for (const activity of [
       { kind: "waiting" },
+      { kind: "stopping" },
       { kind: "device" },
       { kind: "encode" },
       { kind: "storage" },
@@ -123,6 +125,21 @@ describe("PhoneCheckView", () => {
     ] as const) {
       expect(close(view({ ...IDLE, activity }))).toBe(true);
     }
+  });
+
+  // #1379: a screen opened while a closed screen's run winds down. Start would
+  // return without doing anything until that run lets go of the slot.
+  it("shows the wind-down of an earlier run as busy, with both Starts disabled", () => {
+    const root = view({ ...IDLE, activity: { kind: "stopping" } });
+    expect(
+      one(root, '[data-phone-check="start"]').hasAttribute("disabled")
+    ).toBe(true);
+    expect(
+      one(root, '[data-phone-check="memory"]').hasAttribute("disabled")
+    ).toBe(true);
+    expect(one(root, '[data-phone-check="status"]').textContent).toBe(
+      strings.phoneCheckRunStopping
+    );
   });
 
   it("shows a reload recovered from the breadcrumb in the report", () => {
@@ -135,9 +152,9 @@ describe("PhoneCheckView", () => {
     );
   });
 
-  // #1014 item 7: "Done" must mean all three of steps 1-3 landed, not that
+  // #1014 item 7: "Done" must mean every step of Start landed, not that
   // the first one did. A reload mid-run restores whichever of `device`,
-  // `encode` and `storage` `readSavedChecks` found, and leaves the rest
+  // `encode`, `dsp` and `storage` `readSavedChecks` found, and leaves the rest
   // `null` — the shape a restore leaves things in, checked directly rather
   // than through `usePhoneCheck` (its own tests own that wiring).
   const FAILED_DEVICE = { status: "failed", errorName: "X" } as const;
@@ -158,12 +175,13 @@ describe("PhoneCheckView", () => {
     expect(status.textContent).toBe("");
   });
 
-  it("says Done once all three have landed, failed or not", () => {
+  it("says Done once all four have landed, failed or not", () => {
     const status = one(
       view({
         ...IDLE,
         device: FAILED_DEVICE,
         encode: FAILED_DEVICE,
+        dsp: FAILED_DEVICE,
         storage: FAILED_DEVICE,
       }),
       '[data-phone-check="status"]'

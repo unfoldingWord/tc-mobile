@@ -40,6 +40,7 @@ import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { ChapterRow, SegmentRow } from "@/types/view";
 import { one, render } from "./render";
 import { clearAllStores, noTrimDecode, ramp, testCodec } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * #1044: the export names the items it counted (`keys`), and that list rides
@@ -114,6 +115,7 @@ function chapterRow(chapterId: ChapterId, number: number): ChapterRow {
   return {
     chapterId,
     number,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 1,
@@ -185,7 +187,8 @@ describe("Share Chapter, all Finished (joined, #1004): a segment left out before
           seg.id,
           clipId,
           encodeMp3(pcm),
-          computePeaks(pcm, 4)
+          computePeaks(pcm, 4),
+          NO_STAGES_RUN
         )
       ).toBe("committed");
     }
@@ -271,7 +274,8 @@ describe("Share Chapter, all Finished (joined, #1004): a later clip that is not 
             seg.id,
             clipId,
             bytes,
-            computePeaks(pcms[i]!, 4)
+            computePeaks(pcms[i]!, 4),
+            NO_STAGES_RUN
           )
         ).toBe("committed");
       }
@@ -386,7 +390,13 @@ describe("Share Chapter, all Finished (joined, #1004 bench round 2): a later cli
       // rather than a per-segment skip.
       const bytes = i === 1 ? new Uint8Array([...encoded, 1, 2, 3]) : encoded;
       expect(
-        await commitTranscode(seg.id, clipId, bytes, computePeaks(pcms[i]!, 4))
+        await commitTranscode(
+          seg.id,
+          clipId,
+          bytes,
+          computePeaks(pcms[i]!, 4),
+          NO_STAGES_RUN
+        )
       ).toBe("committed");
     }
     const screen = chapterShareItems(
@@ -514,7 +524,8 @@ describe("Share Chapter, all Finished (joined, #1004 bench round 2): joinMp3 ref
           seg.id,
           clipId,
           encodeMp3(stored[i]!),
-          computePeaks(recorded[i]!, 4)
+          computePeaks(recorded[i]!, 4),
+          NO_STAGES_RUN
         )
       ).toBe("committed");
     }

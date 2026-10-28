@@ -61,14 +61,45 @@ test("closing the book sheet over its delete ask: one focus move, to the row", a
   await recordFocusMoves(page);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: SHEET_NAME })).toHaveCount(0);
-  await expect
-    .poll(async () => (await focusMoves(page)).length)
-    .toBeGreaterThan(0);
-  // Let any second move land before reading the whole sequence.
-  await page.waitForTimeout(300);
+  // A second move could land after the first, so a single read after a fixed
+  // sleep proves nothing. Sample twice inside the retry and require the
+  // sequence to be one move AND unchanged between the samples.
+  await expect(async () => {
+    const first = await focusMoves(page);
+    await page.waitForTimeout(400);
+    const second = await focusMoves(page);
+    expect(first).toEqual([expect.stringMatching(/, 0 chapters, expanded$/)]);
+    expect(second).toEqual(first);
+  }).toPass();
 
-  const moves = await focusMoves(page);
-  expect(moves).toEqual([expect.stringMatching(/, 0 chapters, expanded$/)]);
+  const label = await page.evaluate(
+    () => document.activeElement?.getAttribute("aria-label") ?? null
+  );
+  expect(label).toMatch(/, 0 chapters, expanded$/);
+});
+
+test("one page, two closes: after closing over the delete ask, a normal close still returns focus to the ⋮", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await createBook(page);
+  const more = page.getByRole("button", { name: /^More actions for / });
+  await more.click();
+  await page.getByRole("button", { name: "Delete book" }).click();
+  await expect(page.getByRole("group", { name: /^Delete / })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: SHEET_NAME })).toHaveCount(0);
+
+  // A stuck `deleteAskOwnsFocus` flag would suppress this second restore.
+  await more.click();
+  await expect(page.getByRole("dialog", { name: SHEET_NAME })).toBeVisible();
+  await recordFocusMoves(page);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: SHEET_NAME })).toHaveCount(0);
+  await expect(more).toBeFocused();
+  expect(await focusMoves(page)).toEqual([
+    expect.stringMatching(/^More actions for /),
+  ]);
 });
 
 test("closing the book sheet with no delete ask: focus returns to the ⋮", async ({

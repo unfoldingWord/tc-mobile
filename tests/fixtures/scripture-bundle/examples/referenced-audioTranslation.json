@@ -1,0 +1,113 @@
+{
+  "format": "scripture burrito",
+  "meta": {
+    "version": "1.0.0",
+    "category": "source",
+    "generator": {
+      "softwareName": "tC Mobile",
+      "softwareVersion": "2.0.0"
+    },
+    "defaultLocale": "en",
+    "dateCreated": "2026-11-20T10:00:00.000Z",
+    "normalization": "NFC"
+  },
+  "idAuthorities": {
+    "tcmobile": {
+      "id": "https://tcmobile.app",
+      "name": {
+        "en": "tC Mobile"
+      }
+    }
+  },
+  "identification": {
+    "primary": {
+      "tcmobile": {
+        "0b5c6f0e-1111-4222-8333-944445555666": {
+          "revision": "1",
+          "timestamp": "2026-11-20T10:00:00.000Z"
+        }
+      }
+    },
+    "name": {
+      "en": "Mark"
+    }
+  },
+  "confidential": false,
+  "type": {
+    "flavorType": {
+      "name": "scripture",
+      "flavor": {
+        "name": "audioTranslation",
+        "performance": ["singleVoice", "reading"],
+        "formats": {
+          "mp3": {
+            "compression": "mp3",
+            "trackConfiguration": "1/0 (Mono)",
+            "samplingRate": 44100
+          },
+          "wav": {
+            "compression": "wav",
+            "trackConfiguration": "1/0 (Mono)",
+            "bitDepth": 16,
+            "samplingRate": 44100
+          }
+        }
+      },
+      "currentScope": {
+        "MRK": ["1:1-8", "1:9-13"]
+      }
+    }
+  },
+  "languages": [
+    {
+      "tag": "sw",
+      "name": {
+        "en": "Swahili"
+      }
+    }
+  ],
+  "localizedNames": {
+    "book-mrk": {
+      "short": {
+        "en": "Mark"
+      }
+    }
+  },
+  "copyright": {
+    "licenses": [
+      {
+        "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+      }
+    ]
+  },
+  "ingredients": {
+    "ingredients/audio/c001/s001.mp3": {
+      "checksum": {
+        "md5": "d32e9efa2f1af2064e513c807d606421"
+      },
+      "mimeType": "audio/mpeg",
+      "size": 277053,
+      "scope": {
+        "MRK": ["1:1-8"]
+      }
+    },
+    "ingredients/audio/c001/s002.wav": {
+      "checksum": {
+        "md5": "a32e9efa2f1af2064e513c807d606421"
+      },
+      "mimeType": "audio/wav",
+      "size": 5292044,
+      "scope": {
+        "MRK": ["1:9-13"]
+      }
+    },
+    "ingredients/tc-mobile/project.json": {
+      "checksum": {
+        "md5": "c32e9efa2f1af2064e513c807d606421"
+      },
+      "mimeType": "application/json",
+      "size": 2048,
+      "role": "x-tcMobileProject"
+    }
+  }
+}

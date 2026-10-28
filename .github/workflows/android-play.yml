@@ -41,17 +41,6 @@ on:
 
 permissions: {}
 
-concurrency:
-  # One run for this Play app at a time, across BOTH branches: staging and main
-  # share one package and one service account, a second Play edit invalidates
-  # the first, and versionCode (date +%s) must increase per app, not per track.
-  # Never cancel an in-flight upload. This group is on the whole run, so
-  # GitHub keeps one pending run and replaces it with a newer one: a push or
-  # dispatch queued behind an in-flight upload can be replaced by a later one
-  # and never build. Read a `cancelled` run against the branch tip (#1308).
-  group: android-play
-  cancel-in-progress: false
-
 jobs:
   preflight:
     name: Preflight (branch → track)
@@ -118,10 +107,29 @@ jobs:
     if: needs.preflight.outputs.enabled == 'true'
     # Branch-restricted environment, no required reviewers (see header).
     environment: play-upload
+    # One upload for this Play app at a time, across BOTH branches: staging
+    # and main share one package and one service account, a second Play edit
+    # invalidates the first, and versionCode (date +%s) must increase per
+    # app, not per track. So the group carries the lane alone, no ref and no
+    # commit. Never cancel an in-flight upload. The group is on THIS job, not
+    # the workflow (#1616), the same as android-apk.yml and
+    # ios-testflight.yml: a run whose preflight decided not to upload (the
+    # lane disabled) never enters it, so it cannot replace a pending upload
+    # (GitHub keeps one pending run per group and replaces it with a newer
+    # one). Two uploads queued behind an in-flight one still leave only the
+    # newer pending: read a `cancelled` run against the branch tip (#1308).
+    # The group serializes; it does not refuse. A second run of the same
+    # commit waits here, and then the upload guard step below finds the
+    # first run's upload and skips its own (#1616).
+    concurrency:
+      group: android-play
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # actions: read is for the upload guard's reads (#1616).
     permissions:
       contents: read
+      actions: read
     env:
       # Store builds are never diagnostic builds; build.gradle compares this to
       # the synced capacitor.config.json, so it must be explicit.
@@ -169,9 +177,48 @@ jobs:
           node-version-file: .node-version
           cache: "npm"
 
+      # #1616, the pre-upload guard. This job holds the lane's concurrency
+      # group, so no other upload of this lane runs beside it. The step asks
+      # check:redispatch's core (scripts/redispatch-core.mjs, guardUpload)
+      # whether a run of this lane at this commit, or an earlier attempt of
+      # this run, already uploaded. SKIP leaves the job green with a notice
+      # and no upload; a failed or cancelled earlier run never blocks. A read
+      # it cannot settle fails the job before any upload: the core's rule is
+      # that anything the reads cannot settle is a stop, never a guess.
+      #
+      # #1674: every step after this one carries the verdict in its `if:`, so a
+      # SKIP runs no prep (npm ci, builds, key writes) and cannot turn red on one.
+      # build_only skips this step, so the prep gate there is
+      # `inputs.build_only || steps.guard.outputs.upload == 'true'`.
+      - name: Skip the upload if this commit already uploaded on this lane
+        id: guard
+        if: ${{ !inputs.build_only }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LANE: play
+        run: |
+          set -uo pipefail
+          out="$(node scripts/check-redispatch.mjs --lane "$LANE" --sha "$GITHUB_SHA" --branch "$GITHUB_REF_NAME" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT")" && status=0 || status=$?
+          printf '%s\n' "$out"
+          # The verdict is the first UPLOAD/SKIP/STOP line; a failed read can
+          # print more lines after it.
+          verdict="$(printf '%s\n' "$out" | grep -m 1 -E '^(UPLOAD|SKIP|STOP): ' || true)"
+          case "$status" in
+            0) echo "upload=true" >> "$GITHUB_OUTPUT" ;;
+            3)
+              echo "::notice::$verdict. This run uploads nothing and ends green."
+              echo "upload=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::${verdict:-STOP: the guard printed no verdict}. Nothing was uploaded. Run npm run check:redispatch for this lane and commit, and tell the DRI."
+              exit 1
+              ;;
+          esac
+
       # Same JDK pin as android-apk.yml: Capacitor's generated gradle compiles
       # at Java 21 and the runner image defaults to 17.
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         with:
           distribution: temurin
           java-version: "21"
@@ -181,11 +228,13 @@ jobs:
       # iOS lane's macOS runner already ships 3.3. No `bundler-cache`: the
       # "Install fastlane" step pins bundler and installs the frozen lock
       # itself, after the checks below and before any secret reaches disk.
-      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+      - uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8 # v1.331.0
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         with:
           ruby-version: "3.3"
 
       - name: Assert the toolchain this project compiles against
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: |
           set -euo pipefail
           : "${ANDROID_HOME:?ANDROID_HOME is unset on this runner image}"
@@ -198,6 +247,7 @@ jobs:
           java -version 2>&1 | head -1
 
       - name: Install dependencies
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: npm ci
 
       # Installed here, before any Play secret reaches disk (the "Write the
@@ -206,7 +256,7 @@ jobs:
       # bundler install nor fastlane itself needs the keystore or the
       # service-account JSON — only the upload step later does.
       - name: Install fastlane
-        if: ${{ !inputs.build_only }}
+        if: ${{ !inputs.build_only && steps.guard.outputs.upload == 'true' }}
         run: |
           set -euo pipefail
           gem install bundler -v 2.6.9 --no-document --user-install
@@ -217,6 +267,7 @@ jobs:
           bundle _2.6.9_ install --jobs 4 --retry 3
 
       - name: Build the web bundle
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: npm run build
 
       # ci.yml's fourth ship-blocker, checked against THIS (web) build, before
@@ -228,6 +279,7 @@ jobs:
       # the service-worker precache (ADR 0006 / #177) — ~598 files stalling
       # the first native launch. Mirrors android-apk.yml's identical step.
       - name: OBS thumbnails stay out of the precache (web build; ADR 0006 / #177)
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: |
           set -euo pipefail
           if grep -q "obs/thumbs" dist/sw.js; then
@@ -247,9 +299,11 @@ jobs:
       # copies whatever dist/ holds at that point, which must be this one, not
       # the web build's.
       - name: Rebuild and check dist/ for the native shell (self-destroying service worker, #923)
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: npm run test:dist:native
 
       - name: Sync dist/ into the Android project
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: |
           npx cap sync android
           node scripts/check-android-diagnostic.mjs android/app/src/main/assets/capacitor.config.json
@@ -259,6 +313,7 @@ jobs:
       # phones. The OBS-thumbnail policy is checked against the WEB build
       # above, not here — see that step's comment.
       - name: Guard the synced bundle
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: |
           set -euo pipefail
           test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
@@ -276,6 +331,7 @@ jobs:
       # Decoded into a gitignored path: android/tc-mobile-upload.jks. Needed to
       # sign the .aab on every path, build_only included.
       - name: Write the upload keystore
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         env:
           PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
         run: |
@@ -285,7 +341,7 @@ jobs:
       # Decoded into a gitignored path: fastlane/play-service-account.json.
       # Skipped on build_only — nothing after this step reads it there.
       - name: Write the Play service-account key
-        if: ${{ !inputs.build_only }}
+        if: ${{ !inputs.build_only && steps.guard.outputs.upload == 'true' }}
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
@@ -299,6 +355,7 @@ jobs:
       # android/app/build.gradle reads the ANDROID_* signing vars; here they
       # point at the UPLOAD key.
       - name: Build the release bundle
+        if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         id: aab
         env:
           ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/tc-mobile-upload.jks
@@ -317,7 +374,7 @@ jobs:
           echo "release_name=$version ($code) ${GITHUB_REF_NAME}@${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Upload to Google Play
-        if: ${{ !inputs.build_only }}
+        if: ${{ !inputs.build_only && steps.guard.outputs.upload == 'true' }}
         env:
           PLAY_AAB_PATH: ${{ github.workspace }}/android/app/build/outputs/bundle/release/app-release.aab
           PLAY_JSON_KEY_PATH: ${{ github.workspace }}/fastlane/play-service-account.json

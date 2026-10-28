@@ -27,6 +27,7 @@ import { strings } from "@/lib/strings";
 const IDLE: PhoneCheckState = {
   device: null,
   encode: null,
+  dsp: null,
   storage: null,
   allocation: null,
   activity: null,
@@ -41,6 +42,8 @@ const OK_DEVICE: PhoneCheckState["device"] = {
     quotaBytes: null,
     usageBytes: null,
     persisted: null,
+    language: null,
+    languages: null,
   },
 };
 

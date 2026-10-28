@@ -22,6 +22,7 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import type { AudioCodec, Mp3Stream } from "@/types/audio";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import { clearAllStores, noTrimDecode, testCodec } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * #1003 part (b): Share Chapter of a LONG chapter streams its PCM through one
@@ -170,7 +171,8 @@ describe("the streaming path is byte-identical to today's (#1003 b)", () => {
       segmentIds[1]!,
       audio.clip.id,
       mp3,
-      computePeaks(buffers[1]!, 4)
+      computePeaks(buffers[1]!, 4),
+      NO_STAGES_RUN
     );
     const decode = async () => noTrimDecode(buffers[1]!, mp3);
     const legacy = await exportChapterMp3(

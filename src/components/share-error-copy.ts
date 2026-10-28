@@ -58,7 +58,10 @@ export function shareProgressText(
         case "sent":
           return strings.shareSent;
         case "partial":
-          return `${strings.shareSent} ${shareGapText(progress.gap, scope)}`;
+          return strings.sentences(
+            strings.shareSent,
+            shareGapText(progress.gap, scope)
+          );
         case "dismissed":
           return strings.shareDismissed;
         case "unproven":
@@ -118,8 +121,9 @@ export function shareErrorText(
         : strings.shareBookNothing;
     case "failed":
       if (scope === "chapter") return strings.shareFailed;
-      // A browser can refuse the book's zip outright (#272), so the web build
-      // points to the app; the native shell keeps the retry line.
+      // Chromium source indicates Android Chrome refuses the book's zip inside
+      // `share()` (#272; not device-confirmed), so the web build points to the
+      // app; the native shell keeps the retry line.
       return isNativeShell()
         ? strings.shareBookFailed
         : strings.shareBookFailedWeb;
@@ -149,9 +153,9 @@ export function libraryShareErrorText(error: LibraryShareError): string | null {
     case "nothing":
       return strings.shareAllNothing;
     case "failed":
-      // The library zip meets the same browser refusal as the book's (#1333,
-      // #272), so the web build points to the app; the native shell keeps
-      // the retry line.
+      // The library zip is indicated to meet the same refusal as the book's
+      // (#1333, #272; Chromium source, not device-confirmed), so the web
+      // build points to the app; the native shell keeps the retry line.
       return isNativeShell()
         ? strings.shareAllFailed
         : strings.shareAllFailedWeb;
@@ -183,7 +187,7 @@ export function libraryShareGapText(
   if (missingBooks > 0) parts.push(strings.shareAllMissing(missingBooks));
   if (incompleteChapters > 0)
     parts.push(strings.shareAllIncomplete(incompleteChapters));
-  return parts.length > 0 ? parts.join(" ") : null;
+  return parts.length > 0 ? strings.sentences(...parts) : null;
 }
 
 /**
@@ -220,7 +224,7 @@ export function libraryShareProgressText(
           );
           return gap === null
             ? strings.shareSent
-            : `${strings.shareSent} ${gap}`;
+            : strings.sentences(strings.shareSent, gap);
         }
         case "dismissed":
           return strings.shareDismissed;

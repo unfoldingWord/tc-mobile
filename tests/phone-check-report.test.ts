@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { fontReportLines } from "@/lib/phone-check/font-samples";
 import {
   MB,
   UNITS_NOTE,
@@ -28,12 +29,15 @@ const ALL_RUN: PhoneCheckReportInput = {
       quotaBytes: 2048 * MB,
       usageBytes: 12.5 * MB,
       persisted: true,
+      language: null,
+      languages: null,
     },
   },
   encode: {
     status: "ok",
     value: { audioSeconds: 300, wallMs: 12_000, mp3Bytes: 2.4 * MB },
   },
+  dsp: null,
   storage: {
     status: "ok",
     value: { bytes: 50 * MB, writeMs: 2000, readMs: 500 },
@@ -70,6 +74,7 @@ describe("formatPhoneCheckReport states the MB/MiB gap once (#1014 item 2)", () 
       sha: "abc1234",
       device: null,
       encode: null,
+      dsp: null,
       storage: null,
       allocation: null,
     });
@@ -97,12 +102,17 @@ describe("formatPhoneCheckReport", () => {
         "- CPU cores: 8",
         "- Storage: 12.5 MB used of 2048.0 MB quota",
         "- Persisted: yes",
+        "- Language: not reported",
+        "- Languages: not reported",
         "",
         "Encode (real MP3 worker)",
         "- Audio: 300.0 s of synthetic speech",
         "- Wall time: 12.0 s",
         "- Speed: 25.0x realtime",
         "- MP3 size: 2.4 MB",
+        "",
+        "DSP chain (1 minute of synthetic speech, in the MP3 worker)",
+        "- not run",
         "",
         "Storage (throwaway database, deleted afterwards)",
         "- Write: 50.0 MB in 2.0 s (25.0 MB/s)",
@@ -111,6 +121,9 @@ describe("formatPhoneCheckReport", () => {
         "Memory ceiling",
         "- Last succeeded: 200 MB",
         "- Failed at 225 MB: RangeError",
+        "",
+        "Script samples (write rendered or tofu after each)",
+        ...fontReportLines(),
       ].join("\n")
     );
   });
@@ -121,12 +134,14 @@ describe("formatPhoneCheckReport", () => {
       sha: "abc1234",
       device: null,
       encode: null,
+      dsp: null,
       storage: null,
       allocation: null,
     });
     for (const heading of [
       "Device info",
       "Encode (real MP3 worker)",
+      "DSP chain (1 minute of synthetic speech, in the MP3 worker)",
       "Storage (throwaway database, deleted afterwards)",
       "Memory ceiling",
     ]) {
@@ -160,6 +175,8 @@ describe("formatPhoneCheckReport", () => {
           quotaBytes: null,
           usageBytes: null,
           persisted: null,
+          language: null,
+          languages: null,
         },
       },
     });

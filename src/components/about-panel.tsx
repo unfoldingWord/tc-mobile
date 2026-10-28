@@ -9,6 +9,7 @@ import {
 } from "./licenses";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { QrCode } from "./qr-code";
 import { reportFailure } from "@/hooks/report-failure";
 import { readSharePlatform } from "@/hooks/share-target";
 import { strings } from "@/lib/strings";
@@ -20,6 +21,13 @@ import { strings } from "@/lib/strings";
  */
 const PRIVACY_POLICY_URL =
   "https://github.com/unfoldingWord/tc-mobile/blob/main/PRIVACY.md";
+
+/**
+ * The Play listing the Android build's QR code opens (#1250): the `appId` in
+ * `capacitor.config.ts`. It works for other people once the listing is public.
+ */
+const PLAY_LISTING_URL =
+  "https://play.google.com/store/apps/details?id=org.unfoldingword.tcmobile";
 
 interface AboutPanelProps {
   open: boolean;
@@ -109,14 +117,14 @@ export function AboutPanel({
           // `min-h-0 flex-1 overflow-auto` contract the licence-text `<pre>`
           // takes — so on a short phone the panel's header Back stays put
           // instead of scrolling off with the content (#36 G1).
-          className="text-ink flex min-h-0 min-w-0 flex-1 flex-col gap-[14px] overflow-auto text-[13px] leading-relaxed"
+          className="text-ink flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--p-space-4)] overflow-auto text-[length:var(--p-text-md)] leading-relaxed"
         >
           <p className="text-ink-muted">{strings.aboutBlurb}</p>
           <p>{strings.aboutAppLicense}</p>
 
           {/* Licence texts first: the open-edge focus lands on an in-app button,
               never on an off-phone link (George G2). */}
-          <section className="flex flex-col gap-[6px]">
+          <section className="flex flex-col gap-[var(--p-space-2)]">
             <h3 className="t-title">{strings.aboutTexts}</h3>
             {licenseTextsFor(readSharePlatform()).map((text) => (
               <button
@@ -131,7 +139,7 @@ export function AboutPanel({
                   onView(text);
                 }}
                 aria-label={strings.aboutReadText(text.label)}
-                className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
+                className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-start text-[length:var(--p-text-md)] underline"
               >
                 {text.label}
               </button>
@@ -160,6 +168,16 @@ export function AboutPanel({
             </ExternalLink>
           </div>
 
+          {/* Android only (#1250): the store link, drawn on the phone with no
+              network call, for passing the app on. After the buttons and links
+              so the open-edge focus is unchanged. */}
+          {readSharePlatform() === "android" && (
+            <figure className="m-0 flex w-fit flex-col items-center gap-[var(--p-space-2)]">
+              <QrCode text={PLAY_LISTING_URL} label={strings.aboutQrCaption} />
+              <figcaption>{strings.aboutQrCaption}</figcaption>
+            </figure>
+          )}
+
           <section className="flex flex-col gap-[10px]">
             <h3 className="t-title">{strings.aboutThirdParty}</h3>
             {thirdPartyLicenses.map((lib) => (
@@ -187,7 +205,7 @@ export function AboutPanel({
             ))}
           </section>
 
-          <section className="flex flex-col gap-[6px]">
+          <section className="flex flex-col gap-[var(--p-space-2)]">
             <h3 className="t-title">{strings.aboutContent}</h3>
             {contentAttribution.map((item) => (
               <span key={item.what} className="text-ink-muted">
@@ -200,6 +218,7 @@ export function AboutPanel({
                 </ExternalLink>
               </span>
             ))}
+            <span className="text-ink-muted">{strings.aboutLanguageCodes}</span>
           </section>
 
           <BuildStamp />
@@ -276,7 +295,7 @@ function LicenseTextView({ text }: { text: LicenseText }) {
     <pre
       ref={preRef}
       tabIndex={0}
-      className="text-ink min-h-0 min-w-0 flex-1 overflow-auto text-[13px] leading-normal whitespace-pre-wrap"
+      className="text-ink min-h-0 min-w-0 flex-1 overflow-auto text-[length:var(--p-text-md)] leading-normal whitespace-pre-wrap"
     >
       {body}
     </pre>

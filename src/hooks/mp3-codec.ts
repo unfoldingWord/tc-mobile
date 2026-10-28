@@ -64,7 +64,13 @@ import { errorMessage } from "@/lib/failure-text";
 // is emitted and lamejs is not duplicated
 // (round-1 George G2).
 import encoderChunkUrl from "./mp3.worker.ts?worker&url";
-import type { AudioCodec, Mp3Stream } from "@/types/audio";
+import type {
+  AudioCodec,
+  ClipProcessing,
+  DspBenchResult,
+  Mp3Stream,
+  NormalizedPcm,
+} from "@/types/audio";
 
 /**
  * What the client posts. The original request — a view onto canonical PCM,
@@ -73,7 +79,8 @@ import type { AudioCodec, Mp3Stream } from "@/types/audio";
  * always did. {@link StreamRequest} is the additive, versioned half (#1003
  * part b).
  */
-export type EncodeRequest = WholeEncodeRequest | StreamRequest;
+export type EncodeRequest =
+  WholeEncodeRequest | StreamRequest | BenchRequest | NormalizeRequest;
 
 interface WholeEncodeRequest {
   readonly buffer: ArrayBuffer;
@@ -108,6 +115,28 @@ type StreamRequest =
   | { readonly v: StreamProtocolVersion; readonly kind: "stream-cancel" };
 
 /**
+ * The phone check's DSP benchmark (#1433 step 1): not an encode, so it has its
+ * own versioned request and its own answers, which `runEncodeOnWorker` keeps
+ * out of the encoder's health. The worker builds the speech itself.
+ */
+interface BenchRequest {
+  readonly v: StreamProtocolVersion;
+  readonly kind: "dsp-bench";
+  readonly seconds: number;
+}
+
+/**
+ * The Finished chain (#1433 step 3): a clip's PCM, transferred, processed in
+ * place and sent back with `normalized`. Not an encode: the client encodes
+ * the result with a whole encode in the same lane turn.
+ */
+interface NormalizeRequest extends WholeEncodeRequest {
+  readonly v: StreamProtocolVersion;
+  readonly kind: "normalize";
+  readonly sampleRate: number;
+}
+
+/**
  * The messages the worker sends back.
  *
  * `ready` is posted once, when the worker script has run (#192): it settles
@@ -125,6 +154,12 @@ export type EncodeResponse =
   | { readonly kind: "progress"; readonly fraction: number }
   | { readonly kind: "done"; readonly mp3: ArrayBuffer }
   | { readonly kind: "stream-ack" }
+  | { readonly kind: "bench-result"; readonly result: DspBenchResult }
+  | { readonly kind: "bench-error"; readonly message: string }
+  | ({
+      readonly kind: "normalized";
+      readonly processing: ClipProcessing;
+    } & WholeEncodeRequest)
   | { readonly kind: "error"; readonly message: string };
 
 /**
@@ -158,6 +193,20 @@ export class EncoderFailedError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = "EncoderFailedError";
+  }
+}
+
+/**
+ * The DSP benchmark itself failed (#1433 step 1): the worker said so, or
+ * refused the request. Deliberately NOT an {@link EncoderFailedError} and
+ * never counted against the encoder's health, because a benchmark that throws
+ * says nothing about whether the phone can encode. A worker that dies or goes
+ * silent during one is still the encoder's problem, and is reported as such.
+ */
+export class DspBenchFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DspBenchFailedError";
   }
 }
 
@@ -374,6 +423,9 @@ export async function withEncoder<T>(
         encodeInWorker(samples, signal, onProgress),
       decodeMp3: decodeMp3ToCanonical,
       openMp3Stream: () => openStreamInWorker(signal),
+      benchDsp: (seconds) => benchInWorker(seconds, signal),
+      normalizePcm: (samples, sampleRate, onProgress) =>
+        normalizeInWorker(samples, sampleRate, signal, onProgress),
     });
   } finally {
     // Release only once the job ahead has finished too: an abort while still
@@ -824,6 +876,50 @@ async function encodeInWorker(
   return mp3From(result);
 }
 
+/**
+ * Run the DSP benchmark in the shared worker (#1433 step 1), through the same
+ * preamble, silence deadline and abort an encode has. Nothing is transferred:
+ * the worker builds its own speech.
+ */
+async function benchInWorker(
+  seconds: number,
+  signal?: AbortSignal
+): Promise<DspBenchResult> {
+  const { result } = await requestOnWorker(
+    { v: 1, kind: "dsp-bench", seconds },
+    [],
+    signal
+  );
+  if (result === null || !("bench" in result))
+    throw new DspBenchFailedError(
+      "The worker answered the benchmark with something else"
+    );
+  return result.bench;
+}
+
+/**
+ * Run the Finished chain over `samples` in the shared worker (#1433), under
+ * the same deadline and abort an encode has. CONSUMES `samples`.
+ */
+async function normalizeInWorker(
+  samples: Int16Array,
+  sampleRate: number,
+  signal?: AbortSignal,
+  onProgress?: (fraction: number) => void
+): Promise<NormalizedPcm> {
+  const { result } = await requestOnWorker(
+    { v: 1, kind: "normalize", sampleRate, ...pcmRequest(samples) },
+    [samples.buffer as ArrayBuffer],
+    signal,
+    onProgress
+  );
+  if (result === null || !("normalized" in result))
+    throw new EncoderFailedError(
+      "The MP3 encoder answered the loudness chain with something else"
+    );
+  return result.normalized;
+}
+
 /** A view onto canonical PCM, as the worker is sent it (transferred). */
 function pcmRequest(samples: Int16Array): WholeEncodeRequest {
   return {
@@ -833,9 +929,20 @@ function pcmRequest(samples: Int16Array): WholeEncodeRequest {
   };
 }
 
+/**
+ * What a request resolves with: the MP3 a `done` carried, `null` for a
+ * `stream-ack`, or the benchmark's figures (#1433), wrapped so an MP3 is never
+ * mistaken for one.
+ */
+type WorkerResult =
+  | ArrayBuffer
+  | null
+  | { readonly bench: DspBenchResult }
+  | { readonly normalized: NormalizedPcm };
+
 /** The MP3 a `done` carried; a request answered with an ack had none. */
-function mp3From(result: ArrayBuffer | null): Uint8Array<ArrayBuffer> {
-  if (result === null)
+function mp3From(result: WorkerResult): Uint8Array<ArrayBuffer> {
+  if (result === null || "bench" in result || "normalized" in result)
     throw new EncoderFailedError(
       "The MP3 encoder acknowledged a request that should have returned an MP3"
     );
@@ -880,7 +987,7 @@ async function openStreamInWorker(signal?: AbortSignal): Promise<Mp3Stream> {
   const onBound = async (
     request: StreamRequest,
     transfer: Transferable[]
-  ): Promise<ArrayBuffer | null> => {
+  ): Promise<WorkerResult> => {
     if (closed) throw new Error("This MP3 stream is already closed");
     // An abort BETWEEN steps leaves the stream open, so the caller's `cancel`
     // still tells the worker to let the session go. Nothing is in flight, so
@@ -938,7 +1045,7 @@ async function requestOnWorker(
   transfer: Transferable[],
   signal?: AbortSignal,
   onProgress?: (fraction: number) => void
-): Promise<{ worker: Worker; result: ArrayBuffer | null }> {
+): Promise<{ worker: Worker; result: WorkerResult }> {
   if (signal?.aborted) throw abortReason(signal);
   if (typeof Worker === "undefined") {
     // A phone with no `Worker` cannot encode, ever. Counted like any other
@@ -1192,7 +1299,7 @@ function runEncodeOnWorker(
   transfer: Transferable[],
   signal?: AbortSignal,
   onProgress?: (fraction: number) => void
-): Promise<ArrayBuffer | null> {
+): Promise<WorkerResult> {
   return new Promise((resolve, reject) => {
     // An abort that ALREADY fired is not delivered again, and everything below
     // listens rather than asks (George R2 P3). This function is reached a
@@ -1234,6 +1341,11 @@ function runEncodeOnWorker(
      * `armStall` refuses to arm, so a settled job owns nothing.
      */
     let settled = false;
+    // A benchmark's answers never touch the encoder's health (#1433): it is
+    // not an encode, so neither its result nor its failure is evidence about
+    // the encoder. A worker that DIES or goes SILENT under one still is, and
+    // those paths below stay counted.
+    const isBench = "kind" in request && request.kind === "dsp-bench";
     const armStall = (ms: number) => {
       if (settled) return;
       // Clear first: every arm REPLACES the pending window rather than adding
@@ -1387,18 +1499,54 @@ function runEncodeOnWorker(
         return;
       }
       release();
+      // Dispatch on the REQUEST first: no answer to a bench reaches the health
+      // books below, and no encode is closed by a bench's answer kinds.
+      if (isBench) {
+        if (response.kind === "bench-result") {
+          resolve({ bench: response.result });
+        } else if (
+          response.kind === "bench-error" ||
+          response.kind === "error"
+        ) {
+          // `error`: the worker refused the request itself (a protocol
+          // version this build does not speak) - the benchmark's failure,
+          // not the encoder's.
+          reject(new DspBenchFailedError(response.message));
+        } else {
+          reject(
+            new DspBenchFailedError(
+              "The worker answered the benchmark with something else"
+            )
+          );
+        }
+        return;
+      }
       if (response.kind === "done") {
         noteEncodeSucceeded();
         resolve(response.mp3);
+      } else if (response.kind === "normalized") {
+        // The chain ran. Not a finished encode either: health is left to the
+        // encode that follows it.
+        const { buffer, byteOffset, length, processing } = response;
+        resolve({
+          normalized: {
+            samples: new Int16Array(buffer, byteOffset, length),
+            processing,
+          },
+        });
       } else if (response.kind === "stream-ack") {
         // A stream step landed. Not a finished encode, so health is left to
         // the `done` that ends the stream.
         resolve(null);
       } else {
+        // `error`, or a bench's answer to an encode: either way the encoder
+        // did not produce what it was asked for.
         noteEncodeFailed();
-        reject(
-          new EncoderFailedError(`MP3 encoding failed: ${response.message}`)
-        );
+        const why =
+          response.kind === "bench-result"
+            ? "the worker answered with a benchmark result"
+            : response.message;
+        reject(new EncoderFailedError(`MP3 encoding failed: ${why}`));
       }
     };
     worker.onerror = (event) => {

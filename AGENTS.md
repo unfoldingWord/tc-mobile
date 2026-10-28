@@ -9,8 +9,8 @@ edit the waveform, manage the segments of a chapter, and share a chapter as an
 MP3 or a book as a zip of chapter MP3s through the OS share sheet. It targets
 Android and iOS phones, frequently offline, used by people who may not read.
 
-The driving deadline is the **East Africa training in the first week of
-October 2026**, with production readiness targeted for **end of September 2026**.
+The driving deadline is the **training in the first week of October 2026**,
+with production readiness targeted for **end of September 2026**.
 
 ## The pivot — read this before the rest of the file
 
@@ -74,6 +74,9 @@ npm run deploy         # wrangler deploy (production)
 npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
 npm run check:deploy:prod # confirm a staging -> main deploy; checks both production origins, each named explicitly
 npm run check:prepush  # review-bench findings on this branch's commits and added lines; runs in pre-push. Checklist: .claude/skills/tc-prepush
+npm run check:pr-body  # the PR-body gate on a draft: -- --body-file <path>; CI runs it as the PR Body check
+npm run check:redispatch -- --lane <apk|play|testflight> --sha <oid>  # did a native lane build it, and may it be dispatched again? Read-only, never dispatches; runbook §3a step 7
+npm run collateral     # pre-fill the seven Collateral surfaces from origin/develop...HEAD; a hint, not a verdict
 ```
 
 ## Architecture — onion layers
@@ -170,17 +173,6 @@ What closes both, learned on that pin family one hole at a time:
 - **Keep a non-emptiness floor** on any sliced region — `region` and
   `uniqueIndexOf` in `tests/support.ts` throw on a missing, duplicated or
   empty anchor, which is what turned #529's capture into a visible failure.
-
-Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
-at all; that sentence is stale and is tracked in #525, which is where it gets
-fixed. Four places lean on it today, not one:
-`tests/contrast.test.ts:12`, `tests/style-bridge.test.ts:18-19` and
-`tests/notice-bridge.test.ts:21-23` cite it as their stated reason for existing,
-and `src/app/globals.css:29` paraphrases it as the reason an orphaned alias
-fails no check. No two quote it identically — notice-bridge elides the knip
-parenthetical, style-bridge elides with an ellipsis, contrast lowercases it —
-so #525 is a grep (`grep -rn "reads CSS at all" src tests AGENTS.md`), not a
-one-line edit, which is why it is its own change and not a clause in this one.
 
 Imports never go upward. This is enforced by ESLint `no-restricted-imports` in
 `eslint.config.mjs`, not by convention.
@@ -385,6 +377,17 @@ by a later one, never edited in place. "Android has still never run" in a
 2026-09-12 entry was true on 2026-09-12; rewriting it would destroy the reason
 that session's next step was the first Android pass.
 
+**Recordings belong to the language community that made them.** Any future
+use of recordings beyond that community's own work, such as training a
+language model or other data collection, is opt-in and clearly explained to the
+people recording. The wording and the author's reading of its consequences are
+in [ADR 0012](docs/decisions/0012-recordings-belong-to-the-community.md), which
+the requirements owner marked Accepted on 2026-10-19 (S15). The owner has
+defined "the community" as the team that made the recording and has said the
+principle stays internal for now (the ADR records both); read it before scoping
+such a feature. The acceptance covers the principle's wording, not the author's
+reading of its consequences, which stays a reading.
+
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
 transaction, never two; append-only migrations. `ensureObsChapter` is the
@@ -419,7 +422,9 @@ throws (`components/error-boundary.tsx`), encoder health and recovery
 (`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
 share _prepare_ (`hooks/share-flow.ts`), a share's zip spool that could not
 be deleted afterwards (`hooks/archive-spool.ts`, `"share-spool-release"`,
-#1003), the recorder's own guards and bounds
+#1003), a book's Scripture Bundle build that failed on a read, write or zip
+error (`hooks/use-book-export.ts`, `"book-export-bundle"`, #1457), the
+recorder's own guards and bounds
 (`hooks/use-recorder.ts`: `cancel()`'s native `stop()` guard
 `"recorder-cancel-stop"` #474, `start()`'s resume rejection
 `"recorder-start-resume"` #470 and its 1000 ms bound firing
@@ -432,11 +437,24 @@ mic stream is released `"recorder-release-track"` #479, and a take sealed and
 saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
 the one durable record that a take was cut, so it goes out with the report
 and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
-#1076: "Log it, don't light ≡ (Recommended)")), the level tap's clone
+#1076: "Log it, don't light ≡ (Recommended)"), and a take sealed and saved
+because the level tap read exact silence on a moving clock with no track
+or recorder event `"recorder-capture-stalled"` #1294 — the alarm case,
+requirements owner on R13: "A visible “recording stopped” state that saves
+what was captured"; this one does light ≡), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
-save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
+save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
+delete of the held take's pending row, or a hold that found another take's
+row and so kept no safety copy (same file, `"pending-take-write"`,
+`"pending-take-delete"`, #38), a save refused because the take was already
+discarded (same file, `"pending-take-refused"`, #38), a waiting take the
+launch replay saved (same file, `"pending-take-replayed"`, #38) — not a
+failure, but the one durable record that a waiting take existed and was
+saved, written only when the replay's commit saved its audio, so like the
+take-cap row it goes out with the report and does not light `≡` (DRI on PR
+#1706: "A: one text round + log row (Recommended)"), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
@@ -454,6 +472,8 @@ editor (recorder) shows Erase only") pulled Delete back out of the recorder's
 back to one caller), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
+the Export project language ask's failed write and failed list load
+(`hooks/use-language-ask.ts`, `"book-language"` and `"language-list"`, #1492), a failed licence write from Share Book's ask (`hooks/use-licence-ask.ts`, `"book-licence"`, #1455),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
@@ -465,7 +485,37 @@ Play gets a fresh one, a failed `close()` of it, `"playback-context-close"`,
 #1213), the catch sites around it in `hooks/use-audio-session.ts`
 (`"playback-take"`, `"playback-buffer"`, and a segment whose audio is
 missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
-`playSamples` already wrote), a shared context that reports `"running"`
+`playSamples` already wrote), chapter play (`hooks/chapter-player.ts` and
+`hooks/use-chapter-play.ts`, `"chapter-play"`: its playlist read, its hand-offs
+and its in-tap `resumeAudioContext()` rejection, #1468, #1559; the hide-path
+pause is wrapped so a throw is reported under the same context and the context
+drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
+(`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), the same in-tap
+resume on a buffer Play (`"playback-buffer-tap-resume"`) and on sheet open
+(`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker
+(the DRI's pick on #1692, "Log only, no ≡ (Recommended)": a routine iOS event;
+`RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`) —
+`startRecording`'s catch (`"recorder-start"`, which does light it), a share
+whose send failed (`hooks/share-flow.ts`, `"share-send"`), the recorder
+sheet's commit and exit nets and recovery panel (`components/recorder.tsx`: the
+Stop-commit net `"recorder-commit-stop"`, the close-commit net
+`"recorder-commit-close"`, the no-capture tail net `"recorder-close-tail"`, a
+failed save of a recovered take `"recorder-recovered-save"` and a recovered
+take's share refused `"recorder-recovered-share"` — all five light `≡`,
+because a recording could be lost or stranded; and a refused Finished change
+`"recorder-finished-flag"`, which is logged but does **not** light it: the sheet
+says so in place and nothing is lost), the editor's dropped edit
+(`hooks/use-segment-editor.ts`, `"recorder-edit-apply"`, logged and not
+lighting `≡`: the edit is dropped, the saved audio and history are unchanged),
+a system Back whose `requestClose()` rejected (`hooks/use-nav-stack.ts`,
+`"recorder-close-rejected"`, which lights it), a Back that found the recorder
+screen with no recorder handle (same file, `"recorder-back-no-handle"`, which
+lights it: the Back did nothing and whether the take was committed is not known
+from there; the row carries an `Error` built at the site, there being no cause),
+the resume fired by a load panel's "Try again" tap being refused
+(`hooks/use-recorder-segment.ts`, `"recorder-segment-resume-retry"`, logged and
+not lighting `≡`: the re-read goes ahead regardless and a refused resume is a
+routine iOS event), a shared context that reports `"running"`
 while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
 clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
 that Play fails and drops the context, and the catch sites above skip its
@@ -476,8 +526,12 @@ clock still stopped, `"audio-clock-stalled-on-return"`), the tester-only phone c
 breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
 allocation is the measurement, not a failure, and is not reported), a
 licence text in Menu → About & licenses that fails to load or comes back as
-HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), and
-the log's own share and clear paths. `SaveFailed` now
+HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), a lazy
+chunk that would not load after an update (`hooks/stale-chunk-reload.ts`,
+#1421 O1: `"stale-chunk-reload"` when the page reloads once for it — not a
+failure, so it does not light ≡ — and `"stale-chunk"` when no reload is
+allowed: already reloaded once for this build, or audio held only in memory),
+and the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
@@ -490,13 +544,24 @@ This pause is reversible; the crash screen's `quiesceTranscodeSweep()` remains
 one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
-What still ends at `console.error` and is therefore **never written down** is
-mic/record-start, the in-tap `resumeAudioContext()` calls before Play and
-on sheet open (`use-audio-session.ts`), the recorder's preview path, and share _send_
-(`hooks/share-flow.ts`). Routing those is follow-up work — and it is
-not a one-line change, because `SaveFailed` replaces the tree the way the
-crash screen does, so that screen needs the Send control the boundary grew.
-Until it lands, do not describe the log as holding "anything that went wrong":
+The last `console.error`-only sinks in `hooks/use-recorder.ts` now write a
+row too: the microphone not opening
+in `start()`'s catch (`"recorder-mic-refused"` for a `NotAllowedError`,
+`"recorder-mic-start"` for anything else, the cause as thrown so the row
+names the DOMException), the level meter failing to open
+(`"recorder-tap-open"`), the foreground resume mid-take
+(`"recorder-foreground-resume"`) and `retryDecode()`'s resume
+(`"recorder-decode-retry-resume"`). The last three keep their existing
+`console.error` beside the row; the start row logs only through
+`reportFailure`'s own console line. Which of them light ≡ is
+`lib/failure-marker.ts`'s, on the #1692 rule: the refusal and the two
+resumes are logged only; `"recorder-mic-start"` and `"recorder-tap-open"`
+light it. What is still **never written down** is the recorder sheet's own
+Stop notice (`captureFailureText` in `components/recorder.tsx`), which calls
+neither `console.error` nor `reportFailure`: it only sets the on-screen
+copy, and `start()`'s "recording is not supported" line, which is a
+capability check with no cause. So do not describe the log as holding
+"anything that went wrong":
 `docs/training/facilitator-runbook.md` §5 names both halves for facilitators
 and this paragraph is the engineering copy of the same list.
 
@@ -537,11 +602,11 @@ is stored as `@pivot` — which would silently ignore _any_ future export tagged
    lines of timing seam plus 494 lines of its tests survived to be deleted by
    hand. knip cannot tell that from `lib/audio/edit.ts`, which is the engine
    B5 will consume — so the judgement stays human.
-2. **Nothing in this repo reads CSS at all.** knip says so itself
-   (`.css — Compiled extension excluded by project`). There is no stylelint and
-   no CSS plugin. An orphaned custom property or component token is invisible
-   to every check, which matters most in B2 and B3 — the largest UI deletion
-   this repo will do.
+2. **No linter or dead-code check reads CSS.** knip excludes it
+   (`.css — Compiled extension excluded by project`) and there is no stylelint.
+   An orphaned custom property or component token is invisible to both; only
+   the tests that read the stylesheets (see "Architecture — onion layers")
+   can catch one, and only for what they pin.
 
 What it does catch, on its first run: an unused `zustand`, an unused
 `lucide-react` that this document itself claimed was the icon library, and three
@@ -634,7 +699,7 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   2026-10-05 by the DRI (`docs/progress_tracker.md`, that day's "Sprints").
 - **The sprint-end `staging -> main` promotion ships the minor.** That PR
   bumps the minor and tags `main` (`git tag vX.Y.0`), and it goes to the DRI
-  as a go/no-go. Sprint 4 ships `v1.1.0`. A production hotfix between sprint
+  as a go/no-go. A production hotfix between sprint
   ends is a patch on the shipped minor.
 - **One GitHub milestone per sprint, due on its last day; sprint milestones
   replace version milestones.** Live titles read `Sprint N (MM-DD → MM-DD)`,
@@ -724,8 +789,12 @@ API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
 TestFlight lane authenticates to App Store Connect with its own secrets, and
 the Android lane signs with its own keystore secrets — neither is Cloudflare's).
-Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the three native
-lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`.
+Besides `ci.yml` and `dependabot.yml`, `.github/` holds the three native
+lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`, and
+`pr-body.yml`, which runs the PR-body gate (`scripts/check-pr-body.mjs`, see
+"Issue pipeline") on every pull request. It deploys nothing, holds
+`contents: read` only, and is its own workflow so that a body or title edit
+re-runs it without cancelling `ci.yml`.
 
 ### Confirming a deploy and rolling one back
 
@@ -876,18 +945,20 @@ So a device that has opened the newer build cannot run older code against its
 own data again, whether the older code arrives by a Worker rollback, by a
 stale service worker, or by an older native build if one ever runs. The
 recordings are not deleted: the older code's `getDb()` rejects with
-`DatabaseDowngradeError` and nothing is written. They are unreachable until a
-build at that schema or later is served or installed again. On staging
-(`3b5e098d`, schema 9) a refused open calls `coordinator?.onYielded()`,
+`DatabaseDowngradeError` before any read or write through the database. They are
+unreachable until a build at that schema or later is served or installed
+again. A refused open calls `coordinator?.onYielded()`,
 `use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
 shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
 "Restart to use the new version."); Restart leads back to the same screen
-(inference). All of this was read from the code, not seen on a device. v1.1.0 is the current instance: it moves the schema from 9 to 11
-(v10 and v11 in #1346 and #1367). **Roll forward with a fix rather than back
-when the build to undo raised the schema, and never uninstall to clear the
-screen: uninstalling deletes the recordings.** The Node run that showed this
-(staging's `db.ts` against a v11 database) is the only run; no device has
-seen it. `docs/release/promotion-v1.0.0.md` §5 has the procedure.
+(inference). All of this was read from the code, not seen on a device.
+v1.1.0 moved the schema from 9 to 11 (v10 and v11 in #1346 and #1367), and
+v1.2.0 moves it from 11 to 14 (v12, v13 and v14 in #1462, #38 and #1433). **Roll forward with a fix rather than
+back when the build to undo raised the schema, and never uninstall to clear the
+screen: uninstalling deletes the recordings.**
+This paragraph is the one statement of the condition; `docs/release/promotion-v1.0.0.md`
+§5 has the procedure and `docs/training/facilitator-runbook.md` the facilitator
+instruction, and both point here.
 
 ## Device testing — the HTTPS caveat
 
@@ -1043,6 +1114,32 @@ A test-only PR is tiered by what it covers, and a gate test is its own tier
 table's on-device check — a test-only PR never gets the device check, only
 code changes do — see `docs/review/dual-review.md` ("Merge policy").
 
+## Issue pipeline (dev1–dev7)
+
+Every issue moves through seven stages: **dev1 Scope** (a scope contract on the
+issue), **dev2 Plan** (tasks, each with a done-when and a test-first pair),
+**dev3 Build** (a branch from `develop`, red test first), **dev4 Check** (the
+quality gate), **dev5 Ship** (open the PR), **dev6 Validate** (a second agent
+checks the merged base), **dev7 Close** (issues, learnings, tracker). Each stage
+is a skill that says how it ends: `.claude/skills/dev1-scope`,
+`.claude/skills/dev2-plan`, `.claude/skills/dev3-build`,
+`.claude/skills/dev4-check`, `.claude/skills/dev5-ship`,
+`.claude/skills/dev6-validate` and `.claude/skills/dev7-close`.
+
+**dev4 is a gate, not a review.** It runs `npm run verify` and
+`npm run check:prepush`, confirms each done-when with evidence, and walks the
+seven Collateral surfaces. It blocks the PR if anything fails. The review is
+the uwreview bench's (Frank and George, see "Review"); no stage reviews its own
+diff, and a stage's own report is never "independent" or "clean".
+
+**The PR-body gate runs in CI as the `PR Body` check** (`.github/workflows/pr-body.yml`).
+It reads the body from the event payload on disk, never from a shell
+interpolation, and re-runs when a body or title is edited, so fixing a body
+turns it green without a new push. The same script runs locally as
+`npm run check:pr-body -- --body-file <draft>`. Whether `PR Body` is a
+required status check is the repo ruleset's, the DRI's call; until it is
+added there the check is advisory.
+
 ## Known open items
 
 1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker,
@@ -1075,14 +1172,20 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
    that shell's own notice (#477). Not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
-5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.
-   A4 settled the share shape instead: Share Chapter is one concatenated MP3 to
-   the OS share sheet, Share Book is a zip of chapter MP3s. B7 (#33) builds
-   both. Burrito comes back only if a later phase asks for it, so the "talk to
-   Benjamin first" next action is retired; the background is still
-   `docs/research/prior-art.md` §4.
-6. **No Shema Studio source access.** Tim asked us to read it; there is no
-   public repo. Someone needs to ask Han.
+5. **Project export in Scripture Bundle format is in v2, export only** —
+   decided by the requirements owner on 2026-10-19 (D3-export in
+   [`docs/design/v2-plan.md`](docs/design/v2-plan.md);
+   [ADR 0011](docs/decisions/0011-v2-storage-and-export.md)). Scripture Bundle
+   is the format formerly called Scripture Burrito. Import comes later, and
+   none of it is built. A4's share shape is unchanged: Share Chapter is one
+   concatenated MP3 to the OS share sheet, Share Book is a zip of chapter MP3s.
+   The background is still `docs/research/prior-art.md` §4.
+6. **Shema Studio source access: superseded for v2.** The requirements owner
+   asked us to read its source, and there is no public repo. R9 (2026-10-19),
+   `bundle-only`, "Scripture Bundle only in v2", carries the note: "Shema Studio
+   import/export will be v3-required." So import and export with Shema Studio
+   are a v3 item; what R9 says does not cover any other reason to read its
+   source.
 7. **No OBS frame timing exists**, so record-along is not possible — ADR 0007.
    Reference audio is out of Phase 1 (D5). B0 (#26) **removed** the timing seam
    and the narration path and superseded ADR 0007 — both are gone from `src/`.

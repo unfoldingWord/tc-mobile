@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { formatNumber } from "./number-format";
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
@@ -20,7 +21,7 @@ export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${formatNumber(minutes, { minDigits: 2 })}:${formatNumber(seconds, { minDigits: 2 })}`;
 }
 
 /**
@@ -39,17 +40,19 @@ export function formatDuration(ms: number): string {
  * base letter is never parted from its combining marks (#1233 item 22): a name
  * of 80 characters is about 240 bytes in a 3-byte script (Ge'ez, most Indic),
  * and the filename holds two labels against a 255-byte filesystem limit.
+ * `reservedBytes` lets a caller that puts something of its own beside the
+ * label (the chapter number, #1233) take those bytes out of the label's budget.
  *
  * Only the EXPORT form is sanitised. The stored display name is untouched — the
  * shelf still shows exactly what was typed.
  */
-export function filenameSafe(label: string): string {
+export function filenameSafe(label: string, reservedBytes = 0): string {
   const clean = label
     .replace(/[/\\:*?"<>|\p{Cc}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
   const named = WINDOWS_RESERVED_STEM.test(clean) ? `_${clean}` : clean;
-  return capUtf8Bytes(named, FILENAME_LABEL_MAX_BYTES).trim();
+  return capUtf8Bytes(named, FILENAME_LABEL_MAX_BYTES - reservedBytes).trim();
 }
 
 /**
@@ -65,7 +68,9 @@ const WINDOWS_RESERVED_STEM =
 /**
  * Per-label byte cap. A share filename is `<book> - <chapter>.mp3`: two labels,
  * a 3-byte separator and a 4-byte extension, so 2 x 120 + 7 = 247 stays inside
- * the 255-byte limit with the extension intact (#1233 item 22).
+ * the 255-byte limit with the extension intact (#1233 item 22). The chapter
+ * label is `<number> <name>` (#1233 item 21), and the number and its space come
+ * out of these 120 bytes, so the sum holds whatever the number.
  */
 export const FILENAME_LABEL_MAX_BYTES = 120;
 

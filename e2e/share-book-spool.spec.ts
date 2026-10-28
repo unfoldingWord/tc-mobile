@@ -106,6 +106,9 @@ test("Share book hands the sheet a zip read from an OPFS spool, and removes the 
   await page.goto("/");
   await page.getByRole("button", { name: "More actions for Book 001" }).click();
   await page.getByRole("button", { name: "Share book" }).click();
+  // A new book has no licence, so Share book asks first (#1455); the
+  // pre-selected CC BY-SA 4.0 is confirmed and the share goes on.
+  await page.getByRole("button", { name: "Share", exact: true }).click();
   await page.getByRole("button", { name: "Share now" }).click();
 
   await expect

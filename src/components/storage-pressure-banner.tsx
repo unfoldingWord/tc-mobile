@@ -82,11 +82,14 @@ export function StoragePressureBanner({
       strings.shareAllFilename,
       (book) =>
         strings.shareAllFolder(strings.bookHeading(book.name, book.number)),
-      (book, n, chapterName) =>
+      // An unnamed chapter's file reads its on-screen title (#1272, Q1 (b)).
+      (book, n, chapterName, highest, templateNumber) =>
         strings.shareFilename(
           strings.bookHeading(book.name, book.number),
           n,
-          chapterName
+          strings.chapterHeading(chapterName, templateNumber ?? n),
+          highest,
+          book.licence ?? null
         )
     );
   };

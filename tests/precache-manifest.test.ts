@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
@@ -32,14 +33,23 @@ import { stripCodeComments } from "./strip-code-comments";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG = path.join(ROOT, "vite.config.ts");
 const SRC = path.join(ROOT, "src");
-// The definition site of `thumbUrl`; excluded so defining it is not read as a
-// reader of it.
-const CATALOG = path.join(SRC, "lib", "obs", "catalog.ts");
+// The definition site of `thumbUrl`, and the template adapter that writes its
+// path into each segment of the OBS package (#1466). Both produce the path and
+// draw nothing, so neither is read as a reader. With the adapter in between, a
+// screen reaches the thumbnails by loading the package, so an import of
+// `loadObsTemplate` counts as a reader exactly as an import of `thumbUrl` does
+// (READER_SYMBOLS below).
+const PRODUCERS = [
+  path.join(SRC, "lib", "obs", "catalog.ts"),
+  path.join(SRC, "lib", "templates", "obs.ts"),
+];
+const READER_SYMBOLS = new Set(["thumbUrl", "loadObsTemplate"]);
 
 // The exact allowlist the app shell needs, and nothing more. `jpg` is absent
-// by #177; restoring it is a deliberate edit here plus in vite.config.ts.
+// by #177; #246's Template Library picker is the reader that restored it, a
+// deliberate edit here plus in vite.config.ts.
 // `txt` is present for the offline licence texts under public/licenses/ (#36).
-const INTENDED = ["**/*.{js,css,html,svg,png,woff2,txt}"];
+const INTENDED = ["**/*.{js,css,html,svg,png,jpg,woff2,txt}"];
 
 // Both readers take the config with its comments removed (#822): each returns
 // the FIRST match, so a commented-out copy of the good entry above the live one
@@ -109,6 +119,21 @@ function parsePrecachedUrls(source: string): string[] {
   if (body === undefined)
     throw new Error("could not find precacheAndRoute([...]) in dist/sw.js");
   return [...body.matchAll(PRECACHE_URL)].map((m) => m[1] ?? "");
+}
+
+const PRECACHE_ENTRY =
+  /"?url"?\s*:\s*"([^"]+)"\s*,\s*"?revision"?\s*:\s*(?:"([^"]*)"|null)/g;
+
+/** `{ url: revision }` for the manifest's entries (null when Workbox carries
+ *  no revision, as for a hashed asset). Both emitted shapes, as above. */
+function parsePrecachedRevisions(source: string): Map<string, string | null> {
+  const match = source.match(/precacheAndRoute\(\[(.*?)\],/s);
+  const body = match?.[1];
+  if (body === undefined)
+    throw new Error("could not find precacheAndRoute([...]) in dist/sw.js");
+  return new Map(
+    [...body.matchAll(PRECACHE_ENTRY)].map((m) => [m[1] ?? "", m[2] ?? null])
+  );
 }
 
 function precachedUrls(): string[] {
@@ -226,17 +251,21 @@ function readsObsImagery(source: string, fileName: string): boolean {
         for (const specifier of clause.namedBindings.elements) {
           if (
             !specifier.isTypeOnly &&
-            (specifier.propertyName ?? specifier.name).text === "thumbUrl"
+            READER_SYMBOLS.has((specifier.propertyName ?? specifier.name).text)
           )
             return true;
         }
       }
     }
 
-    if (ts.isCallExpression(node) && calleeName(node.expression) === "thumbUrl")
-      return true;
+    if (ts.isCallExpression(node)) {
+      const callee = calleeName(node.expression);
+      if (callee !== undefined && READER_SYMBOLS.has(callee)) return true;
+    }
 
-    if (literalPieces(node).some((text) => text.includes("/obs/thumbs/")))
+    // "obs/thumbs/" without the leading slash: it also matches the relative
+    // path the OBS template package stores (#1466).
+    if (literalPieces(node).some((text) => text.includes("obs/thumbs/")))
       return true;
 
     return ts.forEachChild(node, visit) ?? false;
@@ -247,7 +276,7 @@ function readsObsImagery(source: string, fileName: string): boolean {
 
 function obsThumbnailReaders(): string[] {
   return tsFiles(SRC)
-    .filter((file) => file !== CATALOG)
+    .filter((file) => !PRODUCERS.includes(file))
     .filter((file) => readsObsImagery(readFileSync(file, "utf8"), file))
     .map((file) => path.relative(ROOT, file));
 }
@@ -358,6 +387,16 @@ describe("the precache manifest reader (#522)", () => {
     expect(parsePrecachedUrls(offending)).toContain("version.json");
   });
 
+  it("reads the revision beside each url in both shapes (#1415)", () => {
+    expect(parsePrecachedRevisions(MINIFIED).get("index.html")).toBe("def");
+    expect(parsePrecachedRevisions(DEVELOPMENT).get("index.html")).toBe("def");
+    expect(
+      parsePrecachedRevisions(
+        'precacheAndRoute([{url:"a.js",revision:null}],{});'
+      ).get("a.js")
+    ).toBeNull();
+  });
+
   it("throws rather than returning [] when there is no manifest at all", () => {
     // A silent [] here is the failure mode this whole block exists to stop:
     // it would satisfy every `filter`-based assertion vacuously.
@@ -396,6 +435,36 @@ describe.skipIf(GATE === "skip")(
       expect(urls.length).toBeGreaterThan(0);
       const duplicated = urls.filter((url, i) => urls.indexOf(url) !== i);
       expect(duplicated).toEqual([]);
+    });
+
+    it("carries, for each licence text, the md5 of the file as built (#1415)", () => {
+      // The licence notices are filled in `writeBundle`; the service worker's
+      // revisions are hashed in `closeBundle`. If that order ever flipped, the
+      // revision would be of the tokenised source and an installed app would
+      // keep an old notice after a version bump. Web build only: the native
+      // build replaces sw.js with a teardown that has no precache, and
+      // `test:dist:native` does not run this file.
+      const dir = path.join(ROOT, "dist", "licenses");
+      const built = readdirSync(dir).filter((f) => f.endsWith(".txt"));
+      expect(built.length).toBeGreaterThan(0);
+      const revisions = parsePrecachedRevisions(readFileSync(SW, "utf8"));
+      for (const name of built) {
+        // A revision equal to the md5 of the built file proves the hash was
+        // taken after the fill, not that the fill happened: a file that
+        // still holds a token would hash cleanly. Match the bare prefix so a
+        // spaced `{{version: react}}` is caught too.
+        expect(
+          readFileSync(path.join(dir, name), "utf8").includes("{{version:"),
+          `licenses/${name} still holds an unfilled "{{version:" token`
+        ).toBe(false);
+        const md5 = createHash("md5")
+          .update(readFileSync(path.join(dir, name)))
+          .digest("hex");
+        expect(
+          revisions.get(`licenses/${name}`),
+          `licenses/${name} is not precached with the md5 of the built file`
+        ).toBe(md5);
+      }
     });
 
     it("still precaches the three manifest icons, once each (#161)", () => {
@@ -490,8 +559,35 @@ describe("readsObsImagery (#280 — AST, not raw text)", () => {
     expect(readsObsImagery(source, FILE)).toBe(true);
   });
 
+  // #1466: a screen reaches the thumbnails through the OBS template package,
+  // whose segments carry the path, so loading the package is reading them.
+  it("counts an import of loadObsTemplate as a reader", () => {
+    const source =
+      'import { loadObsTemplate } from "@/lib/templates/obs";\nexport const p = loadObsTemplate();';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("counts a namespace call to loadObsTemplate as a reader", () => {
+    const source =
+      'import * as obs from "@/lib/templates/obs";\nexport const p = obs.loadObsTemplate();';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("does not count a type-only import of loadObsTemplate as a reader", () => {
+    const source =
+      'import type { loadObsTemplate } from "@/lib/templates/obs";\nexport type T = typeof loadObsTemplate;';
+    expect(readsObsImagery(source, FILE)).toBe(false);
+  });
+
   it("counts a hand-built /obs/thumbs/ string literal as a reader", () => {
     const source = 'export const url = "/obs/thumbs/obs-01-01.jpg";';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  // #1466: a package asset path is relative, so the OBS package stores the
+  // thumbnail without the leading slash; that spelling is a reader too.
+  it("counts a relative obs/thumbs/ package-path literal as a reader", () => {
+    const source = 'export const url = "obs/thumbs/obs-01-07.jpg";';
     expect(readsObsImagery(source, FILE)).toBe(true);
   });
 

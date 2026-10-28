@@ -61,7 +61,15 @@ import {
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { WaveformScroller } from "./waveform-scroller";
+import { reportFailure } from "@/hooks/report-failure";
 import { classifyShareError } from "@/hooks/share-flow";
+import { readMicSettingsPlatform } from "@/hooks/mic-settings-platform";
+import {
+  MIC_RETRY_TAPPED,
+  nextMicRetryPhase,
+  showMicSettingsSteps,
+  type MicRetryPhase,
+} from "@/lib/audio/mic-retry";
 import {
   nativeShare,
   readShareEnvironment,
@@ -74,6 +82,8 @@ import type { RecorderAudio } from "@/hooks/use-audio-session";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useChapterHeading } from "@/hooks/use-settings";
+import { headingNumber } from "@/lib/chapter-slot";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
@@ -83,7 +93,11 @@ import {
   buildCaptureContext,
   type CaptureContext,
 } from "@/lib/audio/capture-context";
-import { framesToMs, msToFrames } from "@/lib/audio/format";
+import {
+  framesToMs,
+  framesToSpokenSeconds,
+  msToFrames,
+} from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { panForZoom, playbackStrip, seedSelection } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
@@ -324,6 +338,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     }, [loadError, databaseUnreachable, onExit]);
 
     const [menuOpen, setMenuOpen] = useState(false);
+    // Where Retry is on the permission panel (#1569): the settings steps show
+    // only once a retry attempt has settled back refused, see `mic-retry.ts`.
+    const [micRetry, setMicRetry] = useState<MicRetryPhase>("none");
     // The sheet is two modes over one segment (#89): a record mode (the hero
     // Record + Play + Edit trio, #315, and the #592 bin) and an edit mode (the waveform-editing
     // toolbar). The sheet always opens in record; App keys it on `segmentId` so
@@ -527,7 +544,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // render state (Frank F3 / George G3): two taps in one frame both read
     // `heldRetrying === false` and each mint a fresh clip through `saveRecording`,
     // orphaning one. A ref answers for the current moment — the same shape as
-    // `closing.current` and `use-save-take`'s `savingRef`, which exist for this race.
+    // `closing.current` and `use-save-take`'s slot `saving` guard, which exist for this race.
     const heldRetryingRef = useRef(false);
     // The synchronous in-flight latch for Share (George R2 B-6): a same-gesture
     // double-tap before the OS sheet paints could fire a second `navigator.share`,
@@ -639,9 +656,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const takeActive = state !== "idle" || isClosing;
 
     // The chapter's resolved name for the header's chapter crumb (#1230).
-    const chapterHeading = view
-      ? strings.chapterHeading(view.chapterName, view.chapterNumber)
-      : "";
+    const shownChapterHeading = useChapterHeading(
+      view?.chapterName ?? null,
+      view?.chapterNumber ?? 0,
+      view?.chapterTemplateNumber ?? null
+    );
+    const chapterHeading = view ? shownChapterHeading : "";
 
     // `finishedIntent` is the translator's EXPLICIT choice, null until they tap
     // the checkbox — never written speculatively (an optimistic reset at Record
@@ -1538,6 +1558,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // unmounts and the latch releases; the recovery slot carries anything
         // a failed commit held.
         console.error("Committing the recording failed", cause);
+        reportFailure(cause, "recorder-commit-stop");
         onExit(dirty.current);
       });
     }, [
@@ -1777,6 +1798,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // the edit toolbar on screen and no Record/Pause/VU — "Editing" over a live
     // capture (George R3). Any path that starts the mic belongs in record mode.
     const onRetryRecord = useCallback(() => {
+      setMicRetry(MIC_RETRY_TAPPED);
       setMode("record");
       // Drop any latched `menuOpen`. The menu is already HIDDEN while `denied`
       // (`menuShown`), but the raw flag survives, so a Retry that succeeds would
@@ -1902,6 +1924,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // A handle drag moves the span the audition is OF, so it silences it too.
     // `stopBuffer` returns immediately when nothing is sounding, so this costs a
     // predicate per pointermove, not a stop.
+    // A handle's spoken position (#1344), at the canonical rate like the rest
+    // of this screen's frame-to-time maths.
+    const selectionHandleText = useCallback(
+      (sample: number): string =>
+        strings.selectionHandleTime(framesToSpokenSeconds(sample)),
+      []
+    );
     const onSelectionChange = useCallback(
       (range: SampleRange) => {
         stopPlayback();
@@ -2128,43 +2157,58 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // A second tap does not arrive here: `EraseConfirm` latches on the
         // first, synchronously, and the confirm is busy until this settles.
         const run = { cancelled: false };
-        recordAgainRef.current = run;
-        setRecordAgainPending(true);
-        setEraseFailure(null);
-        // The same helper the sheet-open tap uses; a no-op on a running
-        // context.
-        primeAudio?.();
-        // The microphone is asked for HERE, in the tap, by the start the
-        // Record button uses, and the take is cleared only inside it, once
-        // the microphone has been granted (`StartOptions.beforeCapture`). A
-        // refused, failed or superseded request never reaches the clear, so
-        // the old recording is still there and the refusal shows as it does
-        // for Record.
-        void startTake(async () => {
-          // Back answered "keep it" while the microphone was being asked for,
-          // or the page went hidden (#836: nothing starts in the background):
-          // decline, with nothing erased. Past this line the clear runs to its
-          // end; Back is refused across it (`isErasing`, then `closing`).
-          if (run.cancelled || document.visibilityState === "hidden") {
-            return false;
+        // Every exit: granted and started, refused, declined, cancelled, or a
+        // synchronous throw out of `startTake` (`closeSelection`,
+        // `buildCaptureContext`, the floor claim). The ref is cleared only if
+        // it is still this run's, so a later run's arming is never undone by
+        // an earlier one settling. The confirm is closed on every exit; the
+        // refusal, if any, is behind it.
+        const release = () => {
+          if (recordAgainRef.current === run) {
+            recordAgainRef.current = null;
+            setRecordAgainPending(false);
           }
-          const next = await clearSegment();
-          // Only over the empty segment: a take spliced into a buffer that
-          // still holds the old audio would write it back.
-          if (next === null || (next.samples?.length ?? 0) > 0) return false;
-          // The take starts at 0 of nothing; the offset and context the tap
-          // locked were the erased buffer's.
-          insertionOffset.current = 0;
-          setCaptureContext(null);
-          return true;
-        }).finally(() => {
-          // Every exit: granted and started, refused, declined, cancelled.
-          recordAgainRef.current = null;
-          setRecordAgainPending(false);
-          // A start that never reached the clear leaves the confirm up;
-          // the refusal is behind it.
           setConfirmOpen(false);
-        });
+        };
+        let started: Promise<boolean> | null = null;
+        try {
+          recordAgainRef.current = run;
+          setRecordAgainPending(true);
+          setEraseFailure(null);
+          // The same helper the sheet-open tap uses; a no-op on a running
+          // context.
+          primeAudio?.();
+          // The microphone is asked for HERE, in the tap, by the start the
+          // Record button uses, and the take is cleared only inside it, once
+          // the microphone has been granted (`StartOptions.beforeCapture`). A
+          // refused, failed or superseded request never reaches the clear, so
+          // the old recording is still there and the refusal shows as it does
+          // for Record.
+          started = startTake(async () => {
+            // Back answered "keep it" while the microphone was being asked
+            // for, or the page went hidden (#836: nothing starts in the
+            // background): decline, with nothing erased. Past this line the
+            // clear runs to its end; Back is refused across it (`isErasing`,
+            // then `closing`).
+            if (run.cancelled || document.visibilityState === "hidden") {
+              return false;
+            }
+            const next = await clearSegment();
+            // Only over the empty segment: a take spliced into a buffer that
+            // still holds the old audio would write it back.
+            if (next === null || (next.samples?.length ?? 0) > 0) return false;
+            // The take starts at 0 of nothing; the offset and context the tap
+            // locked were the erased buffer's.
+            insertionOffset.current = 0;
+            setCaptureContext(null);
+            return true;
+          });
+        } finally {
+          // A throw above propagates (to the global error funnel) after this
+          // runs; a started take releases when its promise settles.
+          if (started === null) release();
+          else void started.finally(release);
+        }
         return;
       }
       // Clear only when this call will acquire the guard: a "busy" refusal is
@@ -2284,7 +2328,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // `clearSegmentTake` and returns false — so nothing reaches
                 // `pendingTake`, `SaveFailed` cannot mount, and the panel cannot
                 // either while this sheet is up. Staying would leave "Could not
-                // clear the audio. Try again." over a call that can never
+                // reset the audio. Try again." over a call that can never
                 // succeed, on a screen whose only exit is the Back that just
                 // failed (George R6 P2). Nothing is lost by leaving: the clear
                 // never committed, so the original take is still on disk.
@@ -2321,6 +2365,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // take deleted externally between toggle and close. Surface it
                 // (F5-#1) rather than only the console, and stay open.
                 console.error("Could not change the finished flag", cause);
+                reportFailure(cause, "recorder-finished-flag");
                 // Same trap as the clear above, over a flag rather than audio.
                 // A mark plan carries no edits, so leaving over a missing
                 // segment drops nothing the store still holds (#607). No
@@ -2348,6 +2393,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // cost a recording; exit rather than strand the sheet (the recovery slot
           // carries anything a failed commit held).
           console.error("Committing the recording on close failed", cause);
+          reportFailure(cause, "recorder-close-tail");
           onExit(dirty.current);
           return true;
         }
@@ -2593,6 +2639,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // Neither call rejects by contract; this is the last net on the one path
         // where a failure would cost a recording that cannot be made again.
         console.error("Committing the recording on close failed", cause);
+        reportFailure(cause, "recorder-commit-close");
         onExit(dirty.current);
         // The sheet still exits — `onExit` ran — so a Back gesture is satisfied and
         // must not re-arm; the recovery slot carries anything the failed commit held.
@@ -2733,6 +2780,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // thrown save cannot strand the panel busy with the take still held. A
           // save failure is not a share failure (George R1 G6).
           console.error("Saving the recovered recording failed", cause);
+          reportFailure(cause, "recorder-recovered-save");
           setHeldRetrying(false);
           heldRetryingRef.current = false;
           setHeldRetryError(strings.takeRetryFailed);
@@ -2848,6 +2896,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           const outcome = classifyShareError(cause, hadActivation);
           if (outcome === "dismissed" || outcome === "retry") return;
           console.error("Could not share the recovered recording", cause);
+          reportFailure(cause, "recorder-recovered-share");
           setHeldShareError(strings.takeShareFailed);
         }
       );
@@ -2970,6 +3019,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // R3). Same principle a decode failure already follows via `stopError`.
     const denied =
       !audio.supported || (micError && !hasAudio && !editor.hasEdits);
+    // The retry phase follows the recorder's own transitions (requesting, then
+    // settled refused; recording ends it). A pure step, adjusted during render
+    // (React's derive-state pattern), not in an effect.
+    const micRetryNext = nextMicRetryPhase(
+      micRetry,
+      state,
+      audio.recorderError !== null
+    );
+    if (micRetryNext !== micRetry) setMicRetry(micRetryNext);
 
     // The ⋮-menu rows' disabled REASONS (#135). Each row's `disabled` is
     // `reason !== null`, so the cue that explains a grey row and the gate that
@@ -3201,12 +3259,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // native-disabled, no-reason gap and left the bin's as a named residual —
     // pre-existing, unrelated to #857's `hasTake` change, and nobody had
     // reviewed bar-appropriate erase copy yet. #878 closes it the same way
-    // Edit was closed: `strings.stopToErase` ("Stop recording to clear."),
+    // Edit was closed: `strings.stopToErase` ("Stop recording to reset."),
     // naming the bar's own Stop control, only while the take is LIVE
     // (`recording`) — the same split `editToolbarHint` above uses. The commit
     // window (`committing` half of `"uncommitted-take"`, Stop already
     // pressed) gets no label and stays natively `disabled` with no reason,
-    // same as Edit's commit-window half: "Stop recording to clear." would
+    // same as Edit's commit-window half: "Stop recording to reset." would
     // name a control that is now Record.
     const rerecordHint = barHint(
       eraseReason,
@@ -3525,9 +3583,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             That premise is now false mid-take, but the trap is unchanged, so a
             keyboard or Tab-driven switch user still cannot Tab to Stop. Escape
             (or Close menu), then Stop, is their path — one keystroke, not a
-            deadlock. Letting Tab leave the panel mid-take, or putting the
-            transport in the menu, is tracked in #369; it changes a shared
-            component and does not belong in this lane. */}
+            deadlock. #369 adds the other path for both: mid-take, the ⋮
+            menu's first tile is Stop itself (`onStopTake` on `RecorderMenu`
+            below), reachable by touch and by Tab inside the panel. The scrim
+            and the trap are unchanged. */}
         <div
           ref={sheetRef}
           // Green waveform and Play for a Finished segment (#926), on the same
@@ -3545,7 +3604,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             where the sheet is already inert — deliberately so: this gate states
             the header's own invariant rather than depending on the sheet's. */}
           <header
-            className="flex items-center gap-[8px] px-[4px] py-[2px]"
+            className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[2px]"
             inert={overlayUp || undefined}
           >
             <Control
@@ -3706,23 +3765,29 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           ) : denied ? (
             <PermissionPanel
               message={audio.error}
+              settingsPlatform={
+                audio.supported &&
+                showMicSettingsSteps(micRetry, audio.recorderError)
+                  ? readMicSettingsPlatform()
+                  : null
+              }
               onRetry={onRetryRecord}
               onBack={onRequestBack}
             />
           ) : (
             <>
               {stopError && (
-                <div className="px-[12px] pt-[8px]">
+                <div className="px-[12px] pt-[var(--p-space-3)]">
                   <Notice>{stopError}</Notice>
                 </div>
               )}
               {editor.error && (
-                <div className="px-[12px] pt-[8px]">
+                <div className="px-[12px] pt-[var(--p-space-3)]">
                   <Notice>{strings.editFailed}</Notice>
                 </div>
               )}
               {eraseFailure && (
-                <div className="px-[12px] pt-[8px]">
+                <div className="px-[12px] pt-[var(--p-space-3)]">
                   {/* strings[key] (#172 part 2), not the fixed eraseFailed
                     sentence for every key — a full disk gets `noRoom`'s
                     actionable copy instead of the generic erase failure. */}
@@ -3978,6 +4043,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         onChange={onSelectionChange}
                         startLabel={strings.selectionStartHandle}
                         endLabel={strings.selectionEndHandle}
+                        valueText={selectionHandleText}
                       />
                     )}
                 </div>
@@ -4054,7 +4120,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 )}
                 {recording && (
                   <div
-                    className="recorder-status flex items-center gap-[8px]"
+                    className="recorder-status flex items-center gap-[var(--p-space-3)]"
                     role="status"
                     // #1005 ("Warn at 15, seal at 20"): the readout itself is
                     // the state-in-place marker — CSS tints the whole cluster
@@ -4174,16 +4240,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             setConfirmFor("erase");
             setConfirmOpen(true);
           }}
+          // Mid-take Stop (#369): close the drawer, then the transport's own
+          // Stop handler, so there is one way a take ends from a tap. The
+          // tile renders only while `recording`, so the handler it holds is
+          // the one that commits, never the one that starts a take.
+          recording={recording}
+          onStopTake={() => {
+            setMenuOpen(false);
+            onRecordButton();
+          }}
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
-          chapterNumber={view?.chapterNumber}
-          // The header's own chapter chip text (#1230), so the ⋮ menu's
-          // sheet head always matches the header it was opened from.
-          chapterHeading={
+          // The number an unnamed chapter's title reads (#1272, Q1 (b)).
+          chapterNumber={
             view
-              ? strings.chapterHeading(view.chapterName, view.chapterNumber)
+              ? headingNumber(
+                  view.chapterNumber,
+                  view.chapterTemplateNumber,
+                  false
+                )
               : undefined
           }
+          // The typed name, drawn whole at the top of the menu (#1284).
+          chapterName={view?.chapterName}
+          // The header's own chapter chip text (#1230), so the ⋮ menu's
+          // sheet head always matches the header it was opened from.
+          chapterHeading={view ? chapterHeading : undefined}
         />
         <EraseConfirm
           key={confirmMount}
@@ -4439,7 +4521,7 @@ function SaveDecodeFailedPanel({
           />
         </>
       ) : null}
-      <div className="mt-[10px] flex flex-col items-center gap-[8px]">
+      <div className="mt-[10px] flex flex-col items-center gap-[var(--p-space-3)]">
         <Control
           icon="trash"
           label={
@@ -4453,7 +4535,7 @@ function SaveDecodeFailedPanel({
           onClick={() => (showArmed ? onDiscard() : setArmed(true))}
         />
         {showArmed ? (
-          <p className="text-live text-[12px]">
+          <p className="text-live text-[length:var(--p-text-sm)]">
             {strings.takeRecoverDiscardHint}
           </p>
         ) : null}

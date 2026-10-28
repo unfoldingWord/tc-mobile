@@ -3,10 +3,18 @@ import { useCallback, useEffect, useState } from "react";
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
+import { noteLoadedClip } from "./loaded-clip";
+import { noteObservedRevision } from "./observed-revision";
 import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
+import { templateChapterNumber } from "@/lib/chapter-slot";
 import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
-import { getBook, getChapter, getSegment } from "@/lib/storage/books";
+import {
+  chapterSlot,
+  getBook,
+  getChapter,
+  getSegment,
+} from "@/lib/storage/books";
 import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import { strings } from "@/lib/strings";
@@ -32,7 +40,13 @@ export interface RecorderSegmentView {
    * (`bookCoverHex={view?.bookCoverHex ?? undefined}`).
    */
   readonly bookCoverHex: string | null;
+  /**
+   * The chapter's slot in its book (#1272 B), as the Segments view reads it
+   * (`chapterSlot`); 0 when the chapter is gone.
+   */
   readonly chapterNumber: number;
+  /** The template's number for a template chapter, else `null` (Q1 (b)). */
+  readonly chapterTemplateNumber: number | null;
   /**
    * The facilitator's passage label for this chapter (#264), or `null` when
    * nobody has renamed it. Carried alongside the number rather than instead of
@@ -63,6 +77,18 @@ export interface RecorderSegmentView {
    * screen). The read's one failure point is this effect, before any recording.
    */
   readonly samples: Int16Array | null;
+  /**
+   * The segment's `audioRevision`, read in the same transaction as `samples`.
+   * The hook notes it for the hold only when it adopts this view (cell HM).
+   */
+  readonly audioRevision: number;
+  /**
+   * The `generation` of the clip `samples` came from, read in the same
+   * transaction, or 0 on an empty segment. Noted with `audioRevision`, so a
+   * save stamps the audio it was cut from rather than a clip a transcode has
+   * moved on since (#163 A-14).
+   */
+  readonly generation: number;
 }
 
 /**
@@ -119,6 +145,9 @@ export async function loadRecorderSegmentView(
             clip.mp3,
             clip.meta.frameCount
           );
+  // A PCM buffer is the stored clip itself, so a take recorded over it
+  // unchanged can name the clip instead of copying it (#1545).
+  if (clip?.encoding === "pcm") noteLoadedClip(clip.samples, clip.meta);
   return {
     bookName: book ? strings.bookHeading(book.name, book.number) : "",
     bookCoverHex: book
@@ -126,13 +155,20 @@ export async function loadRecorderSegmentView(
           resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
         )
       : null,
-    chapterNumber: chapter?.number ?? 0,
+    chapterNumber: chapter ? await chapterSlot(chapter) : 0,
+    chapterTemplateNumber: chapter ? templateChapterNumber(chapter) : null,
     chapterName: chapter?.name ?? null,
     ordinal: segment.index,
     segmentLabel: segment.label,
     finished: isFinished(segment.status),
     hasClip: samples !== null,
     samples,
+    // `segment` above is a separate, earlier read; this one is the samples'.
+    audioRevision:
+      audio.kind === "no-segment"
+        ? segment.audioRevision
+        : audio.segment.audioRevision,
+    generation: clip?.meta.generation ?? 0,
   };
 }
 
@@ -178,6 +214,10 @@ export function useRecorderSegment(segmentId: SegmentId) {
         // exactly this reason). Here we only re-read/re-decode.
         const next = await loadRecorderSegmentView(segmentId);
         if (cancelled) return;
+        // Only the adopted view notes its revision and generation: a
+        // cancelled load may have read newer ones than the samples the editor
+        // holds (George r2 on #1618). No React commit can run between this and `setView`.
+        noteObservedRevision(segmentId, next);
         setView(next);
         setError(null);
       } catch (cause) {
@@ -215,6 +255,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
     // context for and even a decode may still complete without.
     void resumeAudioContext().catch((cause) => {
       console.error("Could not resume the AudioContext before retry", cause);
+      reportFailure(cause, "recorder-segment-resume-retry");
     });
     setRetrying(true);
     setAttempt((n) => n + 1);
@@ -232,6 +273,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
   const reload = useCallback(async (): Promise<RecorderSegmentView | null> => {
     try {
       const next = await loadRecorderSegmentView(segmentId);
+      noteObservedRevision(segmentId, next);
       setView(next);
       setError(null);
       return next;

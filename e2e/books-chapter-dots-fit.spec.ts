@@ -37,8 +37,8 @@ test.use({
 
 /** The design's row height, 12 + 44 + 12 (`o4/books.css`). */
 const ROW_HEIGHT = 68;
-/** Three rows of 22 dots, what the 154px column holds at the 5/2 step. */
-const THREE_ROWS = 66;
+/** Three rows of 20 dots, what the 138px column holds at the 5/2 step. */
+const THREE_ROWS = 60;
 
 async function addSegments(page: Page, from: number, to: number) {
   for (let i = from; i < to; i++) {
@@ -97,7 +97,8 @@ async function measureRow(page: Page) {
 }
 
 for (const width of [320, 360]) {
-  // Past the three rows of 22 dots the 154px column holds at the 5/2 step.
+  // Past the three rows of 20 dots the 138px column holds at the 5/2 step.
+  // At 360px the column is 178 and holds three rows of 25, so 80 is past it.
   const SEGMENTS = 80;
   test(`an O4 chapter row with ${SEGMENTS} segments keeps its title line and every dot inside the row at ${width}px (#1229)`, async ({
     page,
@@ -119,14 +120,17 @@ for (const width of [320, 360]) {
     expect(measured.dotsInColumn).toBe(SEGMENTS);
     expect(measured.dotsInRow).toBe(SEGMENTS);
     expect(measured.dotsBelowTitle).toBe(true);
-    // And at 320px the row grew to hold them: a floor, not a cap. The wider
-    // 360px column still holds 80 dots in the 68px floor.
-    if (width === 320) {
-      expect(measured.rowHeight).toBeGreaterThan(ROW_HEIGHT + 0.5);
-    }
+    // And the row grew to hold them at both widths: a floor, not a cap. The
+    // play control took the chevron's 28px and widened the slot to 44
+    // (#1469), so even the 360px column no longer holds 80 dots in 68px.
+    expect(measured.rowHeight).toBeGreaterThan(ROW_HEIGHT + 0.5);
   });
 
-  test(`an O4 chapter row stays ${ROW_HEIGHT}px tall up to ${THREE_ROWS} dots and grows past them at ${width}px (#1233)`, async ({
+  const pastTheFloor =
+    width === 320
+      ? `grows past them at ${width}px`
+      : `is still ${ROW_HEIGHT}px with one more at ${width}px`;
+  test(`an O4 chapter row stays ${ROW_HEIGHT}px tall up to ${THREE_ROWS} dots and ${pastTheFloor} (#1233)`, async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -148,8 +152,8 @@ for (const width of [320, 360]) {
     expect(full.dotsInRow).toBe(THREE_ROWS);
 
     // One dot past the three rows: at 320px it wraps onto a fourth row and
-    // the row must grow. (At 360px the column is wider and still holds it,
-    // so only the 320px run asserts growth.)
+    // the row must grow. At 360px the column is wider and still holds it, so
+    // the row stays on the 68px floor.
     await reopenChapter(page);
     await addSegments(page, THREE_ROWS, THREE_ROWS + 1);
     await openShelfRow(page);
@@ -158,6 +162,8 @@ for (const width of [320, 360]) {
     expect(over.dotsInRow).toBe(THREE_ROWS + 1);
     if (width === 320) {
       expect(over.rowHeight).toBeGreaterThan(ROW_HEIGHT + 0.5);
+    } else {
+      expect(Math.abs(over.rowHeight - ROW_HEIGHT)).toBeLessThan(0.5);
     }
   });
 
@@ -169,8 +175,10 @@ for (const width of [320, 360]) {
     await seedToSegments(page);
     await addSegments(page, 0, 3);
 
-    // Segments 1 and 2 get a real take; segment 1 is then marked finished.
-    for (const n of [1, 2]) {
+    // Segments 1 and 3 get a real take, then segment 3 is marked finished.
+    // Segment 2 stays empty, so segment order (recorded, empty, finished)
+    // differs from the grouped order the row draws.
+    for (const n of [1, 3]) {
       await page
         .getByRole("button", { name: `Open recorder for segment ${n}` })
         .click();
@@ -180,7 +188,10 @@ for (const width of [320, 360]) {
         exact: true,
       });
       await expect(stop).toBeVisible();
-      await page.waitForTimeout(1200);
+      // The take exists once the recorder's own clock has passed a second.
+      await expect(page.locator(".recorder-status .t-timer")).toHaveText(
+        /^00:0[1-9]$/
+      );
       await stop.click();
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
@@ -191,16 +202,18 @@ for (const width of [320, 360]) {
       ).toBeVisible();
     }
     await page
-      .getByRole("button", { name: "More actions for segment 1" })
+      .getByRole("button", { name: "More actions for segment 3" })
       .click();
     await page
       .getByRole("dialog", { name: "More" })
-      .getByRole("button", { name: "Mark segment 1 done", exact: true })
+      .getByRole("button", { name: "Mark segment 3 done", exact: true })
       .click();
 
     await openShelfRow(page);
     const measured = await measureRow(page);
-    // Grouped, not in segment order: finished, then recorded, then empty.
+    // Grouped, not in segment order. The segments are recorded (1), empty (2)
+    // and finished (3), so segment order would read recorded, empty,
+    // finished; the row reads finished, then recorded, then empty.
     expect(measured.dotStates).toEqual(["finished", "recorded", "empty"]);
     expect(measured.dotsInColumn).toBe(3);
     expect(measured.dotsInRow).toBe(3);

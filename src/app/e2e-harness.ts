@@ -48,6 +48,15 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import { exportChapterMp3, SEGMENT_GAP_SECONDS } from "@/lib/export/chapter";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { IDBPDatabase } from "idb";
+import { LoudnessMeter, NO_STAGES_RUN } from "@/lib/audio/loudness";
+import { int16ToFloatInto } from "@/lib/audio/format";
+import { requestTranscodeSweep } from "@/hooks/finish-transcode";
+import { loadSegmentClip } from "@/lib/storage/segment-audio";
+import {
+  NORMALIZE_ON_FINISHED_KEY,
+  storeNormalizeOnFinished,
+} from "@/lib/settings";
+import type { ClipProcessing } from "@/types/audio";
 
 export interface EncodeDecodeResult {
   /** Bytes of the MP3 the worker returned. */
@@ -718,7 +727,13 @@ async function buildAndDecodeJoinedChapter(
     );
     // The real storage write a Finished segment's transcode sweep makes
     // (`hooks/finish-transcode.ts`), not a hand-rolled IndexedDB seed.
-    const outcome = await commitTranscode(segment.id, clipId, mp3, peaks);
+    const outcome = await commitTranscode(
+      segment.id,
+      clipId,
+      mp3,
+      peaks,
+      NO_STAGES_RUN
+    );
     if (outcome !== "committed") {
       throw new Error(`commitTranscode did not commit: ${outcome}`);
     }
@@ -791,6 +806,83 @@ async function buildAndDecodeJoinedChapter(
     gapCount: gapsFound.length,
     gapRms,
     boundaryMaxAbsDelta: boundaryMaxAbsDeltaList,
+  };
+}
+
+// ── Normalize on Finished through the real sweep (#1433) ───────────────────
+
+export interface NormalizeOnFinishedResult {
+  /** The stored clip's encoding after the sweep; "mp3" when it transcoded. */
+  readonly encoding: string;
+  /** The stored `ClipMeta.processing`, as the sweep committed it. */
+  readonly processing: ClipProcessing | null;
+  /** Gated integrated loudness of the seeded PCM, measured here. */
+  readonly sourceLufs: number | null;
+  /** The same measure on the stored MP3 after the browser-boundary decode. */
+  readonly storedLufs: number | null;
+}
+
+/** Integrated loudness of `samples`, with the app's own meter. */
+function integratedLufsOf(samples: Int16Array): number | null {
+  const chunk = CANONICAL_SAMPLE_RATE;
+  const work = new Float32Array(chunk);
+  const meter = new LoudnessMeter(CANONICAL_SAMPLE_RATE, chunk);
+  for (let at = 0; at < samples.length; at += chunk) {
+    meter.push(work, int16ToFloatInto(samples, work, at));
+  }
+  return meter.finish().integratedLufs;
+}
+
+/**
+ * Seed one quiet Finished PCM segment, set the preference, run the app's real
+ * transcode sweep (the real MP3 worker, the real `commitTranscode`), then read
+ * the stored clip back, decode its MP3 and measure it. `amplitude` is a
+ * fraction of full scale for a 441 Hz tone, `seconds` its length.
+ */
+async function finishQuietSegment(
+  normalize: boolean,
+  amplitude: number,
+  seconds: number
+): Promise<NormalizeOnFinishedResult> {
+  window.localStorage.setItem(
+    NORMALIZE_ON_FINISHED_KEY,
+    storeNormalizeOnFinished(normalize)
+  );
+  const frames = Math.round(seconds * CANONICAL_SAMPLE_RATE);
+  const samples = new Int16Array(frames);
+  for (let i = 0; i < frames; i++) {
+    samples[i] = Math.round(
+      amplitude *
+        INT16_MAX *
+        Math.sin((2 * Math.PI * 441 * i) / CANONICAL_SAMPLE_RATE)
+    );
+  }
+  const sourceLufs = integratedLufsOf(samples);
+  const book = await createBook("");
+  const chapter = await addChapter(book.id);
+  const segment = await addSegment(chapter.id);
+  await saveTake(segment.id, newClipId(), samples, CANONICAL_SAMPLE_RATE, {
+    finished: true,
+  });
+  await requestTranscodeSweep();
+
+  const audio = await loadSegmentClip(segment.id);
+  if (audio.kind !== "resolved") {
+    throw new Error(`segment did not resolve: ${audio.kind}`);
+  }
+  const { clip } = audio;
+  let storedLufs: number | null = null;
+  if (clip.encoding === "mp3") {
+    const decoded = await withEncoder(undefined, (codec) =>
+      codec.decodeMp3(new Uint8Array(clip.mp3))
+    );
+    storedLufs = integratedLufsOf(decoded);
+  }
+  return {
+    encoding: clip.encoding,
+    processing: clip.meta.processing,
+    sourceLufs,
+    storedLufs,
   };
 }
 
@@ -933,6 +1025,7 @@ declare global {
       workerSnapshotReady: typeof workerSnapshotReady;
       buildAndDecodeJoinedChapter: typeof buildAndDecodeJoinedChapter;
       streamChapterThroughWorker: typeof streamChapterThroughWorker;
+      finishQuietSegment: typeof finishQuietSegment;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -950,6 +1043,7 @@ window.__e2e = {
   workerSnapshotReady,
   buildAndDecodeJoinedChapter,
   streamChapterThroughWorker,
+  finishQuietSegment,
   openDb,
   watchVersionChange,
 };

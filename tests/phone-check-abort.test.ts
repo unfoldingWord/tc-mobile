@@ -25,6 +25,7 @@ import { runAllocationSteps } from "@/lib/phone-check/allocation";
 const probeSeam = vi.hoisted(() => ({
   signals: [] as Array<AbortSignal | undefined>,
   deviceSignals: [] as Array<AbortSignal | undefined>,
+  dspSignals: [] as Array<AbortSignal | undefined>,
   deviceGate: null as Promise<void> | null,
 }));
 
@@ -51,11 +52,18 @@ vi.mock("@/hooks/phone-check-probes", async (importOriginal) => {
         quotaBytes: null,
         usageBytes: null,
         persisted: null,
+        language: null,
+        languages: null,
       };
     },
     runWorkerEncodeProbe: (signal?: AbortSignal) => {
       probeSeam.signals.push(signal);
       return Promise.resolve({ audioSeconds: 1, wallMs: 1, mp3Bytes: 1 });
+    },
+    // No worker in jsdom: the DSP step (#1433) is replaced the same way.
+    runDspProbe: (signal?: AbortSignal) => {
+      probeSeam.dspSignals.push(signal);
+      return Promise.reject(new Error("no worker in this test"));
     },
   };
 });
@@ -248,6 +256,7 @@ describe("runPhoneChecks and runMemoryCheck with an aborted signal", () => {
             return { status: "failed", errorName: "x" };
           },
           encode,
+          dsp: encode,
           storage: encode,
         },
         land,
@@ -272,6 +281,7 @@ describe("runPhoneChecks and runMemoryCheck with an aborted signal", () => {
             run.abort();
             return { status: "failed", errorName: "x" };
           },
+          dsp: storage,
           storage,
         },
         land,
@@ -293,6 +303,7 @@ describe("runPhoneChecks and runMemoryCheck with an aborted signal", () => {
         {
           device: async () => ({ status: "failed", errorName: "x" }),
           encode: async () => ({ status: "failed", errorName: "x" }),
+          dsp: async () => ({ status: "failed", errorName: "x" }),
           storage: async () => {
             run.abort();
             return { status: "failed", errorName: "x" };
@@ -313,7 +324,7 @@ describe("runPhoneChecks and runMemoryCheck with an aborted signal", () => {
     const device = vi.fn();
     await expect(
       runPhoneChecks(
-        { device, encode: device, storage: device },
+        { device, encode: device, dsp: device, storage: device },
         land,
         () => {},
         aborted()
@@ -357,6 +368,7 @@ describe("usePhoneCheck unmounting mid-run", () => {
     window.sessionStorage.clear();
     probeSeam.signals.length = 0;
     probeSeam.deviceSignals.length = 0;
+    probeSeam.dspSignals.length = 0;
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -421,5 +433,27 @@ describe("usePhoneCheck unmounting mid-run", () => {
     expect(probeSeam.deviceSignals).toHaveLength(1);
     expect(probeSeam.deviceSignals[0]).toBe(probeSeam.signals[0]);
     await act(async () => root.unmount());
+  });
+
+  it("hands the live run's signal to the DSP step too (#1433)", async () => {
+    probeSeam.deviceGate = null;
+    let start: (() => void) | undefined;
+    const expose = (run: () => void) => {
+      start = run;
+    };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await act(async () => root.render(createElement(Owner, { expose })));
+      await act(async () => start?.());
+      await vi.waitFor(() => {
+        expect(isPhoneCheckRunning()).toBe(false);
+      });
+      expect(probeSeam.dspSignals).toHaveLength(1);
+      expect(probeSeam.dspSignals[0]).toBeInstanceOf(AbortSignal);
+      expect(probeSeam.dspSignals[0]).toBe(probeSeam.signals[0]);
+    } finally {
+      error.mockRestore();
+      await act(async () => root.unmount());
+    }
   });
 });

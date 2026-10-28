@@ -112,9 +112,52 @@
  * upgrade: what was on top stays on top. Additive like v9: no store dropped,
  * no other field touched, and the chapters, segments, takes and clips behind a
  * book are never read.
+ *
+ * ── v12 (#1462): provenance, licence, timestamps, template keys — append-only ──
+ *
+ * The frozen design is docs/design/v12-schema.md. `Book` gained `provenance`,
+ * `licence` and `modifiedAt`; `Chapter` and `Segment` gained `createdAt`,
+ * `modifiedAt` and `templateKey`; `Segment.reference` became a numeric span
+ * (every stored value is `null`, so no row is converted). Two new stores,
+ * `tombstones` (a deletion log, auto-increment key) and `pendingTakes` (keyed
+ * by `segmentId`), created beside v6's and before any await. The backfill
+ * writes `{ kind: "blank" }` and `null`s only, keyed on each field being
+ * ABSENT (`in`, so a deliberate `null` is kept), at most one write per row and
+ * none for a row that already has every field. It reads no clock: an upgrade
+ * time in `createdAt` or `modifiedAt` would be a false fact. `Chapter.number`
+ * and `Book.languageCode` are kept as stored. Takes and clips are not read.
+ *
+ * Roll forward only: a phone that has opened v12 cannot be opened by an older
+ * build (`DatabaseDowngradeError`).
+ *
+ * ── v13 (#38): the audio revision and take dispositions — append-only ──
+ *
+ * The design is docs/design/pending-take-lifecycle.md (§2). `Segment` gained
+ * `audioRevision`, backfilled to 0, keyed on absence, no clock. One new store,
+ * `takeDispositions` (keyPath `clipId`, index `bySegment`), and one new index,
+ * `pendingTakes.bySourceClip`, created beside v12's stores before any await.
+ * Takes, clips and pending rows are not read. It is a version step, not an
+ * optional field, so that no build without the rules in that note's
+ * "compatibility boundary" can write the same database.
+ *
+ * ── v14 (#1433): the clip's processing record — append-only ──
+ *
+ * `ClipMeta` gained `processing`: which stages of the Finished chain ran and
+ * at which version, the measured loudness and true peak, and the applied
+ * gain. The v14 step classifies every clip row from any earlier version,
+ * keeps a record that is already decided, and touches nothing else. It
+ * reads no clock, and a re-run writes nothing. A Finished
+ * segment's active clip that is still PCM (its transcode was owed at the
+ * upgrade) gets `stages: []`, so it is encoded as it was; every other clip
+ * gets `null`. A clip finished before v14 is never normalized (U6c).
  */
 
-import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import {
+  openDB,
+  type DBSchema,
+  type IDBPDatabase,
+  type OpenDBCallbacks,
+} from "idb";
 
 import type {
   Book,
@@ -124,14 +167,39 @@ import type {
   ClipId,
   Segment,
   SegmentId,
+  StoredPendingTake,
   Take,
   TakeId,
+  TakeDisposition,
+  Tombstone,
 } from "@/types/domain";
 import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 11;
+const DB_VERSION = 14;
+
+/**
+ * What the v12 step adds to a row that lacks it, per store. Plain data and no
+ * clock: every value is a blank or a `null`.
+ */
+const V12_BACKFILL = {
+  books: { provenance: { kind: "blank" }, licence: null, modifiedAt: null },
+  chapters: { createdAt: null, modifiedAt: null, templateKey: null },
+  segments: { createdAt: null, modifiedAt: null, templateKey: null },
+} as const;
+
+/**
+ * The v12 fields `row` does not carry, or `null` when it carries them all.
+ * Absence is `in`, never a value test: a stored `null` is a real value.
+ */
+function absentFields(
+  row: object,
+  fields: Readonly<Record<string, unknown>>
+): Record<string, unknown> | null {
+  const absent = Object.entries(fields).filter(([key]) => !(key in row));
+  return absent.length === 0 ? null : Object.fromEntries(absent);
+}
 
 /**
  * A `books` row as v9 and earlier stored it: the placeholder rendered into
@@ -211,6 +279,23 @@ export interface TcMobileDb extends DBSchema {
    * key field baked into it and insertion order is key order.
    */
   failures: { key: number; value: StoredFailure };
+  /** v12: the deletion log, out-of-line auto-increment like `failures`. */
+  tombstones: { key: number; value: Tombstone };
+  /**
+   * v12: one unsaved take per segment, keyPath `segmentId`. v13 indexes a
+   * `stored` base's clip, so clip clean-up can count it as a use.
+   */
+  pendingTakes: {
+    key: SegmentId;
+    value: StoredPendingTake;
+    indexes: { bySourceClip: ClipId };
+  };
+  /** v13: why a take stopped being pending, keyPath `clipId`. */
+  takeDispositions: {
+    key: ClipId;
+    value: TakeDisposition;
+    indexes: { bySegment: SegmentId };
+  };
 }
 
 /**
@@ -518,7 +603,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
   const openToken = {};
 
   const raced = new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
-    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+    const callbacks: OpenDBCallbacks<TcMobileDb> = {
       async upgrade(db, oldVersion, _newVersion, tx) {
         // One-time destructive recreate to the pivot schema (v3). See the header
         // for why append-only is waived here. Gated on `oldVersion < 3` so this
@@ -571,6 +656,26 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           db.createObjectStore("failures", { autoIncrement: true });
         }
 
+        // v12 (#1462): the deletion log and the pending-take slot. Up here
+        // with v6's create for the same reason: before any await.
+        if (oldVersion < 12) {
+          db.createObjectStore("tombstones", { autoIncrement: true });
+          db.createObjectStore("pendingTakes", { keyPath: "segmentId" });
+        }
+
+        // v13 (#38): structure, also before any await. Rows with an inline
+        // base have no `base.sourceClipId`, so the index holds stored bases
+        // only.
+        if (oldVersion < 13) {
+          db.createObjectStore("takeDispositions", {
+            keyPath: "clipId",
+          }).createIndex("bySegment", "segmentId");
+          tx.objectStore("pendingTakes").createIndex(
+            "bySourceClip",
+            "base.sourceClipId"
+          );
+        }
+
         // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
         // rows and the audio behind them are kept. On a fresh install, or straight
         // after the v3 recreate above, the store is empty and this loops zero
@@ -593,6 +698,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 byteLength: legacy.frameCount * 2,
                 transcodeStallCount: 0,
                 peaks: null,
+                processing: null,
               };
               await cursor.update(stamped);
             }
@@ -670,10 +776,13 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         }
 
         // v10 (#169): give every book a placeholder slot, and take the rendered
-        // English back off the rows that were only ever showing one. Additive —
-        // a name a facilitator typed is never rewritten, and the pass keys on
-        // `number` being ABSENT, so a row already carrying one (from a newer
-        // build) is left alone.
+        // English back off the rows that were only ever showing one. A name is
+        // rewritten only when it is exactly the string the old writer produced
+        // (`legacyPlaceholderSlot`): that rendering is all the row records, so
+        // a name typed by hand to read exactly like it ("Book 003") cannot be
+        // told apart and is read as the placeholder. Any other typed name is
+        // kept as it is. The pass keys on `number` being ABSENT, so a row
+        // already carrying one (from a newer build) is left alone.
         //
         // `getAll` and two passes, not one cursor walk, because the slot a
         // NAMED row gets has to avoid every slot the unnamed rows claim — and
@@ -741,6 +850,82 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             .sort((a, b) => b.createdAt - a.createdAt);
           for (const row of unplaced) {
             await store.put({ ...row, shelfPosition: next++ });
+          }
+        }
+
+        // v12 (#1462): add each missing v12 field, in one write per row, to
+        // every book, chapter and segment; a row that has them all is not
+        // written. Cursor walks, one row at a time, as v5/v8/v9: segments are
+        // the largest metadata store on a phone.
+        if (oldVersion < 12) {
+          for (const name of ["books", "chapters", "segments"] as const) {
+            let cursor = await tx.objectStore(name).openCursor();
+            while (cursor) {
+              const absent = absentFields(cursor.value, V12_BACKFILL[name]);
+              if (absent) {
+                await cursor.update({ ...cursor.value, ...absent } as never);
+              }
+              cursor = await cursor.continue();
+            }
+          }
+        }
+
+        // v13 (#38): every segment starts at revision 0, recorded or not. Keyed
+        // on absence, so a row a newer build already wrote is left alone.
+        if (oldVersion < 13) {
+          let cursor = await tx.objectStore("segments").openCursor();
+          while (cursor) {
+            const row: Omit<Segment, "audioRevision"> = cursor.value;
+            if (!("audioRevision" in row)) {
+              await cursor.update({ ...row, audioRevision: 0 });
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v14 (#1433): every clip row is classified here, whatever version
+        // it came from. The active PCM clip of a Finished segment is a
+        // transcode still owed from before v14 (a stall, a full phone): it
+        // gets an explicit "no stage ran", so the sweep encodes it as it was
+        // (U6c, Frank R1 P2 on #1679). Every other clip gets null, eligible
+        // for the chain once Finished. A null already on the row is not a
+        // decision: before v14 only the v4 stamp in this same upgrade writes
+        // one (Frank R2 P2), so it is classified like an absent field. A
+        // record with stages or `stages: []` is kept, which is what makes a
+        // re-run write nothing. "affirmed" is the Finished status as v13
+        // stores it, frozen here rather than read from `takes.ts`, which
+        // imports this.
+        if (oldVersion < 14) {
+          const owedClips = new Set<string>();
+          let segment = await tx.objectStore("segments").openCursor();
+          while (segment) {
+            const { status, activeTakeId } = segment.value;
+            if (status === "affirmed" && activeTakeId !== null) {
+              const take = await tx.objectStore("takes").get(activeTakeId);
+              if (take) owedClips.add(take.clipId);
+            }
+            segment = await segment.continue();
+          }
+          let cursor = await tx.objectStore("clipMeta").openCursor();
+          while (cursor) {
+            const row: Omit<ClipMeta, "processing"> &
+              Partial<Pick<ClipMeta, "processing">> = cursor.value;
+            const owed = row.encoding === "pcm" && owedClips.has(row.id);
+            const undecided = row.processing === undefined;
+            if (undecided || (row.processing === null && owed)) {
+              await cursor.update({
+                ...row,
+                processing: owed
+                  ? {
+                      stages: [],
+                      measuredLufs: null,
+                      measuredTruePeakDbtp: null,
+                      appliedGainDb: 0,
+                    }
+                  : null,
+              });
+            }
+            cursor = await cursor.continue();
           }
         }
       },
@@ -842,13 +1027,94 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           markYielded();
         }
       },
+    };
+
+    /**
+     * The error an `upgrade` step threw, if one did (#1421). Kept so the open
+     * rejects with it rather than with the bare `AbortError` the abort below
+     * produces, which names nothing.
+     */
+    let upgradeFault: unknown;
+    /** Whether an `upgrade` step failed; a step could throw `undefined`. */
+    let upgradeFailed = false;
+    /**
+     * Settles once the `upgrade` callback has finished, either way (it never
+     * rejects: its fault is recorded above). Already settled when no upgrade
+     * runs. The open waits for it, because a step can fail after the native
+     * open has already succeeded, and the fulfilment check below must see
+     * that fault.
+     *
+     * A step that never settled would hang the open here. No current step
+     * can: each awaits only requests on the `versionchange` transaction, and
+     * those settle when it commits or aborts, and a request made on it after
+     * it has finished throws at once. So there is no bound on this wait; a
+     * step that awaits anything else must bring its own.
+     */
+    let upgradeSettled: Promise<void> = Promise.resolve();
+
+    const native = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+      ...callbacks,
+      // `idb` calls the upgrade callback and does not await what it returns, so
+      // an error thrown after the first `await` (every backfill) used to leave
+      // the `versionchange` transaction to COMMIT what it had written, at the
+      // new version: the steps that had not run never ran again. Aborting it
+      // rolls the whole upgrade back and fails the open instead, so the stored
+      // version stays where it was and the next open runs every step again —
+      // each keys on its field being absent, so a rerun is safe. A failed
+      // IndexedDB request already aborts the transaction by itself; this covers
+      // the thrown error that does not.
+      upgrade(db, oldVersion, newVersion, tx, event) {
+        upgradeSettled = Promise.resolve(
+          callbacks.upgrade?.(db, oldVersion, newVersion, tx, event)
+        ).catch((cause: unknown) => {
+          upgradeFault = cause;
+          upgradeFailed = true;
+          try {
+            tx.abort();
+          } catch {
+            // `abort()` throws `InvalidStateError` on a transaction that has
+            // already finished, which happens two ways. (1) A failed request
+            // (a constraint or quota refusal) aborted it itself before this
+            // ran: the open still REJECTS, and `upgradeFault` is what it
+            // rejects with. Observed on fake-indexeddb with `idb` 8, not on a
+            // real engine. (2) It committed before the error surfaced: the
+            // upgrade cannot be rolled back then, and the open would SUCCEED
+            // on a half-migrated database, so the open's fulfilment below
+            // closes the connection and rejects with `upgradeFault` instead.
+            // Case (2) is not reachable from the current steps, which await
+            // IDB requests only; `tests/db-upgrade-throw.test.ts` simulates it.
+          }
+        });
+        // The abort also rejects the transaction's own `done` promise, which
+        // nothing else reads on this path; the open's rejection carries the
+        // outcome, so this one is dropped on purpose rather than left to
+        // surface as a second, unattributed unhandled rejection.
+        tx.done.catch(() => undefined);
+      },
     });
 
+    const opening = native.then((db) => upgradeSettled.then(() => db));
     pendingOpen = opening;
 
     void opening.then(
       (db) => {
         if (pendingOpen === opening) pendingOpen = null;
+        // An upgrade step failed after its transaction had already committed
+        // (case (2) above): the database is at the new version with the steps
+        // after the fault never run, and nothing can roll that back from here.
+        // Do not hand that connection to the app as if the upgrade had worked.
+        // Close it and fail the open with the fault, so the failure is
+        // reported through the same rejection as every other upgrade fault.
+        if (upgradeFailed) {
+          // Like the rejection path: a blocked open that ends in a failure
+          // leaves the database no more reachable than it was.
+          wasBlocked = false;
+          db.close();
+          if (settled) return;
+          settled = true;
+          reject(upgradeFault);
+          return;
+        }
         // This open was told it was blocked and has now come through, so the
         // other copy has closed and the database is reachable again. Said
         // whichever branch below takes the connection: in both of them the
@@ -886,7 +1152,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         wasBlocked = false;
         if (settled) return;
         settled = true;
-        reject(cause);
+        reject(upgradeFault ?? cause);
       }
     );
   });

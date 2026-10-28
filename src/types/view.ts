@@ -12,16 +12,29 @@
 
 import type { Peaks } from "./audio";
 import type { BookId, ChapterId, ClipId, SegmentId } from "./domain";
+import type { LicenceId } from "./template";
 
 // ── Books screen (B2) ──────────────────────────────────────────────────────
 
 export interface ChapterRow {
   readonly chapterId: ChapterId;
+  /**
+   * The chapter's slot: its 1-based place among the book's resolvable
+   * chapters (#1272, the requirements owner's answer B, `lib/chapter-slot.ts`).
+   * Not the stored `Chapter.number`. The badge, the move line and the Share
+   * Book chips all read it.
+   */
   readonly number: number;
   /**
+   * The number a template gave this chapter, or `null` for one added by hand
+   * (`templateChapterNumber`). Read only for the default title of an unnamed
+   * chapter (`headingNumber`, the DRI's Q1 (b) on #1272).
+   */
+  readonly templateNumber: number | null;
+  /**
    * The facilitator's passage label (#264), or `null` ⇒ show "Chapter
-   * {number}". The Books row and the Segments breadcrumb both render it through
-   * `strings.chapterHeading`.
+   * {headingNumber}". The Books row and the Segments breadcrumb both render it
+   * through `strings.chapterHeading`.
    */
   readonly name: string | null;
   /** From `chapterProgress` — count of segments with `status === "affirmed"`. */
@@ -66,6 +79,19 @@ export interface BookCard {
    * guide then takes the top card, which is where a create puts a book.
    */
   readonly createdAt?: number;
+  /**
+   * `Book.licence` (#1566), so the shelf's Share Book names its zip and its
+   * chapter files the way Share Chapter does (#1579). Optional so a test
+   * fixture can omit it; a card without it shares untagged, like a `null`.
+   */
+  readonly licence?: LicenceId | null;
+  /**
+   * `Book.languageCode` (#1492), so Export project knows whether to ask the
+   * book's language first. Optional so a test fixture can omit it; a card
+   * without it asks, like a `null`, and the store keeps any language the book
+   * already has (`setBookLanguageOnce`).
+   */
+  readonly languageCode?: string | null;
 }
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────

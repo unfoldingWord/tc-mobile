@@ -62,6 +62,14 @@
     stroke-width: 7;
     stroke-linecap: round;
   }
+  /* The joined-chapter read (#1078): a thin arc on the track, so it never
+     reads as the count's own fill. */
+  :root .share-o4-read {
+    fill: none;
+    stroke: var(--s-send-ring);
+    stroke-width: 3;
+    stroke-linecap: round;
+  }
 
   /* --- outcomes (D14, D16) --------------------------------------------- */
   :root .share-scrim[data-outcome="sent"] .share-o4-frame {

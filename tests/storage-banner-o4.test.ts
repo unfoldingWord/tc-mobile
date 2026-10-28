@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { StoragePressureBanner } from "@/components/storage-pressure-banner";
 import type { StoragePressureNotice } from "@/components/storage-pressure-notice";
 import type { UseLibraryShare } from "@/hooks/use-library-share";
@@ -47,8 +48,10 @@ const share = vi.hoisted(() => ({
       nameBook: (book: BookLabel) => string,
       nameChapter: (
         book: BookLabel,
-        chapterNumber: number,
-        chapterName: string | null
+        chapterSlot: number,
+        chapterName: string | null,
+        chapterCount: number,
+        templateNumber: number | null
       ) => string
     ) => Promise<null>
   >(() => Promise.resolve(null)),
@@ -277,19 +280,57 @@ describe("the button runs the library share", () => {
     expect(nameBook({ name: "Mark/Luke", number: 1 })).toBe(
       strings.shareAllFolder("Mark/Luke")
     );
-    expect(nameChapter(mark, 3, null)).toBe(strings.shareFilename("Mark", 3));
+    expect(nameChapter(mark, 3, null, 3, null)).toBe(
+      strings.shareFilename("Mark", 3)
+    );
+    // The book's highest chapter number sets the width (#1233).
+    expect(nameChapter(mark, 3, null, 150, null)).toBe(
+      strings.shareFilename("Mark", 3, null, 150)
+    );
     // The chapter's own name reaches the MP3, as in Share Book (#1218).
-    expect(nameChapter(mark, 3, "The sower")).toBe("Mark - The sower.mp3");
+    expect(nameChapter(mark, 3, "The sower", 3, null)).toBe(
+      "Mark - 03 The sower.mp3"
+    );
     // An unnamed book is labelled by the placeholder its slot renders, the
     // same words its shelf row shows (#169) — never an empty folder name.
     const unnamed = { name: null, number: 4 };
     expect(nameBook(unnamed)).toBe(
       strings.shareAllFolder(strings.bookHeading(null, 4))
     );
-    expect(nameChapter(unnamed, 2, null)).toBe(
+    expect(nameChapter(unnamed, 2, null, 2, null)).toBe(
       strings.shareFilename(strings.bookHeading(null, 4), 2)
     );
+    // An unnamed template chapter's file reads its title, "Chapter 7", after
+    // its slot (#1272, Q1 (b)).
+    expect(nameChapter(mark, 3, null, 4, 7)).toBe("Mark - 03 Chapter 7.mp3");
     expect(share.send).not.toHaveBeenCalled();
+  });
+
+  it("names each chapter with its book's licence (#1579)", async () => {
+    const container = await mount(
+      createElement(StoragePressureBanner, {
+        notice: low,
+        share: shareSurface(),
+      })
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>("button.o4-storage-share")!
+        .click()
+    );
+    const nameChapter = share.prepare.mock.calls[0]![2];
+    expect(
+      nameChapter(
+        { name: "Mark", number: 1, licence: "CC0-1.0" },
+        3,
+        null,
+        3,
+        null
+      )
+    ).toBe("Mark - 03 Chapter 3 (CC0 1.0).mp3");
+    expect(
+      nameChapter({ name: "Mark", number: 1, licence: null }, 3, null, 3, null)
+    ).toBe("Mark - 03 Chapter 3.mp3");
   });
 
   it("tap 2 hands the armed archive to the share sheet", async () => {
@@ -350,6 +391,7 @@ describe("Books shows the banner where the #247 line was", () => {
       {
         chapterId: "chapter-1-4000-8000-000000000001" as ChapterId,
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 0,
         totalCount: 1,
@@ -364,6 +406,7 @@ describe("Books shows the banner where the #247 line was", () => {
     const layers = new Map<string, Layer>();
     return mount(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {

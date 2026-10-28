@@ -29,7 +29,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
-import type { StepReporter } from "@/lib/export/chapter";
+import type { ReadReporter, StepReporter } from "@/lib/export/chapter";
 
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
@@ -211,11 +211,16 @@ interface PreparedShare {
  * Share Chapter's count now includes the encode (#996, `withEncodeSteps`), and
  * either share may pass `skipped` (how many of `done` finished with no audio)
  * and `items` (how many of `total` are items, when not all are).
+ *
+ * `onRead` (#1078) is Share Chapter's joined-path clip reads, its own phase
+ * on the modal and never a step (`ReadReporter`, `lib/export/chapter.ts`). A
+ * builder with no such read (Share Book) never calls it.
  */
 type BuildShareFile = (
   isCurrent: () => boolean,
   signal: AbortSignal,
-  onStep: StepReporter
+  onStep: StepReporter,
+  onRead: ReadReporter
 ) => Promise<PreparedShare | "nothing" | null>;
 
 /**
@@ -242,6 +247,22 @@ export function stepReporter(
       ...(items === undefined ? {} : { items }),
       ...(keys === undefined ? {} : { keys }),
     });
+  };
+}
+
+/**
+ * The `onRead` a prepare hands its builder (#1078): each call becomes one
+ * `read` event, only while this run still owns the flow — the same gate as
+ * {@link stepReporter}, for the same reason. The machine keeps the read apart
+ * from the step count (`withRead`, `share-progress.ts`).
+ */
+export function readReporter(
+  isCurrent: () => boolean,
+  dispatch: (event: ShareProgressEvent) => void
+): ReadReporter {
+  return (done, total) => {
+    if (!isCurrent()) return;
+    dispatch({ type: "read", done, total });
   };
 }
 
@@ -778,7 +799,10 @@ export function useShareFlow(): UseShareFlow {
       // A newer run owns the flow: don't touch its state and don't let the caller
       // act on this stale settle.
       if (!current()) return "superseded";
-      if (outcome === "failed") console.error("Sharing failed", cause);
+      if (outcome === "failed") {
+        console.error("Sharing failed", cause);
+        reportFailure(cause, "share-send");
+      }
       // Dismissed or a real failure: end the flow for the run that still owns it.
       // The staged cache file is already gone — `nativeShare.send` removes its
       // own directory on a rejection, because a refused chooser is the one piece
@@ -866,7 +890,8 @@ export function useShareFlow(): UseShareFlow {
         const prepared = await build(
           current,
           controller.signal,
-          stepReporter(current, modal.dispatch)
+          stepReporter(current, modal.dispatch),
+          readReporter(current, modal.dispatch)
         );
         // Claimed BEFORE the stale-run bail below: a cancel that lands after
         // the build finished still leaves a spool behind (#1003).
@@ -891,8 +916,9 @@ export function useShareFlow(): UseShareFlow {
           return null;
         }
         const { file } = prepared;
-        // The browser may still refuse this particular File — Android Chrome's
-        // Web Share allowlist has no `application/zip`, which is #272. The native
+        // The browser may still refuse this particular File: Chromium source
+        // indicates Android Chrome refuses `application/zip` inside `share()`
+        // rather than in `canShare()` (#272; not device-confirmed). The native
         // route does not consult that gate at all; see `selectShareRoute`.
         const route = selectShareRoute(readShareEnvironment(), file);
         if (route === "unsupported") {

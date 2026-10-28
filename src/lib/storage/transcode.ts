@@ -27,11 +27,17 @@
 
 import { isFinished } from "./takes";
 import { getDb } from "./db";
-import type { Peaks } from "@/types/audio";
+import type { ClipProcessing, Peaks } from "@/types/audio";
 import type { ClipId, SegmentId } from "@/types/domain";
 
 /** The stores the commit touches — the clip's two halves, the pointers to it. */
-const COMMIT_STORES = ["segments", "takes", "clipMeta", "clipData"] as const;
+const COMMIT_STORES = [
+  "segments",
+  "takes",
+  "clipMeta",
+  "clipData",
+  "pendingTakes",
+] as const;
 
 /**
  * What a `commitTranscode` did.
@@ -39,7 +45,8 @@ const COMMIT_STORES = ["segments", "takes", "clipMeta", "clipData"] as const;
  * `committed`: the MP3 is on disk and the PCM is gone. `already`: the clip was
  * already MP3 (a concurrent sweep beat us; nothing to do). `stale`: the segment
  * no longer matches what was encoded — not finished any more, a different
- * take/clip, or gone — and nothing was written; the PCM, if any, is untouched.
+ * take/clip, or gone — or a pending row's stored base names the clip (v13,
+ * #38) — and nothing was written; the PCM, if any, is untouched.
  */
 export type TranscodeOutcome = "committed" | "already" | "stale";
 
@@ -137,6 +144,9 @@ export async function recordTranscodeStall(clipId: ClipId): Promise<void> {
  * is gone — computed by the caller from the samples it encoded, before it let
  * go of them.
  *
+ * `processing` is the record of what the chain did to the audio on its way
+ * here (#1433), written with the bytes it describes.
+ *
  * An empty MP3 is refused up front: an encoder that produced nothing must not
  * be allowed to take the only copy of the audio with it.
  */
@@ -144,7 +154,8 @@ export async function commitTranscode(
   segmentId: SegmentId,
   clipId: ClipId,
   mp3: Uint8Array,
-  peaks: Peaks
+  peaks: Peaks,
+  processing: ClipProcessing
 ): Promise<TranscodeOutcome> {
   if (mp3.byteLength === 0) {
     throw new Error("Refusing to replace a clip's audio with an empty MP3");
@@ -179,9 +190,19 @@ export async function commitTranscode(
       await tx.done;
       return "already";
     }
+    // v13 (#38): a pending row's stored base names this clip, and its recipe
+    // needs these PCM bytes. A later sweep converts it once the row has ended.
+    const bases = tx.objectStore("pendingTakes").index("bySourceClip");
+    if ((await bases.count(clipId)) > 0) {
+      await tx.done;
+      return "stale";
+    }
 
     // The two halves in the same transaction: `put` replaces the PCM bytes
     // under the same key, so the PCM is gone exactly when the MP3 is durable.
+    // No `modifiedAt` (#1463, v12 J6): it marks a put of a book, chapter or
+    // segment row, and this writes only `clipData` and `clipMeta`. The
+    // segment row above is read, never put.
     await tx.objectStore("clipData").put(bytes.buffer, clipId);
     await tx.objectStore("clipMeta").put({
       ...meta,
@@ -189,6 +210,7 @@ export async function commitTranscode(
       generation: meta.generation + 1,
       byteLength: bytes.byteLength,
       peaks,
+      processing,
     });
     await tx.done;
     return "committed";

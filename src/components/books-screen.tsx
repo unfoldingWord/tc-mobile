@@ -12,6 +12,9 @@ import {
 } from "react";
 
 import { AboutPanel } from "./about-panel";
+import { useChapterPlayAnnouncement } from "./chapter-play-announcement";
+import { ChapterPlayControl } from "./chapter-play-control";
+import { chapterRowStatus } from "./chapter-row-status";
 import type { LicenseText } from "./licenses";
 import { Control } from "./control";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
@@ -21,9 +24,17 @@ import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
+import { NameReveal } from "./name-reveal";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
 import { CoverPicker } from "./cover-picker";
-import { CoverTile, O4BookHead, O4CoverPick } from "./o4-book-menu";
+import { LanguageAsk } from "./language-ask";
+import { LicenceAsk } from "./licence-ask";
+import {
+  CoverTile,
+  LicenceTile,
+  O4BookHead,
+  O4CoverPick,
+} from "./o4-book-menu";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SquareButton } from "./o4-controls";
@@ -35,20 +46,27 @@ import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
 import { shelfNoticeText } from "./shelf-notice-text";
+import { activeLocale } from "@/lib/locale";
 import { strings } from "@/lib/strings";
-import { ThemeControl } from "./theme-control";
+import { SettingsPanel } from "./settings-panel";
+import { TemplatePicker } from "./template-picker";
+import { useChapterHeading } from "@/hooks/use-settings";
 import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookCoverColour } from "@/hooks/use-book-cover-colour";
+import { useLanguageAsk, useLanguageList } from "@/hooks/use-language-ask";
+import { needsLicenceAsk, useLicenceAsk } from "@/hooks/use-licence-ask";
 import { useBookShare } from "@/hooks/use-book-share";
+import type { ChapterAudio } from "@/hooks/use-audio-session";
 import { useBooks } from "@/hooks/use-books";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import {
   useLibraryShare,
   type UseLibraryShare,
 } from "@/hooks/use-library-share";
+import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { useReorderGesture } from "@/hooks/use-reorder-gesture";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
@@ -63,11 +81,12 @@ import {
   type CoverColourKey,
 } from "@/lib/cover-colour";
 import type { Layer } from "@/lib/nav/layer-stack";
-import { nextChapterNumber } from "@/lib/storage/books";
+import { getBook } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import { reorderShift } from "@/lib/view/reorder-gesture";
-import type { BookId, ChapterId } from "@/types/domain";
+import type { Book, BookId, ChapterId } from "@/types/domain";
+import type { LicenceId } from "@/types/template";
 import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
 
 /**
@@ -125,9 +144,13 @@ type BooksLayerId =
   | "books:book-menu"
   | "books:delete-confirm"
   | "books:about"
-  | "books:about-text";
+  | "books:about-text"
+  | "books:settings"
+  | "books:templates";
 
 interface BooksScreenProps {
+  /** Chapter play (#1469): the row controls' view of the audio session. */
+  audio: ChapterAudio;
   /** Open a chapter's Segments screen. Owned by App (slice 4) for navigation. */
   onOpenChapter: (chapterId: ChapterId) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
@@ -145,6 +168,7 @@ interface BooksScreenProps {
  * because the next thing they do is add a chapter to it.
  */
 export function BooksScreen({
+  audio,
   onOpenChapter,
   pushLayer,
   popLayer,
@@ -166,6 +190,16 @@ export function BooksScreen({
     moveChapter,
     moveBook,
   } = useBooks();
+  const { chapterPlay, stopChapter: stopChapterNow } = audio;
+  // What a chapter's play did, said in its own polite region below (#1344).
+  // Every stop this screen asks for goes through `stopChapter`, which hushes
+  // the line first, so a collapse, a share or a delete is not called a finish.
+  const { line: chapterPlayLine, hush: hushChapterPlay } =
+    useChapterPlayAnnouncement(chapterPlay, books);
+  const stopChapter = useCallback(() => {
+    hushChapterPlay();
+    stopChapterNow();
+  }, [hushChapterPlay, stopChapterNow]);
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
   // as empty would show "start a book" and a live New Book over a shelf that
@@ -231,6 +265,11 @@ export function BooksScreen({
   // About closes the menu, and the About panel owns its own Menu.
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutViewing, setAboutViewing] = useState<LicenseText | null>(null);
+  // Settings (#1575), opened by the gear in the header. Its own flag and its
+  // own Back layer, like About's, so the two never share a close path.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // The Template Library (#246): its own panel, opened from a ≡ tile.
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
   // shelf read included, which is precisely when a facilitator needs the report.
@@ -247,10 +286,10 @@ export function BooksScreen({
   // instead of it.
   const [failureRetryToken, setFailureRetryToken] = useState(0);
   const failureCount = useFailureCount(failureRetryToken);
-  // The rows that mark ≡: every row except informational ones, today only a
-  // take sealed at the 20-minute cap (#1005; DRI on #1076, verbatim: "Log it,
-  // don't light ≡ (Recommended)"). The panel below still keys on
-  // `failureCount`, so a log holding only that row can still be sent.
+  // The rows that mark ≡: every row except those `lightsFailureMarker` leaves
+  // plain, such as a take sealed at the 20-minute cap (#1005; DRI on #1076,
+  // verbatim: "Log it, don't light ≡ (Recommended)"). The panel below still
+  // keys on `failureCount`, so a log holding only such rows can still be sent.
   const markedFailureCount = useMarkedFailureCount();
   // Both halves of Try again, in one handler so a later edit cannot drop one:
   // re-read the shelf, and hand the failure count's ladder back.
@@ -347,6 +386,44 @@ export function BooksScreen({
   // picker in place of its tiles. A mode of the same sheet, as rename is, so
   // it opens no layer of its own, and it resets every time the sheet closes.
   const [pickingCover, setPickingCover] = useState(false);
+  // #1492: Export project's language ask; reset whenever the sheet closes.
+  const {
+    askingFor: askingLanguageFor,
+    saving: savingLanguage,
+    failed: languageFailed,
+    ask: askLanguage,
+    cancel: cancelLanguageAsk,
+    choose: chooseLanguage,
+  } = useLanguageAsk();
+  const languageList = useLanguageList(askingLanguageFor !== null);
+  // #1455: Share Book's licence ask for a book with none chosen; reset
+  // whenever the sheet closes, as the language ask is.
+  // Licences the ask has stored, kept locally so the share gate does not
+  // depend on the shelf reload succeeding (#1455).
+  const [chosenLicences, setChosenLicences] = useState<
+    Readonly<Record<string, LicenceId>>
+  >({});
+  const onLicenceCommitted = useCallback(
+    (book: Book) => {
+      const { licence } = book;
+      if (licence) setChosenLicences((m) => ({ ...m, [book.id]: licence }));
+      reload();
+    },
+    [reload]
+  );
+  const {
+    askingFor: askingLicenceFor,
+    saving: savingLicence,
+    failed: licenceFailed,
+    ask: askLicence,
+    cancel: cancelLicenceAsk,
+    choose: chooseLicence,
+    isSaving: licenceSaving,
+  } = useLicenceAsk(onLicenceCommitted);
+  // #1455 "change it later": the ask was reopened from the book menu's
+  // Licence tile, so a pick is stored and nothing is shared. Set by both ways
+  // into the ask (the tile and Share), so a stale value cannot outlive either.
+  const [changingLicence, setChangingLicence] = useState(false);
   // A failed cover write, scoped to the picker: the screen's Notice sits
   // behind the sheet's scrim, as rename's does.
   const [coverFailed, setCoverFailed] = useState<FailureKey | null>(null);
@@ -531,15 +608,27 @@ export function BooksScreen({
    */
   const closeBookMenuState = useCallback(() => {
     if (bookShare.ownsScreen()) return false;
+    // A licence write in flight cannot be cancelled, so the sheet stays up
+    // until it settles: closing now would drop the share after the licence
+    // committed (#1455).
+    if (licenceSaving()) return false;
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
     setPickingCover(false);
     setCoverFailed(null);
+    cancelLanguageAsk();
+    cancelLicenceAsk();
     setSavingName(false);
     bookShare.reset();
     return true;
-  }, [bookShare, setSavingName]);
+  }, [
+    bookShare,
+    setSavingName,
+    cancelLanguageAsk,
+    cancelLicenceAsk,
+    licenceSaving,
+  ]);
 
   /**
    * Cancel / Escape / scrim / a system Back unmount the delete confirm with
@@ -640,7 +729,12 @@ export function BooksScreen({
       // the screen for its whole timeline (Amendment D, widened from
       // `status === "preparing"` because #491's modal outlives it — see
       // `UseShareFlow.ownsScreen`).
-      busy: () => savingBookNameRef.current || bookShare.ownsScreen(),
+      // A licence write in flight (#1455) cannot be cancelled and
+      // `closeBookMenuState` refuses while it runs, so Back must see it as
+      // busy: otherwise the adapter unregisters the layer and a second Back
+      // leaves the app mid-share.
+      busy: () =>
+        savingBookNameRef.current || bookShare.ownsScreen() || licenceSaving(),
       dismiss: () => {
         closeBookMenuState();
       },
@@ -680,6 +774,23 @@ export function BooksScreen({
       busy: () => false,
       dismiss: () => {
         setAboutViewing(null);
+      },
+    },
+    // Settings (#1575) writes through its own rows, each of which lands in
+    // one synchronous tap, so Back is never refused.
+    "books:settings": {
+      busy: () => false,
+      dismiss: () => {
+        setSettingsOpen(false);
+      },
+    },
+    // The Template Library (#246): a create in flight is not recalled by Back,
+    // and the picker's own `close` refuses while it runs, so Back is refused
+    // the same way through the picker's own latch (`templatesBusy`).
+    "books:templates": {
+      busy: () => templatesBusy.current,
+      dismiss: () => {
+        setTemplatesOpen(false);
       },
     },
   });
@@ -725,6 +836,7 @@ export function BooksScreen({
     () => ({
       ...libraryShare,
       prepare: (zipFilename, nameBook, nameChapter) => {
+        stopChapter();
         openLibraryShareLayer();
         return libraryShare.prepare(zipFilename, nameBook, nameChapter);
       },
@@ -733,7 +845,7 @@ export function BooksScreen({
         return libraryShare.send();
       },
     }),
-    [libraryShare, openLibraryShareLayer]
+    [libraryShare, openLibraryShareLayer, stopChapter]
   );
 
   // The global menu's ONE open and ONE close. Every entry point — the ≡, the
@@ -798,6 +910,43 @@ export function BooksScreen({
     },
     [layers]
   );
+  // The gear's ONE open and ONE close. Opened from the tap itself, so the
+  // layer is registered in the gesture, and the ≡ menu is not involved: the
+  // gear is its own opener.
+  const settingsFocusRestore = useFocusRestore();
+  const openSettings = useCallback(() => {
+    settingsFocusRestore.capture();
+    layers.open("books:settings");
+    setSettingsOpen(true);
+  }, [layers, settingsFocusRestore]);
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    layers.close("books:settings");
+  }, [layers]);
+  // Once the screen is gone and the shelf's `inert` has lifted.
+  useLayoutEffect(() => {
+    if (settingsOpen) return;
+    settingsFocusRestore.restore({ suppressed: false, fallback: null });
+  }, [settingsOpen, settingsFocusRestore]);
+  // The Template Library's ONE open and ONE close, like About: it replaces the
+  // global menu, so the menu's layer goes with it.
+  const templatesBusy = useRef(false);
+  const onTemplatesBusy = useCallback((busy: boolean) => {
+    templatesBusy.current = busy;
+  }, []);
+  const openTemplates = useCallback(() => {
+    layers.open("books:templates");
+    closeGlobalMenu();
+    setTemplatesOpen(true);
+  }, [closeGlobalMenu, layers]);
+  const closeTemplates = useCallback(() => {
+    setTemplatesOpen(false);
+    layers.close("books:templates");
+  }, [layers]);
+  const onTemplateCreated = useCallback(() => {
+    closeTemplates();
+    reload();
+  }, [closeTemplates, reload]);
   const closeLicenseText = useCallback(() => {
     setAboutViewing(null);
     layers.close("books:about-text");
@@ -832,14 +981,31 @@ export function BooksScreen({
     // (`use-scroll-to-new.ts`), so it is there for exhaustiveness.
   }, [books, deleteTargetId, newBookSeed, newChapter, rowReveal]);
 
-  const toggle = useCallback((id: BookId) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  // Whether `chapterPlay` is about a chapter of this book (#1469). A row a
+  // collapse hides, or a book a delete removes, must not keep playing under
+  // a screen that no longer shows it; another book's chapter is none of this
+  // book's business.
+  const playsInBook = useCallback(
+    (id: BookId) =>
+      chapterPlay.chapterId !== null &&
+      (books.find((b) => b.bookId === id)?.chapters ?? []).some(
+        (c) => c.chapterId === chapterPlay.chapterId
+      ),
+    [books, chapterPlay.chapterId]
+  );
+
+  const toggle = useCallback(
+    (id: BookId) => {
+      if (expanded.has(id) && playsInBook(id)) stopChapter();
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [expanded, playsInBook, stopChapter]
+  );
 
   // `+` (and the empty state's CTA) no longer create anything: they open the
   // naming dialog first (#314). The field is pre-filled with the placeholder the
@@ -969,10 +1135,12 @@ export function BooksScreen({
   // and the shelf is never left live and un-`inert` across an await, with a
   // row's ⋮ one tap from stacking a second `aria-modal` panel.
   //
-  // `nextChapterNumber` is the same pure function `addChapter`'s own write
-  // transaction calls, so the name the field offers is the ordinal the write
-  // then derives as long as this shelf is current — `onConfirmNewChapter`
-  // says what happens when another copy of the app has moved it.
+  // A new chapter is appended, so it lands in the next slot: the card's
+  // chapter count + 1 (#1272 B). An untouched field stores no name, and an
+  // unnamed chapter's title is derived from its slot, so the name the field
+  // offers is the title the row then shows as long as this shelf is current —
+  // `onConfirmNewChapter` says what happens when another copy of the app has
+  // added one.
   const onNewChapter = useCallback(
     (bookId: BookId) => {
       const card = books.find((b) => b.bookId === bookId);
@@ -987,9 +1155,7 @@ export function BooksScreen({
       setCreatingChapterBusy(false);
       setNewChapter({
         bookId,
-        seed: strings.chapterName(
-          nextChapterNumber(card.chapters.map((c) => c.number))
-        ),
+        seed: strings.chapterName(card.chapters.length + 1),
       });
       layers.open("books:new-chapter");
     },
@@ -1084,7 +1250,49 @@ export function BooksScreen({
 
   // The book whose ⋮ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
-  const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  const shelfBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // The stored licence wins over a card the reload has not refreshed (or could
+  // not): without it a second Share would ask again and could overwrite.
+  const shareMenuBook = useMemo(() => {
+    const chosen = shelfBook ? chosenLicences[shelfBook.bookId] : undefined;
+    return shelfBook && chosen ? { ...shelfBook, licence: chosen } : shelfBook;
+  }, [shelfBook, chosenLicences]);
+  // Whether the open book was made from a template, read from the store: the
+  // shelf card does not carry provenance. A template book's licence is fixed
+  // (D5 `lock-template`), so its menu has no Licence tile. Keyed by book id,
+  // so one book's answer is never read for another, and unknown until the read
+  // lands, which also hides the tile: the tile is offered only on a positive
+  // "not a template".
+  const [bookKinds, setBookKinds] = useState<Readonly<Record<string, boolean>>>(
+    {}
+  );
+  useEffect(() => {
+    if (shareMenuBookId === null) return;
+    let live = true;
+    void getBook(shareMenuBookId).then(
+      (book) => {
+        if (!live || !book) return;
+        const isTemplate = book.provenance.kind === "template";
+        setBookKinds((m) => ({ ...m, [book.id]: isTemplate }));
+      },
+      (cause: unknown) => {
+        // Unknown provenance keeps the tile away, which is the safe side; the
+        // menu itself is unaffected.
+        console.error("Reading a book's provenance failed", cause);
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [shareMenuBookId]);
+  // Also off unless the share is idle: a prepared file's names carry the
+  // licence it was armed with, and Share now sends that file, so a change
+  // while one is armed or preparing would go out under the old licence — the
+  // Export tile's rule for the same armed file (Frank r1 P2, #1707).
+  const canChangeLicence =
+    shareMenuBook !== null &&
+    bookKinds[shareMenuBook.bookId] === false &&
+    bookShare.status === "idle";
   // The open book's cover colour: its stored key, or #957's id-derived
   // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
   // swatch and the delete ask all read this one value.
@@ -1142,12 +1350,20 @@ export function BooksScreen({
       setShareMenuBookId(bookId);
       setPickingCover(false);
       setCoverFailed(null);
+      cancelLanguageAsk();
+      cancelLicenceAsk();
       // A different book's still-pending rename must not show THIS book's fresh
       // Confirm as busy before it has even been tapped (Frank r1, #384).
       setSavingName(false);
       layers.open("books:book-menu");
     },
-    [menuFocusRestore, layers, setSavingName]
+    [
+      menuFocusRestore,
+      layers,
+      setSavingName,
+      cancelLanguageAsk,
+      cancelLicenceAsk,
+    ]
   );
   // Menu's actual `onClose`, and the one close every caller uses — see
   // `closeBookMenuState` above for what it does and why the share-overlay guard
@@ -1329,41 +1545,173 @@ export function BooksScreen({
   // remount and always names a live, non-destructive landmark for
   // `restore()`'s `fallback`. See `segments-screen.tsx`'s `shareControlRef`.
   const shareControlRef = useRef<HTMLButtonElement | null>(null);
+  // The prepare itself, handed the licence its file names carry (#1579,
+  // #1566): the stored one, or the one the ask just wrote (#1455), which the
+  // render this closure belongs to has not seen yet.
+  const runBookShare = useCallback(
+    (licence: LicenceId | null) => {
+      if (!shareMenuBook) return;
+      // On the native route `prepare()` chains straight into `send()` (#860,
+      // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so
+      // the tap alone must close the menu on `sent`/`dismissed` the same way
+      // `onSendBookShare` below already does for the web route's own second
+      // tap. On the web route (still `ready`, waiting for that second tap) and
+      // on every non-chained ending (nothing to share, a prepare error, a
+      // superseded run) this resolves `null`, and the guard below leaves the
+      // menu exactly as every one of those already did.
+      void bookShare
+        .prepare(
+          shareMenuBook.bookId,
+          strings.shareBookFilename(shareMenuBookName, licence),
+          // An unnamed chapter's file reads its on-screen title (#1272, Q1 (b)).
+          (n, name, highest, templateNumber) =>
+            strings.shareFilename(
+              shareMenuBookName,
+              n,
+              strings.chapterHeading(name, templateNumber ?? n),
+              highest,
+              licence
+            )
+        )
+        .then((outcome) => {
+          if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
+        });
+    },
+    [bookShare, shareMenuBook, shareMenuBookName, onCloseShareMenu]
+  );
   // Tap 1 — encode the book's chapters into a zip and arm the send gesture. The
   // menu stays open across both gestures (the shelf is `inert` behind it), so the
-  // panel is what the translator is looking at.
+  // panel is what the translator is looking at. A book with no licence chosen
+  // asks it first (#1455, S6): nothing is encoded from this tap, and the share
+  // runs from the ask once the pick is stored.
   const onPrepareBookShare = useCallback(() => {
     if (!shareMenuBook) return;
     focusRestore.capture();
+    // A share encodes while the screen is held; a chapter must not keep
+    // playing under it (#1469). After the capture, which has to come first.
+    stopChapter();
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
     setSavingName(false);
-    // On the native route `prepare()` chains straight into `send()` (#860,
-    // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so this
-    // tap alone must close the menu on `sent`/`dismissed` the same way
-    // `onSendBookShare` below already does for the web route's own second
-    // tap. On the web route (still `ready`, waiting for that second tap) and
-    // on every non-chained ending (nothing to share, a prepare error, a
-    // superseded run) this resolves `null`, and the guard below leaves the
-    // menu exactly as every one of those already did.
-    void bookShare
-      .prepare(
-        shareMenuBook.bookId,
-        strings.shareBookFilename(shareMenuBookName),
-        (n, name) => strings.shareFilename(shareMenuBookName, n, name)
-      )
-      .then((outcome) => {
-        if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
-      });
+    setChangingLicence(false);
+    if (needsLicenceAsk(shareMenuBook)) {
+      askLicence(shareMenuBook.bookId);
+      return;
+    }
+    runBookShare(shareMenuBook.licence ?? null);
   }, [
     focusRestore,
-    bookShare,
     setSavingName,
     shareMenuBook,
-    shareMenuBookName,
-    onCloseShareMenu,
+    stopChapter,
+    askLicence,
+    runBookShare,
   ]);
+  // The pick is stored once, then the share goes on with it; a failed write
+  // stays in the ask, and a closed or cancelled ask resolves null and shares
+  // nothing.
+  const licenceTileRef = useRef<HTMLButtonElement | null>(null);
+  const onPickLicence = useCallback(
+    (licence: LicenceId) => {
+      // Captured with the tap: the mode is the ask this pick was made in.
+      const change = changingLicence;
+      void chooseLicence(licence).then((book) => {
+        if (!book) return;
+        if (change) {
+          // Save-only: stored, nothing shared; back to the tiles on Licence.
+          setChangingLicence(false);
+          requestAnimationFrame(() => licenceTileRef.current?.focus());
+          return;
+        }
+        runBookShare(book.licence);
+      });
+    },
+    [chooseLicence, runBookShare, changingLicence]
+  );
+  // Cancel goes back to the tiles with nothing written and focus on the
+  // control the ask came from: Share, or the Licence tile.
+  const onCancelLicence = useCallback(() => {
+    cancelLicenceAsk();
+    const back = changingLicence ? licenceTileRef : shareControlRef;
+    setChangingLicence(false);
+    requestAnimationFrame(() => back.current?.focus());
+  }, [cancelLicenceAsk, changingLicence]);
+  // The Licence tile (#1455): reopen the ask with the stored licence selected.
+  // Offered only on a book known not to be from a template (`canChangeLicence`),
+  // and re-checked here so a stale tap on a template book still does nothing.
+  const onOpenLicenceTile = useCallback(() => {
+    if (!shareMenuBook || !canChangeLicence) return;
+    focusRestore.capture();
+    bookMenuSession.current += 1;
+    setSavingName(false);
+    setChangingLicence(true);
+    askLicence(shareMenuBook.bookId);
+  }, [
+    shareMenuBook,
+    canChangeLicence,
+    focusRestore,
+    setSavingName,
+    askLicence,
+  ]);
+  // Export project (#1457): the same tap-1 handling as Share Book above — the
+  // focus capture, the chapter stop, the rename-session bump, the chained
+  // close — through the same flow, handed a Scripture Bundle instead of the
+  // MP3 zip. A book with no language asks it first (#1492, R12); the export
+  // reads the stored book, so the tag reaches `metadata.json`.
+  const runBookExport = useCallback(
+    (bookId: BookId) => {
+      void bookShare
+        .prepareProject(bookId, {
+          filename: strings.exportProjectFilename(shareMenuBookName),
+          bookName: shareMenuBookName,
+          appVersion: __APP_VERSION__,
+          defaultLocale: activeLocale().tag,
+          exportedAt: Date.now(),
+        })
+        .then((outcome) => {
+          if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
+        });
+    },
+    [bookShare, shareMenuBookName, onCloseShareMenu]
+  );
+  const onPrepareBookExport = useCallback(() => {
+    if (!shareMenuBook) return;
+    focusRestore.capture();
+    stopChapter();
+    bookMenuSession.current += 1;
+    setSavingName(false);
+    if (!shareMenuBook.languageCode) {
+      askLanguage(shareMenuBook.bookId);
+      return;
+    }
+    runBookExport(shareMenuBook.bookId);
+  }, [
+    focusRestore,
+    setSavingName,
+    shareMenuBook,
+    stopChapter,
+    askLanguage,
+    runBookExport,
+  ]);
+  // The pick is stored once, then the export goes on; a failed write stays in
+  // the ask, and a closed or cancelled ask resolves null and exports nothing.
+  const onPickLanguage = useCallback(
+    (tag: string) => {
+      void chooseLanguage(tag).then((book) => {
+        if (!book) return;
+        reload();
+        runBookExport(book.id);
+      });
+    },
+    [chooseLanguage, reload, runBookExport]
+  );
+  // Cancel goes back to the tiles with nothing written and focus on Export.
+  const exportTileRef = useRef<HTMLButtonElement | null>(null);
+  const onCancelLanguage = useCallback(() => {
+    cancelLanguageAsk();
+    requestAnimationFrame(() => exportTileRef.current?.focus());
+  }, [cancelLanguageAsk]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
   // error Notice lives in the menu and must stay visible).
@@ -1533,11 +1881,21 @@ export function BooksScreen({
       setRenamingBook(false);
       setPickingCover(false);
       setCoverFailed(null);
+      cancelLanguageAsk();
+      cancelLicenceAsk();
       setSavingName(false);
       resetBookShare();
       layers.close("books:book-menu");
     });
-  }, [shareMenuBook, shareMenuBookId, layers, setSavingName, resetBookShare]);
+  }, [
+    shareMenuBook,
+    shareMenuBookId,
+    layers,
+    setSavingName,
+    resetBookShare,
+    cancelLanguageAsk,
+    cancelLicenceAsk,
+  ]);
   // Arm the delete ask from the book sheet's Delete tile. The sheet stays
   // open and its share is NOT reset (#980): the ask is about the same book
   // the sheet's share flow belongs to, so Keep returns to the sheet exactly
@@ -1576,6 +1934,9 @@ export function BooksScreen({
     // No share reset here: arming does NOT reset the share (Keep returns to
     // the sheet as it was), so the tail below resets it when it closes the
     // sheet, on either outcome.
+    // Before the first await: the book's chapters are about to go, and the
+    // tap is the moment to end its sound (#1469).
+    if (playsInBook(deleteTargetId)) stopChapter();
     void (async () => {
       const result = await deleteBook(deleteTargetId);
       // A double-tap's second call is refused, not answered: the first delete is
@@ -1616,7 +1977,16 @@ export function BooksScreen({
       // hand-off above still decides where focus lands.
       onCloseShareMenu();
     })();
-  }, [books, deleteBook, deleteTargetId, layers, onCloseShareMenu, rowReveal]);
+  }, [
+    books,
+    deleteBook,
+    deleteTargetId,
+    layers,
+    onCloseShareMenu,
+    playsInBook,
+    rowReveal,
+    stopChapter,
+  ]);
 
   // The delete ask's focus (#980). On the render the ask appears, land on Keep:
   // the sheet's `<Menu>` does not refocus, because it never closed. Again
@@ -1680,6 +2050,8 @@ export function BooksScreen({
   const shelfInert =
     menuOpen ||
     aboutOpen ||
+    settingsOpen ||
+    templatesOpen ||
     shareMenuBook !== null ||
     deleteTargetId !== null ||
     newBookSeed !== null ||
@@ -1702,8 +2074,8 @@ export function BooksScreen({
   // supplies the one write, the words and the focus.
   //
   // One write, on the drop: `moveChapter` (#1053) patches the card
-  // optimistically, renumbers the badges (names such as "Mark 6" stay, the
-  // DRI's pick), leaves the book where it is on the shelf (#953 scope Q4),
+  // optimistically, re-slots every badge so they still read 1..N (#1272 B;
+  // names such as "Mark 6" stay as they are), leaves the book where it is on the shelf (#953 scope Q4),
   // and on failure puts the stored order back and reports "chapter-reorder",
   // with nothing extra on screen (#172). Every cancel writes nothing.
   //
@@ -1726,8 +2098,9 @@ export function BooksScreen({
       if (active === document.body || (node && node.contains(active))) {
         rowReveal.armFocus(row.chapterId);
       }
-      // Chapters renumber after a move, so the row's new number is its new
-      // position among the card's rows (the ones `moveChapter` indexes).
+      // Slot to slot (#1272, Q4 (a)): the moved chapter takes the number of
+      // the slot it landed in, among the card's rows (the ones `moveChapter`
+      // indexes), the way a segment's line says it.
       const moved = strings.chapterReorderMoved(row.number, toIndex + 1);
       setReorderStatus(moved);
       // A write that did not land puts the row back (`moveChapter` resolves
@@ -1757,11 +2130,45 @@ export function BooksScreen({
   // One write, on the drop: `moveBook` patches the shelf optimistically, does
   // not count as activity on the book, and on failure puts the stored order
   // back and reports "book-reorder", with nothing extra on screen (#172).
-  // Every cancel writes nothing. Like the chapter reorder, there is no
-  // keyboard or switch path to move a book (D11); the live region only says
-  // what a drag did.
+  // Every cancel writes nothing. Unlike the chapter reorder, a book has a
+  // tap path too: Move up / Move down in its ⋮ menu (#1344, the DRI's "Yes,
+  // menu Move up/down" pick, revisiting D11 for this case), through the same
+  // write and the same spoken line (`commitBookMove`).
   const bookHeadingOf = (book: BookCard) =>
     strings.bookHeading(book.name, book.number);
+  // The one write and the one spoken line for a book's move, from a drop or
+  // from the menu. The landing is the book's new place on the shelf, counted
+  // from 1. A write that did not land puts the book back (`moveBook`
+  // resolves false, having reported it), so the spoken line must not keep
+  // saying it moved. Only if nothing newer has been said since.
+  const commitBookMove = (book: BookCard, toIndex: number) => {
+    const heading = bookHeadingOf(book);
+    const moved = strings.bookReorderMoved(heading, toIndex + 1);
+    setReorderStatus(moved);
+    void moveBook(book.bookId, toIndex).then((landed) => {
+      if (!landed) {
+        setReorderStatus((s) =>
+          s === moved ? strings.bookReorderStayed(heading) : s
+        );
+      }
+    });
+  };
+  // Move up / Move down from the book menu (#1344): one place, to the
+  // neighbour's index on the shelf. The menu closes the way its Close does,
+  // so focus goes back to this book's ⋮ (the restore effect above), and the
+  // row is scrolled into view if the move took it out. The menu greys the
+  // tile that would leave the shelf, and this refuses it again.
+  const moveBookFromMenu = (step: -1 | 1) => {
+    const from = books.findIndex((b) => b.bookId === shareMenuBookId);
+    const book = books[from];
+    const toIndex = from + step;
+    if (!book || toIndex < 0 || toIndex >= books.length) return;
+    if (!closeBookMenuState()) return;
+    layers.close("books:book-menu");
+    rowReveal.armScroll(book.bookId);
+    commitBookMove(book, toIndex);
+  };
+  const bookMenuIndex = books.findIndex((b) => b.bookId === shareMenuBookId);
   const bookGesture = useReorderGesture<BookId>({
     enabled: !shelfInert && !loading,
     ids: books.map((book) => book.bookId),
@@ -1775,7 +2182,6 @@ export function BooksScreen({
     onDrop: (bookId, _fromIndex, toIndex) => {
       const book = books.find((b) => b.bookId === bookId);
       if (!book) return;
-      const heading = bookHeadingOf(book);
       // Keep focus with the book that moved — on its row, which is what the
       // hand-off lands on — only when focus was on that row or nowhere, so a
       // drop never pulls focus off something else.
@@ -1784,19 +2190,7 @@ export function BooksScreen({
       if (active === document.body || (hit && hit === active)) {
         rowReveal.armFocus(bookId);
       }
-      // The landing is the book's new place on the shelf, counted from 1.
-      const moved = strings.bookReorderMoved(heading, toIndex + 1);
-      setReorderStatus(moved);
-      // A write that did not land puts the book back (`moveBook` resolves
-      // false, having reported it), so the spoken line must not keep saying
-      // it moved. Only if nothing newer has been said since.
-      void moveBook(bookId, toIndex).then((landed) => {
-        if (!landed) {
-          setReorderStatus((s) =>
-            s === moved ? strings.bookReorderStayed(heading) : s
-          );
-        }
-      });
+      commitBookMove(book, toIndex);
     },
     onCancel: (index) => {
       const book = books[index];
@@ -1837,6 +2231,15 @@ export function BooksScreen({
             render. Same two classes, same `aria-hidden` sibling shape, so the
             two marks cannot drift apart visually; the only difference is the
             colour, because this one is a state mark rather than a reason. */}
+        {/* Settings (#1575, the DRI: "Gear icon on Books header"). Its own
+            Control, ahead of the ≡, so the ≡'s hint wrapper below is untouched. */}
+        <Control
+          icon="gear"
+          label={strings.settingsOpen}
+          variant="quiet"
+          className="books-ghost"
+          onClick={openSettings}
+        />
         <span className="control-hinted">
           <Control
             icon="menu"
@@ -1990,6 +2393,7 @@ export function BooksScreen({
               <BookItem
                 key={book.bookId}
                 book={book}
+                audio={audio}
                 onHoldStart={bookGesture.holdStart(index)}
                 lifted={bookDrag?.fromIndex === index}
                 // While a book is lifted: it follows the finger and the books
@@ -2032,8 +2436,8 @@ export function BooksScreen({
           share it — as on the Segments list: which row was lifted, where it
           landed, or that it went back. Outside the shelf's scroll box, and
           mounted for the screen's whole life so a screen reader hears the
-          first change. D11 leaves no keyboard or switch path to move a
-          chapter or a book; this only tells what a drag did. */}
+          first change. It tells what a drag did, and what a book menu's Move
+          up / Move down did (#1344); a chapter has no tap path to move yet. */}
       <span
         className="sr-only"
         role="status"
@@ -2042,9 +2446,22 @@ export function BooksScreen({
       >
         {reorderStatus}
       </span>
+      {/* What a chapter's play did (#1344): started, paused, finished or
+          failed, with the chapter's heading. A sibling of the reorder region,
+          so neither overwrites the other's line, and mounted for the screen's
+          whole life for the same reason (`useChapterPlayAnnouncement`). */}
+      <span
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-chapter-play-status=""
+      >
+        {chapterPlayLine}
+      </span>
 
-      {/* The global menu: the failure-log panel, then About & licenses, then
-          the theme toggle.
+      {/* The global menu: the failure-log panel, then About & licenses. The
+          theme toggle left it for the Settings screen (#1575), which the gear
+          in the header opens.
 
           THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
           focus on its first actionable child on open, and while the log is
@@ -2060,16 +2477,11 @@ export function BooksScreen({
           menu and hands off to the About panel, which owns its own Menu.
 
           Placement (DRI ruling on PR #1019, 2026-09-26): About renders as
-          a tile in the same `TileGrid` the theme tile uses, ahead of the
-          `TileSpacer` — so it is the grid's first tile and the theme tile
-          keeps the far end, the position `tests/books-menus-tiles-o4.test.ts`
-          already pins for it.
+          a tile in the `TileGrid`.
 
-          The toggle (#171) is `ThemeControl`, which is also mounted in the
-          chapter and recorder menus (#149) — its own docblock holds why it is
-          one shared component, why the glyph names the destination, and why
-          the tap leaves this menu open. What stays Books-only is the panel
-          above it, for the two reasons recorded there.
+          The toggle (#171) is `ThemeControl`, and it lives only on the
+          Settings screen (DRI on #1623, 2026-10-22: "Remove, Settings only").
+          Its own docblock holds why the glyph names the destination.
 
           This menu used to end with the design switch (#938's pencil, "New
           look (O4)"). #1244 removed it, and #954 removed the old look it
@@ -2086,10 +2498,8 @@ export function BooksScreen({
             onClearConfirmClose={onClearConfirmClose}
           />
         )}
-        {/* The workbench's G1, plus the DRI's About placement above: About
-            is a tile ahead of the spacer, the theme tile stays at the far
-            end, where every menu draws it. The report panel above stays as
-            it is (its Export tile's words are a DRI call). */}
+        {/* The report panel above stays as it is (its Export tile's words are
+            a DRI call). */}
         <TileGrid>
           <Tile
             tone="plain"
@@ -2098,10 +2508,24 @@ export function BooksScreen({
             caption={strings.tileAbout}
             onClick={openAbout}
           />
-          <TileSpacer />
-          <ThemeControl tile />
+          <Tile
+            tone="plain"
+            icon="book-open"
+            label={strings.templatesOpen}
+            caption={strings.tileTemplates}
+            onClick={openTemplates}
+          />
         </TileGrid>
       </Menu>
+
+      <SettingsPanel open={settingsOpen} onClose={closeSettings} />
+
+      <TemplatePicker
+        open={templatesOpen}
+        onClose={closeTemplates}
+        onCreated={onTemplateCreated}
+        onBusyChange={onTemplatesBusy}
+      />
 
       <AboutPanel
         open={aboutOpen}
@@ -2289,57 +2713,152 @@ export function BooksScreen({
           // comes back here.
           <>
             <O4BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
-              {!pickingCover && (
-                <Control
-                  icon="pencil"
-                  label={strings.renameBook}
-                  size={24}
-                  className="o4-head-pen"
-                  onClick={() => setRenamingBook(true)}
-                />
-              )}
+              {!pickingCover &&
+                askingLanguageFor === null &&
+                askingLicenceFor === null && (
+                  <Control
+                    icon="pencil"
+                    label={strings.renameBook}
+                    size={24}
+                    className="o4-head-pen"
+                    onClick={() => setRenamingBook(true)}
+                  />
+                )}
             </O4BookHead>
-            {pickingCover ? (
+            {askingLanguageFor !== null ? (
+              <LanguageAsk
+                state={languageList.state}
+                onRetry={languageList.retry}
+                onPick={onPickLanguage}
+                onCancel={onCancelLanguage}
+                saving={savingLanguage}
+                error={languageFailed ? strings[languageFailed] : null}
+              />
+            ) : askingLicenceFor !== null ? (
+              <LicenceAsk
+                // A fresh ask per book and mode, so the seeded selection can
+                // never come from another open (George r1 Low).
+                key={`${askingLicenceFor}:${changingLicence ? "change" : "share"}`}
+                change={
+                  changingLicence
+                    ? { current: shareMenuBook?.licence ?? null }
+                    : undefined
+                }
+                onContinue={onPickLicence}
+                onCancel={onCancelLicence}
+                saving={savingLicence}
+                error={licenceFailed ? strings[licenceFailed] : null}
+              />
+            ) : pickingCover ? (
               <O4CoverPick
                 selected={shareMenuCoverKey}
                 onSelect={onChooseCover}
                 error={coverFailed ? strings[coverFailed] : null}
               />
             ) : (
-              <ShareMenuSection
-                status={bookShare.status}
-                sendUnconfirmed={bookShare.sendUnconfirmed}
-                error={bookShare.error}
-                scope="book"
-                controlRef={shareControlRef}
-                idleLabel={strings.shareBook}
-                preparingLabel={strings.shareBookPreparing}
-                unconfirmedLabel={strings.shareBookUnconfirmed}
-                hasGap={bookShareHasGap}
-                gapText={bookShareGapText}
-                onPrepare={onPrepareBookShare}
-                onSend={onSendBookShare}
-                tiles={{
-                  after: (
-                    <>
-                      <CoverTile
-                        ref={coverTileRef}
-                        coverHex={shareMenuCoverHex}
-                        onClick={onOpenCoverPicker}
-                      />
-                      <TileSpacer />
-                      <Tile
-                        ref={deleteControlRef}
-                        tone="erase"
-                        icon="trash"
-                        label={strings.deleteBook}
-                        caption={strings.tileDelete}
-                        onClick={onArmDelete}
-                      />
-                    </>
-                  ),
-                }}
-              />
+              <>
+                <ShareMenuSection
+                  status={bookShare.status}
+                  sendUnconfirmed={bookShare.sendUnconfirmed}
+                  error={bookShare.error}
+                  scope="book"
+                  controlRef={shareControlRef}
+                  idleLabel={strings.shareBook}
+                  preparingLabel={
+                    bookShare.kind === "project"
+                      ? strings.exportProjectPreparing
+                      : strings.shareBookPreparing
+                  }
+                  unconfirmedLabel={strings.shareBookUnconfirmed}
+                  hasGap={bookShareHasGap}
+                  gapText={bookShareGapText}
+                  onPrepare={onPrepareBookShare}
+                  onSend={onSendBookShare}
+                  // Share, Export, Cover colour and Delete are four tiles: at
+                  // the pinned 76 px they run past a 360 px sheet, so the row
+                  // takes the compact size the segment menu's four use.
+                  compact
+                  tiles={{
+                    after: (
+                      <>
+                        {/* Off while a file is armed: Share now sends what was
+                          prepared, so Export cannot sit beside it as if it
+                          would swap the file in. */}
+                        {bookShare.status !== "ready" && (
+                          <Tile
+                            ref={exportTileRef}
+                            tone="send"
+                            icon="file-zip"
+                            label={strings.exportProject}
+                            caption={strings.tileExport}
+                            busy={
+                              bookShare.status === "preparing" &&
+                              bookShare.kind === "project"
+                            }
+                            onClick={onPrepareBookExport}
+                          />
+                        )}
+                        <CoverTile
+                          ref={coverTileRef}
+                          coverHex={shareMenuCoverHex}
+                          onClick={onOpenCoverPicker}
+                        />
+                        {canChangeLicence && (
+                          <LicenceTile
+                            ref={licenceTileRef}
+                            onClick={onOpenLicenceTile}
+                          />
+                        )}
+                        <TileSpacer />
+                        <Tile
+                          ref={deleteControlRef}
+                          tone="erase"
+                          icon="trash"
+                          label={strings.deleteBook}
+                          caption={strings.tileDelete}
+                          onClick={onArmDelete}
+                        />
+                      </>
+                    ),
+                  }}
+                />
+                {/* Move up / Move down (#1344): their own row under the
+                  actions, so the compact action row keeps its fit. The first
+                  book's Move up and the last book's Move down are greyed
+                  with their reason (#135), as the segment menu greys Done
+                  and Edit on an empty segment. */}
+                <TileGrid>
+                  {(
+                    [
+                      [
+                        -1,
+                        "arrow-up",
+                        strings.moveUp,
+                        bookMenuIndex <= 0,
+                        "alreadyFirst",
+                      ],
+                      [
+                        1,
+                        "arrow-down",
+                        strings.moveDown,
+                        bookMenuIndex >= books.length - 1,
+                        "alreadyLast",
+                      ],
+                    ] as const
+                  ).map(([step, icon, label, blocked, reason]) => (
+                    <Tile
+                      key={step}
+                      tone="plain"
+                      icon={icon}
+                      label={label}
+                      caption={label}
+                      disabled={blocked}
+                      hint={blocked ? { label: strings[reason] } : null}
+                      onClick={() => moveBookFromMenu(step)}
+                    />
+                  ))}
+                </TileGrid>
+              </>
             )}
           </>
         )}
@@ -2393,6 +2912,8 @@ interface ChapterReorder {
 
 interface BookItemProps {
   book: BookCard;
+  /** Chapter play, for this book's rows (#1469). */
+  audio: ChapterAudio;
   expanded: boolean;
   onToggle: () => void;
   onNewChapter: () => void;
@@ -2424,6 +2945,7 @@ interface BookItemProps {
 
 function BookItem({
   book,
+  audio,
   expanded,
   onToggle,
   onNewChapter,
@@ -2464,6 +2986,9 @@ function BookItem({
   // The facilitator's name (#264), else the placeholder its slot renders
   // (#169) — `ChapterItem`'s `heading` one level up the tree.
   const heading = strings.bookHeading(book.name, book.number);
+  // Hold a cut-off book name to read it whole (S14, #1284). A name that fits
+  // leaves the press to the book's own reorder hold (#338).
+  const nameReveal = useHoldReveal();
   return (
     <li
       className={cn("books-card", lifted && "books-card-lifted")}
@@ -2519,9 +3044,14 @@ function BookItem({
                 size={expanded ? 36 : 34}
               />
             </span>
-            <span className="books-name" dir="auto">
+            <span
+              className="books-name"
+              dir="auto"
+              onPointerDown={nameReveal.holdStart}
+            >
               {heading}
             </span>
+            <NameReveal text={heading} place={nameReveal.place} />
           </>
         </button>
         <Control
@@ -2556,6 +3086,7 @@ function BookItem({
             <ChapterItem
               key={chapter.chapterId}
               chapter={chapter}
+              audio={audio}
               onOpen={() => onOpenChapter(chapter.chapterId)}
               guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
@@ -2582,6 +3113,7 @@ function BookItem({
 
 interface ChapterItemProps {
   chapter: ChapterRow;
+  audio: ChapterAudio;
   onOpen: () => void;
   /** This row is the guided step (#604). */
   guided: boolean;
@@ -2600,6 +3132,7 @@ interface ChapterItemProps {
 
 function ChapterItem({
   chapter,
+  audio,
   onOpen,
   guided,
   setNode,
@@ -2607,8 +3140,14 @@ function ChapterItem({
   lifted,
   reorderY,
 }: ChapterItemProps) {
-  // The passage label the facilitator set (#264), else "Chapter {number}".
-  const heading = strings.chapterHeading(chapter.name, chapter.number);
+  // The passage label the facilitator set (#264), else "Chapter {n}" by the
+  // slot or a template's number (#1272, Q1 (b)).
+  const heading = useChapterHeading(
+    chapter.name,
+    chapter.number,
+    chapter.templateNumber
+  );
+  const status = chapterRowStatus(audio.chapterPlay, chapter.chapterId);
   return (
     <li
       ref={(el) => setNode(chapter.chapterId, el)}
@@ -2634,13 +3173,31 @@ function ChapterItem({
       >
         <O4ChapterFace chapter={chapter} />
       </button>
+      {/* A sibling of the row button, never inside it: a button in a button is
+          invalid, and a tap or a hold here must not reach the row's open and
+          lift handlers (#1469). It sits over the slot the row's face keeps
+          for it (`books-chapter-go`). */}
+      <ChapterPlayControl
+        heading={heading}
+        recordedCount={chapter.recordedCount}
+        status={status}
+        pausedFraction={audio.chapterPlay.pausedFraction}
+        // Playing and loading pause; every other state plays, which resumes
+        // a paused chapter and retries a failed one (`playChapter`).
+        onPress={() =>
+          status === "playing" || status === "loading"
+            ? audio.pauseChapter()
+            : audio.playChapter(chapter.chapterId)
+        }
+        readProgress={audio.readChapterProgress}
+      />
     </li>
   );
 }
 
 /**
  * The chapter row's face (#942, state 03): the number in a 44 badge, the
- * chapter's title line, one progress dot per segment, and a chevron.
+ * chapter's title line, one progress dot per segment, and the room for the play control.
  *
  * All of it is decoration — the row button's own name (`strings.openChapter`)
  * already carries the heading, typed title included — so each part is
@@ -2651,13 +3208,22 @@ function ChapterItem({
  * New Chapter prompt offered (#609) when it has none. A chapter always has a
  * name to show (#1219), so the line is always drawn and the badge always steps
  * back behind it, as the design reference's §3 and §7 describe for a titled
- * row. The default is derived here at read time rather than stored, so a
- * reorder (#953) renumbers it with the badge. A title that was only spoken is
+ * row. The default is derived here at read time rather than stored: from the
+ * template's number for a template chapter, else from the slot, which a
+ * reorder changes (#1272, Q1 (b)). The badge is always the slot. A title that was only spoken is
  * tier 2 (after the training) and is not drawn here.
  */
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
+  const heading = useChapterHeading(
+    chapter.name,
+    chapter.number,
+    chapter.templateNumber
+  );
   const dots = dotStates(chapter);
   const [size, gap] = dotFit(dots.length, TITLED_DOT_ROOM);
+  // Hold a cut-off title to read it whole (S14, #1284). A title that fits
+  // leaves the press to the row's reorder hold (#953).
+  const nameReveal = useHoldReveal();
   return (
     <>
       <span className="books-chapter-num is-dim" aria-hidden="true">
@@ -2666,10 +3232,20 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
       <span className="books-chapter-mid" aria-hidden="true">
         <span
           className="books-chapter-title"
-          dir={chapter.name === null ? undefined : "auto"}
+          dir={
+            // A derived "Chapter N" is the app's own text; only a typed name
+            // carries a direction of its own (#1267).
+            heading === strings.chapterName(chapter.number) ||
+            heading ===
+              strings.chapterName(chapter.templateNumber ?? chapter.number)
+              ? undefined
+              : "auto"
+          }
+          onPointerDown={nameReveal.holdStart}
         >
-          {strings.chapterHeading(chapter.name, chapter.number)}
+          {heading}
         </span>
+        <NameReveal text={heading} place={nameReveal.place} />
         <span
           className="books-dots"
           style={
@@ -2684,9 +3260,10 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
           ))}
         </span>
       </span>
-      <span className="books-chapter-go" aria-hidden="true">
-        <Icon name="chevron-right" size={28} />
-      </span>
+      {/* The room the play control takes (#1469): the chevron's slot, now a
+          44px one. Empty on purpose, so the dots' column is derived from a
+          stylesheet width and not from a hand-kept number. */}
+      <span className="books-chapter-go" aria-hidden="true" />
     </>
   );
 }
@@ -2732,10 +3309,11 @@ function dotStates(chapter: ChapterRow): SegmentRowState[] {
  * − 2 × (10 + 1) (`.books-card`'s padding and border)
  * − (12 + 16) (`.books-chapter`'s left and right padding)
  * − 44 (`.books-chapter-num`) − 2 × 14 (the row's two gaps)
- * − 28 (the chevron) = 154. `tests/books-o4.test.ts` re-derives it from the
- * stylesheets.
+ * − 44 (`.books-chapter-go`, the play control's slot, #1469) = 138. It was 154
+ * while a 28px chevron held that slot. `tests/books-o4.test.ts` re-derives it
+ * from the stylesheets.
  */
-const DOT_COLUMN = 154;
+const DOT_COLUMN = 138;
 /** Size/gap steps, largest first (the design reference, §3). */
 const DOT_STEPS: readonly (readonly [number, number])[] = [
   [13, 6],

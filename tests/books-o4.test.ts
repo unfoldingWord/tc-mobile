@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import {
   COVER_COLOUR_KEYS,
   coverColourHex,
@@ -90,6 +91,7 @@ function chapter(
   return {
     chapterId: chapterId(b, n),
     number: n,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 0,
@@ -118,6 +120,7 @@ async function mount(books: BookCard[]) {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {
@@ -219,12 +222,12 @@ const NARROWEST_VIEWPORT = 320;
  * The dots' column on the narrowest supported phone, walked down the CSS
  * chain from the viewport: the shell's side padding (`.app-shell`), the
  * card's padding and border, the chapter row's own padding, the 44 badge,
- * the row's two gaps and the chevron. The shelf's scroll box, the book list
- * and the chapter list add no inline space (none sets a padding). The
- * chevron's width is read from the rendered row, the rest from the
- * stylesheets, so a change to any of them moves this number.
+ * the row's two gaps and the play control's slot (`.books-chapter-go`, which
+ * took the chevron's place in #1469). The shelf's scroll box, the book list
+ * and the chapter list add no inline space (none sets a padding). Every term
+ * is read from the stylesheets, so a change to any of them moves this number.
  */
-function narrowestDotColumn(chevronWidth: number): number {
+function narrowestDotColumn(): number {
   const O4 = ":root";
   const books = "src/app/styles/o4/books.css";
   const shell = declarations("src/app/styles/3-components.css", ".app-shell")
@@ -234,7 +237,8 @@ function narrowestDotColumn(chevronWidth: number): number {
   const card = declarations(books, `${O4} .books-card`);
   const cardBorder = px(card.get("border")!.split(" ")[0]);
   const row = declarations(books, `${O4} .books-chapter`);
-  const [, rowRight, , rowLeft] = row.get("padding")!.split(" ");
+  // Logical since #1552: `padding-inline: <start> <end>`, both summed here.
+  const [rowLeft, rowRight] = row.get("padding-inline")!.split(" ");
   const badge = px(
     declarations(books, `${O4} .books-chapter-num`).get("width")
   );
@@ -245,7 +249,7 @@ function narrowestDotColumn(chevronWidth: number): number {
     (px(rowLeft) + px(rowRight)) -
     badge -
     2 * px(row.get("gap")) -
-    chevronWidth
+    px(declarations(books, `${O4} .books-chapter-go`).get("width"))
   );
 }
 
@@ -258,12 +262,6 @@ function packed(
   const perRow = Math.floor((column + gap) / (size + gap));
   const rows = Math.ceil(n / perRow);
   return { rows, height: rows * (size + gap) - gap };
-}
-
-/** The rendered chevron's width, in px. */
-function chevronWidth(row: HTMLElement): number {
-  const svg = only(".books-chapter-go svg", row);
-  return parseFloat(svg.getAttribute("width") ?? "NaN");
 }
 
 describe("O4 Books list, state 03 (#942)", () => {
@@ -310,7 +308,39 @@ describe("O4 Books list, state 03 (#942)", () => {
     );
   });
 
-  it("gives a chapter row a 44 badge, a chevron, and a title line with its name, the default when it has none (#1219)", async () => {
+  it("badges read the slot, and an unnamed template chapter's title keeps the template's number (#1272 B, Q1 (b))", async () => {
+    await mount([
+      {
+        bookId: bookId(1),
+        name: "Mark",
+        number: 1,
+        coverColourKey: null,
+        chapters: [
+          chapter(1, 1),
+          chapter(1, 2, { name: "The sower" }),
+          chapter(1, 3, { templateNumber: 7 }),
+          chapter(1, 4),
+        ],
+      },
+    ]);
+    await act(async () => button(strings.bookRow("Mark", 4, false)).click());
+
+    const badges = all(".books-chapter-num").map((el) => el.textContent);
+    expect(badges).toEqual(["1", "2", "3", "4"]);
+    const titles = all(".books-chapter-title").map((el) => el.textContent);
+    expect(titles).toEqual([
+      strings.chapterName(1),
+      "The sower",
+      strings.chapterName(7),
+      strings.chapterName(4),
+    ]);
+    // The row's spoken name is the same title, so the badge and the name
+    // can differ for a template chapter: slot 3, "Chapter 7".
+    const templated = button(strings.openChapter(strings.chapterName(7)));
+    expect(only(".books-chapter-num", templated).textContent).toBe("3");
+  });
+
+  it("gives a chapter row a 44 badge, the play control's room, and a title line with its name, the default when it has none (#1219)", async () => {
     await mount([
       {
         bookId: bookId(1),
@@ -402,10 +432,10 @@ describe("O4 Books list, state 03 (#942)", () => {
 
     const rows = all(".books-chapter");
     expect(rows).toHaveLength(26);
-    // 320 − 2×8 − 2×(10 + 1) − (12 + 16) − 44 − 2×14 − 28 = 154px. Pinned so
+    // 320 − 2×8 − 2×(10 + 1) − (12 + 16) − 44 − 2×14 − 44 = 138px. Pinned so
     // a change anywhere in the chain is seen here, not only as a looser fit.
-    const column = narrowestDotColumn(chevronWidth(rows[0]!));
-    expect(column).toBe(154);
+    const column = narrowestDotColumn();
+    expect(column).toBe(138);
     const sizes = new Set<number>();
     for (const [i, row] of rows.entries()) {
       const { totalCount } = chapters[i]!;
@@ -447,8 +477,8 @@ describe("O4 Books list, state 03 (#942)", () => {
     const [eight, eleven, plain26, titled26, titled41] = all(".books-chapter");
     // Every row has the title line since #1219, so an unnamed chapter's dots
     // fit the same 19px a named one's do.
-    expect(dotGeometry(eight!)).toEqual({ size: 13, gap: 6 });
-    expect(dotGeometry(eleven!)).toEqual({ size: 9, gap: 4 });
+    expect(dotGeometry(eight!)).toEqual({ size: 11, gap: 5 });
+    expect(dotGeometry(eleven!)).toEqual({ size: 7, gap: 3 });
     expect(dotGeometry(plain26!)).toEqual({ size: 7, gap: 3 });
     expect(dotGeometry(titled26!)).toEqual({ size: 7, gap: 3 });
     expect(dotGeometry(titled41!)).toEqual({ size: 5, gap: 2 });
@@ -481,12 +511,17 @@ describe("O4 Books list, state 03 (#942)", () => {
     // rows under its own controls.
     expect(buttonNames()).toEqual([
       strings.newBook,
+      strings.settingsOpen,
       strings.menuOpen,
       strings.bookRow("Mark", 2, true),
       strings.addChapter("Mark"),
       strings.bookMenuOpen("Mark"),
       strings.openChapter(strings.chapterName(1)),
+      // The play control follows its own row, a sibling after the row button
+      // (#1469); a chapter with nothing recorded names why it is inert.
+      strings.playChapter(strings.chapterName(1)),
       strings.openChapter("The sower"),
+      strings.chapterNothingToPlay("The sower"),
       strings.bookRow("Ruth", 0, false),
       strings.addChapter("Ruth"),
       strings.bookMenuOpen("Ruth"),

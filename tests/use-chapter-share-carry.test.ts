@@ -126,7 +126,7 @@ it("the send's busy state carries the prepare's hollow positions, item count and
     );
   let prepared!: Promise<unknown>;
   act(() => {
-    prepared = hook().prepare(chapterId, "c.mp3");
+    prepared = hook().prepare(chapterId, () => "c.mp3");
   });
   await act(async () => {
     await encodeStarted;

@@ -1,6 +1,14 @@
 import "fake-indexeddb/auto";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 
 import {
   deleteClip,
@@ -43,14 +51,21 @@ import {
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { Book, BookId, RecordingStatus } from "@/types/domain";
-import { recordTake, samplesOf, storeOrphanClip } from "./support";
+import {
+  forgetDisposition,
+  loseClip,
+  recordTake,
+  samplesOf,
+  savedTake,
+  storeOrphanClip,
+} from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
 
 /** A book → chapter → one segment, and the ids to address it by. */
 const oneSegment = async () => {
-  const book = await createBook("b");
+  const book = await createBook(`b-${crypto.randomUUID()}`);
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   return { chapterId: chapter.id, segmentId: segment.id };
@@ -117,8 +132,10 @@ describe("clip storage", () => {
     // The name is deliberately narrow: these two calls both go through
     // `clipMeta`, so they say nothing about the samples. That is the test
     // below.
-    const { segmentId } = await oneSegment();
-    const { clipId: id } = await recordTake(segmentId, { frames: 10 });
+    // An orphan: `deleteClip` keeps a clip a take or a pending row still
+    // names (v13, #38).
+    const id = newClipId();
+    await storeOrphanClip(id, new Int16Array(10).fill(1));
     await deleteClip(id);
     expect(await getClipMeta(id)).toBeUndefined();
     expect(await getClip(id)).toBeUndefined();
@@ -131,8 +148,8 @@ describe("clip storage", () => {
     // `clipMeta` so it cannot see the orphan either. Discarding a failed take
     // deletes its clip precisely to give the bytes back on a phone that has
     // just run out of room, so the data store is checked directly.
-    const { segmentId } = await oneSegment();
-    const { clipId: id } = await recordTake(segmentId, { frames: 1000 });
+    const id = newClipId();
+    await storeOrphanClip(id, new Int16Array(1000).fill(1));
     const db = await getDb();
     expect(await db.get("clipData", id)).toBeDefined();
 
@@ -180,7 +197,7 @@ describe("book tree", () => {
   });
 
   it("numbers chapters max+1 and parents them to the book", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const c1 = await addChapter(book.id);
     const c2 = await addChapter(book.id);
 
@@ -193,7 +210,7 @@ describe("book tree", () => {
   });
 
   it("appends segments with a sequential index and empty defaults", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -215,7 +232,7 @@ describe("book tree", () => {
   });
 
   it("reads one segment by id, and nothing for an unknown id", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s = await addSegment(chapter.id);
 
@@ -229,7 +246,7 @@ describe("book tree", () => {
   });
 
   it("returns a chapter's segments in declared order, dropping dangling ids", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const a = await addSegment(chapter.id);
     const b = await addSegment(chapter.id);
@@ -289,7 +306,7 @@ describe("book tree", () => {
   });
 
   it("rolls up finished/total/recorded for the chapter counter and the storage-pressure gate", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -397,18 +414,25 @@ describe("book tree", () => {
 
   it("keeps the audio when a re-record reuses the same clip id", async () => {
     // The pending-take retry path re-runs the save with the SAME clipId
-    // (retrySave keeps it; the clip write is an upsert). The take write then
-    // sees prior.clipId === new clipId, and deleting "the superseded clip"
-    // would strand the take it just wrote — the reference check in takes.ts is
-    // what stops that.
+    // (retrySave keeps it; the clip write is an upsert). Once the first run
+    // has landed, its `saved` record (v13, #38) makes the second a no-op, so
+    // nothing can strand the take it already wrote.
     const { segmentId } = await oneSegment();
-    const { clipId } = await recordTake(segmentId, { frames: 1000 });
+    const first = await recordTake(segmentId, { frames: 1000 });
+    const clipId = first.clipId;
 
     // Same id again, as a retry does.
-    const second = await recordTake(segmentId, { clipId, frames: 1000 });
+    expect(
+      await saveTake(
+        segmentId,
+        clipId,
+        new Int16Array(1000).fill(1000),
+        CANONICAL_SAMPLE_RATE
+      )
+    ).toEqual({ outcome: "already-saved" });
 
     const db = await getDb();
-    expect((await db.get("segments", segmentId))?.activeTakeId).toBe(second.id);
+    expect((await db.get("segments", segmentId))?.activeTakeId).toBe(first.id);
     // The audio the active take points at must still be present.
     expect(await db.get("clipMeta", clipId)).toBeDefined();
     expect(await db.get("clipData", clipId)).toBeDefined();
@@ -451,12 +475,13 @@ describe("book tree", () => {
   it("keeps a clip that another take still references when clearing", async () => {
     // Frank R4: clips are 1:1 today, but if two takes ever share a clipId,
     // clearing one segment must NOT delete the audio the other still plays.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
     const shared = newClipId();
     await recordTake(s1.id, { clipId: shared, frames: 500 });
+    await forgetDisposition(shared);
     await recordTake(s2.id, { clipId: shared, frames: 500 }); // both point at the same clip
 
     await clearSegmentTake(s1.id);
@@ -470,7 +495,7 @@ describe("book tree", () => {
   });
 
   it("leaves other segments untouched when one is cleared", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -486,7 +511,7 @@ describe("book tree", () => {
   });
 
   it("resolves export order across segments and counts gaps", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id); // left unrecorded
@@ -507,7 +532,7 @@ describe("book tree", () => {
     // longer there. Dropping it from the export without counting it would make
     // the UI report a chapter as complete while a segment is silently absent
     // from the MP3.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -523,7 +548,7 @@ describe("book tree", () => {
   });
 
   it("counts a segment whose active take points at no stored clip", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
@@ -532,7 +557,7 @@ describe("book tree", () => {
     // The take row is fine. The audio it names is gone — deleted from under
     // it, since the commit write stores the clip in the take's own transaction.
     const lost = await recordTake(s2.id);
-    await deleteClip(lost.clipId);
+    await loseClip(lost.clipId);
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId]);
@@ -653,15 +678,16 @@ describe("book placeholder slots (#314, #360, #169)", () => {
     expect((await createBook("")).number).toBe(1);
   });
 
-  it("does not make a SUPPLIED name unique", async () => {
-    // Deliberate, and long-standing: a facilitator may have two books called
-    // "Mark", and renameBook has always allowed it. It is also why the New Book
-    // dialog sends "" rather than the placeholder string it displayed — a
-    // supplied placeholder would take THIS path (George R1 P2-3).
-    const first = await createBook("Mark");
-    const second = await createBook("Mark");
-    expect([first.name, second.name]).toEqual(["Mark", "Mark"]);
-    expect(first.id).not.toBe(second.id);
+  it("refuses a SUPPLIED name another book already has (#1272)", async () => {
+    // Reversed by #1272 (S13, "require unique names for the books"); the
+    // full set of cases is in `book-unique-names.test.ts`. It is still why the
+    // New Book dialog sends "" rather than the placeholder string it
+    // displayed: a supplied placeholder would take THIS path (George R1 P2-3),
+    // and a second one would now be refused instead of written.
+    await createBook("Mark");
+    await expect(createBook("Mark")).rejects.toThrow(
+      "Another book already has this name"
+    );
   });
 
   it("leaves a blank or whitespace-only name unnamed (#314)", async () => {
@@ -731,7 +757,7 @@ describe("chapter naming at creation (#609)", () => {
     // field offered, whenever the loaded shelf still matches disk. When it does
     // not, the write's number wins and the row shows it, because a one-tap
     // create stores no label to contradict it.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const first = await addChapter(book.id);
     const second = await addChapter(book.id);
     const displayed = nextChapterNumber([first.number, second.number]);
@@ -740,14 +766,14 @@ describe("chapter naming at creation (#609)", () => {
   });
 
   it("stores a typed name, trimmed, like renameChapter does", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id, undefined, "  Mark 6  ");
     expect(chapter.name).toBe("Mark 6");
     expect((await getChapter(chapter.id))?.name).toBe("Mark 6");
   });
 
   it("stores null for a blank, whitespace-only, or omitted name", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     // Blank is what an untouched "Chapter N" default confirms as, and what an
     // emptied field sends: both keep the row on the ordinal display.
     expect((await addChapter(book.id, undefined, "")).name).toBeNull();
@@ -759,7 +785,7 @@ describe("chapter naming at creation (#609)", () => {
 
   it("does not let a name displace the ordinal", async () => {
     // The name is a label OVER `number`, exactly as `renameChapter` leaves it.
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const first = await addChapter(book.id, undefined, "Mark 6");
     const second = await addChapter(book.id, undefined, "Mark 7");
     expect([first.number, second.number]).toEqual([1, 2]);
@@ -767,7 +793,7 @@ describe("chapter naming at creation (#609)", () => {
 });
 
 /**
- * Renaming a book and a chapter in place (#264, the Nairobi manual workflow).
+ * Renaming a book and a chapter in place (#264, the training manual workflow).
  *
  * A facilitator names a book for the passage ("Mark") and a chapter for the
  * span ("Mark 6"). Each rename is a get-then-put in ONE transaction — the
@@ -775,7 +801,7 @@ describe("chapter naming at creation (#609)", () => {
  */
 describe("rename book and chapter", () => {
   it("gives a fresh chapter a null name (default 'Chapter N' until renamed)", async () => {
-    const book = await createBook("b");
+    const book = await createBook(`b-${crypto.randomUUID()}`);
     const chapter = await addChapter(book.id);
     // The field is present and null, not absent — so a reader never sees
     // `undefined` and the display fallback keys on one shape.
@@ -974,6 +1000,8 @@ describe("rename segment (#591)", () => {
   });
 
   it("changes the label and nothing else: ordinal, order, status and audio stay", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    onTestFinished(() => clock.mockRestore());
     const book = await createBook("Mark");
     const chapter = await addChapter(book.id);
     await addSegment(chapter.id);
@@ -983,11 +1011,16 @@ describe("rename segment (#591)", () => {
     const before = await getSegment(second.id);
     const chapterBefore = await getChapter(chapter.id);
 
+    clock.mockReturnValue(2_000);
     await renameSegment(second.id, "verses 3–4");
 
+    // The label moves, and `modifiedAt` with it: the row was written at the
+    // rename's time (v12 J6, #1463). Every other field is as it was.
+    expect(before?.modifiedAt).toBe(1_000);
     expect(await getSegment(second.id)).toEqual({
       ...before,
       label: "verses 3–4",
+      modifiedAt: 2_000,
     });
     expect(await getChapter(chapter.id)).toEqual(chapterBefore);
     const audio = await loadSegmentClip(second.id);
@@ -1077,11 +1110,8 @@ describe("atomic take save (saveTake)", () => {
   it("writes the clip and the take together", async () => {
     const { segmentId } = await oneSegment();
     const clipId = newClipId();
-    const take = await saveTake(
-      segmentId,
-      clipId,
-      samples(1000),
-      CANONICAL_SAMPLE_RATE
+    const take = savedTake(
+      await saveTake(segmentId, clipId, samples(1000), CANONICAL_SAMPLE_RATE)
     );
 
     expect(take.clipId).toBe(clipId);
@@ -1222,7 +1252,7 @@ describe("segment audio resolution", () => {
     // Nothing checks on read that a take's clip exists, which is how a chapter
     // can hold takes pointing at no audio at all once a clip is lost.
     const take = await recordTake(segmentId);
-    await deleteClip(take.clipId);
+    await loseClip(take.clipId);
 
     for (const audio of [
       await resolveSegmentAudio(segmentId),
@@ -1269,7 +1299,7 @@ describe("segment audio resolution", () => {
   it("resolves again once the missing clip is stored", async () => {
     const { segmentId } = await oneSegment();
     const { clipId } = await recordTake(segmentId);
-    await deleteClip(clipId);
+    await loseClip(clipId);
     expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
 
     // The resolver reads; it does not repair and it does not latch. Storing

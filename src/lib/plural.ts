@@ -20,7 +20,8 @@
  * import upward (AGENTS.md's onion rule) and the sentences those layers return
  * have the same counts in them.
  */
-import { SHIPPED_LOCALE } from "./locale";
+import { activeLocale } from "./locale";
+import { formatNumber } from "./number-format";
 
 /**
  * CLDR's plural categories — the keys a forms table may carry.
@@ -66,7 +67,7 @@ type PluralForms = {
 /**
  * `Intl.PluralRules` construction is not free and these labels render on every
  * list row, so keep one per locale. The map is keyed by the locale string as
- * passed; there is one entry in practice.
+ * passed, so it grows by one entry per locale the app has counted in.
  */
 const rules = new Map<string, Intl.PluralRules>();
 
@@ -87,27 +88,23 @@ function rulesFor(locale: string): Intl.PluralRules {
 /**
  * The phrase for `n`, with `{n}` replaced by the count.
  *
- * The count is interpolated as plain ASCII digits (`String(n)`), NOT
- * `toLocaleString`. Digit shaping is a separate decision this repo has already
- * made in the other direction — `formatDuration`'s clock is ASCII "because
- * digits read across scripts" (`lib/utils.ts`) — and changing it here would
- * quietly restyle every count in the app under cover of a plural fix. When a
- * locale that wants Arabic-Indic digits arrives, that is its own change, made
- * for both surfaces at once.
+ * The count is interpolated through `formatNumber` (`lib/number-format.ts`),
+ * which forces Latin digits (R19, ADR 0015 (h)) and no grouping, the same entry
+ * `formatDuration`'s clock uses. A locale cannot restyle the digits here.
  *
  * Every `{n}` is replaced, not just the first: a form is free to name the count
  * twice.
  *
- * `locale` defaults to `SHIPPED_LOCALE.tag` — the build's one locale, the same
- * value `<html lang>` and the manifest are written from (`lib/locale.ts`, #697)
- * — rather than to a `"en"` of its own. An independent default would have been
- * a second source of truth the moment the first one moved, which is the exact
- * note QA and George both left on #673 while #697 was still in flight.
+ * `locale` defaults to `activeLocale().tag`, the locale whose table is
+ * installed (`lib/locale.ts`, ADR 0015 (b)), rather than to a `"en"` or a build
+ * constant of its own. An independent default would be a second source of
+ * truth: a French table counting by English rules the moment the phone's
+ * language moved, which is the note QA and George both left on #673.
  */
 export function plural(
   n: number,
   forms: PluralForms,
-  locale: string = SHIPPED_LOCALE.tag
+  locale: string = activeLocale().tag
 ): string {
   const category = rulesFor(locale).select(n) as PluralCategory;
   // The exact arm is matched on the number, never on the locale's category.
@@ -122,5 +119,5 @@ export function plural(
   // function form makes the patterns inert for whatever the count becomes
   // later: a grouped or locale-formatted number, or a second placeholder
   // carrying something a translator typed (#713, George r1 Low 1).
-  return form.replaceAll("{n}", () => String(n));
+  return form.replaceAll("{n}", () => formatNumber(n));
 }

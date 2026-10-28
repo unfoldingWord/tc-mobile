@@ -20,6 +20,8 @@
  * an unaddressed voice memo.
  */
 
+import type { LicenceId, SegmentSpan, TemplateRef } from "./template";
+
 export type BookId = string & { readonly __brand: "BookId" };
 export type ChapterId = string & { readonly __brand: "ChapterId" };
 export type SegmentId = string & { readonly __brand: "SegmentId" };
@@ -31,30 +33,31 @@ export type ClipId = string & { readonly __brand: "ClipId" };
  *
  * A1: a segment is generic, and a Scripture/OBS reference is optional metadata
  * a template attaches — so a segment with no reference is the normal case, and
- * this sits `| null` on the segment. Nothing writes it non-null this lane;
- * B7's OBS/template import (#33) is the writer.
+ * this sits `| null` on the segment.
  *
- * `scope` uses the Scripture Burrito ingredient-scope grammar rather than a
- * bespoke pair, because that is what the audio interchange standard keys on:
- *
- *   ""          whole book
- *   "2"         whole chapter
- *   "2-4"       chapter range
- *   "2:1-13"    verse range within a chapter
- *   "2:1-3:4"   cross-chapter span
- *
- * See docs/research/prior-art.md §4.
- *
- * @pivotpending Written by B7's OBS/template import (#33); no reader consumes
- * it as an export this lane, so it is tagged rather than left to fail CI. The
- * type itself is live — `Segment.reference` is typed on it.
+ * Numbers, not a scope string (v12, #1462; Q4: "a segment stores a start and
+ * an end chapter:verse"): the template package's span, `SegmentSpan`, with its
+ * three allowed states. A span that crosses a chapter belongs to its start
+ * chapter (R6). `book` is the USFM code, or "OBS" for Open Bible Stories
+ * (story:frame as chapter:verse), which the export maps (ADR 0014). The
+ * Scripture Bundle scope string is an output the export writes, not a stored
+ * value (ADR 0004, amended by v12; docs/design/v12-schema.md).
  */
-export interface SegmentRef {
-  /** USFM book code where known, e.g. "RUT", or "OBS" for Open Bible Stories. */
-  readonly book: string;
-  /** Scripture Burrito scope string. Empty string means the whole book. */
-  readonly scope: string;
-}
+export type SegmentRef = SegmentSpan;
+
+/**
+ * How the app made a book (v12, #1462): blank, or from a template package,
+ * with the package's attribution text as it read when the book was made (the
+ * export needs the notice that applied then; ADR 0006). Not what was typed
+ * into the book: a template typed in by hand is still `blank`.
+ */
+type BookProvenance =
+  | { readonly kind: "blank" }
+  | {
+      readonly kind: "template";
+      readonly template: TemplateRef;
+      readonly attribution: string;
+    };
 
 export interface Book {
   readonly id: BookId;
@@ -125,20 +128,50 @@ export interface Book {
    * `undefined`.
    */
   readonly shelfPosition: number;
+  /**
+   * v12 (#1462). A non-null union: every pre-v12 book is backfilled
+   * `{ kind: "blank" }`, which is true of every book a shipped build made.
+   */
+  readonly provenance: BookProvenance;
+  /**
+   * The licence a share or a backup reads (D5). `null` means not chosen yet:
+   * the v12 backfill and a new non-template book (R20). A template book is
+   * written CC BY-SA 4.0, and its lock is `provenance.kind === "template"`.
+   */
+  readonly licence: LicenceId | null;
+  /**
+   * When this row was last written, or `null` when no put has touched it
+   * since v12 (the backfill reads no clock). Not `updatedAt`, which means
+   * activity and which a reorder leaves alone. Every put of the row stamps
+   * it with the write's time, in that same put (#1463); a write that puts
+   * nothing leaves it.
+   */
+  readonly modifiedAt: number | null;
 }
 
 export interface Chapter {
   readonly id: ChapterId;
   readonly bookId: BookId;
   /**
-   * 1-based, unique within its book (max existing + 1 on create). A reorder
-   * (`moveChapter`, #953) renumbers every chapter of the book to its position
-   * + 1, so the badge and the export file name follow the order.
+   * The number stored at create: the one the template gave, or max existing +
+   * 1 for a chapter added by hand. A reorder (`moveChapter`) does not change
+   * it, and the order is `Book.chapterIds`.
+   *
+   * It is not the chapter's slot. Under #1272's answer B ("the fifth chapter
+   * slot is always 5") a chapter is numbered by its place in the book
+   * (`lib/chapter-slot.ts`), and with no schema change (the DRI's S1) this
+   * field is meant only as the template's number, read where `templateKey` is
+   * not `null` (`templateChapterNumber`). Export project's `project.json`
+   * reads it that way, and so does an unnamed template chapter's default
+   * title, "Chapter {template number}" (`headingNumber`, the DRI's Q1 (b)).
+   * Everything else a person sees reads the slot: the Books badge, an unnamed
+   * hand-made chapter's title, the move line, the Share Book chips, and the
+   * shared MP3 names and track tag.
    */
   readonly number: number;
   /**
    * Optional passage label the facilitator sets in place — "Mark 6" (#264).
-   * `null` is the default: the UI then shows "Chapter {number}". Clearing the
+   * `null` is the default: the UI then shows "Chapter {n}" (`headingNumber`). Clearing the
    * name reverts to `null`. Every row carries the field (the v5 backfill stamps
    * pre-#264 chapters `null`), so a reader never meets `undefined`.
    */
@@ -148,6 +181,12 @@ export interface Chapter {
    * is the source of truth for export concatenation order.
    */
   readonly segmentIds: readonly SegmentId[];
+  /** Write time at creation; `null` on a pre-v12 row, whose time is unknown. */
+  readonly createdAt: number | null;
+  /** As {@link Book.modifiedAt}. */
+  readonly modifiedAt: number | null;
+  /** The template package's own key for this chapter ("01"), or `null`. */
+  readonly templateKey: string | null;
 }
 
 export interface Segment {
@@ -163,7 +202,7 @@ export interface Segment {
    * `renumberSegments`.
    */
   readonly index: number;
-  /** A1: null is the normal case. B7 (#33) is the writer. */
+  /** A1: null is the normal case. The template writer (#1450) writes it. */
   readonly reference: SegmentRef | null;
   /**
    * Optional label the facilitator sets in place — "verses 3–4" (#591). A label
@@ -182,6 +221,24 @@ export interface Segment {
    */
   readonly activeTakeId: TakeId | null;
   readonly status: RecordingStatus;
+  /** As {@link Chapter.createdAt}. */
+  readonly createdAt: number | null;
+  /** As {@link Book.modifiedAt}. */
+  readonly modifiedAt: number | null;
+  /**
+   * The template package's own key for this segment ("01-07"), or `null`. A
+   * separate field from `reference` because an introduction has no passage
+   * and still needs a title.
+   */
+  readonly templateKey: string | null;
+  /**
+   * Which take is active, as a count (v13, #38): every write that changes
+   * `activeTakeId` or replaces the active take adds one, in the same
+   * transaction. Two reads with the same value saw the same active take. It
+   * does not move on a transcode, the Finished toggle or a rename
+   * (docs/design/pending-take-lifecycle.md, §1).
+   */
+  readonly audioRevision: number;
 }
 
 /**
@@ -201,4 +258,110 @@ export interface Take {
   readonly clipId: ClipId;
   readonly createdAt: number;
   readonly durationMs: number;
+}
+
+/**
+ * One row of the `tombstones` store (v12, #1462): a book or segment a person
+ * deleted, so a backup or a later sync can tell "deleted" from "never here".
+ * A log under an out-of-line auto-increment key: insertion order is deletion
+ * order, and the store itself would keep two rows for one id. Written by
+ * `deleteBook` and `deleteSegment` inside the delete's own transaction, and
+ * only when the row was there, so a repeated delete adds none (#1463).
+ */
+export interface Tombstone {
+  readonly entity: "book" | "segment";
+  /** The deleted row's id. */
+  readonly entityId: string;
+  /** `null` for a book; the chapter's id for a segment. */
+  readonly parentId: string | null;
+  readonly deletedAt: number;
+}
+
+/**
+ * The audio a pending take splices onto (#174, 2026-10-19: "base = stored |
+ * inline"). `stored` only while the editor's buffer is that stored clip
+ * unchanged; `generation` and `frameCount` let a replay refuse a clip that was
+ * transcoded since. Everything else, a first take included (an empty buffer),
+ * is `inline`.
+ */
+export type PendingTakeBase =
+  | {
+      readonly kind: "stored";
+      readonly sourceClipId: ClipId;
+      readonly generation: number;
+      readonly frameCount: number;
+    }
+  | { readonly kind: "inline"; readonly samples: ArrayBuffer };
+
+/**
+ * One row of the `pendingTakes` store (v12, #1462): a take whose save has not
+ * landed, kept so a kill and relaunch does not lose it. Keyed by `segmentId`,
+ * because the app holds one save slot and a retry must overwrite. The writer
+ * and the replay are #38's; the shape is docs/design/v12-schema.md's.
+ */
+export interface StoredPendingTake {
+  readonly segmentId: SegmentId;
+  readonly ordinal: number | null;
+  /** The clip id the save will write. */
+  readonly clipId: ClipId;
+  readonly base: PendingTakeBase;
+  /** Int16 PCM, copied through a fresh buffer. */
+  readonly recorded: ArrayBuffer;
+  readonly sampleRate: number;
+  /** Samples. */
+  readonly offset: number;
+  readonly finished: boolean;
+  readonly editOnly: boolean;
+  readonly createdAt: number;
+  /**
+   * The segment's `audioRevision` that the take's base was read at, carried
+   * on the take from the recorder's load (v13; the note's §1 and step 6 of
+   * "The hold"), never the hold's own read. Absent on a row written before
+   * v13, which the step does not guess, and on a take that did not know it.
+   */
+  readonly baseRevision?: number;
+  /**
+   * The `generation` of the clip the take's base was read from, carried on
+   * the take from the recorder's load (#163 A-14), so a replay stamps the
+   * saved clip with it rather than re-reading the clip it replaces, which a
+   * transcode since the load has moved on. Optional with no version step, as
+   * `refusal` is: absent on a row written before it and on a take that did
+   * not know it, and the replay then re-reads, as it did before.
+   */
+  readonly baseGeneration?: number;
+  /**
+   * Set when a replay refused to save this row and kept it instead (#38, the
+   * note's §4 "Keep, exactly"): `superseded` when the segment's audio moved
+   * since the base was read, `unexplained` when nothing says who owns it. The
+   * launch replay's classification marks the rest before any audio is read
+   * (the note's §3, "The replay's own reads"): `legacy` (no `baseRevision`),
+   * `sample-rate`, and a `stored` base that is `base-missing` or
+   * `base-changed`. A marked row is never saved by a replay; it keeps its
+   * audio until #1562 item 2 decides when refused audio may go. Absent on
+   * every other row.
+   */
+  readonly refusal?: PendingRefusal;
+}
+
+/** Why a replay kept a row instead of saving it (see `refusal` above). */
+export type PendingRefusal =
+  | "superseded"
+  | "unexplained"
+  | "legacy"
+  | "sample-rate"
+  | "base-missing"
+  | "base-changed";
+
+/**
+ * Why a take stopped being pending (v13, #38), keyed by its `clipId`, written
+ * in the same transaction as the act that ends its row. `given-up` may become
+ * `saved` or `discarded`; those two are final. Deleted only with its segment.
+ * See docs/design/pending-take-lifecycle.md, §3.
+ */
+export interface TakeDisposition {
+  readonly clipId: ClipId;
+  readonly segmentId: SegmentId;
+  readonly kind: "given-up" | "discarded" | "saved";
+  /** Write time; diagnostic only, never a deletion clock. */
+  readonly at: number;
 }

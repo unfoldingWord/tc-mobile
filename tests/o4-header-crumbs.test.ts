@@ -45,6 +45,7 @@ const recorderView = vi.hoisted(() => ({
   // A chapter the facilitator renamed, reproducing Tim's report verbatim:
   // its NUMBER is 1, its typed name is "2:1-4".
   chapterNumber: 1,
+  chapterTemplateNumber: null as number | null,
   chapterName: "2:1-4" as string | null,
   ordinal: 1,
   segmentLabel: null as string | null,
@@ -69,12 +70,14 @@ vi.mock("@/components/vu-meter", () => ({ VuMeter: () => null }));
 const segmentsMocks = vi.hoisted(() => ({
   rows: [] as SegmentRow[],
   chapterName: "2:1-4" as string | null,
+  templateNumber: null as number | null,
 }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: () => ({
     bookName: "Book Mine",
     bookCoverHex: "#11796d",
     chapterNumber: 1,
+    chapterTemplateNumber: segmentsMocks.templateNumber,
     // Reproduces the same renamed chapter as the recorder case above.
     chapterName: segmentsMocks.chapterName,
     rows: segmentsMocks.rows,
@@ -120,7 +123,9 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   segmentsMocks.rows = [];
   segmentsMocks.chapterName = "2:1-4";
+  segmentsMocks.templateNumber = null;
   recorderView.chapterName = "2:1-4";
+  recorderView.chapterTemplateNumber = null;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -218,6 +223,15 @@ describe("the recorder header (#1105)", () => {
       readMeterAvailable: () => true,
       readScope: () => null,
       peekScope: () => null,
+      chapterPlay: {
+        chapterId: null,
+        status: "idle" as const,
+        pausedFraction: null,
+      },
+      playChapter: () => {},
+      pauseChapter: () => {},
+      stopChapter: () => {},
+      readChapterProgress: () => null,
     };
     await act(async () =>
       root.render(
@@ -378,6 +392,16 @@ describe("the recorder header (#1105)", () => {
     });
   });
 
+  it("names an unnamed template chapter by its template's number, not its slot (#1272, Q1 (b))", async () => {
+    recorderView.chapterName = null;
+    recorderView.chapterTemplateNumber = 7;
+    await mount();
+    expect(crumbs(header())[1]).toEqual({
+      text: strings.chapterName(7),
+      state: null,
+    });
+  });
+
   it("exposes the chips to assistive tech: the only thing in the header naming the place", async () => {
     await mount();
     const row = header().querySelector(".o4-crumbs")!;
@@ -411,6 +435,18 @@ describe("the recorder header (#1105)", () => {
       );
     }
   );
+
+  it("draws an unnamed template chapter's name in the ⋮ menu head as the header does, by its template number (#1272, Q1 (b))", async () => {
+    recorderView.chapterName = null;
+    recorderView.chapterTemplateNumber = 7;
+    await mount();
+    await tap(document, strings.recorderMenuOpen);
+    const panel = document.querySelector(".menu-panel")!;
+    expect(crumbs(panel)).toEqual(crumbs(header()));
+    expect(panel.querySelector(".o4-sheet-name")?.textContent).toBe(
+      strings.chapterName(7)
+    );
+  });
 
   it("sets a typed name's direction on the chips, the menu's head and its spoken place, not on the segment number (#1267)", async () => {
     recorderView.chapterName = "שלום.";
@@ -483,6 +519,16 @@ describe("the segments header (#1105)", () => {
     await mount();
     expect(crumbs(header())[1]).toEqual({
       text: strings.chapterName(1),
+      state: null,
+    });
+  });
+
+  it("names an unnamed template chapter by its template's number, not its slot (#1272, Q1 (b))", async () => {
+    segmentsMocks.chapterName = null;
+    segmentsMocks.templateNumber = 7;
+    await mount();
+    expect(crumbs(header())[1]).toEqual({
+      text: strings.chapterName(7),
       state: null,
     });
   });

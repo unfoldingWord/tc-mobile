@@ -21,7 +21,8 @@ import { getClip, getClipMeta, newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import { clearAllStores } from "./support";
+import { clearAllStores, throwWhenStoreRequested } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 /**
  * Delete a Segment (#590) — T1.
@@ -65,35 +66,6 @@ async function countAll(): Promise<StoreCounts> {
   ]);
   await tx.done;
   return { chapters, segments, takes, clipMeta, clipData };
-}
-
-/**
- * Make the NEXT transaction opened on this connection throw the moment
- * `deleteSegment` asks it for `storeName`. The same seam
- * `tests/delete-book.test.ts` uses: the native `IDBDatabase.transaction`,
- * reached with `unwrap` past idb's proxy, since `deleteSegment` does not
- * return its transaction for a test to inspect directly.
- */
-function throwWhenStoreRequested(
-  raw: IDBDatabase,
-  storeName: string,
-  error: Error
-) {
-  const open = raw.transaction.bind(raw);
-  return vi
-    .spyOn(raw, "transaction")
-    .mockImplementation((...args: Parameters<IDBDatabase["transaction"]>) => {
-      const tx = open(...args);
-      const objectStore = tx.objectStore.bind(tx);
-      Object.defineProperty(tx, "objectStore", {
-        configurable: true,
-        value: (name: string) => {
-          if (name === storeName) throw error;
-          return objectStore(name);
-        },
-      });
-      return tx;
-    });
 }
 
 async function chapterWithSegments(
@@ -141,6 +113,8 @@ describe("deleteSegment", () => {
     const [s1, s2] = segmentIds as [SegmentId, SegmentId];
     const shared = newClipId();
     await saveTake(s1, shared, samples(300), CANONICAL_SAMPLE_RATE);
+    // Two takes on one clip id: drop the first record (see forgetDisposition).
+    await (await getDb()).delete("takeDispositions", shared);
     await saveTake(s2, shared, samples(300), CANONICAL_SAMPLE_RATE);
 
     await deleteSegment(s1);
@@ -209,7 +183,9 @@ describe("deleteSegment", () => {
 
     await deleteSegment(s1);
 
-    expect(await commitTranscode(s1, clipId, mp3, peaks)).toBe("stale");
+    expect(await commitTranscode(s1, clipId, mp3, peaks, NO_STAGES_RUN)).toBe(
+      "stale"
+    );
     expect(await getSegment(s1)).toBeUndefined();
     expect(await getClipMeta(clipId)).toBeUndefined();
     expect(await getClip(clipId)).toBeUndefined();

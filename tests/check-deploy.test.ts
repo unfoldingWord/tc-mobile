@@ -370,6 +370,42 @@ describe("CLI entry point against a real server serving a malformed version.json
       expect(result.stderr).not.toContain("TypeError");
     }));
 
+  // #1321: a 200 whose body fails the content check and an origin that never
+  // answered both printed a bare `FAIL:`; the promoter could not tell them
+  // apart. Each now leads with which one it was, and neither carries the
+  // other's words.
+  it("says the origin answered when a 200 body fails the content check", () =>
+    withServer("null", async (origin) => {
+      const result = await runCli([
+        `--origin=${origin}`,
+        "--version=0.1.12",
+        "--sha=abc1234",
+      ]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("FAIL: origin answered but its body");
+      expect(result.stderr).not.toContain("did not answer");
+    }));
+
+  it("says the origin did not answer when nothing is listening", async () => {
+    // Bind a port, free it, and ask for it: a refused connection.
+    const probe: Server = createServer();
+    await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+    const address = probe.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("expected a bound TCP address");
+    }
+    const port = address.port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    const result = await runCli([
+      `--origin=http://127.0.0.1:${port}`,
+      "--version=0.1.12",
+      "--sha=abc1234",
+    ]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("FAIL: origin did not answer");
+    expect(result.stderr).not.toContain("answered but");
+  });
+
   it("still passes for a well-formed version.json body (both states, per AGENTS.md)", () =>
     withServer(
       JSON.stringify({ version: "0.1.12", sha: "abc1234", builtAt: "now" }),

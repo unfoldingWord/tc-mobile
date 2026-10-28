@@ -758,15 +758,29 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * `superseded`, and the `null` a non-chained web run, an empty share, a
    * prepare error, or a superseded run resolves to).
    */
+  /** A `useCallback` body ends at its dependency list, whichever way prettier lays it out. */
+  const bodyEnd = (source: string, from: number): number => {
+    const ends = [
+      source.indexOf("}, [", from),
+      source.indexOf("},\n    [", from),
+    ];
+    const found = ends.filter((i) => i > from);
+    expect(found.length).toBeGreaterThan(0);
+    return Math.min(...found);
+  };
   for (const [screen, prepareFn, closeFn] of [
     [
+      // The same split on Share Chapter (#1455): `onPrepareShare` asks or
+      // calls `runChapterShare`, which holds the prepare.
       "src/components/segments-screen.tsx",
-      "onPrepareShare",
+      "runChapterShare",
       "onCloseChapterMenu",
     ],
     [
+      // The prepare and its outcome handling moved into `runBookShare` when
+      // the licence ask arrived (#1455): `onPrepareBookShare` asks or calls it.
       "src/components/books-screen.tsx",
-      "onPrepareBookShare",
+      "runBookShare",
       "onCloseShareMenu",
     ],
   ] as const) {
@@ -776,10 +790,7 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       const source = read(screen);
       const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
       expect(prepareAt).toBeGreaterThan(-1);
-      const prepareBody = source.slice(
-        prepareAt,
-        source.indexOf("}, [", prepareAt)
-      );
+      const prepareBody = source.slice(prepareAt, bodyEnd(source, prepareAt));
       expect(prepareBody).toMatch(
         new RegExp(
           `outcome === "sent" \\|\\| outcome === "dismissed"\\)\\s*${closeFn}\\(\\);`
@@ -790,10 +801,7 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     it(`${name}: ${prepareFn} reads prepare()'s own resolved outcome via .then, not a bare fire-and-forget`, () => {
       const source = read(screen);
       const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
-      const prepareBody = source.slice(
-        prepareAt,
-        source.indexOf("}, [", prepareAt)
-      );
+      const prepareBody = source.slice(prepareAt, bodyEnd(source, prepareAt));
       expect(prepareBody).toMatch(
         /\.prepare\([\s\S]*?\)\s*\.then\(\(outcome\) => \{/
       );

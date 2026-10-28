@@ -112,9 +112,12 @@ describe("Play upload lane triggers", () => {
   it("never builds a diagnostic bundle", () => {
     expect(workflow).toContain('TC_ANDROID_DIAGNOSTIC: "false"');
   });
-  it("serializes every run for this Play app across both branches", () => {
+  it("serializes every upload for this Play app across both branches", () => {
+    // On the upload job, not the run (#1616); tests/native-lane-concurrency
+    // .test.ts runs the group in both states for all three lanes.
+    expect(workflow).not.toMatch(/^concurrency:/m);
     expect(workflow).toMatch(
-      /^ {2}group: android-play\n {2}cancel-in-progress: false\n/m
+      /^ {4}concurrency:\n {6}group: android-play\n {6}cancel-in-progress: false\n/m
     );
   });
   it("keeps the security shape the header relies on", () => {
@@ -183,14 +186,18 @@ describe("build_only needs only the signing secrets, not the service account (#8
     ).toBe(0);
   });
 
-  it("decodes the upload keystore unconditionally", () => {
+  it("decodes the upload keystore on build_only and on an upload, not on a guard SKIP", () => {
     const block = stepBlock("Write the upload keystore");
-    expect(stepIf(block)).toBeNull();
+    expect(stepIf(block)).toBe(
+      "${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}"
+    );
   });
 
-  it("gates decoding the Play service-account key on build_only", () => {
+  it("gates decoding the Play service-account key on build_only and on the guard", () => {
     const block = stepBlock("Write the Play service-account key");
-    expect(stepIf(block)).toBe("${{ !inputs.build_only }}");
+    expect(stepIf(block)).toBe(
+      "${{ !inputs.build_only && steps.guard.outputs.upload == 'true' }}"
+    );
   });
 
   it("still cleans up both decoded credential paths regardless of which ran", () => {
@@ -302,7 +309,7 @@ describe("Play preflight branch → track mapping", () => {
 describe("android-play.yml Ruby", () => {
   it("pins setup-ruby by commit to a Ruby the locked gems accept", () => {
     const step =
-      /- uses: ruby\/setup-ruby@([0-9a-f]{40})[ \t]*\n\s+with:\n\s+ruby-version: "(\d+)\.(\d+)"/.exec(
+      /- uses: ruby\/setup-ruby@([0-9a-f]{40})[ \t]*\n(?:\s+if: .+\n)?\s+with:\n\s+ruby-version: "(\d+)\.(\d+)"/.exec(
         workflow
       );
     expect(step, "no SHA-pinned ruby/setup-ruby step").not.toBeNull();

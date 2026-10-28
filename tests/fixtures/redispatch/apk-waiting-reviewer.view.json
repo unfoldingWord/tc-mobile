@@ -1,0 +1,50 @@
+{
+  "_source": "constructed: apk-staging-built.view with the signing job waiting and no steps yet (the release-signing reviewer wait; not observed live in this lane)",
+  "jobs": [
+    {
+      "completedAt": "2026-10-20T16:25:15Z",
+      "conclusion": "success",
+      "databaseId": 118747272554,
+      "name": "Preflight (promotion or dispatch)",
+      "startedAt": "2026-10-20T16:25:13Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-20T16:25:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Build a promotion merge, or a dispatch from staging/main",
+          "number": 2,
+          "startedAt": "2026-10-20T16:25:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-20T16:25:14Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-10-20T16:25:14Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/39457261742/job/118747272554"
+    },
+    {
+      "completedAt": null,
+      "conclusion": "",
+      "databaseId": 118747311590,
+      "name": "Build release APK",
+      "startedAt": null,
+      "status": "waiting",
+      "steps": [],
+      "url": "https://github.com/unfoldingWord/tc-mobile/actions/runs/39457261742/job/118747311590"
+    }
+  ]
+}

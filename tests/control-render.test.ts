@@ -292,3 +292,21 @@ describe("Control's toggle state", () => {
     ).not.toContain("is-on");
   });
 });
+
+describe("Control describedBy (#1032)", () => {
+  it("sets aria-describedby only when given, and emits no attribute otherwise", () => {
+    expect(
+      button({
+        icon: "back",
+        label: "Keep",
+        onClick: () => {},
+        describedBy: "q1",
+      }).getAttribute("aria-describedby")
+    ).toBe("q1");
+    expect(
+      button({ icon: "back", label: "Keep", onClick: () => {} }).hasAttribute(
+        "aria-describedby"
+      )
+    ).toBe(false);
+  });
+});

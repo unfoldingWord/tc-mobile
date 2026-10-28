@@ -61,7 +61,13 @@ export type IconName =
   | "book"
   | "book-open"
   | "person"
-  | "open";
+  | "open"
+  // The Books header's Settings control (#1575).
+  | "gear"
+  // Move up / Move down in the book and segment row menus (#1344): the
+  // tap path to reorder a row without press-and-hold.
+  | "arrow-up"
+  | "arrow-down";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -909,6 +915,49 @@ const PATHS: Record<IconName, React.ReactNode> = {
       />
     </>
   ),
+  // A cog — Settings (#1575): a thick ring with eight square teeth. Drawn
+  // with blunt teeth and no inner hub, so it is not read as the sun
+  // (`sun` is a thin ring with fine rays) which sits on the theme row beside it.
+  gear: (
+    <>
+      <circle
+        cx="11"
+        cy="11"
+        r="5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+      />
+      <path
+        d="M16.9 11h3.4M5.1 11H1.7M11 16.9v3.4M11 5.1V1.7M15.24 15.24l2.41 2.41M6.76 15.24l-2.41 2.41M15.24 6.76l2.41-2.41M6.76 6.76 4.35 4.35"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3.4"
+      />
+    </>
+  ),
+  // Move up / Move down (#1344): a shaft and a head, in the chevrons' stroke.
+  // Vertical, so neither mirrors at RTL.
+  "arrow-up": (
+    <path
+      d="M11 17.5V4.5M5.5 10 11 4.5l5.5 5.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  "arrow-down": (
+    <path
+      d="M11 4.5v13M5.5 12l5.5 5.5 5.5-5.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
 };
 
 interface IconProps {
@@ -916,6 +965,12 @@ interface IconProps {
   size?: number;
   className?: string;
 }
+
+/** The glyphs whose drawn direction means "back" or "onward", not time. */
+const MIRRORED_AT_RTL: ReadonlySet<IconName> = new Set<IconName>([
+  "back",
+  "chevron-right",
+]);
 
 export function Icon({ name, size = 22, className }: IconProps) {
   return (
@@ -926,6 +981,7 @@ export function Icon({ name, size = 22, className }: IconProps) {
       aria-hidden="true"
       focusable="false"
       className={className}
+      data-rtl-mirror={MIRRORED_AT_RTL.has(name) ? "" : undefined}
     >
       {PATHS[name]}
     </svg>

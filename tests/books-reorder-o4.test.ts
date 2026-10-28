@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -87,6 +88,7 @@ function chapter(i: number, extra: Partial<ChapterRow> = {}): ChapterRow {
   return {
     chapterId: `ch${i}` as ChapterId,
     number: i + 1,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 2,
@@ -165,6 +167,7 @@ async function render() {
   await act(async () =>
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter,
         pushLayer: vi.fn(),
         popLayer: vi.fn(),
@@ -230,6 +233,15 @@ describe("the O4 hold area (#953 PR2b: the chapter row)", () => {
     expect(moveChapter).not.toHaveBeenCalled();
   });
 
+  it("does not lift a row held on its play control, which is outside the hold area (#1469)", async () => {
+    await mount();
+    const play = items()[0]!.querySelector(".books-play button")!;
+    await hold(play, 34);
+    expect(lifted()).toBeNull();
+    expect(items()[0]!.classList.contains("books-lifted")).toBe(false);
+    expect(moveChapter).not.toHaveBeenCalled();
+  });
+
   it("lifts from the number badge and the title, which sit inside the row", async () => {
     await mount();
     await hold(items()[2]!.querySelector(".books-chapter-title")!, 234);
@@ -280,6 +292,8 @@ describe("the drag and the one write", () => {
     expect(moveChapter).toHaveBeenCalledTimes(1);
     expect(moveChapter).toHaveBeenCalledWith("ch0", 2);
     expect(liveText()).toBe(strings.chapterReorderMoved(1, 3));
+    // Slot to slot (#1272, Q4 (a)): the chapter takes the number of its new slot.
+    expect(liveText()).toBe("Chapter 1 is now chapter 3.");
     expect(list.hasAttribute("data-reordering")).toBe(false);
   });
 

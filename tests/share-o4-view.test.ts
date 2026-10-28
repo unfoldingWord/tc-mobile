@@ -507,6 +507,7 @@ describe("the items each screen hands the chips (D21)", () => {
     return {
       chapterId: `c${n}` as ChapterId,
       number: n,
+      templateNumber: null,
       name: null,
       // Finished and total counts that disagree with recordedCount, so
       // neither can stand in for it.

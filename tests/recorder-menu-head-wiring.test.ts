@@ -21,7 +21,7 @@ import { restingErase } from "./support";
  * acquisition mocked, the recorder, its menu and the strings real.
  */
 
-const view = {
+const view: { chapterName: string | null; [k: string]: unknown } = {
   bookName: "Ruth",
   bookCoverHex: "#11796d",
   chapterNumber: 4,
@@ -101,6 +101,15 @@ async function openMenu(): Promise<Element> {
     readMeterAvailable: () => true,
     readScope: () => null,
     peekScope: () => null,
+    chapterPlay: {
+      chapterId: null,
+      status: "idle" as const,
+      pausedFraction: null,
+    },
+    playChapter: () => {},
+    pauseChapter: () => {},
+    stopChapter: () => {},
+    readChapterProgress: () => null,
   };
   await act(async () =>
     root.render(
@@ -153,5 +162,16 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
     ) as HTMLElement | null;
     expect(cover).not.toBeNull();
     expect(cover!.style.getPropertyValue("--book-cover")).toBe("#11796d");
+  });
+
+  it("draws the view's typed chapter name whole at the top of the menu (#1284)", async () => {
+    const NAME = "abcdefghij".repeat(6);
+    view.chapterName = NAME;
+    try {
+      const panel = await openMenu();
+      expect(panel.querySelector(".o4-sheet-name")?.textContent).toBe(NAME);
+    } finally {
+      view.chapterName = null;
+    }
   });
 });

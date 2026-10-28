@@ -88,9 +88,10 @@ export type ShareRoute = "native" | "web" | "unsupported";
  *
  * `native` wins first and WITHOUT consulting `canShare`. Two reasons, and both
  * are the bugs this exists for: the WebView may have no `navigator.share` to
- * gate on (#336), and Android Chrome's Web Share allowlist rejects
- * `application/zip` (#272) while the native `ACTION_SEND` intent carries any
- * MIME type. Neither web capability says anything about the native path.
+ * gate on (#336), and Chromium source indicates Android Chrome refuses
+ * `application/zip` inside `share()` (#272; not device-confirmed, and not
+ * through `canShare()`) while the native `ACTION_SEND` intent carries any MIME
+ * type. Neither web capability says anything about the native path.
  */
 export function selectShareRoute(
   env: ShareEnvironment,
@@ -466,7 +467,7 @@ async function readChunkBase64(file: File, at: number): Promise<string> {
  * MIME type off it (`SharePlugin.getMimeType`).
  *
  * **No raw space, either** (George R6 P2). `shareFilename` (strings.ts) always
- * interpolates one — "Genesis - Chapter 1.mp3" — and this segment is what
+ * interpolates one — "Genesis - 01 Chapter 1.mp3" — and this segment is what
  * `Share.share`'s URI ends in. Android's `MimeTypeMap.getFileExtensionFromUrl`
  * reads the MIME type off that same URI string with an allowlist
  * (`[a-zA-Z_0-9.\-()%]+`) that does not include a literal space; if the URI

@@ -8,11 +8,13 @@ import {
   commitTranscode,
   listPcmFinishedSegments,
 } from "@/lib/storage/transcode";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 import { computePeaks } from "@/lib/audio/peaks";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * Transcode on Finished (B8, D3) — the SWEEP, in Node (#181).
@@ -51,6 +53,8 @@ function segment(): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
+    audioRevision: 0,
   };
 }
 
@@ -82,6 +86,7 @@ function metaFor(id: ClipId, encoding: "pcm" | "mp3", frames: number) {
     byteLength: frames * 2,
     transcodeStallCount: 0,
     peaks: null,
+    processing: null,
   } as const;
 }
 
@@ -202,14 +207,16 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
       sid("s1"),
       cid("c1"),
       new Uint8Array([10]),
-      peaks1
+      peaks1,
+      NO_STAGES_RUN
     );
     expect(commitTranscode).toHaveBeenNthCalledWith(
       2,
       sid("s2"),
       cid("c2"),
       new Uint8Array([40]),
-      peaks2
+      peaks2,
+      NO_STAGES_RUN
     );
   });
 
@@ -293,7 +300,8 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
         sid("s2"),
         cid("c2"),
         expect.any(Uint8Array),
-        expect.anything()
+        expect.anything(),
+        NO_STAGES_RUN
       );
       expect(errorSpy).toHaveBeenCalledTimes(1);
     } finally {
@@ -333,7 +341,8 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
         sid("s2"),
         cid("c2"),
         expect.any(Uint8Array),
-        expect.anything()
+        expect.anything(),
+        NO_STAGES_RUN
       );
       expect(errorSpy).toHaveBeenCalledTimes(1);
     } finally {
@@ -377,7 +386,8 @@ describe("requestTranscodeSweep — the sweep's orchestration", () => {
         sid("s2"),
         cid("c2"),
         expect.any(Uint8Array),
-        expect.anything()
+        expect.anything(),
+        NO_STAGES_RUN
       );
       expect(errorSpy).toHaveBeenCalledTimes(1);
     } finally {

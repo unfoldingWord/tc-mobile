@@ -74,7 +74,7 @@ pipeline cannot work without. **Check this before you plan the rest of the
 day**, because it turns the task from "an hour of forms" into "wait for whoever
 holds the account".
 
-### Q3. Internal or external testers for the Nairobi training?
+### Q3. Internal or external testers for the October 2026 training?
 
 This is a **product decision, not a setup step**, but it changes what you build
 here — and the current pipeline has already picked one.
@@ -87,8 +87,8 @@ here — and the current pipeline has already picked one.
 | What the Fastfile does today | ✅ `distribute_external: false`                                                       | ❌ not wired                                    |
 
 `fastlane/Fastfile` sets `distribute_external: false`, so **today's pipeline is
-internal-only**. For a handful of named testers (§7 lists Caleb, Javi, Tim) that
-is right. For a room of facilitators in Nairobi each installing on their own
+internal-only**. For a handful of named testers (§7 lists the two training facilitators and the requirements owner) that
+is right. For a room of facilitators at the training each installing on their own
 phone, adding every one as an App Store Connect user is painful, and the
 external public link is the normal answer — but it needs Beta App Review, which
 is a lead time you do not want to discover in October.
@@ -294,11 +294,11 @@ run, but the copy in `~/Downloads` is the only one that exists until you file it
 
 **App Store Connect** → your app → **TestFlight** → **Internal Testing** → **+**
 
-| Question                                | Answer                                                          | Why                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Group name                              | `Internal` (or `Field testers`)                                 | Free text                                                                                                                                                                                                                                                                                                                                   |
-| **Automatically distribute new builds** | **enable it**                                                   | ⚠️ **The quiet failure.** The pipeline assigns **no** tester group — `upload_to_testflight` uploads and stops. With this off, every build lands in App Store Connect and reaches **nobody** until you assign it by hand, and the workflow is still green. This one checkbox is the difference between "CI works" and "testers got the app". |
-| Testers                                 | Caleb, Javi, Tim (per [README §4](README.md#4-ios--testflight)) |                                                                                                                                                                                                                                                                                                                                             |
+| Question                                | Answer                                                                                                  | Why                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Group name                              | `Internal` (or `Field testers`)                                                                         | Free text                                                                                                                                                                                                                                                                                                                                   |
+| **Automatically distribute new builds** | **enable it**                                                                                           | ⚠️ **The quiet failure.** The pipeline assigns **no** tester group — `upload_to_testflight` uploads and stops. With this off, every build lands in App Store Connect and reaches **nobody** until you assign it by hand, and the workflow is still green. This one checkbox is the difference between "CI works" and "testers got the app". |
+| Testers                                 | the two training facilitators and the requirements owner (per [README §4](README.md#4-ios--testflight)) |                                                                                                                                                                                                                                                                                                                                             |
 
 **Each internal tester must first exist as an App Store Connect user** (Users
 and Access → **+**, invite by Apple ID email). They then receive an invitation
@@ -432,8 +432,8 @@ it cannot mean that, by design:
   it into the archive.
 
 The build number is the run's **unix timestamp**, so builds always increase and
-never collide. TestFlight shows the marketing version **`1.1.1`**
-(`MARKETING_VERSION`), deliberately **not** the PWA's `0.1.x` — see
+never collide. TestFlight shows the marketing version **`1.2`**
+(`MARKETING_VERSION`), deliberately **not** the PWA's `package.json` version — see
 [README §6](README.md#6-versioning). Do not "fix" that mismatch; it is
 intentional.
 

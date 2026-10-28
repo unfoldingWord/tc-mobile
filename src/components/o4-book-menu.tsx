@@ -90,6 +90,29 @@ export const CoverTile = forwardRef<
 });
 
 /**
+ * The Licence tile (#1455, "change it later"): reopens the licence ask with
+ * the stored licence selected. The book menu mounts it only for a book that
+ * was not made from a template, whose licence is fixed (D5 `lock-template`).
+ * The name holds the caption (label-in-name).
+ */
+export const LicenceTile = forwardRef<
+  HTMLButtonElement,
+  { onClick: () => void }
+>(function LicenceTile({ onClick }, ref) {
+  return (
+    <Tile
+      ref={ref}
+      tone="plain"
+      className="o4-tile--licence"
+      icon="copies"
+      label={strings.licenceTileLabel}
+      caption={strings.tileLicence}
+      onClick={onClick}
+    />
+  );
+});
+
+/**
  * #957's picker, in the book sheet where the tiles were. It sits inside the
  * tile grid so the sheet keeps its bottom-sheet shell (`o4/menus.css` keys
  * the shell on the grid). Focus lands on the book's own colour when it

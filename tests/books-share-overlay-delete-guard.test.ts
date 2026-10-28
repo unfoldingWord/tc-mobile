@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { strings } from "@/lib/strings";
 import type { ShareProgress } from "@/hooks/share-progress";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -43,6 +44,7 @@ const shelf = (): BookCard[] => [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 0,
         totalCount: 0,
@@ -136,6 +138,7 @@ async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer,
         popLayer,

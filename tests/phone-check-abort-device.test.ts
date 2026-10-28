@@ -73,6 +73,32 @@ describe("readDeviceInfo and an abort", () => {
     }
   });
 
+  it("leaves no unhandled rejection when a call already being raced rejects after the abort", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (cause: unknown) => void unhandled.push(cause);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const run = new AbortController();
+      let rejectEstimate!: (cause: unknown) => void;
+      const estimate = vi.fn(
+        () =>
+          new Promise<never>((_resolve, reject) => {
+            rejectEstimate = reject;
+          })
+      );
+      const pending = readDeviceInfo({ storage: { estimate } }, run.signal);
+      // The race is attached; only now does the run abort and the call reject.
+      expect(estimate).toHaveBeenCalled();
+      run.abort();
+      await expect(pending).rejects.toBe(run.signal.reason);
+      rejectEstimate(new Error("quota"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toHaveLength(0);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("is recognised as the abort by settleProbe, so nothing reaches the funnel", async () => {
     const seen: unknown[] = [];
     const off = subscribeToFailures((r) => void seen.push(r));

@@ -4,10 +4,11 @@
  * The design reference's section 4 loops, on the targets that exist today:
  * the guide pulse on the guided record control (#604's outset ring), the
  * recorder stage's live edge, the recording dot's blink (#945's states), and
- * the refusal shake on the book delete ask's head (#1030's markup). The mic
- * pulse, the shake's mic-denied target and the audible
- * ping land with the screens that carry them (2026-09-26 remainder audit,
- * issue #950).
+ * the refusal shake on the book delete ask's head (#1030's markup) and on the
+ * mic-refused card (#1089: `data-refused` on the permission panel's body, set
+ * while Retry has come back refused and dropped at the next Retry tap, so each
+ * refusal replays it). The mic pulse and the audible ping land with the
+ * screens that carry them (2026-09-26 remainder audit, issue #950).
  *
  * Each keyframe is the workbench's own, recoloured through layer-2 roles.
  * Each duration reads #967's ambient primitive, with the design value as the
@@ -121,7 +122,8 @@
      the ask is up (components/o4-book-delete-ask.tsx), so this rule fires on
      mount rather than needing a trigger class of its own — the hook posted
      on #950 (2026-09-26). */
-  :root .books-delete-ask > .o4-sheet-head {
+  :root .books-delete-ask > .o4-sheet-head,
+  :root .o4-err-body[data-refused] {
     animation: shake var(--p-ambient-shake, 0.35s) ease-in-out 2;
   }
   @keyframes shake {
@@ -145,7 +147,8 @@
     :root .o4-tile--send.is-armed,
     :root .recorder-stage[data-o4-look="recording"]::after,
     :root .recorder-status .rec-dot,
-    :root .books-delete-ask > .o4-sheet-head {
+    :root .books-delete-ask > .o4-sheet-head,
+    :root .o4-err-body[data-refused] {
       animation: none;
     }
   }

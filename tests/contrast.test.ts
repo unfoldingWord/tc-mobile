@@ -367,6 +367,32 @@ describe("the O4 roles clear the floors the workbench claimed for them (round 4,
   }
 });
 
+describe("the chapter-play ring fill clears the non-text floor (#1469)", () => {
+  // The ring is the control's progress mark, so its FILL takes 3:1 on both
+  // grounds a chapter row can sit on. The TRACK (`--s-mark-empty`) is not
+  // gated here: it is read as decorative, which is a pending decision, not a
+  // pinned one — nothing below asserts its ratio either way.
+  const booksCss = readFileSync(path.join(STYLES, "o4", "books.css"), "utf8");
+
+  it("the ring paints its fill with --s-voice, so this pin scores the real paint", () => {
+    const ring = cssRule(booksCss, ":root .books-play-ring");
+    const background = declarationValue(ring, "background");
+    expect(background).toMatch(/^conic-gradient\(\s*var\(--s-voice\)\s+calc\(/);
+  });
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const surface of ["--s-floor", "--s-well"]) {
+      it(`${theme}: --s-voice on ${surface} — the chapter-play ring fill`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-voice"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+  }
+});
+
 describe("the O4 colour values #937 decided hold", () => {
   // A floor alone would let either value drift back to what the decision
   // replaced: the old blue Edit tile cleared 5:1 too.
@@ -464,4 +490,194 @@ describe("the SaveFailed armed Restart glyph reads on its own fill (#1088 S9)", 
       expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
     });
   }
+});
+
+describe("the trim selection has its own blue, --s-select (#1471)", () => {
+  // The band, its two edges, both stems and both knobs used to paint
+  // `--s-voice`, the same amber as the waveform under them: the light-theme
+  // band over a waveform bar scored 2.84:1. The requirements owner chose a new
+  // colour that never reads as the guide ring (Q7-blue).
+  //
+  // All ratios are WCAG 2.x over the declared sRGB values and all distances are
+  // OKLab over the same values — computed, not measured on a screen.
+
+  type Matrix = readonly (readonly number[])[];
+
+  /** OKLab (Ottosson) from an sRGB hex, on the 0–100 scale the issue states. */
+  function oklab(hex: string, matrix?: Matrix): [number, number, number] {
+    const lin = channels(hex).map((c) =>
+      c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    ) as [number, number, number];
+    const [r, g, b] = matrix
+      ? ([0, 1, 2].map((row) =>
+          Math.min(
+            1,
+            Math.max(
+              0,
+              matrix[row]![0]! * lin[0] +
+                matrix[row]![1]! * lin[1] +
+                matrix[row]![2]! * lin[2]
+            )
+          )
+        ) as [number, number, number])
+      : lin;
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [
+      100 * (0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s),
+      100 * (1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s),
+      100 * (0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s),
+    ];
+  }
+
+  // Machado, Oliveira and Fernandes (2009), severity 1.0, applied in linear
+  // sRGB. These simulate full dichromacy: a stated model, not a person. The
+  // issue's own matrices were typed from memory, so the helper below is
+  // checked against a maintained library's output instead.
+  const VISION: Record<string, Matrix | undefined> = {
+    normal: undefined,
+    protanopia: [
+      [0.152286, 1.052583, -0.204868],
+      [0.114503, 0.786281, 0.099216],
+      [-0.003882, -0.048116, 1.051998],
+    ],
+    deuteranopia: [
+      [0.367322, 0.860646, -0.227968],
+      [0.280085, 0.672501, 0.047413],
+      [-0.01182, 0.04294, 0.968881],
+    ],
+    tritanopia: [
+      [1.255528, -0.076749, -0.178779],
+      [-0.078411, 0.930809, 0.147602],
+      [0.004733, 0.691367, 0.3039],
+    ],
+  };
+
+  function distance(a: string, b: string, matrix?: Matrix): number {
+    const A = oklab(a, matrix);
+    const B = oklab(b, matrix);
+    return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]);
+  }
+
+  /** The band's own fill is 20% of the role over whatever is behind it. */
+  const BAND_PCT = 0.2;
+  /** A stated judgement, not a standard (the issue's own words). */
+  const MIN_DISTANCE_FROM_GUIDE = 10;
+
+  it("the OKLab distance helper reproduces a maintained library's values", () => {
+    // Reference values computed with culori's `oklab()` and its `lrgb`
+    // converter, the severity-1.0 matrices applied in linear light and
+    // clamped, as the paper specifies. (culori's own `filterDeficiency*`
+    // multiplies gamma-encoded values, which is not the paper's model, so it
+    // is not the reference here.) Rounded to one decimal.
+    expect(distance("#0369a1", "#2e7df6")).toBeCloseTo(14.1, 1);
+    expect(distance("#0369a1", "#2e7df6", VISION.tritanopia)).toBeCloseTo(
+      11.5,
+      1
+    );
+    expect(distance("#4cc9f0", "#2e7df6", VISION.deuteranopia)).toBeCloseTo(
+      21.7,
+      1
+    );
+  });
+
+  for (const theme of ["dark", "light"] as const) {
+    it(`${theme}: --s-select is a different colour from guide, hear, voice and focus`, () => {
+      const select = resolve(theme, "--s-select");
+      for (const other of ["--s-guide", "--s-hear", "--s-voice", "--s-focus"]) {
+        expect(select).not.toBe(resolve(theme, other));
+      }
+    });
+
+    for (const [vision, matrix] of Object.entries(VISION)) {
+      it(`${theme}: --s-select is at least ${MIN_DISTANCE_FROM_GUIDE} OKLab units from --s-guide under ${vision} vision`, () => {
+        expect(
+          distance(
+            resolve(theme, "--s-select"),
+            resolve(theme, "--s-guide"),
+            matrix
+          )
+        ).toBeGreaterThanOrEqual(MIN_DISTANCE_FROM_GUIDE);
+      });
+    }
+
+    it(`${theme}: --s-select on --s-surface clears the non-text floor`, () => {
+      expect(
+        contrast(resolve(theme, "--s-select"), resolve(theme, "--s-surface"))
+      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+
+    it(`${theme}: --s-select on the band's own wash clears the non-text floor`, () => {
+      const surface = resolve(theme, "--s-surface");
+      const band = wash(resolve(theme, "--s-select"), surface, BAND_PCT);
+      expect(
+        contrast(resolve(theme, "--s-select"), band)
+      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+
+    it(`${theme}: the amber waveform bar seen through the band reads against the band's wash`, () => {
+      // Both sides are the band's 20% over what it covers: over the surface for
+      // the wash, over an amber bar for the bar as seen through it.
+      const select = resolve(theme, "--s-select");
+      const band = wash(select, resolve(theme, "--s-surface"), BAND_PCT);
+      const barThroughBand = wash(
+        select,
+        resolve(theme, "--s-voice"),
+        BAND_PCT
+      );
+      expect(contrast(barThroughBand, band)).toBeGreaterThanOrEqual(
+        AA_NON_TEXT
+      );
+    });
+  }
+
+  it("an amber band over an amber bar, as it used to be, fails in the light theme", () => {
+    // The state the issue exists to fix (2.84:1), kept so the pin above is
+    // known to be able to fail.
+    const voice = resolve("light", "--s-voice");
+    const band = wash(voice, resolve("light", "--s-surface"), BAND_PCT);
+    expect(contrast(wash(voice, voice, BAND_PCT), band)).toBeLessThan(
+      AA_NON_TEXT
+    );
+  });
+
+  describe("source: the band, the stems and the knobs read --s-select", () => {
+    const components = readFileSync(
+      path.join(STYLES, "3-components.css"),
+      "utf8"
+    );
+    const recorder = readFileSync(
+      path.join(STYLES, "o4", "recorder.css"),
+      "utf8"
+    );
+    const band = cssRule(components, ".selection-band");
+    const stem = cssRule(components, ".selection-stem");
+    const knob = cssRule(recorder, ":root .selection-handle::after");
+
+    it("the band fill is a 20% wash of --s-select", () => {
+      expect(declarationValue(band, "background")).toBe(
+        "color-mix(in srgb, var(--s-select) 20%, transparent)"
+      );
+    });
+
+    it("the band's edges are 2px of --s-select", () => {
+      expect(declarationValue(band, "border-inline")).toBe(
+        "2px solid var(--s-select)"
+      );
+    });
+
+    it("the stem and the knob are --s-select", () => {
+      expect(declarationValue(stem, "background")).toBe("var(--s-select)");
+      expect(declarationValue(knob, "background")).toBe("var(--s-select)");
+    });
+
+    it("none of the four rules reads the voice, guide or hear role", () => {
+      for (const rule of [band, stem, knob]) {
+        expect(stripCssComments(rule)).not.toMatch(
+          /var\(--s-(?:voice|guide|hear)\b/
+        );
+      }
+    });
+  });
 });

@@ -15,7 +15,7 @@
  * like the app never started. Importing this file first makes its body the
  * first code that runs, so every module imported after it is covered.
  *
- * What is still NOT covered, and is not claimed to be: this module's own two
+ * What is still NOT covered, and is not claimed to be: this module's own
  * imports, which by the same rule finish evaluating before any of the
  * statements below run. That is no longer a single declaration-only module —
  * `@/hooks/failure-log` pulls in the storage layer and `@/lib/failure-text`
@@ -31,12 +31,13 @@
  * a sink installed inside a React effect is installed after the App graph has
  * evaluated and rendered, so the earliest failures — the ones that look like the
  * app never started — would reach the funnel with nowhere to be stored. Ordered
- * BEFORE the two listeners below so a failure raised by their own registration
+ * BEFORE the listeners below so a failure raised by their own registration
  * would still land in the log.
  */
 
 import { installFailureLog } from "@/hooks/failure-log";
 import { reportFailure } from "@/hooks/report-failure";
+import { installStaleChunkReload } from "@/hooks/stale-chunk-reload";
 
 installFailureLog();
 
@@ -60,3 +61,8 @@ window.addEventListener("error", (event) => {
   // line in the log.
   reportFailure(event.error ?? event.message, "uncaught-error");
 });
+
+// A lazily loaded file from an older build that the service worker has since
+// deleted (#1421 O1): reload once, then fail. Installed here so it is live
+// before any module below can ask for a lazy chunk. See its own docblock.
+installStaleChunkReload();

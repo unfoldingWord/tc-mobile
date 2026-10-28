@@ -7,6 +7,8 @@ import {
   useShareFlow,
 } from "./share-flow";
 import { exportChapterMp3, withEncodeSteps } from "@/lib/export/chapter";
+import { chapterFileParts } from "@/lib/export/chapter-tag";
+import { chapterPlacement } from "@/lib/storage/books";
 import type { ChapterId } from "@/types/domain";
 
 export interface UseChapterShare extends ShareSurface {
@@ -22,10 +24,14 @@ export interface UseChapterShare extends ShareSurface {
    * See {@link UseShareFlow.prepare} (`share-flow.ts`, #860): on the native
    * route this chains straight into `send()` and resolves to its outcome; on
    * the web route it resolves `null` and leaves the flow at `ready`.
+   *
+   * `nameFile` gets the chapter's slot in its book and the book's chapter
+   * count (#1272, #1233), read here from storage so the name never depends on
+   * a view's stored number.
    */
   prepare: (
     chapterId: ChapterId,
-    filename: string
+    nameFile: (slot: number, chapterCount: number) => string
   ) => Promise<ShareOutcome | null>;
 }
 
@@ -55,32 +61,55 @@ export function useChapterShare(): UseChapterShare {
   } = useShareFlow();
 
   const prepare = useCallback(
-    (chapterId: ChapterId, filename: string): Promise<ShareOutcome | null> =>
-      run((isCurrent, signal, onStep) =>
+    (
+      chapterId: ChapterId,
+      nameFile: (slot: number, chapterCount: number) => string
+    ): Promise<ShareOutcome | null> =>
+      run((isCurrent, signal, onStep, onRead) =>
         // `withEncodeSteps` (#996) hands the export a codec and an `onStep`
         // that put the encode on the same count as the segments: the count
         // reads its total only once the MP3 exists. The inner `onStep` is that
-        // wrapped reporter, deliberately shadowing the flow's own.
+        // wrapped reporter, deliberately shadowing the flow's own. `onRead`
+        // (#1078) carries the joined path's clip reads, never a step.
         withEncoder(
           signal,
-          withEncodeSteps(onStep, isCurrent, async (codec, onStep) => {
-            const result = await exportChapterMp3(
-              chapterId,
-              codec,
-              isCurrent,
-              onStep
-            );
-            // exportChapterMp3 returns null both for an empty chapter and for a run
-            // cancelled during the gather (its shouldEncode check). `isCurrent`
-            // distinguishes them: still live means genuinely nothing to share.
-            if (result === null) return isCurrent() ? "nothing" : null;
-            // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
-            // which `File` accepts directly.
-            const file = new File([result.mp3], filename, {
-              type: "audio/mpeg",
-            });
-            return { file, missing: result.missing };
-          })
+          withEncodeSteps(
+            onStep,
+            isCurrent,
+            async (codec, onStep) => {
+              const result = await exportChapterMp3(
+                chapterId,
+                codec,
+                isCurrent,
+                onStep
+              );
+              // exportChapterMp3 returns null both for an empty chapter and for a run
+              // cancelled during the gather (its shouldEncode check). `isCurrent`
+              // distinguishes them: still live means genuinely nothing to share.
+              if (result === null) return isCurrent() ? "nothing" : null;
+              // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
+              // which `File` accepts directly.
+              // The file's number is the chapter's slot, padded to its whole
+              // book's count (#1272, #1233), so this file is named as Share
+              // Book would name it. A chapter its book no longer lists has no
+              // slot, and so nothing to share by that name.
+              const placement = await chapterPlacement(chapterId);
+              if (placement === null) return isCurrent() ? "nothing" : null;
+              // The ID3 tag (#252) and the MP3 go into the File as two parts,
+              // so the MP3 is not copied.
+              const parts = await chapterFileParts(chapterId, result.mp3);
+              if (!isCurrent()) return null;
+              const file = new File(
+                parts,
+                nameFile(placement.slot, placement.chapterCount),
+                {
+                  type: "audio/mpeg",
+                }
+              );
+              return { file, missing: result.missing };
+            },
+            onRead
+          )
         )
       ),
     [run]

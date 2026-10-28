@@ -6,7 +6,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
-import { exportBookZip, memoryArchiveSink } from "@/lib/export/book";
+import {
+  type ChapterNamer,
+  exportBookZip,
+  memoryArchiveSink,
+} from "@/lib/export/book";
 import * as chapterExport from "@/lib/export/chapter";
 import {
   addChapter,
@@ -21,7 +25,8 @@ import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
 import { getDb } from "@/lib/storage/db";
 import type { BookId } from "@/types/domain";
-import { clearAllStores, testCodec } from "./support";
+import { audioAfterId3v2, clearAllStores, testCodec } from "./support";
+import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 
 const samples = (n: number, value: number): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -126,7 +131,9 @@ describe("exportBookZip", () => {
     const { chapters } = await resolveBookChapters(bookId);
     for (const chapter of chapters) {
       const solo = await chapterExport.exportChapterMp3(chapter.id, codec);
-      expect(entries[nameChapter(chapter.number)]).toEqual(solo!.mp3);
+      expect(audioAfterId3v2(entries[nameChapter(chapter.number)]!)).toEqual(
+        solo!.mp3
+      );
     }
   });
 
@@ -181,19 +188,21 @@ describe("exportBookZip", () => {
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(2);
     expect(result!.missing).toBe(1); // the dangling chapter — silently 0 before the fix
+    // Slots count the resolvable chapters (#1272), as the Books screen does,
+    // so the third chapter shares as the second.
     expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
       "Chapter 1.mp3",
-      "Chapter 3.mp3",
+      "Chapter 2.mp3",
     ]);
   });
 
-  it("keeps both chapters' audio when their numbers collide, under distinct names", async () => {
-    // addChapter permits an explicit duplicate number, so nameChapter can map two
-    // chapters to the same path. Both recordings must survive under distinct
-    // entries — two entries at one path is an ambiguous archive.
+  it("keeps both chapters' audio when their names collide, under distinct names", async () => {
+    // Slots never repeat (#1272), but the namer is the caller's, and it can map
+    // two chapters to the same path. Both recordings must survive under
+    // distinct entries — two entries at one path is an ambiguous archive.
     const book = await createBook("b");
-    const c1 = await addChapter(book.id, 1);
-    const c2 = await addChapter(book.id, 1); // same number, on purpose
+    const c1 = await addChapter(book.id);
+    const c2 = await addChapter(book.id);
     const s1 = await addSegment(c1.id);
     await saveTake(
       s1.id,
@@ -210,7 +219,12 @@ describe("exportBookZip", () => {
     );
 
     const sink = memoryArchiveSink();
-    const result = await exportBookZip(book.id, nameChapter, testCodec(), sink);
+    const result = await exportBookZip(
+      book.id,
+      () => "Chapter 1.mp3", // one name for both, on purpose
+      testCodec(),
+      sink
+    );
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(2);
@@ -448,7 +462,8 @@ describe("exportBookZip — Finished chapters are joined, not re-encoded (#1004)
             segmentId,
             audio.clip.id,
             encodeMp3(clip.samples),
-            computePeaks(clip.samples, 4)
+            computePeaks(clip.samples, 4),
+            NO_STAGES_RUN
           )
         ).toBe("committed");
       }
@@ -478,24 +493,29 @@ describe("exportBookZip — Finished chapters are joined, not re-encoded (#1004)
     const { chapters } = await resolveBookChapters(bookId);
     for (const chapter of chapters) {
       const solo = await chapterExport.exportChapterMp3(chapter.id, codec);
-      expect(entries[nameChapter(chapter.number)]).toEqual(solo!.mp3);
+      expect(audioAfterId3v2(entries[nameChapter(chapter.number)]!)).toEqual(
+        solo!.mp3
+      );
     }
     expect(codec.encodeMp3).not.toHaveBeenCalled();
   });
 });
 
 /**
- * #953: a chapter move renumbers, and the zip follows both the new order and
- * the new numbers — the entry name is `nameChapter(chapter.number)`, so the
- * audio a facilitator already shared can come out under a different name
- * after a move. That is the intended behaviour (scope §4, "File names").
+ * #953 / #1272 B: a chapter move changes the order and nothing else stored.
+ * The zip follows the new order, and each entry is named by the chapter's
+ * slot (the DRI on #1272, Q2 (a): "shared MP3 file names and the track tag
+ * use the slot"), so a list sorted by file name matches the book's order. The
+ * moved book is the scope's `[1, 4, 2, 3]` case: its stored numbers no longer
+ * equal its slots.
  */
-describe("exportBookZip after a chapter move (#953)", () => {
-  it("orders and names the entries by the moved order", async () => {
+describe("exportBookZip after a chapter move (#953, #1272)", () => {
+  it("orders the entries by the moved order and names them by slot", async () => {
     const bookId = await bookWith([
       [{ n: 100, v: 100 }],
       [{ n: 100, v: 150 }],
       [{ n: 100, v: 200 }],
+      [{ n: 100, v: 250 }],
     ]);
     const before = (await resolveBookChapters(bookId)).chapters;
     const codec = testCodec();
@@ -507,8 +527,10 @@ describe("exportBookZip after a chapter move (#953)", () => {
       );
     }
 
-    // The third chapter moves to the top: it becomes Chapter 1.
-    await moveChapter(before[2]!.id, 0);
+    // The fourth chapter moves to second place: stored numbers 1, 4, 2, 3.
+    await moveChapter(before[3]!.id, 1);
+    const after = (await resolveBookChapters(bookId)).chapters;
+    expect(after.map((c) => c.number)).toEqual([1, 4, 2, 3]);
 
     const sink = memoryArchiveSink();
     const result = await exportBookZip(bookId, nameChapter, codec, sink);
@@ -518,10 +540,47 @@ describe("exportBookZip after a chapter move (#953)", () => {
       "Chapter 1.mp3",
       "Chapter 2.mp3",
       "Chapter 3.mp3",
+      "Chapter 4.mp3",
     ]);
-    // Each name now holds the audio of the chapter that moved into that slot.
-    expect(entries["Chapter 1.mp3"]).toEqual(solo.get(before[2]!.id));
-    expect(entries["Chapter 2.mp3"]).toEqual(solo.get(before[0]!.id));
-    expect(entries["Chapter 3.mp3"]).toEqual(solo.get(before[1]!.id));
+    // Each name holds the audio of the chapter now in that slot.
+    after.forEach((chapter, i) => {
+      expect(audioAfterId3v2(entries[`Chapter ${i + 1}.mp3`]!)).toEqual(
+        solo.get(chapter.id)
+      );
+    });
+  });
+
+  it("hands the namer a template chapter's own number, and null for a hand-made one (#1272, Q1 (b))", async () => {
+    const bookId = await bookWith([[{ n: 100, v: 100 }], [{ n: 100, v: 150 }]]);
+    const second = (await resolveBookChapters(bookId)).chapters[1]!;
+    await (
+      await getDb()
+    ).put("chapters", { ...second, templateKey: "obs-7", number: 7 });
+    const namer = vi.fn<ChapterNamer>((n) => `Chapter ${n}.mp3`);
+    await exportBookZip(bookId, namer, testCodec(), memoryArchiveSink());
+    expect(namer.mock.calls.map(([n, , , t]) => [n, t])).toEqual([
+      [1, null],
+      [2, 7],
+    ]);
+  });
+
+  it("pads to the book's chapter count, not to its highest stored number", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }],
+      [{ n: 100, v: 150 }],
+      [{ n: 100, v: 200 }],
+    ]);
+    // A template may number a chapter past the book's count (a chapter 120 in
+    // a book of three); the width still comes from the slots.
+    const third = (await resolveBookChapters(bookId)).chapters[2]!;
+    await (await getDb()).put("chapters", { ...third, number: 120 });
+    const namer = vi.fn(
+      (n: number, _name: string | null, highest: number) =>
+        `${n} of ${highest}.mp3`
+    );
+
+    await exportBookZip(bookId, namer, testCodec(), memoryArchiveSink());
+
+    expect(namer.mock.calls.map((call) => call[2])).toEqual([3, 3, 3]);
   });
 });

@@ -40,6 +40,17 @@
  * crash — takes it with the worker. The PCM arrives as a transferred
  * `ArrayBuffer` (moved, not copied) and the MP3 goes back the same way, so a
  * chapter's audio is never held twice across the two threads.
+ *
+ * One more versioned request is not an encode at all: `dsp-bench` (#1433 step
+ * 1). It builds its own synthetic speech in here, so no PCM crosses the
+ * boundary, runs the phone check's DSP benchmark with the same heartbeat, and
+ * answers `bench-result` or `bench-error` - its own kinds, so the client can
+ * keep a benchmark out of the encoder's health. It touches no stream session.
+ *
+ * And `normalize` (#1433 step 3): the Finished chain over a clip's PCM, in
+ * place, with the same heartbeat, answered with `normalized` carrying the
+ * processed PCM back (transferred) and the record of what ran. The client
+ * then encodes that PCM with an ordinary whole encode.
  */
 
 import {
@@ -47,7 +58,11 @@ import {
   createMp3StreamEncoder,
   encodeMp3,
 } from "@/lib/audio/mp3";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { normalizePcm } from "@/lib/audio/loudness";
 import { errorMessage } from "@/lib/failure-text";
+import { runDspBench } from "@/lib/phone-check/dsp-bench";
+import { speechLikePcm } from "@/lib/phone-check/speech";
 import type { EncodeRequest, EncodeResponse } from "./mp3-codec";
 
 /**
@@ -87,6 +102,44 @@ type Answer = {
   readonly response: EncodeResponse;
   readonly transfer: Transferable[];
 } | null;
+
+/** The longest benchmark this worker will run, in seconds of audio. */
+const MAX_BENCH_SECONDS = 600;
+
+/**
+ * Run the DSP benchmark. Its own failures are `bench-error`, never `error`:
+ * the client counts an `error` against the encoder's health, and a benchmark
+ * that throws says nothing about the encoder.
+ */
+function benchAnswer(seconds: unknown): Answer {
+  try {
+    if (
+      typeof seconds !== "number" ||
+      !Number.isFinite(seconds) ||
+      seconds <= 0 ||
+      seconds > MAX_BENCH_SECONDS
+    )
+      throw new Error(
+        `The benchmark needs seconds between 0 and ${MAX_BENCH_SECONDS}`
+      );
+    // Built before the clock starts: the kernel times the chain, not the speech.
+    const input = speechLikePcm(seconds, CANONICAL_SAMPLE_RATE);
+    const beat = heartbeat();
+    const result = runDspBench({
+      input,
+      sampleRate: CANONICAL_SAMPLE_RATE,
+      now: () => performance.now(),
+      onChunk: (pass, done, total) =>
+        beat(((pass - 1) * total + done) / (2 * total)),
+    });
+    return { response: { kind: "bench-result", result }, transfer: [] };
+  } catch (cause) {
+    return {
+      response: { kind: "bench-error", message: errorMessage(cause) },
+      transfer: [],
+    };
+  }
+}
 
 function answer(request: EncodeRequest): Answer {
   if (!("kind" in request)) {
@@ -133,6 +186,26 @@ function answer(request: EncodeRequest): Answer {
     case "stream-cancel":
       stream = null;
       return null;
+    case "dsp-bench":
+      return benchAnswer(request.seconds);
+    case "normalize": {
+      const processing = normalizePcm(
+        new Int16Array(request.buffer, request.byteOffset, request.length),
+        request.sampleRate,
+        heartbeat()
+      );
+      const { buffer, byteOffset, length } = request;
+      return {
+        response: {
+          kind: "normalized",
+          buffer,
+          byteOffset,
+          length,
+          processing,
+        },
+        transfer: [buffer],
+      };
+    }
     default: {
       // Inside the handler's `catch`, so an unknown kind is the same typed
       // `error` answer as an unknown version, and ends the session.

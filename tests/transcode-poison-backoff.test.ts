@@ -9,6 +9,7 @@ import type {
   SegmentId,
   TakeId,
 } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * A clip that stalls the encoder EVERY time, and a translator who keeps
@@ -65,6 +66,8 @@ function segment(id: SegmentId): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
+    audioRevision: 0,
   };
 }
 
@@ -97,6 +100,7 @@ function resolvedPcm(
         byteLength: 2,
         transcodeStallCount: 0,
         peaks: null,
+        processing: null,
       },
       samples,
     },

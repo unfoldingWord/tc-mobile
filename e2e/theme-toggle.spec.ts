@@ -38,7 +38,7 @@ import { DARK_FLOOR, LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
  * equatorial sun, which is the condition it was written for. That is a device
  * check on a phone outdoors, and it is still owed (#245 for Android at all,
  * #249 for whether the glyph is recognised). Headless Chromium on a container
- * is not a screen in Nairobi.
+ * is not a screen at the training.
  */
 
 const themeColor = (page: import("@playwright/test").Page) =>
@@ -98,8 +98,10 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     expect(await statusBarStyle(page)).toBe("black-translucent");
 
     // --- 2. the toggle is where a translator can find it -------------------
-    await page.getByRole("button", { name: "Open menu" }).click();
-    const menu = page.getByRole("dialog", { name: "Menu" });
+    // The Settings screen's first row (#1575): the gear in the Books header
+    // opens it. The ≡ menu no longer holds the toggle.
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const menu = page.getByRole("dialog", { name: "Settings", exact: true });
     await expect(menu).toBeVisible();
     // Named by DESTINATION, not state — a control reading "Dark theme" while
     // the screen is already dark tells an AT user nothing.
@@ -167,9 +169,9 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     // this reads INK as well as the floor, in the shipped cascade, rather than
     // trusting that one attribute selected the whole block.
     await page.goto("/");
-    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page
-      .getByRole("dialog", { name: "Menu" })
+      .getByRole("dialog", { name: "Settings", exact: true })
       .getByRole("button", { name: /light screen/i })
       .click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -244,9 +246,9 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
     await expect(failureMarker(page)).toHaveCount(0);
 
     // Switch to light, with the write failing underneath.
-    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page
-      .getByRole("dialog", { name: "Menu" })
+      .getByRole("dialog", { name: "Settings", exact: true })
       .getByRole("button", { name: /light screen/i })
       .click();
     await page.keyboard.press("Escape");
@@ -295,40 +297,15 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
   });
 });
 
-test.describe("the theme is reachable from the screens you work on (#149)", () => {
+test.describe("the theme lives only in Settings (#1575)", () => {
   /**
-   * #149 asked whether Books-only was acceptable for the global menu. It was,
-   * while the menu's only entry was a licence notice nobody needs mid-session.
-   * The theme toggle (#171, #457) is the opposite: `2-semantic.css`'s header
-   * says the light theme exists because direct equatorial sun makes the dark
-   * screen unreadable, and that condition arrives WHILE you are recording. On
-   * a Books-only toggle the way out is back out of the recorder, back out of
-   * Segments, open the hamburger, tap, and navigate back in — four screens,
-   * in the one condition where the screen is hardest to read.
-   *
-   * So these two cases assert the toggle is reachable from the chapter's `⋮`
-   * and the recorder's `⋮`, and that tapping it there actually repaints. They
-   * fail on a Books-only toggle at the locator: the control is not in those
-   * menus at all.
-   *
-   * WHY NOT A SECOND HAMBURGER on those screens. Both already carry their own
-   * `⋮` (`strings.chapterMenuOpen`, `strings.recorderMenuOpen`), and a second
-   * opener beside them is the worse option on a 320px header that #370 already
-   * reports wrapping — so the global entry joins the existing menu rather than
-   * arriving with an opener of its own.
-   *
-   * WHAT THIS DOES NOT COVER, and what the Books cases above still own: the
-   * `theme-color`/status-bar metas, persistence across a reload, and the
-   * failed-write path. Those are properties of `use-theme.ts`, which is one
-   * store for every caller — proving them once is the point of that store.
-   * What is new here is only REACHABILITY plus a real repaint at each site.
+   * #149 had mounted the toggle in the chapter `⋮` and the recorder `⋮` so a
+   * translator in direct sun could switch mid-take. The DRI's pick on #1623
+   * (2026-10-22), "Remove, Settings only", took both out. These cases keep
+   * the claim in a real browser: neither menu carries a theme control.
    */
-  test("the chapter ⋮ carries the toggle, and it repaints from there", async ({
-    page,
-  }) => {
+  test("the chapter ⋮ no longer carries the toggle", async ({ page }) => {
     await seedToSegments(page);
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-
     await page
       .getByRole("button", {
         name: "More actions for this chapter",
@@ -337,81 +314,23 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
       .click();
     const menu = page.getByRole("dialog", { name: "Chapter", exact: true });
     await expect(menu).toBeVisible();
-
-    const toLight = menu.getByRole("button", { name: /light screen/i });
-    await expect(toLight).toBeVisible();
-    await toLight.click();
-
-    // The repaint, not just the attribute: the shipped cascade is what the
-    // person in the sun actually gets.
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
-
-    // Same affordance as on Books: the menu stays open, so the control is its
-    // own undo and a wrong guess costs one more tap in the same spot.
-    await expect(menu).toBeVisible();
-    await menu.getByRole("button", { name: /dark screen/i }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
+    // The menu is populated, so an absent toggle is not an empty menu.
+    await expect(menu.getByRole("button").first()).toBeVisible();
+    await expect(
+      menu.getByRole("button", { name: /(light|dark) screen/i })
+    ).toHaveCount(0);
   });
 
-  test("the recorder ⋮ carries the toggle, and it repaints from inside the sheet", async ({
-    page,
-  }) => {
-    // The case the reframing of #149 turns on: the sheet is where a translator
-    // spends the session, and it is `aria-modal` over an `inert` Segments —
-    // so a toggle that lives anywhere else is unreachable without leaving the
-    // recording behind.
+  test("the recorder ⋮ no longer carries the toggle", async ({ page }) => {
     await seedToRecorder(page);
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-
-    // `exact`, because the Segments `⋮` behind the sheet ("More actions for
-    // this chapter") is still in the DOM and a substring match would find two.
     await page
       .getByRole("button", { name: "More actions", exact: true })
       .click();
     const menu = page.getByRole("dialog", { name: "More", exact: true });
     await expect(menu).toBeVisible();
-
-    const toLight = menu.getByRole("button", { name: /light screen/i });
-    await expect(toLight).toBeVisible();
-
-    // The AT consequence this PR asks a reviewer to ACCEPT, pinned rather than
-    // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
-    // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
-    // recorded and an empty clipboard every row is hinted (Edit: no audio and
-    // no clipboard to paste; Mark: no audio; Clear: no clip), making the
-    // toggle that child.
-    //
-    // #590/#1080 briefly changed this: "Delete segment" (once a row in this
-    // same menu) did not require stored audio, so on this exact empty segment
-    // it was actionable ahead of the toggle, and this assertion named IT as
-    // the open-edge target instead. #1104 (the requirements owner's
-    // 2026-09-26 decision) removed Delete from this menu entirely — it
-    // belongs to the chapter view's own segment-row menu now — so this is
-    // back to its original shape: no row ahead of the toggle is ever
-    // actionable on an empty segment, and open-edge focus lands directly on
-    // the toggle again.
-    //
-    // It is asserted BEFORE the click, because clicking moves focus itself and
-    // would make this pass for the wrong reason.
-    //
-    // WHAT THIS DOES AND DOES NOT CATCH. It catches one of the GATES changing:
-    // if a pre-existing row becomes actionable in this state, it takes the
-    // first actionable position and this fails. It does NOT catch a reorder,
-    // and an earlier version of this comment wrongly said it did (George).
-    // The mount ORDER is held by `tests/theme.test.ts` and by the comments in
-    // `recorder-menu.tsx`.
-    await expect(toLight).toBeFocused();
-
-    await toLight.click();
-
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
-
-    await expect(menu).toBeVisible();
-    await menu.getByRole("button", { name: /dark screen/i }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
+    await expect(menu.getByRole("button").first()).toBeVisible();
+    await expect(
+      menu.getByRole("button", { name: /(light|dark) screen/i })
+    ).toHaveCount(0);
   });
 });

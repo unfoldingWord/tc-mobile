@@ -10,11 +10,13 @@ import { Control } from "./control";
 import { Menu } from "./menu";
 import { rowHint } from "./menu-row-state";
 import { NameEdit } from "./name-edit";
+import { NameReveal } from "./name-reveal";
 import { Notice } from "./notice";
 import { O4SheetHead } from "./o4-crumbs";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
+import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/lib/view/segment-rows";
@@ -136,6 +138,18 @@ interface SegmentRowProps {
    * released before the hold still reaches the open button's click.
    */
   onHoldStart?: (e: React.PointerEvent) => void;
+  /**
+   * Move this row one place up (`-1`) or down (`1`) — the menu's Move up /
+   * Move down tiles (#1344, the DRI's "Yes, menu Move up/down" pick), the tap
+   * path to reorder for screen-reader and motor users. The screen owns the
+   * write and the spoken line, the same ones a drop uses. Absent, the menu
+   * draws no Move tiles.
+   */
+  onMove?: (step: -1 | 1) => void;
+  /** This row is first in the chapter, so Move up is greyed with its reason. */
+  isFirst?: boolean;
+  /** This row is last in the chapter, so Move down is greyed with its reason. */
+  isLast?: boolean;
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
@@ -187,9 +201,9 @@ function playOffsetSeconds(fraction: number, durationMs: number): number {
  * shipped it). Unlike Erase, Delete does NOT require a recorded row — an
  * accidentally added, never-recorded segment is exactly what it needs to
  * remove. In the tile grid the tiles read left to right as Done, Edit,
- * Clear, Delete (the DRI's 2026-09-28 pick on #1119). "Clear" is the visible
- * word for this file's erase (audio only; the segment stays), with the
- * eraser glyph; the bin is Delete's alone.
+ * Reset, Delete (the order is the DRI's 2026-09-28 pick on #1119). "Reset"
+ * is the visible word for this file's erase (audio only; the segment stays;
+ * #1220, #1233), with the eraser glyph; the bin is Delete's alone.
  *
  * The ordinal always shows in the badge; a label, when set, is the typed
  * title over the wave.
@@ -213,8 +227,14 @@ export function SegmentRow({
   bookCoverHex,
   chapterHeading,
   onHoldStart,
+  onMove,
+  isFirst = false,
+  isLast = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
+  // Hold a cut-off title to read it whole (S14, #1284). A title that fits
+  // leaves the press to the row's reorder hold (#953).
+  const nameReveal = useHoldReveal();
   const [menuOpen, setMenuOpen] = useState(false);
   // The menu is showing its rename field (#591) rather than its action list,
   // the rename write is in flight, and the last one did not land. All three
@@ -479,6 +499,12 @@ export function SegmentRow({
   const holdArea = onHoldStart
     ? { onPointerDown: onHoldStart, "data-reorder-handle": "" }
     : undefined;
+  // The title's press: a cut-off title claims it (and stops it here); a
+  // title that fits hands it on to the reorder hold, as before.
+  const onTitlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    nameReveal.holdStart(e);
+    if (!e.isPropagationStopped()) onHoldStart?.(e);
+  };
 
   const wave = hasClip ? (
     <div
@@ -548,11 +574,15 @@ export function SegmentRow({
             className="row-title"
             dir="auto"
             aria-hidden="true"
-            {...holdArea}
+            data-reorder-handle={holdArea ? "" : undefined}
+            onPointerDown={onTitlePointerDown}
           >
             {row.label}
           </span>
         )}
+        {titled && row.label ? (
+          <NameReveal text={row.label} place={nameReveal.place} />
+        ) : null}
         {wave}
       </div>
 
@@ -791,6 +821,39 @@ export function SegmentRow({
                 }}
               />
             </TileGrid>
+            {onMove && (
+              // Move up / Move down (#1344): their own row under the
+              // actions, so the four-tile row keeps its fit. The first
+              // row's Move up and the last row's Move down are greyed with
+              // their reason (#135), as Done and Edit are on an empty
+              // segment. A move closes the menu the way its Close does —
+              // focus back on this row's ⋮ — so the next move is one more
+              // open away; the screen says where the row landed.
+              <TileGrid>
+                {(
+                  [
+                    [-1, "arrow-up", strings.moveUp, isFirst, "alreadyFirst"],
+                    [1, "arrow-down", strings.moveDown, isLast, "alreadyLast"],
+                  ] as const
+                ).map(([step, icon, label, blocked, reason]) => (
+                  <Tile
+                    key={step}
+                    tone="plain"
+                    icon={icon}
+                    label={label}
+                    caption={label}
+                    disabled={blocked}
+                    hint={blocked ? { label: strings[reason] } : null}
+                    onClick={() => {
+                      if (blocked) return;
+                      pendingFocus.current = "menu";
+                      closeMenu();
+                      onMove(step);
+                    }}
+                  />
+                ))}
+              </TileGrid>
+            )}
           </>
         )}
       </Menu>

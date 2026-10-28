@@ -14,6 +14,7 @@ import type {
   SegmentId,
   TakeId,
 } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * #1010 — a segment whose transcode fails because the phone is out of room (a
@@ -73,6 +74,8 @@ function segment(id: string): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
+    audioRevision: 0,
   };
 }
 
@@ -90,6 +93,7 @@ function pcmClip(id: ClipId, samples: Int16Array, durationMs = 1): Clip {
       byteLength: samples.length * 2,
       transcodeStallCount: 0,
       peaks: null,
+      processing: null,
     },
     samples,
   };

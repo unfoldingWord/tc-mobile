@@ -1,7 +1,7 @@
 # Native packaging (Capacitor) — build & ship runbook
 
 **Issue:** [#262](https://github.com/unfoldingWord/tc-mobile/issues/262) —
-installable iOS (TestFlight) + Android (APK) for the Nairobi training.
+installable iOS (TestFlight) + Android (APK) for the October 2026 training.
 **Decision basis:** `docs/research/native-packaging.md` (recommendation) and
 its counter-case (#86). **Status:** shell only, no product changes.
 
@@ -103,12 +103,12 @@ route).
 Some steps depend on people, money, or approvals outside this repo. Start these
 early — a membership or an access grant can take **more than a day**.
 
-| Gate                                   | Platform | Cost   | Lead time                      | Needed for                                              |
-| -------------------------------------- | -------- | ------ | ------------------------------ | ------------------------------------------------------- |
-| **Apple Developer Program** membership | iOS      | Paid   | Enrollment can take **a day+** | Any signed iOS install; TestFlight                      |
-| **unfoldingWord Apple Team**           | iOS      | —      | Access grant                   | Signing under the org identity                          |
-| **App Store Connect** access           | iOS      | —      | Access grant                   | Adding the build + testers (Caleb, Javi, Tim)           |
-| Android signing                        | Android  | **$0** | **None**                       | Nothing external — debug APK, or a self-signed keystore |
+| Gate                                   | Platform | Cost   | Lead time                      | Needed for                                                                         |
+| -------------------------------------- | -------- | ------ | ------------------------------ | ---------------------------------------------------------------------------------- |
+| **Apple Developer Program** membership | iOS      | Paid   | Enrollment can take **a day+** | Any signed iOS install; TestFlight                                                 |
+| **unfoldingWord Apple Team**           | iOS      | —      | Access grant                   | Signing under the org identity                                                     |
+| **App Store Connect** access           | iOS      | —      | Access grant                   | Adding the build + testers (the two training facilitators, the requirements owner) |
+| Android signing                        | Android  | **$0** | **None**                       | Nothing external — debug APK, or a self-signed keystore                            |
 
 **Android has no external gatekeeper.** You either use the auto-signed debug APK
 above, or generate your own release keystore locally (§5 step 1) — no account,
@@ -152,7 +152,7 @@ Generated project facts (evidence, from the scaffolded projects):
   `version` at build time (`0.2.3` as of this writing — was the Capacitor
   template default `"1.0"` until #410).
 - **iOS:** deployment target `15.4`, bundle id `org.unfoldingword.tcmobile`,
-  `MARKETING_VERSION 1.1.1` (raised from 1.1 for the v1.1.1 patch), `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
+  `MARKETING_VERSION 1.2`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
 ---
 
@@ -258,11 +258,15 @@ TestFlight only; **App Store submission is out of scope** (#262).
    translations."_) — no Mac step is needed to add it. Adjust the copy here if
    the wording changes, but do not remove the key: the recording path is the
    product's whole point (#262 / #86 C1–C2, PR #265).
+   The prompt is localized per app language in `ios/App/App/<tag>.lproj/InfoPlist.strings`
+   (registered in `knownRegions` and `CFBundleLocalizations`; `Info.plist` stays the
+   English fallback). The drafts are unchecked and have not been seen on a phone;
+   `tests/ios-microphone-prompt-localized.test.ts` pins the files, not the wording.
 5. Select **Any iOS Device (arm64)** → _Product → Archive_.
 6. In the Organizer: **Distribute App → TestFlight (Internal/External)** →
    upload to App Store Connect.
 7. In **App Store Connect → TestFlight**, add the build to a tester group
-   (Caleb, Javi, Tim). External testers need a one-time Beta App Review.
+   (the two training facilitators, the requirements owner). External testers need a one-time Beta App Review.
 8. **Testers install** via the **TestFlight** app using the invite link/email.
 
 ---
@@ -314,9 +318,9 @@ strictly increasing with no round-trip to App Store Connect. (Reading the latest
 build and adding one would race the no-wait upload: a rerun fired before Apple
 indexes the previous build reads a stale latest and uploads a duplicate.) The
 user-facing **marketing version** stays `MARKETING_VERSION` from the project —
-**`1.1.1`** today (raised from `1.1` for the v1.1.1 patch), the native-shell version, deliberately independent of the PWA's
-`package.json` version ([§6](#6-versioning)); TestFlight therefore shows `1.1.1`, not
-the web `0.x`. Bump it in `ios/App/App.xcodeproj/project.pbxproj` for a user-facing
+**`1.2`** today, the native-shell version, deliberately independent of the PWA's
+`package.json` version ([§6](#6-versioning)); TestFlight therefore shows `1.2`, not
+the web version. Bump it in `ios/App/App.xcodeproj/project.pbxproj` for a user-facing
 change.
 
 ### One-time setup (human, outside this repo)
@@ -813,7 +817,7 @@ stays native/CI-owned either way — a unix timestamp stamped at build or upload
 time, never read from `package.json`.
 
 - **iOS:** `MARKETING_VERSION` (user-facing) is **independent** of
-  `package.json` by design — currently `1.1.1` (raised from `1.1` for the v1.1.1 patch) — + `CURRENT_PROJECT_VERSION`
+  `package.json` by design — currently `1.2` (it was raised from `1.0` to `1.1` for the v1.1.0 release, to `1.1.1` for the v1.1.1 patch, and to `1.2` for the v1.2.0 release; this is the one place that history is kept). Debug and Release must carry the same value, which `tests/ios-marketing-version.test.ts` pins — + `CURRENT_PROJECT_VERSION`
   (build, must increase every upload — and the CI lane uploads unix-timestamp
   builds, so a later manual build must exceed the last `CFBundleVersion` on
   TestFlight, not the committed `1`; §4a).
@@ -911,6 +915,7 @@ cd android && ./gradlew :app:dependencies --configuration releaseRuntimeClasspat
 Every module in that output gets a section (`group:artifact version — SPDX`,
 the licence from the module's published POM), except a `-bom` platform, which
 ships no code. The iOS remote packages are the `.package(url:)` entries the
-test lists; `ion-ios-filesystem` is declared with a floor, not an exact
-version, and no `Package.resolved` is committed, so its section names the
-major (`1.x`) rather than a resolved release.
+test lists. A package pinned `exact:` gets a section at that version. One
+declared with a floor (`from:`) gets a section naming the major (`N.x`) and
+the floor, because no `Package.resolved` is committed and the resolved release
+is not known here.

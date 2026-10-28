@@ -30,12 +30,20 @@
  */
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { id3v2Tag, withId3v2 } from "@/lib/audio/id3";
 import {
   SEGMENT_GAP_SECONDS,
   type StepReporter,
   exportChapterMp3,
 } from "@/lib/export/chapter";
 import {
+  highestSlot,
+  templateChapterNumber,
+  withSlots,
+} from "@/lib/chapter-slot";
+import { chapterId3Fields } from "@/lib/export/chapter-tag";
+import {
+  getBook,
   listBooks,
   resolveBookChapters,
   resolveChapterClipIds,
@@ -146,9 +154,9 @@ function folderKey(name: string): string {
  * ` (2)`, ` (3)`, … suffix before the extension rather than letting the later
  * write clobber the earlier one.
  *
- * `nameChapter` derives the name from `chapter.number` and `chapter.name`;
- * `addChapter` permits an explicit duplicate number and two chapters may carry
- * the same name, so two chapters CAN map to the same path. Two
+ * `nameChapter` derives the name from the chapter's slot and `chapter.name`;
+ * two chapters may carry the same name, and a caller's namer is free text, so
+ * two chapters CAN map to the same path. Two
  * entries under one path is a corrupt-or-ambiguous archive (Frank R-B7-book P2).
  * Renaming keeps every chapter's audio; losing a recording is unrecoverable in
  * the field, a confusing filename is not.
@@ -173,7 +181,7 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  * export rather than a partial archive: a zip missing its directory is not a
  * share.
  */
-interface ZipSink {
+export interface ZipSink {
   readonly zip: Zip;
   /** A stored (pass-through) entry for `name`, ready for `zip.add`. */
   entry(name: string): ZipPassThrough;
@@ -188,9 +196,10 @@ interface ZipSink {
   drain(): Promise<void>;
 }
 
-async function openZipSink(sink: ArchiveSink): Promise<ZipSink> {
+export async function openZipSink(sink: ArchiveSink): Promise<ZipSink> {
   // Loaded when a zip is first needed, not at startup: fflate is only used by
-  // Share Book and Share your work, so it stays out of the entry chunk (#161).
+  // the zip exports (Share Book, Share your work, the bundle writer in
+  // `bundle/write.ts`), so it stays out of the entry chunk (#161).
   const { Zip, ZipPassThrough } = await import("fflate");
   let pending: Promise<void>[] = [];
   let zipError: Error | null = null;
@@ -215,6 +224,9 @@ async function openZipSink(sink: ArchiveSink): Promise<ZipSink> {
   };
 }
 
+/** What a chapter's ID3 tag reads from its book (#252). */
+type TagBook = Pick<Book, "name" | "provenance">;
+
 /** What one book's chapter loop added to the archive. */
 interface ChaptersAdded {
   readonly written: number;
@@ -225,7 +237,8 @@ interface ChaptersAdded {
 
 /**
  * Encode each of `chapters`, in order, and append it to `sink` as a stored
- * entry named `folder` + `nameChapter(number, name)`. The ONE chapter loop both
+ * entry named `folder` + `nameChapter(slot, name, highest, templateNumber)`, its ID3 tag from `book`
+ * first (#252; `null` when the book record is gone: untagged). The ONE chapter loop both
  * Share Book and Share your work run (#987): the library export calls it once
  * per book with that book's folder, Share Book once with no folder — which is
  * what makes each library folder the same layout Share Book produces.
@@ -236,9 +249,10 @@ interface ChaptersAdded {
  */
 async function addChaptersToZip(
   sink: ZipSink,
+  book: TagBook | null,
   chapters: readonly Chapter[],
   folder: string,
-  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
+  nameChapter: ChapterNamer,
   codec: AudioCodec,
   shouldContinue?: () => boolean,
   onStep?: StepReporter
@@ -259,9 +273,14 @@ async function addChaptersToZip(
   // The counted chapters by id (#1044): a dangling id never reached
   // `chapters`, so a count position is not a screen position.
   const keys = chapters.map((c) => c.id);
+  // One width for every file of the book (#1233), from all its chapters, not
+  // only the ones with audio, so a chapter's name does not depend on which
+  // of its siblings were recorded. A file is numbered by its slot (#1272), so
+  // the width is the highest slot, not the highest stored number.
+  const highest = highestSlot(chapters);
   if (chapters.length > 0)
     onStep?.(done, chapters.length, skipped, undefined, keys);
-  for (const chapter of chapters) {
+  for (const { chapter, slot } of withSlots(chapters)) {
     if (shouldContinue && !shouldContinue()) return null;
     const result = await exportChapterMp3(chapter.id, codec, shouldContinue);
     if (result === null) {
@@ -280,15 +299,21 @@ async function addChaptersToZip(
     if (shouldContinue && !shouldContinue()) return null;
     const name = uniqueEntryName(
       taken,
-      nameChapter(chapter.number, chapter.name)
+      nameChapter(slot, chapter.name, highest, templateChapterNumber(chapter))
     );
     taken.add(folderKey(name));
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
     // itself as the data chunk. `result.mp3` is dropped after this iteration;
-    // the archive's reference to it is the one copy that remains.
+    // the archive's reference to it is the one copy that remains. The ID3 tag
+    // (#252) goes in as its own chunk ahead of it, so the MP3 is not copied
+    // to make room.
     const entry = sink.entry(`${folder}${name}`);
     sink.zip.add(entry);
-    entry.push(result.mp3, true);
+    const parts =
+      book === null
+        ? [result.mp3]
+        : withId3v2(result.mp3, chapterId3Fields(book, chapter, slot));
+    parts.forEach((part, i) => entry.push(part, i === parts.length - 1));
     // This chapter's bytes reach the sink before the next chapter is encoded
     // (#1003): that is the whole bound on what the export holds.
     await sink.drain();
@@ -310,7 +335,7 @@ async function addChaptersToZip(
  * Close the archive, surfacing any error fflate reported while writing it, once
  * the central directory has reached the sink.
  */
-async function finishZip(sink: ZipSink): Promise<void> {
+export async function finishZip(sink: ZipSink): Promise<void> {
   sink.zip.end();
   await sink.drain();
   const zipError = sink.error();
@@ -322,8 +347,8 @@ async function finishZip(sink: ZipSink): Promise<void> {
  * archive them into one zip. Returns `null` when no chapter had resolvable audio
  * (nothing to share) or when the run was cancelled part-way.
  *
- * `nameChapter` supplies each zip entry's filename from the chapter's number
- * and its own name (`null` when it has none, #1218): naming is
+ * `nameChapter` supplies each zip entry's filename from the chapter's slot
+ * (#1272) and its own name (`null` when it has none, #1218): naming is
  * translator-facing copy, so it is injected by the hook (from `strings`)
  * rather than baked in here, keeping this module free of UI text.
  *
@@ -362,7 +387,7 @@ async function finishZip(sink: ZipSink): Promise<void> {
  */
 export async function exportBookZip(
   bookId: BookId,
-  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
+  nameChapter: ChapterNamer,
   codec: AudioCodec,
   sink: ArchiveSink,
   shouldContinue?: () => boolean,
@@ -373,9 +398,11 @@ export async function exportBookZip(
   // dangling chapter would export as if whole.
   const { chapters, missing: danglingChapters } =
     await resolveBookChapters(bookId);
+  const book = (await getBook(bookId)) ?? null;
   const zip = await openZipSink(sink);
   const added = await addChaptersToZip(
     zip,
+    book,
     chapters,
     "",
     nameChapter,
@@ -427,7 +454,24 @@ function folderStem(label: string, position: number): string {
  * facilitator's name, or `null` with the placeholder slot to render (#169).
  * The words stay the caller's — this layer holds no copy.
  */
-export type BookLabel = Pick<Book, "name" | "number">;
+export type BookLabel = Pick<Book, "name" | "number"> &
+  Partial<Pick<Book, "licence">>;
+
+/**
+ * Names one chapter's MP3 from its slot (#1272: its 1-based place in the book,
+ * `lib/chapter-slot.ts`), its own name (`null` when it has none) and the
+ * book's chapter count (its highest slot), which sets how wide the number is
+ * padded so every file of one book sorts in the book's order (#1233). The
+ * template's number (`null` for a chapter added by hand) is what an unnamed
+ * chapter's label reads, as its title on screen does (#1272, the DRI's Q1 (b));
+ * the number the name starts with is always the slot.
+ */
+export type ChapterNamer = (
+  chapterSlot: number,
+  chapterName: string | null,
+  chapterCount: number,
+  templateNumber: number | null
+) => string;
 
 /**
  * Share your work (#987): every book in one zip, one folder per book, each
@@ -439,7 +483,7 @@ export type BookLabel = Pick<Book, "name" | "number">;
  *
  * `nameBook` names each folder and `nameChapter` each MP3 inside it, both from
  * the book's label — its own name, or `null` and the placeholder slot the
- * caller renders (#169) — and, for an MP3, the chapter's number and name:
+ * caller renders (#169) — and, for an MP3, the chapter's slot and name:
  * copy is injected, as for `exportBookZip`. A folder name is disambiguated
  * against its siblings with ` (2)`, ` (3)`, … so two books with one name keep
  * both books' audio. Names that differ only in case
@@ -458,8 +502,7 @@ export async function exportLibraryZip(
   nameBook: (book: BookLabel) => string,
   nameChapter: (
     book: BookLabel,
-    chapterNumber: number,
-    chapterName: string | null
+    ...chapter: Parameters<ChapterNamer>
   ) => string,
   codec: AudioCodec,
   sink: ArchiveSink,
@@ -485,9 +528,10 @@ export async function exportLibraryZip(
     );
     const added = await addChaptersToZip(
       zip,
+      book,
       chapters,
       `${folder}/`,
-      (n, name) => nameChapter(book, n, name),
+      (...chapter) => nameChapter(book, ...chapter),
       codec,
       shouldContinue
     );
@@ -540,7 +584,8 @@ const CHAPTER_OVERHEAD_BYTES = 4096;
  * Walks the same resolution the export does (`resolveBookChapters`,
  * `resolveChapterClipIds`, a clip's `frameCount`), and sizes each chapter as
  * its audio plus the gaps between segments at the export bitrate, plus
- * {@link CHAPTER_OVERHEAD_BYTES}. What it needs to be is "not below the real
+ * {@link CHAPTER_OVERHEAD_BYTES} and the chapter's ID3 tag, built exactly as
+ * the export builds it (#252). What it needs to be is "not below the real
  * archive", which the test suite pins against a real encode.
  */
 export async function estimateLibraryZipBytes(
@@ -551,7 +596,7 @@ export async function estimateLibraryZipBytes(
   for (const book of await listBooks()) {
     if (shouldContinue && !shouldContinue()) return null;
     const { chapters } = await resolveBookChapters(book.id);
-    for (const chapter of chapters) {
+    for (const { chapter, slot } of withSlots(chapters)) {
       const { clipIds } = await resolveChapterClipIds(chapter.id);
       let frames = 0;
       let clips = 0;
@@ -566,7 +611,9 @@ export async function estimateLibraryZipBytes(
       bytes +=
         Math.ceil(
           (frames / CANONICAL_SAMPLE_RATE) * EXPORT_MP3_BYTES_PER_SECOND
-        ) + CHAPTER_OVERHEAD_BYTES;
+        ) +
+        CHAPTER_OVERHEAD_BYTES +
+        id3v2Tag(chapterId3Fields(book, chapter, slot)).length;
     }
   }
   return bytes;

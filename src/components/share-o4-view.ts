@@ -55,7 +55,8 @@ export function chapterShareItems(rows: readonly SegmentRow[]): ShareItem[] {
 /**
  * Share Book's items: the shared book's chapters, in `chapterIds` order as
  * the Books screen loads them. A chapter goes out when it holds a recorded
- * take (`recordedCount > 0`), and its chip shows its chapter number. Its key
+ * take (`recordedCount > 0`), and its chip shows its slot, the number its
+ * badge shows (`ChapterRow.number`, #1272 B). Its key
  * is its chapter id, which is what the book export names each chapter by.
  */
 export function bookShareItems(chapters: readonly ChapterRow[]): ShareItem[] {
@@ -86,6 +87,14 @@ export interface ShareO4View {
   readonly icon: IconName;
   /** How much of the ring is filled, 0 to 1; `null` draws no ring at all. */
   readonly ring: number | null;
+  /**
+   * How much of an all-Finished chapter's clip read is done, 0 to 1 (#1078),
+   * drawn as its own thin arc, apart from the count ring; absent draws none.
+   * Only before the count begins: once a step lands, the read is over and the
+   * ring takes over. It moves neither the ring nor the meter, so a fallback
+   * after the read has nothing on screen to take back.
+   */
+  readonly read?: number;
   /**
    * The core's progress bar (D22): `now` is the whole percent, or `null`
    * before the first count. Handed over (`sent`) keeps it at 100, as the
@@ -150,8 +159,16 @@ export function shareO4View(
   // lib/export/book.ts). Guarded here anyway, cheaply, as the same "no count
   // yet" look the `steps === undefined` branch already draws (D15), rather
   // than trust every future caller of `shareO4View` to uphold that invariant.
-  if (steps === undefined || steps.total <= 0)
-    return { icon: "share", ring: null, meter: { now: null }, chips: [] };
+  if (steps === undefined || steps.total <= 0) {
+    const reading = progress.reading;
+    return {
+      icon: "share",
+      ring: null,
+      meter: { now: null },
+      ...(reading === undefined ? {} : { read: reading.done / reading.total }),
+      chips: [],
+    };
+  }
   return {
     icon: "share",
     ring: steps.done / steps.total,

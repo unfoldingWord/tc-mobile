@@ -4,10 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * Add Chapter prompts for a name before it writes anything (#609) — the chapter
@@ -36,6 +38,7 @@ const made: Chapter = {
   number: 3,
   name: null,
   segmentIds: [],
+  ...ROW_V12_FIELDS,
 };
 const mocks = vi.hoisted(() => ({ addChapter: vi.fn() }));
 const shelf = (): BookCard[] => [
@@ -47,6 +50,7 @@ const shelf = (): BookCard[] => [
       {
         chapterId: "chapter-0000-4000-8000-000000000001" as ChapterId,
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 0,
         totalCount: 0,
@@ -55,6 +59,7 @@ const shelf = (): BookCard[] => [
       {
         chapterId: "chapter-0000-4000-8000-000000000002" as ChapterId,
         number: 2,
+        templateNumber: null,
         name: "Mark 6",
         finishedCount: 0,
         totalCount: 0,
@@ -77,6 +82,7 @@ function landChapter() {
         {
           chapterId: made.id,
           number: made.number,
+          templateNumber: null,
           name: made.name,
           finishedCount: 0,
           totalCount: 0,
@@ -162,6 +168,7 @@ async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer,
         popLayer,
@@ -226,8 +233,24 @@ it("opens the prompt instead of writing, seeded with the ordinal the chapter wil
   await click(strings.addChapter(bookName));
   // The whole of #609: the `+` is a prompt now, not a write.
   expect(mocks.addChapter).not.toHaveBeenCalled();
-  // Two chapters exist, so the next is 3 — the same ordinal `addChapter`'s own
-  // transaction derives through `nextChapterNumber` (tests/storage.test.ts).
+  // Two chapters exist, so the new one lands in slot 3 (#1272 B).
+  expect(field()?.value).toBe(strings.chapterName(3));
+});
+
+it("seeds the next slot, count + 1, even when the chapters came from a template (#1272)", async () => {
+  // A template's numbers are kept for its own chapters' titles (Q1 (b)), but a
+  // chapter added by hand is appended, so it is named by the slot it lands in.
+  books = [
+    {
+      ...books[0]!,
+      chapters: books[0]!.chapters.map((row, i) => ({
+        ...row,
+        templateNumber: 40 + i,
+      })),
+    },
+  ];
+  await mount();
+  await click(strings.addChapter(bookName));
   expect(field()?.value).toBe(strings.chapterName(3));
 });
 

@@ -18,22 +18,14 @@
  * derive from it: `withLocaleAttributes` rewrites the document's own `<html>`
  * tag, and `vite.config.ts`'s manifest reads the same two fields.
  *
- * WHY BUILD TIME AND NOT A RUNTIME APPLIER, which is the shape
- * `hooks/use-theme.ts` uses for the neighbouring problem. A theme is a stored
- * per-translator choice, so it cannot be known until the app runs. The shipped
- * UI language is a constant of the build, and `dir` in particular must be
- * right in the first byte the parser reads: flipping it after the first paint
- * would reflow the entire document, which is a far louder version of the dark
- * flash that hook's docblock names as its own residual. There is no stored
- * locale to read, so there is nothing a runtime pass could learn that the
- * build does not already know.
- *
- * WHAT THIS DOES NOT DO. It does not make the app multilingual. Selecting a
- * locale, and `strings[locale]` behind it, is the rest of #169 and is in
- * flight separately; this slice only removes the hard-coded `en` and supplies
- * the `dir` that was missing, so that when a second locale does land it is an
- * entry here rather than an edit in three files. Nothing about the running app
- * changes today: the shipped locale is still English, still left-to-right.
+ * WHICH LOCALE RUNS is chosen on the phone, not by the build (ADR 0015). The
+ * build writes `SHIPPED_LOCALE` into `index.html` and the manifest, the answer
+ * for anything that reads the file without running JavaScript. Before the
+ * first render, `hooks/phone-locale.ts` resolves the phone's language list
+ * against the locales whose tables are complete, installs that table and
+ * locale (`lib/i18n/locales.ts`'s `installLocale`), and rewrites `<html lang
+ * dir>`; it re-resolves on a language change and on return, never with a take
+ * open. `activeLocale()` below is the locale that pass last installed.
  */
 
 /**
@@ -60,7 +52,7 @@ export interface Locale {
 }
 
 /**
- * The locale this build ships.
+ * The locale this build ships, and the one every resolution falls back to.
  *
  * `dir` is carried as data rather than derived from the tag on purpose. A
  * tag-to-direction function has to encode a script table, and an incomplete
@@ -73,6 +65,53 @@ export interface Locale {
  * `tests/locale.test.ts` pins the two together so they cannot drift.
  */
 export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
+
+/**
+ * The UI languages v2 supports (#1482; decision D6-languages, "The 10 level-4
+ * languages in v2"), each stating its own direction for the reason above.
+ * `SHIPPED_LOCALE` is the English entry itself, not a copy of it.
+ *
+ * Mandarin is `zh-Hans`: the Simplified script is part of the tag, because
+ * every Chinese phone gets the Simplified text (R19, "default to simplified
+ * text on Chinese phones").
+ *
+ * An entry here is a language the resolver can pick, not a translation that
+ * exists: a locale whose table is incomplete is skipped at runtime
+ * (`completeLocales` in `lib/i18n/locales.ts`, ADR 0015 (g)).
+ */
+export const LOCALES: readonly Locale[] = [
+  { tag: "ar", dir: "rtl" },
+  SHIPPED_LOCALE,
+  { tag: "es", dir: "ltr" },
+  { tag: "fr", dir: "ltr" },
+  { tag: "hi", dir: "ltr" },
+  { tag: "id", dir: "ltr" },
+  { tag: "pt", dir: "ltr" },
+  { tag: "ru", dir: "ltr" },
+  { tag: "sw", dir: "ltr" },
+  { tag: "zh-Hans", dir: "ltr" },
+];
+
+let active: Locale = SHIPPED_LOCALE;
+
+/**
+ * The locale the running UI is in: `SHIPPED_LOCALE` until the runtime
+ * installer picks another. `plural()` takes its default from here, so the
+ * count rule and the words always come from the same locale (ADR 0015 (b)).
+ * Read it at the point of use; the value changes when the phone's does.
+ */
+export function activeLocale(): Locale {
+  return active;
+}
+
+/**
+ * Record the running locale. Only `installLocale` (`lib/i18n/locales.ts`)
+ * calls this, in the same turn as it installs that locale's table, so the
+ * words and the locale cannot disagree.
+ */
+export function setActiveLocale(locale: Locale): void {
+  active = locale;
+}
 
 /**
  * A language tag that is safe to write into an attribute without escaping.

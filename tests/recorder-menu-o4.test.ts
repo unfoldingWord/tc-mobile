@@ -18,8 +18,9 @@ import { areaRules, declsFor } from "./o4-area-css";
  * one component.
  *
  * G3 (workbench round 4) drops Edit from this menu — the recorder screen
- * carries its own edit control — so the record-mode menu is Mark, Erase and
- * the theme tile.
+ * carries its own edit control — so the record-mode menu is Mark and Erase.
+ * The theme tile left it (#1575, the DRI's pick on #1623: "Remove, Settings
+ * only"); the negative case near the end pins that.
  *
  * Delete segment (#590) lived here too, from #1080 until #1104 (the
  * requirements owner's 2026-09-26 decision) pulled it back out of this menu
@@ -27,9 +28,8 @@ import { areaRules, declsFor } from "./o4-area-css";
  * (`tests/segments-o4.test.ts` and `tests/segment-row-*.test.ts` cover that
  * one). The negative case near the end of this file pins the removal.
  *
- * Marking done (G8) is #995's shared `done` / `doneoff` tile tone and the
- * theme tile is `ThemeControl`'s shared `tile` prop — the same two mechanisms
- * the segment menu uses, not a recorder copy of either.
+ * Marking done (G8) is #995's shared `done` / `doneoff` tile tone, the same
+ * mechanism the segment menu uses, not a recorder copy of it.
  *
  * What this file does NOT cover: the cascade (whether `o4/menus.css` wins on
  * a real page, and whether the sheet really stays under half a phone's
@@ -59,12 +59,12 @@ function show(over: Partial<RecorderMenuProps> = {}) {
   act(() => root.render(createElement(RecorderMenu, { ...base, ...over })));
   // A floor for every case: a case that loops over the tiles, or asks a
   // row question, must be asking it of the tile grid and not of rows. Three
-  // in record mode: Mark, Erase, theme (#1104 removed the fourth, Delete —
-  // see the negative case near the end of this file). Two in edit mode:
-  // Erase, theme (#1252 removed the Done tile).
+  // in record mode: Mark, Erase (#1104 removed Delete and #1575 the theme
+  // tile — see the negative cases near the end of this file). One in edit
+  // mode: Erase (#1252 removed the Done tile).
   if (over.open ?? true)
     expect(tiles().length, "no tiles rendered").toBe(
-      over.mode === "edit" ? 2 : 3
+      over.mode === "edit" ? 1 : 2
     );
 }
 const buttons = () => [...document.querySelectorAll("button")];
@@ -73,8 +73,9 @@ const named = (label: string) =>
 const startingWith = (label: string) =>
   buttons().find((b) => b.getAttribute("aria-label")?.startsWith(label));
 const tiles = () => [...document.querySelectorAll("button.o4-tile")];
-// The theme tile names the DESTINATION, which depends on the theme the
-// document starts in; either name is the theme tile.
+// The theme control names the DESTINATION, which depends on the theme the
+// document starts in; either name is the theme control. It is not in this
+// menu any more (#1575), so every use below asks for its absence.
 const themeTile = () =>
   named(strings.useLightTheme) ?? named(strings.useDarkTheme);
 const labels = () => tiles().map((t) => t.getAttribute("aria-label"));
@@ -93,7 +94,7 @@ afterEach(() => {
 });
 
 describe("RecorderMenu on the tile grid (#949 G3)", () => {
-  it("lays record mode out as Mark, Erase, then the theme tile past a spacer", () => {
+  it("lays record mode out as Mark, then Erase, with no theme tile (#1575)", () => {
     show();
     const grid = document.querySelector(".o4-tiles");
     expect(grid).not.toBeNull();
@@ -101,21 +102,19 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
       strings.markFinished(3),
       strings.eraseSegment,
     ]);
-    expect(labels()[2]).toBe(themeTile()?.getAttribute("aria-label"));
-    // Every action is a tile inside the one grid, the spacer before theme.
-    expect(grid?.querySelectorAll("button.o4-tile")).toHaveLength(3);
-    const kids = [...(grid?.children ?? [])];
-    expect(kids[2]?.classList.contains("o4-tiles-gap")).toBe(true);
+    expect(themeTile()).toBeUndefined();
+    // Every action is a tile inside the one grid, and no spacer holds a place
+    // for the theme tile that moved to Settings.
+    expect(grid?.querySelectorAll("button.o4-tile")).toHaveLength(2);
+    expect(grid?.querySelector(".o4-tiles-gap")).toBeNull();
     // G3 round 4: Edit is on the recorder screen, not in this menu.
     expect(startingWith(strings.enterEdit)).toBeUndefined();
   });
 
-  it("lays edit mode (the ⋮ menu) out as Erase, then theme — no Done tile (#1252)", () => {
+  it("lays edit mode (the ⋮ menu) out as Erase alone — no Done tile (#1252), no theme tile (#1575)", () => {
     show({ mode: "edit" });
-    expect(labels()).toEqual([
-      strings.eraseSegment,
-      themeTile()?.getAttribute("aria-label"),
-    ]);
+    expect(labels()).toEqual([strings.eraseSegment]);
+    expect(themeTile()).toBeUndefined();
     // "Done" keeps one meaning, mark finished (the requirements owner).
     expect(
       tiles().filter((t) => t.textContent?.includes(strings.tileFinished))
@@ -144,7 +143,7 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
       expect(panel?.matches(CAP_PANEL), `${mode}: cap selector misses`).toBe(
         true
       );
-      const actions = tiles().filter((t) => t !== themeTile());
+      const actions = tiles();
       expect(actions).toHaveLength(mode === "edit" ? 1 : 2);
       for (const t of actions)
         expect(
@@ -187,7 +186,7 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
     }
   });
 
-  it("gives the tiles their tones: doneoff Mark, plain theme, plain Clear (#1119)", () => {
+  it("gives the tiles their tones: doneoff Mark, plain Clear (#1119)", () => {
     show();
     expect(named(strings.markFinished(3))?.classList).toContain(
       "o4-tile--doneoff"
@@ -198,7 +197,6 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
     expect(named(strings.eraseSegment)?.classList).not.toContain(
       "o4-tile--erase"
     );
-    expect(themeTile()?.classList).toContain("o4-tile--plain");
   });
 
   it("keeps the Mark tile's label fixed and flips its tone (done / doneoff) and aria-pressed on the same value (#351)", () => {
@@ -273,7 +271,46 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("lands open-edge focus on the first actionable tile, never the theme tile first", () => {
+  it("puts Stop first while a take is recording, and its tap reaches onStopTake (#369)", () => {
+    // The DRI's 2026-10-19 pick on #369: while recording, the menu's first
+    // tile ends the take, so a menu opened by accident does not stand
+    // between the translator and the transport underneath it. Since #614
+    // that transport control is Stop (it commits the take), so this is too.
+    const onStopTake = vi.fn();
+    act(() =>
+      root.render(
+        createElement(RecorderMenu, {
+          ...base,
+          recording: true,
+          onStopTake,
+          markReason: "uncommitted-take",
+          eraseReason: "uncommitted-take",
+        })
+      )
+    );
+    expect(tiles()).toHaveLength(3);
+    const stop = named(strings.stop);
+    expect(tiles()[0], "Stop is the first tile").toBe(stop);
+    expect(stop?.querySelector(".control-caption")?.textContent).toBe(
+      strings.tileStop
+    );
+    // Erase stays beside it (#1104 kept Erase); Delete does not come back.
+    expect(startingWith(strings.eraseSegment)).toBeDefined();
+    expect(named(strings.deleteSegment)).toBeUndefined();
+    // The open edge lands on it: it is the first actionable tile.
+    expect(document.activeElement).toBe(stop);
+    act(() => stop?.click());
+    expect(onStopTake).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws no Stop tile when no take is recording, in either mode (#369)", () => {
+    show({ recording: false, onStopTake: vi.fn() });
+    expect(named(strings.stop)).toBeUndefined();
+    show({ mode: "edit", recording: false, onStopTake: vi.fn() });
+    expect(named(strings.stop)).toBeUndefined();
+  });
+
+  it("lands open-edge focus on the first actionable tile, never a tile that is not an action", () => {
     show();
     expect(document.activeElement?.getAttribute("aria-label")).toBe(
       strings.markFinished(3)

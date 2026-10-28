@@ -26,8 +26,8 @@ tried on an iPad. <!-- source: ios/App/App.xcodeproj/project.pbxproj TARGETED_DE
    it. Search for "TestFlight", made by Apple.
 3. **Open the invitation** from your email and tap **Accept**, then **Install**.
    This installs tC Mobile onto your iPhone. TestFlight shows the app's
-   version as `1.1.1` with a long build number; that is normal — the app's own
-   build stamp (below) is the thing to check. <!-- source: docs/native/README.md §4a (MARKETING_VERSION is 1.1.1, CFBundleVersion is the run's unix timestamp, independent of the web version) -->
+   version as `1.2` with a long build number; that is normal — the app's own
+   build stamp (below) is the thing to check. <!-- source: docs/native/README.md §4a (MARKETING_VERSION is 1.2, CFBundleVersion is the run's unix timestamp, independent of the web version) -->
 4. **Open tC Mobile from your home screen** — tap the tC Mobile icon, not the
    TestFlight app. TestFlight is only there to deliver the app; you use tC
    Mobile itself from the home screen like any other app.
@@ -71,8 +71,11 @@ phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 2
    about any app file; it is not specific to tC Mobile. Look for the button
    that lets the download continue or keeps the file — it is usually not the
    first or most prominent one. **Before you choose it, read the file the
-   warning names. Choose it only if that file is `app-release.apk` from the
-   releases page in step 1.** If the warning names a different file, or the
+   warning names. Choose it only if that file is `app-release.apk`, or the
+   same name with a number in brackets before `.apk` (such as
+   `app-release (1).apk`, which a browser gives a second download), and it
+   came from the releases page in step 1.** The same names from a chat, an
+   email or another tab are a stop. If the warning names a different file, or the
    file came from anywhere else, stop. Do not keep it — tell the facilitator
    instead. If the browser removes the
    file outright instead of just warning ("blocked"), the setting that
@@ -95,19 +98,23 @@ phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 2
 4. **Tap Install**, then **Open** when it finishes. These are usually the
    single large button on the screen at each step.
 5. **The first time you record, your phone will ask to use the microphone.**
-   Allow it — the app needs the microphone to record, and without it
-   recording will not work. In English the choice that allows it may say
-   **Allow**, **While using the app** or **Only this time**; do not choose
-   **Don't allow**. On some older Android versions the button that refuses
-   may instead say **Deny** — it means the same thing as **Don't allow**. If
-   you will be recording more than once, such as over a training day,
-   choose **Allow** or **While using the app** rather than **Only this
-   time** if you can: **Only this time** may end once you leave the app, and
-   you could be asked to grant the microphone again before a later
-   recording. <!-- inference, not repo evidence: how long an "Only this
-   time" grant lasts is Android platform behaviour, and this repo has no
-   record of testing it per OS version; confidence: medium; gh issue #248,
-   PR #870 George round 2 --> The choices may be a list, one under another,
+   Allow it: the app needs the microphone to record, and without it
+   recording will not work. Read the choices your phone shows and pick by
+   these rules (the button names here are English). If **While using the
+   app** is shown, choose it; otherwise, if **Allow** is shown, choose it.
+   If you will be recording more than once, such as over a
+   training day, do not choose **Only this time**: it may end once you leave
+   the app, and you could be asked to grant the microphone again before a
+   later recording. **Deny** and **Don't allow** both refuse the microphone;
+   do not choose either. If none of these names is on the dialog, for
+   example because the phone is in another language, stop and ask the
+   facilitator which button allows the microphone. **This wording has not
+   been checked against a real
+   permission dialog on a phone.** <!-- inference, not repo evidence: how
+   long an "Only this time" grant lasts is Android platform behaviour, and
+   this repo has no record of testing it per OS version; confidence: medium;
+   gh issue #248, PR #870 George round 2 and the 2026-10-12 follow-up -->
+   The choices may be a list, one under another,
    and the side a button sits on changes with the phone's language, so ask
    the facilitator rather than guessing by position.
 

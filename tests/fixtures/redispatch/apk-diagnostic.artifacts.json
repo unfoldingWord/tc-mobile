@@ -1,0 +1,10 @@
+{
+  "_source": "constructed: the name android-apk.yml gives a diagnostic dispatch (`android-apk-diagnostic-<sha>`)",
+  "total_count": 1,
+  "artifacts": [
+    {
+      "name": "android-apk-diagnostic-a87c2f6f1d44d020f096b9cf1b6028853b1121a6",
+      "expired": false
+    }
+  ]
+}

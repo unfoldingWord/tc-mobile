@@ -4,8 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
+import { loadObsTemplate } from "@/lib/templates/obs";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
@@ -138,6 +140,7 @@ async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {
@@ -193,7 +196,7 @@ function swatch(name: string): HTMLButtonElement {
 }
 
 describe("O4: the book menu on the tile grid (04)", () => {
-  it("draws Share and Cover colour, then Delete past a gap; Rename is the head's pencil", async () => {
+  it("draws Share, Export project and Cover colour, then Delete past a gap; Rename is the head's pencil", async () => {
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
     const sheet = bookSheet();
@@ -203,8 +206,12 @@ describe("O4: the book menu on the tile grid (04)", () => {
     const labels = tilesIn(sheet!).map((t) => t.getAttribute("aria-label"));
     expect(labels).toEqual([
       strings.shareBook,
+      strings.exportProject,
       strings.coverColourLabel,
       strings.deleteBook,
+      // Move up / Move down (#1344), in their own row; Mark is first.
+      `${strings.moveUp}. ${strings.alreadyFirst}`,
+      strings.moveDown,
     ]);
     // Delete sits past the spacer, at the far end, as the workbench draws it.
     const kids = [...grid!.children];
@@ -226,8 +233,9 @@ describe("O4: the book menu on the tile grid (04)", () => {
   it("gives every tile a spoken name that contains its caption", async () => {
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
+    // Four action tiles, then Move up and Move down (#1344).
     const tiles = tilesIn(bookSheet()!);
-    expect(tiles.length).toBe(3);
+    expect(tiles.length).toBe(6);
     for (const tile of tiles) {
       const caption = tile.querySelector(".control-caption")?.textContent;
       expect(caption, tile.getAttribute("aria-label") ?? "").toBeTruthy();
@@ -347,7 +355,7 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
 });
 
 describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
-  it("puts About first in the tile grid and keeps the theme tile at the far end (DRI: PR #1019 review, About becomes a tile, theme tile stays last)", async () => {
+  it("holds About and Templates as its tiles, and the theme tile has moved to Settings (#1575)", async () => {
     await mount();
     await openFrom(strings.menuOpen);
     const menu = appMenu();
@@ -356,26 +364,26 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     expect(grid).not.toBeNull();
     const tiles = tilesIn(menu!);
     expect(tiles).toHaveLength(2);
-    const [about, theme] = tiles as [HTMLButtonElement, HTMLButtonElement];
+    const [about, templates] = tiles as [HTMLButtonElement, HTMLButtonElement];
+    // The Template Library tile (#246), after About.
+    expect(templates.getAttribute("aria-label")).toBe(strings.templatesOpen);
     expect(about.getAttribute("aria-label")).toBe(strings.aboutOpen);
     expect(about.classList).toContain("o4-tile--plain");
-    expect(theme.classList).toContain("o4-tile--plain");
-    for (const tile of tiles) {
-      const caption = tile.querySelector(".control-caption")?.textContent;
-      expect(caption, tile.getAttribute("aria-label") ?? "").toBeTruthy();
-      expect(tile.getAttribute("aria-label")!.toLowerCase()).toContain(
-        caption!.toLowerCase()
-      );
-    }
-    // The gap sits between the two tiles, pushing the theme tile to the far
-    // end while About stays the grid's first tile.
-    const kids = [...grid!.children];
-    expect(kids[0]).toBe(about);
-    const gapAt = kids.findIndex((k) => k.classList.contains("o4-tiles-gap"));
-    expect(gapAt).toBeGreaterThan(0);
-    expect(kids[gapAt + 1]).toBe(theme);
+    const caption = about.querySelector(".control-caption")?.textContent;
+    expect(caption).toBeTruthy();
+    expect(about.getAttribute("aria-label")!.toLowerCase()).toContain(
+      caption!.toLowerCase()
+    );
+    // The toggle is not here any more: the move is the behaviour, so neither
+    // destination's name may be found in this menu.
+    for (const name of [strings.useLightTheme, strings.useDarkTheme])
+      expect(
+        [...menu!.querySelectorAll("button")].some(
+          (b) => b.getAttribute("aria-label") === name
+        )
+      ).toBe(false);
     // About is the first thing focus lands on when the menu opens, per the
-    // DRI ruling: focus follows the first tile, not the theme tile.
+    // DRI ruling: focus follows the first tile.
     expect(document.activeElement).toBe(about);
     await key("Escape");
     expect(document.activeElement).toBe(button(strings.menuOpen));
@@ -387,9 +395,9 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     await openFrom(strings.menuOpenWithFailures(2));
     const menu = appMenu()!;
     const report = button(strings.shareFailureLog);
-    const theme = tilesIn(menu).at(-1)!;
+    const about = tilesIn(menu).at(-1)!;
     expect(
-      report.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING
+      report.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(document.activeElement).toBe(report);
   });
@@ -412,5 +420,40 @@ describe("the app ≡ menu holds no way back to the old look (#1244)", () => {
     expect(menu!.querySelectorAll("[aria-pressed]")).toHaveLength(0);
     for (const b of all)
       expect(b.getAttribute("aria-label") ?? "").not.toMatch(/new look/i);
+  });
+});
+
+describe("the Template Library panel (#246)", () => {
+  const row = () =>
+    document.querySelector<HTMLButtonElement>("button.template-row");
+  const nameField = () =>
+    document.querySelector(`input[aria-label="${strings.bookNameField}"]`);
+  async function openLibrary() {
+    await openFrom(strings.menuOpen);
+    await click(strings.templatesOpen);
+    // The package list loads after the open edge.
+    for (let i = 0; i < 50 && row() === null; i++)
+      await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(row(), "the package list").not.toBeNull();
+  }
+
+  // Frank and George round 1 on #1655: system Back dismisses the layer by
+  // `open` falling, without the picker's own `close`.
+  it("reopens on the list after system Back from the name step", async () => {
+    // Warm the package's one-time load so the open edge settles quickly.
+    await loadObsTemplate();
+    await mount();
+    await openLibrary();
+    await act(async () => row()!.click());
+    expect(nameField(), "the name step").not.toBeNull();
+    const top = layers.get("books:templates");
+    expect(top).toBeDefined();
+    expect(top!.busy()).toBe(false);
+    await act(async () => {
+      top!.dismiss();
+      layers.delete("books:templates");
+    });
+    await openLibrary();
+    expect(nameField(), "no stale name step").toBeNull();
   });
 });

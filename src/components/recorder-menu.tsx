@@ -1,9 +1,8 @@
 import { Menu } from "./menu";
 import { O4SheetHead } from "./o4-crumbs";
-import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { Tile, TileGrid } from "./o4-tile-menu";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
-import { ThemeControl } from "./theme-control";
 
 /**
  * The recorder sheet's ⋮ menu (#160, L-1).
@@ -64,6 +63,20 @@ export interface RecorderMenuProps {
   /** Close the menu and arm the erase confirm. */
   onErase: () => void;
   /**
+   * A take is recording right now. While it is, the first tile is Stop
+   * (#369, the DRI's 2026-10-19 pick), so a translator who opened this menu
+   * mid-take can end the take without first dismissing the drawer that
+   * covers the transport. Absent means false.
+   */
+  recording?: boolean;
+  /**
+   * Close the menu and end the take, through the same handler the
+   * transport's own Stop runs. Since #614 that tap commits the take rather
+   * than pausing it, so the tile wears the transport's stop glyph and name,
+   * not a pause.
+   */
+  onStopTake?: () => void;
+  /**
    * The book's name, the sheet head's first crumb (workbench G3). Absent,
    * that crumb is left out.
    */
@@ -75,7 +88,10 @@ export interface RecorderMenuProps {
    * `view?.bookCoverHex ?? undefined`.
    */
   bookCoverHex?: string;
-  /** The chapter's number, the sheet head's second crumb. */
+  /**
+   * The number an unnamed chapter's title reads (`headingNumber`, #1272), the
+   * sheet head's second crumb when no `chapterHeading` is given.
+   */
   chapterNumber?: number;
   /**
    * The chapter's resolved name (`strings.chapterHeading`), shown in place
@@ -84,6 +100,15 @@ export interface RecorderMenuProps {
    * view has loaded.
    */
   chapterHeading?: string;
+  /**
+   * The chapter's name as typed, `null` when it has none (#1284, U3). Given
+   * with `chapterNumber`, the sheet head also draws the name whole as a
+   * wrapping heading, the pattern the chapter menu already uses; the crumbs
+   * above it still elide a long name. It is the typed name, not the Settings
+   * label `chapterHeading` may carry ("always show the number"). Absent, no
+   * heading is drawn.
+   */
+  chapterName?: string | null;
 }
 
 export function RecorderMenu({
@@ -96,10 +121,13 @@ export function RecorderMenu({
   eraseReason,
   onToggleFinished,
   onErase,
+  recording = false,
+  onStopTake,
   bookName,
   bookCoverHex,
   chapterNumber,
   chapterHeading,
+  chapterName,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
   // paint. They were two expressions that disagreed: the label also required a
@@ -138,6 +166,11 @@ export function RecorderMenu({
         book={bookName}
         bookCoverHex={bookCoverHex}
         chapter={chapterHeading ?? chapterNumber}
+        fullName={
+          chapterName === undefined || chapterNumber === undefined
+            ? undefined
+            : strings.chapterHeading(chapterName, chapterNumber)
+        }
         segment={
           ordinal === null
             ? undefined
@@ -160,9 +193,9 @@ export function RecorderMenu({
           eraseReason={eraseReason}
           onToggleFinished={onToggleFinished}
           onErase={onErase}
+          recording={recording}
+          onStopTake={onStopTake}
         />
-        <TileSpacer />
-        <ThemeControl tile />
       </TileGrid>
     </Menu>
   );
@@ -191,6 +224,8 @@ function RecorderMenuTiles({
   eraseReason,
   onToggleFinished,
   onErase,
+  recording,
+  onStopTake,
 }: Pick<
   RecorderMenuProps,
   | "mode"
@@ -199,9 +234,24 @@ function RecorderMenuTiles({
   | "eraseReason"
   | "onToggleFinished"
   | "onErase"
-> & { marked: boolean }) {
+  | "onStopTake"
+> & { marked: boolean; recording: boolean }) {
   return (
     <>
+      {/* Stop, first, only while a take is recording (#369). First so the
+          open-edge focus lands on it: mid-take, ending the take is what the
+          translator most likely wants from a drawer that covers the
+          transport. Record mode only, as a take cannot run in edit mode. */}
+      {mode === "record" && recording && onStopTake && (
+        <Tile
+          tone="plain"
+          icon="stop"
+          label={strings.stop}
+          caption={strings.tileStop}
+          className="recorder-menu-tile"
+          onClick={onStopTake}
+        />
+      )}
       {/* Edit mode has no Done tile (#1252, the requirements owner): "Done"
           keeps one meaning, mark finished, and the toolbar's ✕ leaves edit
           mode. */}

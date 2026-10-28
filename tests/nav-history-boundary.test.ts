@@ -125,19 +125,52 @@ async function ruleEntryFor(file: string, ruleId: string): Promise<RuleEntry> {
   return config.rules?.[ruleId];
 }
 
+/** The `selector` string of every option, failing closed on shape: an option
+ * that is not an object with a string `selector` throws, so a string-form
+ * restriction cannot be dropped from both sides of an equality (#1414). */
+function selectorsOf(options: readonly unknown[]): string[] {
+  return options.map((o, i) => {
+    const selector =
+      typeof o === "object" && o !== null
+        ? (o as { selector?: unknown }).selector
+        : undefined;
+    if (typeof selector !== "string") {
+      throw new Error(
+        `no-restricted-syntax option ${i} has no string selector: ${JSON.stringify(o)}`
+      );
+    }
+    return selector;
+  });
+}
+
+/** The selectors in a resolved rule entry (`[level, ...options]`, or a bare
+ * level, which has none). Split out of `restrictedSelectorsFor` so the
+ * fail-closed path is reachable with a fake entry, not only with the real
+ * config. A bare string option is legal ESLint but is deliberately rejected
+ * here: `eslint.config.mjs` uses object options, and a throw is the
+ * fail-closed answer to a shape this test does not understand. */
+function selectorsFromEntry(entry: RuleEntry): string[] {
+  return selectorsOf(Array.isArray(entry) ? entry.slice(1) : []);
+}
+
 /** The `selector` strings in `ruleId`'s resolved options for `file`. */
 async function restrictedSelectorsFor(
   file: string,
   ruleId: string
 ): Promise<string[]> {
-  const entry = await ruleEntryFor(file, ruleId);
-  const options = Array.isArray(entry) ? entry.slice(1) : [];
-  return options.flatMap((o) =>
-    typeof o === "object" && o !== null && "selector" in o
-      ? [String((o as { selector: unknown }).selector)]
-      : []
-  );
+  return selectorsFromEntry(await ruleEntryFor(file, ruleId));
 }
+
+/** The one selector `eslint.config.mjs` subtracts for the adapter
+ * (`HISTORY_POPSTATE_SELECTOR`), matched whole so a different selector whose
+ * text merely contains "popstate" is not mistaken for it. The config does not
+ * export it. If the config's selector text drifts from this copy, the
+ * `toHaveLength(1)` in the "keeps the popstate selector" case fails. The FIRES
+ * case for `addEventListener("popstate", …)` does not compare text: it only
+ * proves that some selector in the config still catches such a call. */
+const POPSTATE_SELECTOR =
+  "CallExpression[callee.property.name='addEventListener'][arguments.0.value='popstate']";
+const isPopstate = (s: string): boolean => s === POPSTATE_SELECTOR;
 
 /** The resolved level (0/1/2) of `ruleId` for `file`. */
 async function ruleLevelFor(file: string, ruleId: string): Promise<number> {
@@ -243,13 +276,45 @@ export function useThing(): string | null {
       otherHook,
       "no-restricted-syntax"
     );
-    const notPopstate = (s: string) => !s.includes("popstate");
-    // Subtracted for the adapter, present for every other hook.
-    expect(otherSelectors.filter((s) => !notPopstate(s))).toHaveLength(1);
-    expect(adapterSelectors.filter((s) => !notPopstate(s))).toEqual([]);
+    const notPopstate = (s: string) => !isPopstate(s);
+    // Subtracted for the adapter, present for the hook sampled here
+    // (src/hooks/use-recorder.ts), not asserted for every hook.
+    expect(otherSelectors.filter(isPopstate)).toHaveLength(1);
+    expect(adapterSelectors.filter(isPopstate)).toEqual([]);
     // Still enabled for the next selector: the adapter's list is the other
     // hooks' list minus popstate, and it is not empty.
     expect(adapterSelectors.length).toBeGreaterThan(0);
     expect(adapterSelectors).toEqual(otherSelectors.filter(notPopstate));
   }, 15000);
+
+  it("selectorsOf fails closed on an option without a string selector, and exactly matches the popstate selector", () => {
+    expect(selectorsOf([{ selector: "A" }, { selector: "B" }])).toEqual([
+      "A",
+      "B",
+    ]);
+    expect(() => selectorsOf(["CallExpression"])).toThrow(/option 0/);
+    expect(() => selectorsOf([{ selector: "A" }, { selector: 7 }])).toThrow(
+      /option 1/
+    );
+    expect(() => selectorsOf([null])).toThrow(/option 0/);
+    expect(isPopstate(POPSTATE_SELECTOR)).toBe(true);
+    expect(
+      isPopstate(`${POPSTATE_SELECTOR}, Identifier[name='popstate']`)
+    ).toBe(false);
+    expect(isPopstate("Identifier[name='popstate']")).toBe(false);
+  });
+
+  it("selectorsFromEntry, which restrictedSelectorsFor calls, fails closed on a fake entry rather than dropping the option", () => {
+    expect(selectorsFromEntry(["error", { selector: "A" }])).toEqual(["A"]);
+    expect(selectorsFromEntry("error")).toEqual([]);
+    expect(selectorsFromEntry(2)).toEqual([]);
+    expect(selectorsFromEntry(undefined)).toEqual([]);
+    // A bare string option: legal ESLint, deliberately not accepted here.
+    expect(() => selectorsFromEntry(["error", "CallExpression"])).toThrow(
+      /option 0/
+    );
+    expect(() =>
+      selectorsFromEntry(["error", { selector: "A" }, { selector: 7 }])
+    ).toThrow(/option 1/);
+  });
 });
