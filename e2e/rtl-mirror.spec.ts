@@ -9,7 +9,8 @@ import { clickEditRecording } from "./recorder-fixtures";
  * #1458). The source test (`tests/rtl-logical-properties.test.ts`) pins which
  * declarations are logical; only a browser can say what the cascade does with
  * them under `dir="rtl"`. At 360 px wide this checks that the chrome mirrors
- * (the back arrow, the play control on the chapter row, the Books header's start padding) and
+ * (the back arrow, the play control and the ⋮ on the chapter row, the Books
+ * header's start padding) and
  * that the waveform's time axis does NOT: time runs left to right in every
  * locale, so the selection's start handle stays to the left of its end handle.
  *
@@ -72,15 +73,20 @@ for (const dir of ["ltr", "rtl"] as const) {
     // The list's start side: the first thing in a chapter row (its number)
     // hugs the row's start edge.
     const row = await page.locator(".books-chapter").first().boundingBox();
-    // The play control (#1469, which took the chevron's place) sits on the
-    // row's END edge, 16px in: the right at ltr, the left at rtl.
+    // The row's END edge holds two controls: the ⋮ (#1730) flush with it, its
+    // 44px hit area taking the row's 16px end padding, and the play control
+    // (#1469) 44px in, just inside the ⋮. The right at ltr, the left at rtl.
     const play = await page.locator(".books-play").first().boundingBox();
+    const more = await page.locator(".books-more").first().boundingBox();
     expect(play).not.toBeNull();
+    expect(more).not.toBeNull();
     expect(row).not.toBeNull();
-    const fromEnd = rtl
-      ? play!.x - row!.x
-      : row!.x + row!.width - (play!.x + play!.width);
-    expect(Math.abs(fromEnd - 16)).toBeLessThan(0.5);
+    const fromEnd = (box: { x: number; width: number }) =>
+      rtl ? box.x - row!.x : row!.x + row!.width - (box.x + box.width);
+    expect(Math.abs(fromEnd(more!) - 0)).toBeLessThan(0.5);
+    expect(Math.abs(fromEnd(play!) - 44)).toBeLessThan(0.5);
+    expect(more!.width).toBe(44);
+    expect(play!.width).toBe(44);
 
     const num = await page.locator(".books-chapter-num").first().boundingBox();
     expect(row).not.toBeNull();
