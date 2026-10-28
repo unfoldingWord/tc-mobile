@@ -6,7 +6,12 @@ import { PermissionPanel } from "@/components/permission-panel";
 import { SaveFailed } from "@/components/save-failed";
 import { strings } from "@/lib/strings";
 
-import { areaScope, areaSelector, scopeDeclarations } from "./o4-area-css";
+import {
+  areaScope,
+  areaSelector,
+  readAreaCss,
+  scopeDeclarations,
+} from "./o4-area-css";
 import { one, render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -152,10 +157,11 @@ describe("SaveFailed, O4", () => {
 });
 
 describe("o4/errors.css", () => {
-  // The layer's rules, comments stripped so prose cannot match, and every
-  // declaration in them as `[property, value]`.
+  // The layer's rules, comments stripped so prose cannot match, for the
+  // per-selector reads; and every declaration in the WHOLE file, nested
+  // blocks included, as `[property, value]`, for the file-wide bans.
   const css = areaScope("errors");
-  const declared = scopeDeclarations(css);
+  const declared = scopeDeclarations(readAreaCss("errors"));
 
   it("takes every colour from a layer-2 role", () => {
     const declarations = declared.filter(([prop]) =>

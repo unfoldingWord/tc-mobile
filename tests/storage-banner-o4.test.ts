@@ -19,6 +19,7 @@ import {
   areaScope,
   areaSelector,
   declsFor,
+  fileRules,
   scopeDeclarations,
   scopeRules,
 } from "./o4-area-css";
@@ -486,7 +487,13 @@ describe("o4/books.css, the banner rules", () => {
     const colourProps =
       /^(color|background|background-color|border|border-color)$/;
     let seen = 0;
-    for (const rule of rules)
+    // Every banner rule in the whole file, nested blocks included, not only
+    // the layer's own rules.
+    const everywhere = fileRules("books").filter((r) =>
+      r.selectors.some((s) => s.includes(".o4-storage"))
+    );
+    expect(everywhere.length).toBeGreaterThanOrEqual(rules.length);
+    for (const rule of everywhere)
       for (const [prop, value] of scopeDeclarations(rule.body)) {
         if (!colourProps.test(prop)) continue;
         seen += 1;

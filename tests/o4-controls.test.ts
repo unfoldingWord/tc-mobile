@@ -12,6 +12,7 @@ import {
   areaRule,
   areaScope,
   areaSelector,
+  readAreaCss,
   scopeDeclarations,
 } from "./o4-area-css";
 import { one, render } from "./render";
@@ -116,8 +117,9 @@ describe("o4/controls.css (#941)", () => {
   };
 
   it("paints colour only through layer-2 roles", () => {
-    const colours = scopeDeclarations(layer).filter(([prop]) =>
-      /color|background|shadow/.test(prop)
+    // The whole file, nested blocks included, not only the layer's rules.
+    const colours = scopeDeclarations(readAreaCss("controls")).filter(
+      ([prop]) => /color|background|shadow/.test(prop)
     );
     expect(colours.length).toBeGreaterThanOrEqual(4);
     for (const [prop, value] of colours) {

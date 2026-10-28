@@ -10,10 +10,10 @@ import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import {
-  areaRule,
   areaScope,
   areaSelector,
   declsFor,
+  fileRules,
   readAreaCss,
   scopeDeclarations,
   scopeRules,
@@ -287,12 +287,17 @@ describe("o4/segments.css (#944)", () => {
       for (const [property, v] of Object.entries(declared))
         expect(value(selector, property), `${selector} ${property}`).toBe(v);
     // The `--s-surface` ground stays layer 3's: an O4 background on `.row`
-    // would out-specify the finished row's wash (#81).
-    expect(
-      scopeDeclarations(areaRule(layer, sel(".row"))).some(([property]) =>
-        property.startsWith("background")
-      )
-    ).toBe(false);
+    // would out-specify the finished row's wash (#81) — in the layer or in any
+    // block nested in the file, so every `.row` rule is read, not only the
+    // layer's own.
+    const rowRules = fileRules("segments").filter((r) =>
+      r.selectors.includes(sel(".row"))
+    );
+    expect(rowRules.length).toBeGreaterThanOrEqual(1);
+    for (const { body } of rowRules) {
+      const props = scopeDeclarations(body).map(([property]) => property);
+      expect(props.some((p) => p.startsWith("background"))).toBe(false);
+    }
     expect(value(".scrub--playing canvas", "mask-image")).toMatch(
       /^linear-gradient\( ?to right, black var\(--row-played\), var\(--s-voice-dim\) var\(--row-played\) ?\)/
     );

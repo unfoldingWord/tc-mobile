@@ -103,6 +103,23 @@ export function scopeRules(scope: string): ScopeRule[] {
     });
 }
 
+/** Every style rule in `area`'s WHOLE file, at any depth (the layer, its
+ *  `@media` and `@supports` blocks, and anything nested deeper), comments
+ *  stripped. For a ban that claims the file: `scopeRules(areaScope(area))`
+ *  sees only the layer's own rules, so a rule moved into a nested block
+ *  would pass it unread. */
+export function fileRules(area: Area): ScopeRule[] {
+  const out: ScopeRule[] = [];
+  postcss.parse(stripCssComments(readAreaCss(area))).walkRules((rule) => {
+    const text = rule.toString();
+    out.push({
+      selectors: rule.selectors.map(squash),
+      body: text.slice(text.indexOf("{") + 1, text.lastIndexOf("}")).trim(),
+    });
+  });
+  return out;
+}
+
 /** Every declaration in `scope` (a block's rules, or one rule's body) as
  *  `[property, value]`, the value's whitespace collapsed. For a sweep. */
 export function scopeDeclarations(scope: string): [string, string][] {

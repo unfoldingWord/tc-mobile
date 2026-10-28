@@ -9,6 +9,7 @@ import {
   areaRule,
   areaScope,
   areaSelector,
+  readAreaCss,
   scopeDeclarations,
   scopeRules,
 } from "./o4-area-css";
@@ -104,7 +105,8 @@ describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
   });
 
   it("reaches colour only through layer-2 roles", () => {
-    const values = scopeDeclarations(CSS);
+    // The whole file, nested blocks included, not only the layer's rules.
+    const values = scopeDeclarations(readAreaCss("dialogs"));
     expect(values.length).toBeGreaterThanOrEqual(15);
     for (const [prop, value] of values)
       expect(value, `${prop} reaches past layer 2`).not.toMatch(/--p-/);
