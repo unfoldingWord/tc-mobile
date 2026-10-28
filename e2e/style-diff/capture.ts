@@ -23,10 +23,13 @@ import type { CaptureState, CaptureTest, StyleMap } from "./diff";
  * every action a spec takes is followed by one snapshot of the page's computed
  * style. The fixture restores the prototypes when the test ends.
  *
- * One snapshot records, for every element under `<html>` except `<head>`, and
- * for its `::before` and `::after` when they are generated:
- *   - its structural path (`html>body:nth-child(2)>div:nth-child(1)`), with no
- *     class or attribute in it, so a class rename keeps the key;
+ * One snapshot records, for every element under `<html>` except `<head>` and
+ * the elements that never render (`script`, `style`, `link`, `meta`,
+ * `template`, `noscript`), and for its `::before` and `::after` when they are
+ * generated:
+ *   - its structural path (`html>body[1]>div[1]`, each index counting only the
+ *     kept siblings), with no class or attribute in it, so a class rename
+ *     keeps the key;
  *   - every property `getComputedStyle` enumerates, plus every custom
  *     property named in a loaded stylesheet, read by name;
  *   - the properties a running animation or transition drives on it, which
@@ -140,6 +143,15 @@ async function snapshotInPage(arg: { known: string[] }): Promise<PageSnapshot> {
     if (!known.has(h)) styles[h] = sorted;
     elements.push([path, h]);
   };
+  const unrendered = new Set([
+    "head",
+    "script",
+    "style",
+    "link",
+    "meta",
+    "template",
+    "noscript",
+  ]);
   const visit = (el: Element, path: string): void => {
     pathOf.set(el, path);
     record(path, getComputedStyle(el));
@@ -148,11 +160,14 @@ async function snapshotInPage(arg: { known: string[] }): Promise<PageSnapshot> {
       const content = cs.getPropertyValue("content");
       if (content !== "none" && content !== "normal") record(path + pseudo, cs);
     }
+    // The index counts only the siblings that are kept, so a `<script>` or
+    // `<style>` inserted ahead of the app's root does not renumber every
+    // element after it.
     let index = 0;
     for (const child of Array.from(el.children)) {
+      if (unrendered.has(child.localName)) continue;
       index += 1;
-      if (child.tagName === "HEAD") continue;
-      visit(child, `${path}>${child.localName}:nth-child(${index})`);
+      visit(child, `${path}>${child.localName}[${index}]`);
     }
   };
   visit(document.documentElement, "html");

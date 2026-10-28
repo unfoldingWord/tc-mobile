@@ -25,7 +25,7 @@ import {
  * reported on the PR that runs it, never here.
  */
 
-const BOOKS_CARD = "html>body:nth-child(2)>div:nth-child(1)";
+const BOOKS_CARD = "html>body[1]>div[1]";
 
 function state(
   key: string,
@@ -173,7 +173,7 @@ describe("diffRuns", () => {
     const states = (h: string) => [
       state("001 p0 page.goto", {
         [BOOKS_CARD]: h,
-        [`${BOOKS_CARD}>div:nth-child(1)`]: h,
+        [`${BOOKS_CARD}>div[1]`]: h,
       }),
       state("002 p0 locator.click", { [BOOKS_CARD]: h }),
     ];
@@ -282,8 +282,8 @@ describe("formatReport", () => {
     for (let i = 0; i < 5; i++) {
       styles[`a${i}`] = { width: `${i}px` };
       styles[`b${i}`] = { width: `${i + 100}px` };
-      elA[`html>div:nth-child(${i + 1})`] = `a${i}`;
-      elB[`html>div:nth-child(${i + 1})`] = `b${i}`;
+      elA[`html>div[${i + 1}]`] = `a${i}`;
+      elB[`html>div[${i + 1}]`] = `b${i}`;
     }
     const report = diffRuns(
       run(styles, [test([state("001 p0 end", elA)])]),
