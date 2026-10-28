@@ -64,16 +64,15 @@ default, the text there says to keep using it.
    the stamp is not the one named for the session (§2 says how to read it),
    note the phone and tell the maintainer rather than reinstalling. <!-- source: src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); docs/progress_tracker.md "2026-10-02 ... v1.0.0 and v1.0.1 shipped" (1.0.1 is the store build; "Assign TestFlight build 1790903231 to the testers' group" is listed under Next, so assignment is not recorded as done); docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the previous one; happened on 1.0.0-rc.1) and §5a ("Release candidates use `tester-build-v1.0.0-rc.N`") -->
 
-   **Not every phone has the new look.** A phone that saved the old look keeps
-   it after an update, and the app no longer has a switch to change it. A phone
-   that never saved a choice gets the new look. <!-- source: src/lib/design.ts readStoredDesign (a stored "current" wins; anything else, including nothing stored, reads as "o4"); nextDesign's docblock ("No menu entry calls it since #1244 removed the Books ≡ switch"); gh issue #1244 (DRI decision 2026-09-30); not device-verified -->
-   - **How to tell:** open any menu. In the new look its top corner shows a **✕**.
-     On an old-look phone that corner shows **‹**, **≡** or **⋮** instead. <!-- source: src/components/menu.tsx dismissGlyph (`o4` draws "close" unless `back`; otherwise `hamburger ? dismissIcon : "back"`) -->
-   - An old-look phone still records, plays and shares normally.
-   - These are **new look only**: the ✕ to close a menu, dragging a menu down to
-     close it, tappable crumbs (book and chapter names) in the screen headers,
-     chapter names in the headers, and the larger icons. Expect an old-look
-     phone not to have them. <!-- source: src/components/menu.tsx (drag to close is O4 only, #1268); src/components/o4-crumbs.tsx (links, #1269; chapter name, #1230); src/components/segments-screen.tsx (the O4 header); src/app/styles/o4/recorder.css (glyphs drawn larger); not device-verified -->
+   **From 1.1.0, every phone has the same look.** The app has one look, and
+   no saved choice changes it. Open any menu: its top corner shows a **✕**.
+   Menus also close by dragging them down, the screen headers carry tappable
+   book and chapter names, and the icons are the larger ones. <!-- source: gh PR #1363 (deleted the earlier look and the design switch; first in tester-build-v1.1.0, not in v1.0.1); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`) and its drag to close (#1268); src/components/o4-crumbs.tsx (links, #1269; chapter name, #1230); src/components/segments-screen.tsx (the header); the O4 recorder stylesheet (glyphs drawn larger); nothing in src/ reads the saved look any more; not device-verified -->
+   - **A phone still on 1.0.1 or earlier may show the earlier look**, if it
+     saved that choice before the switch was removed: its menus' top corner
+     shows **‹**, **≡** or **⋮** instead of **✕**, and it has none of the
+     above. It still records, plays and shares normally. Update it the way §2
+     says, over the top; on 1.1.0 or later it shows the one look. <!-- source: v1.0.1's design module, readStoredDesign (a stored "current" wins; anything else reads as "o4") and its dismissGlyph (`hamburger ? dismissIcon : "back"` outside O4); gh issue #1244 (DRI decision 2026-09-30, the Books ≡ switch removed); the saved choice was a localStorage value, not part of the recordings (inference from v1.0.1's useDesign hook); not device-verified -->
    - **Do not uninstall or reinstall to change the look. That deletes every
      recording on the phone.** Write down which phone it is and tell the
      maintainer.
@@ -249,22 +248,20 @@ default, the text there says to keep using it.
    pictures that open a menu:
    - **⋮** (three dots in a column) — on a book, a chapter, or a segment,
      and in the top corner of the recorder. It opens that one item's own
-     actions: rename it, delete it, mark a segment done, and so on. What the
-     recorder's own **⋮** drawer holds depends on the look (§1, step 5):
-     - **New look** (every freshly installed 1.0.1 phone): two tiles, **Done**
-       (marks the segment finished) and **Reset** (its confirm box reads
-       "Reset segment and start over"). There is **no Edit tile** here — Edit
-       is the scissors on the recorder's bottom bar (§3). The drawer closes
-       with the **✕** in its top corner, like every new-look menu. From 1.1,
-       if the drawer is opened while recording, a **Stop** tile (the square)
-       comes first: tapping it closes the drawer and ends the take, the same
-       as the Stop button underneath. <!-- source: src/components/recorder-menu.tsx (RecorderMenuTiles: the Stop tile, record mode, only while `recording`); src/components/recorder.tsx (onStopTake → onRecordButton); gh issue #369 (DRI pick 2026-10-19); not device-verified -->
-     - **Old look**: rows, not tiles — Edit, "Mark segment N done", and
-       "Reset segment and start over" — and the drawer's own close control is
-       a **⋮**.
+     actions: rename it, delete it, mark a segment done, and so on. The
+     recorder's own **⋮** drawer holds two tiles, **Done** (marks the segment
+     finished) and **Reset** (its confirm box reads "Reset segment and start
+     over"). There is **no Edit tile** here — Edit is the scissors on the
+     recorder's bottom bar (§3). The drawer closes with the **✕** in its top
+     corner, like every menu. From 1.1, if the drawer is opened while
+     recording, a **Stop** tile (the square) comes first: tapping it closes
+     the drawer and ends the take, the same as the Stop button underneath. A
+     phone still on 1.0.1 or earlier with the earlier look (§1, step 5) shows
+     rows instead — Edit, "Mark segment N done", and "Reset segment and start
+     over" — and closes the drawer with a **⋮**. <!-- source: src/components/recorder-menu.tsx (RecorderMenuTiles: the Stop tile, record mode, only while `recording`; the Done tile in record mode and the Reset tile; its docblock: "Record mode has no Edit tile ... because the recorder screen carries its own edit control"; `hamburger`); src/components/recorder.tsx (onStopTake → onRecordButton); gh issue #369 (DRI pick 2026-10-19); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`); the rows and the ⋮ closer are v1.0.1's non-O4 branch of recorder-menu.tsx (`dismissIcon="more"`), deleted by gh PR #1363; not device-verified -->
 
      The tile reads **Done**; the app's storage warnings and these notes say
-     "finished" for the same state. <!-- source: src/components/recorder-menu.tsx (o4 branch: RecorderMenuTiles renders the Done tile in record mode and the Reset tile; its docblock: "Record mode has no Edit tile ... because the recorder screen carries its own edit control"; the non-o4 branch renders the Edit, mark-done and erase rows; `hamburger` + `dismissIcon="more"`); src/components/menu.tsx dismissGlyph (o4 → "close", otherwise `hamburger ? dismissIcon : "back"`); src/lib/strings.ts tileFinished ("Done", D17 #949), markFinished ("Mark segment N done"), tileErase ("Reset", #1220), eraseSegment ("Reset segment and start over"), enterEdit ("Edit recording", the scissors), storageLow ("Mark segments finished ..."); src/lib/design.ts DEFAULT_DESIGN = "o4"; src/components/segment-row.tsx; not device-verified; George round 1 P2-1 on PR #1297 -->
+     "finished" for the same state. <!-- source: src/lib/strings.ts tileFinished ("Done", D17 #949), tileErase ("Reset", #1220), eraseSegment ("Reset segment and start over"), enterEdit ("Edit recording", the scissors), storageLow ("Mark segments finished ..."); src/components/segment-row.tsx; not device-verified; George round 1 P2-1 on PR #1297 -->
 
    - **≡** (three stacked lines) — only in the top corner of the Books screen
      (settings and the problem report). Rename and delete stay on the item's
@@ -308,10 +305,11 @@ been measured on a device yet.
   cache" alone leaves recordings intact has not been verified on a phone, so
   treat both as off limits until it has. <!-- source: gh issue #248 comment on #1002's known limits ("Do not tell facilitators to clear the app's cache or storage until someone verifies on a phone"; a row for it on #974); docs/native/README.md §0 (uninstall deletes every recording; IndexedDB is the system of record) -->
 - **What the storage warnings mean.** They appear on the Books screen only
-  when there is something to act on. In the new look (§1, step 5) the first
-  two come as a banner with a phone icon, the title "Share your work soon"
-  and a **Share your work** button that shares every book on the phone as one
-  zip; on an old-look phone they are a plain line of text. <!-- source: src/components/storage-pressure-banner.tsx (O4: state 17 banner, strings.storageShareSoon title, strings.shareAll button, #983/#987/#1045; current look: the #247 Notice); src/components/books-screen.tsx pressureLine -->
+  when there is something to act on. The first two come as a banner with a
+  phone icon, the title "Share your work soon" and a **Share your work**
+  button that shares every book on the phone as one zip; on a phone still on
+  1.0.1 or earlier with the earlier look (§1, step 5) they are a plain line of
+  text. <!-- source: src/components/storage-pressure-banner.tsx (state 17 banner, strings.storageShareSoon title, strings.shareAll button, #983/#987/#1045); src/components/books-screen.tsx pressureLine; the plain line is v1.0.1's non-O4 branch (the #247 Notice), deleted by gh PR #1363 -->
 
   **Share your work can refuse.** Before it builds anything it checks that
   the phone has room for the zip, and if not it says "This phone does not
@@ -380,14 +378,14 @@ been measured on a device yet.
 - **The recorder's own `⋮` (its overflow drawer) opens and closes instantly** —
   it does not slide in or out, so do not expect an animation as a sign it
   worked; if the drawer's contents are on screen, it is open. <!-- source: src/components/menu.tsx (hamburger prop docblock, "opens and closes in place"); gh PR #656 (Fixes #621) -->
-- **In the new look, `⋮` and `≡` only open a menu, and the ✕ at the menu's top
+- **`⋮` and `≡` only open a menu, and the ✕ at the menu's top
   right closes it** — the same on the Books, book, chapter, segment and
   recorder menus and the naming sheets. It can also be closed by dragging the
   bar at its top (or the row with the ✕) down; a short drag lets it spring
   back open. About's licence text keeps a back arrow, because there it goes
-  back to the list rather than closing. **On an old-look phone (§1, step 5)
-  the menu's top corner shows ‹, ≡ or ⋮ instead of ✕, and that control
-  closes the menu.** <!-- source: src/components/menu.tsx (`back` prop docblock, dismissGlyph, drag down to close); src/components/recorder-menu.tsx (hamburger, dismissIcon="more"); src/components/sheet-drag.ts; #1268; not device-verified -->
+  back to the list rather than closing. **On a phone still on 1.0.1 or
+  earlier with the earlier look (§1, step 5) the menu's top corner shows ‹, ≡
+  or ⋮ instead of ✕, and that control closes the menu.** <!-- source: src/components/menu.tsx (`back` prop docblock, dismissGlyph, drag down to close); src/components/recorder-menu.tsx (hamburger); src/components/sheet-drag.ts; #1268; the ‹, ≡ and ⋮ closers are v1.0.1's (`dismissIcon`), deleted by gh PR #1363; not device-verified -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). Each MP3 is named for the
