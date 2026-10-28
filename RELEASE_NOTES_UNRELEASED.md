@@ -14,6 +14,8 @@ its body and empties it.
 - The phone-settings steps after a second microphone refusal fit a small
   screen: a long word wraps inside its step, and the space above Try again
   is no longer doubled (#1760).
+- If none of a chapter's recordings can be found, chapter play now shows that
+  it could not play, instead of quietly going back to rest (#1767).
 
 ## Removed
 
