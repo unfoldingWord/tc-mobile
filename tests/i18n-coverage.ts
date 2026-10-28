@@ -214,12 +214,15 @@ export function call(table: Strings, name: string, args: unknown[]): string {
  * `table` with every function entry but `name` wrapped so the `plural()` forms
  * it records are dropped when it returns: an entry is checked for its own
  * forms, not for those of an entry it calls through `this`, which is checked
- * on its own row (or is still pending).
+ * on its own row (or is still pending). `onDelegate` runs when a wrapped
+ * callee did record a form, so a caller can tell "left the count to a callee"
+ * from "never counted".
  */
 function isolate(
   table: Strings,
   name: string,
-  recorded: Array<Record<string, string>>
+  recorded: Array<Record<string, string>>,
+  onDelegate: () => void = () => {}
 ): Strings {
   const out: Record<string, unknown> = { ...table };
   for (const [key, value] of Object.entries(table)) {
@@ -230,11 +233,25 @@ function isolate(
       try {
         return fn.apply(this, a);
       } finally {
+        if (recorded.length > mark) onDelegate();
         recorded.length = mark;
       }
     };
   }
   return out as unknown as Strings;
+}
+
+/**
+ * The problem for an own key that is a function `signatures()` did not parse,
+ * or null. Without it both checks skipped such a key unexercised (George r2
+ * #1531); a text entry has no signature and is not a problem.
+ */
+function unparsed(tag: string, table: Strings, name: string): string | null {
+  if (SIGNATURES.has(name)) return null;
+  const entry = (table as unknown as Record<string, unknown>)[name];
+  return typeof entry === "function"
+    ? `${tag}: ${name} is a function with no parsed signature`
+    : null;
 }
 
 /** The counts every plural entry is exercised with (#1481). */
@@ -263,6 +280,11 @@ export function countsFor(tag: string): number[] {
  * list `plural` is spied into (the test owns the mock); this clears it, runs
  * every entry the locale supplies itself, and reports forms that miss a
  * category `Intl.PluralRules(tag)` reports.
+ *
+ * An entry that records no form at all is not passed by default (George r1
+ * #1531): where English's own entry calls `plural()` for the same arguments,
+ * the locale's must too, or leave the count to an entry it calls. A language
+ * with one category has nothing to choose between, so it is exempt.
  */
 export function pluralProblems(
   tag: string,
@@ -274,12 +296,27 @@ export function pluralProblems(
     .pluralCategories as string[];
   const problems = new Set<string>();
   for (const name of own) {
+    const missed = unparsed(tag, table, name);
+    if (missed) problems.add(missed);
     if (!SIGNATURES.has(name)) continue;
-    const isolated = isolate(table, name, recorded);
+    let delegated = false;
+    const isolated = isolate(table, name, recorded, () => (delegated = true));
+    const english = isolate(stringsEn, name, recorded);
     for (const n of COUNTS)
       for (const args of argVectors(name, n)) {
         recorded.length = 0;
+        call(english, name, args);
+        const englishCounts = recorded.length > 0;
+        recorded.length = 0;
+        delegated = false;
         call(isolated, name, args);
+        if (
+          englishCounts &&
+          needed.length > 1 &&
+          recorded.length === 0 &&
+          !delegated
+        )
+          problems.add(`${tag}: ${name} counts with no plural()`);
         for (const forms of recorded)
           for (const category of needed)
             if (!(category in forms))
@@ -310,6 +347,8 @@ export function parityProblems(
     Object.values(UNION_DOMAINS).flatMap((members) => [...members])
   );
   for (const name of own) {
+    const missed = unparsed(tag, table, name);
+    if (missed) problems.add(missed);
     if (!SIGNATURES.has(name)) continue;
     for (const args of argVectors(name, 4242, true)) {
       const english = call(stringsEn, name, args);
