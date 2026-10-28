@@ -56,8 +56,11 @@ export function useHoldReveal(): HoldRevealHandle {
   const machine = useRef<HoldReveal | null>(null);
   const anchor = useRef<HTMLElement | null>(null);
   const detach = useRef<(() => void) | null>(null);
+  /** Takes down the armed click guard, if one is up. */
+  const unguard = useRef<(() => void) | null>(null);
 
   const guardClick = useCallback((target: Element) => {
+    unguard.current?.();
     const onClick = (e: MouseEvent) => {
       if (e.target instanceof Node && target.contains(e.target)) {
         e.preventDefault();
@@ -69,8 +72,10 @@ export function useHoldReveal(): HoldRevealHandle {
     const done = () => {
       window.clearTimeout(timer);
       window.removeEventListener("click", onClick, true);
+      if (unguard.current === done) unguard.current = null;
     };
     window.addEventListener("click", onClick, true);
+    unguard.current = done;
   }, []);
 
   const holdStart = useCallback(
@@ -172,12 +177,14 @@ export function useHoldReveal(): HoldRevealHandle {
     [guardClick]
   );
 
-  // Leaving the screen with a name up: take it down, let go of the press.
+  // Leaving the screen with a name up: take it down, let go of the press,
+  // and drop a click guard a release just armed.
   useEffect(
     () => () => {
       machine.current?.cancel();
       detach.current?.();
       detach.current = null;
+      unguard.current?.();
     },
     []
   );
