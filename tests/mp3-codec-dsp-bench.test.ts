@@ -56,6 +56,11 @@ class FakeWorker {
     for (const fn of [...this.messageListeners]) fn(event);
     this.onmessage?.(event);
   }
+  emitError(error: Error): void {
+    const event = { error, message: error.message };
+    for (const fn of [...this.errorListeners]) fn(event);
+    this.onerror?.(event);
+  }
 }
 
 const microtasks = async () => {
@@ -246,6 +251,22 @@ describe("codec.benchDsp — the client half (#1433 T2)", () => {
     expect(codecModule.encoderHealth()).toBe("ok");
   });
 
+  it("a worker that dies during a bench counts against the encoder's health", async () => {
+    // The bench's own answers never count; the worker dying under it does,
+    // because a dead worker is the encoder failing whatever it was running.
+    for (let i = 0; i < codecModule.ENCODER_FAILURE_THRESHOLD; i++) {
+      const outcome = await start(bench());
+      live().emitError(new Error("worker ran out of memory"));
+      expect(await outcome.settled).toBeInstanceOf(
+        codecModule.EncoderFailedError
+      );
+    }
+    expect(FakeWorker.instances).toHaveLength(
+      codecModule.ENCODER_FAILURE_THRESHOLD
+    );
+    expect(codecModule.encoderHealth()).toBe("failing");
+  });
+
   it("a normal encode right after a bench still works on the same warm worker", async () => {
     const outcome = await start(bench());
     live().emit({ kind: "bench-result", result: RESULT });
@@ -314,10 +335,79 @@ describe("mp3.worker — the bench half (#1433 T2)", () => {
       });
   });
 
+  it("every heartbeat of a run is a fraction of the whole, and the last is the end", () => {
+    // Step the clock past the throttle on every read, so every kernel chunk
+    // posts a beat: a fraction that overshot 1 (a pass the denominator does
+    // not know about) or stopped short of it would show here.
+    let clock = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 1_000));
+    send({ v: 1, kind: "dsp-bench", seconds: 3 });
+    const fractions = posted
+      .filter((m) => (m as { kind: string }).kind === "progress")
+      .map((m) => (m as { fraction: number }).fraction);
+    // Three one-second chunks, two passes.
+    expect(fractions).toHaveLength(6);
+    for (const [i, fraction] of fractions.entries()) {
+      expect(fraction).toBeGreaterThan(i === 0 ? 0 : fractions[i - 1]!);
+      expect(fraction).toBeLessThanOrEqual(1);
+    }
+    expect(fractions.at(-1)).toBe(1);
+  });
+
   it("refuses an unknown version with an error answer", () => {
     send({ v: 2, kind: "dsp-bench", seconds: 2 });
     expect(posted).toEqual([
       { kind: "error", message: expect.stringMatching(/version: 2/) },
+    ]);
+  });
+});
+
+describe("mp3.worker — the bench's length bound", () => {
+  let handler: (event: { data: unknown }) => void;
+  let posted: unknown[];
+  let worker: typeof import("@/hooks/mp3.worker");
+
+  beforeEach(async () => {
+    vi.useRealTimers();
+    vi.resetModules();
+    // The bound is the question here, not the kernel: a stand-in answers at
+    // once, so the longest accepted length costs nothing to run.
+    vi.doMock("@/lib/phone-check/speech", () => ({
+      speechLikePcm: () => new Int16Array(1),
+    }));
+    vi.doMock("@/lib/phone-check/dsp-bench", () => ({
+      runDspBench: () => RESULT,
+    }));
+    posted = [];
+    vi.stubGlobal(
+      "addEventListener",
+      (_: string, fn: (event: { data: unknown }) => void) => (handler = fn)
+    );
+    vi.stubGlobal("postMessage", (message: unknown) => posted.push(message));
+    worker = await import("@/hooks/mp3.worker");
+    posted.length = 0; // the module's own `ready`
+  });
+
+  afterEach(() => {
+    vi.doUnmock("@/lib/phone-check/speech");
+    vi.doUnmock("@/lib/phone-check/dsp-bench");
+    vi.unstubAllGlobals();
+  });
+
+  const send = (data: unknown) => handler({ data });
+
+  it("runs a bench of exactly MAX_BENCH_SECONDS", () => {
+    send({ v: 1, kind: "dsp-bench", seconds: worker.MAX_BENCH_SECONDS });
+    expect(posted).toEqual([{ kind: "bench-result", result: RESULT }]);
+  });
+
+  it("refuses one second more, and says the bound includes its end", () => {
+    send({ v: 1, kind: "dsp-bench", seconds: worker.MAX_BENCH_SECONDS + 1 });
+    expect(posted).toEqual([
+      {
+        kind: "bench-error",
+        message: `The benchmark needs more than 0 and at most ${worker.MAX_BENCH_SECONDS} seconds`,
+      },
     ]);
   });
 });
