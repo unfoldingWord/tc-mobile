@@ -9,7 +9,8 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  * A locale-fit sweep at a small phone (#1458, the per-language 360 px pass),
  * against the shipped `dist/` build: for the screens a translator meets first
  * (the Books shelf with a book, the book's ⋮ menu, the Segments screen, the
- * recorder's controls, Settings, the Templates picker, the licence ask at Share
+ * recorder's controls, the recorder's ≡ menu tiles over a recorded take,
+ * Settings, the Templates picker, the licence ask at Share
  * Book and the Export project language ask), in English and every language
  * whose table is complete (`tests/locale-fit-sweep-list.test.ts` fails when
  * `LOCALES` and the complete languages differ), no control's label spills out of its own box, no control is
@@ -73,6 +74,7 @@ const SCREENS = [
   "book-menu",
   "segments",
   "recorder",
+  "recorder-menu",
   "settings",
   "templates",
   "licence-ask",
@@ -257,6 +259,9 @@ async function measure(
   );
 }
 
+/** The recorder's ≡ sheet, told apart from the recorder dialog under it. */
+const RECORDER_MENU = ".menu-panel:has(.recorder-menu-tile)";
+
 async function settled(page: Page, selector: string) {
   await page.locator(selector).first().waitFor({ state: "visible" });
   // The sheet's slide-in, so boxes are measured where they come to rest.
@@ -283,18 +288,8 @@ async function handle(
   return h!;
 }
 
-/** One chapter with one recorded segment, from the synthetic microphone. */
-async function recordOneSegment(page: Page): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("button", { name: "New book" }).click();
-  await page.getByRole("button", { name: "Create book" }).click();
-  await page.getByRole("button", { name: /^Add chapter to/ }).click();
-  await page.getByRole("button", { name: "Create chapter" }).click();
-  await page.getByRole("button", { name: "Open Chapter 1" }).click();
-  await page.getByRole("button", { name: "Add segment" }).click();
-  await page
-    .getByRole("button", { name: "Open recorder for segment 1" })
-    .click();
+/** In an open recorder, record a short take from the synthetic microphone. */
+async function recordTake(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Stop recording", exact: true })
@@ -307,6 +302,12 @@ async function recordOneSegment(page: Page): Promise<void> {
     "aria-busy",
     "true"
   );
+}
+
+/** One chapter with one recorded segment, from the synthetic microphone. */
+async function recordOneSegment(page: Page): Promise<void> {
+  await seedToRecorder(page);
+  await recordTake(page);
   // Back on the shelf (a reload: the book is in IndexedDB).
   await page.goto("/");
   await expect(page.locator("#launch-intro")).toBeHidden({ timeout: 10_000 });
@@ -365,6 +366,19 @@ export async function sweep(
       await seedToRecorder(page);
       await switchLanguage(page, tag);
       return measure(page, null);
+    }
+    case "recorder-menu": {
+      // The ≡ menu's Done and Reset tiles (#1592 review: "Réinitialiser" is
+      // the caption that needed the 2.7 ratio). Over a recorded take, so Reset
+      // is live, as a translator meets it.
+      await seedToRecorder(page);
+      await recordTake(page);
+      const more = await handle(page, "button", "More actions", true);
+      await switchLanguage(page, tag);
+      await more.click();
+      await expect(page.locator(".recorder-menu-tile")).toHaveCount(2);
+      await settled(page, RECORDER_MENU);
+      return measure(page, RECORDER_MENU);
     }
     case "settings": {
       await page.goto("/");
