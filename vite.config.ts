@@ -540,9 +540,9 @@ export default defineConfig(({ mode }) => {
           // — small files (the largest is the ~42 KB LGPL text), unrelated to the
           // thumbnail exclusion above.
           globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2,txt}"],
-          // No single precached asset exceeds the 2 MiB default (the largest is
-          // the ~552 KB entry chunk); the former 4 MiB override existed only for
-          // the now-excluded thumbnails, which were individually tiny anyway.
+          // The 2 MiB default per-asset limit is kept; the former 4 MiB override
+          // existed only for the now-excluded thumbnails, which were
+          // individually tiny anyway.
           navigateFallback: "index.html",
           // `version.json` is deliberately outside globPatterns (comment above
           // `versionJsonPlugin`) so a `fetch()` always reaches the origin, never

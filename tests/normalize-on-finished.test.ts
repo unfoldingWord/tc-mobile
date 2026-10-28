@@ -26,7 +26,7 @@ import { ROW_V12_FIELDS } from "./row-fields";
  * The chain itself is `lib/audio/loudness.ts` (`tests/normalize-pcm.test.ts`)
  * and the worker round trip is `tests/mp3-codec-normalize.test.ts`. What this
  * file pins is the decision the sweep makes per clip: run the chain when the
- * preference is on (the default when nothing is stored, U6b) and the clip's
+ * preference is on (off when nothing is stored, since #1748) and the clip's
  * record names no stage yet; encode the normalized samples; take the row
  * peaks from them; and hand the record to `commitTranscode`. With the
  * preference off the encode gets the very samples it got before v14.
