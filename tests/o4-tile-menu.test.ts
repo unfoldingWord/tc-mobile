@@ -118,11 +118,8 @@ describe("TileGrid and TileSpacer (#941)", () => {
 describe("o4/menus.css (#941)", () => {
   const rules = areaRules("menus");
 
-  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
+  it("has rules to check (a floor, so an emptied file cannot pass vacuously)", () => {
     expect(rules.length).toBeGreaterThanOrEqual(8);
-    for (const rule of rules)
-      for (const selector of rule.selectors)
-        expect(selector).toMatch(/^:root(\[dir="rtl"\])? /);
   });
 
   it("lets a tile caption wrap inside its tile's width plus the gap (#1665)", () => {

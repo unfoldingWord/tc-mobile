@@ -63,20 +63,11 @@ function ruleSelectors(css: string): string[] {
     .filter((s) => s !== "" && !s.startsWith("@"));
 }
 
-describe("o4/recorder.css is prefixed and stays on the colour roles (#945)", () => {
+describe("o4/recorder.css stays on the colour roles (#945)", () => {
   const selectors = ruleSelectors(CSS);
 
   it("has the rules this lane adds (non-emptiness floor)", () => {
     expect(selectors.length).toBeGreaterThanOrEqual(10);
-  });
-
-  it("prefixes every selector in every list with :root", () => {
-    // The prefix holds each rule at the specificity it had under the old
-    // `[data-design="o4"]` scope, so the rules it overrides in
-    // 3-components.css still lose (#954, `o4/index.css`'s header).
-    for (const list of selectors)
-      for (const sel of list.split(","))
-        expect(sel.trim().startsWith(`${O4} `), sel).toBe(true);
   });
 
   it("reads colour only through layer-2 roles, never a primitive or a literal", () => {

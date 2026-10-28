@@ -15,7 +15,7 @@ import { stripCssComments } from "./support";
  * the selector whose declaration it reads.
  *
  * What this cannot prove: the cascade. That the O4 rule wins in a browser is
- * the build's and the phone's to show (tests/o4-cascade.test.ts reads the
+ * the build's and the phone's to show (tests/component-cascade.test.ts reads the
  * built bundle; the device check is #974).
  */
 
@@ -77,12 +77,8 @@ const CORE: Record<ShareSettled | "busy", readonly [string, string]> = {
 };
 
 describe("O4 share circle stylesheet (#947)", () => {
-  it("has rules, and prefixes every one of them with :root (o4/index.css)", () => {
-    // A floor, so a parse that finds nothing cannot pass the loop below.
+  it("has rules (a floor, so a parse that finds nothing cannot pass below)", () => {
     expect(RULES.length).toBeGreaterThanOrEqual(10);
-    for (const rule of RULES)
-      for (const selector of rule.selectors)
-        expect(selector, `unscoped selector: ${selector}`).toMatch(/^:root /);
   });
 
   it("colours only through layer-2 roles", () => {

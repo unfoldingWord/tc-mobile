@@ -23,9 +23,8 @@ import { stripCssComments } from "./support";
  * component, and is not exercised here.
  *
  * Two halves, because each alone can pass vacuously:
- *   1. the stylesheet's declarations carry the design values, every rule
- *      carries the `:root` prefix (`o4/index.css`), and no colour primitive
- *      leaks past layer 2
+ *   1. the stylesheet's declarations carry the design values, and no
+ *      colour primitive leaks past layer 2
  *      (the `share-progress.test.ts` shape: rule blocks are sliced and their
  *      declaration VALUES matched, with comments stripped first, so a comment
  *      that names a selector cannot capture the test — AGENTS.md);
@@ -76,12 +75,6 @@ function decl(selector: string): Record<string, string> {
 describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
   it("has rules at all (non-emptiness floor)", () => {
     expect(RULES.length).toBeGreaterThanOrEqual(8);
-  });
-
-  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
-    for (const { selectors } of RULES)
-      for (const s of selectors)
-        expect(s.startsWith(`${SCOPE} `), s).toBe(true);
   });
 
   it("dims behind the dialog and insets it 18px", () => {

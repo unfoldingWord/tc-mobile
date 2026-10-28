@@ -126,3 +126,60 @@ describe("useTemplateLibrary reads the package list", () => {
     ]);
   });
 });
+
+/** The same hook with `open` driven by the test, so a reopen can be staged. */
+function OpenProbe({
+  open,
+  onApi,
+}: {
+  open: boolean;
+  onApi: (api: Library) => void;
+}) {
+  const api = useTemplateLibrary(open, () => {});
+  useEffect(() => {
+    onApi(api);
+  });
+  return null;
+}
+
+async function show(open: boolean): Promise<void> {
+  await act(async () => {
+    root.render(createElement(OpenProbe, { open, onApi: (a) => (api = a) }));
+  });
+}
+
+describe("useTemplateLibrary on a reopen (#1655 follow-up, #1747)", () => {
+  it("reads loading again while a reopen's load is in flight, not the last load's failure", async () => {
+    list.obs = false;
+    list.extra = [() => Promise.reject(new Error("nothing loads"))];
+    await show(true);
+    for (let turn = 0; turn < 200; turn += 1) {
+      if (api !== null && (api as Library).status !== "loading") break;
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 5));
+      });
+    }
+    expect((api as Library | null)?.status).toBe("failed");
+
+    // Close, then reopen on a load the test holds open.
+    await show(false);
+    let settle: (value: { pkg: unknown; titles: unknown[] }) => void = () => {};
+    list.extra = [
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+    ];
+    await show(true);
+    expect((api as Library | null)?.status).toBe("loading");
+
+    await act(async () => {
+      settle({ pkg: hymnal, titles: [] });
+      await new Promise((r) => setTimeout(r, 5));
+    });
+    expect((api as Library | null)?.status).toBe("ready");
+    expect((api as Library | null)?.entries.map((e) => e.pkg.id)).toEqual([
+      "hymnal:fixture",
+    ]);
+  });
+});

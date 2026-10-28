@@ -438,3 +438,33 @@ describe("the batch-five pixel bridge stays mapped (#460)", () => {
     expect(primitiveValue(primitives, "--p-text-md")).toBe("13px");
   });
 });
+
+/**
+ * The pixel half of the arbitrary-value bridge, batch seven (#460).
+ *
+ * Batch seven is the Books screen's one literal: the shelf column's
+ * `gap-[14px]` to `--p-space-4`. Equality is asserted below from the token
+ * declaration.
+ */
+describe("the batch-seven pixel bridge stays mapped (#460)", () => {
+  // The file holds no `//` or `/*` inside a string.
+  const code = stripComments(
+    readFileSync(path.join(COMPONENTS, "books-screen.tsx"), "utf8")
+  );
+
+  it("sees the swept file", () => {
+    expect(code.length).toBeGreaterThan(0);
+  });
+
+  it("books-screen.tsx does not carry the bare gap-[14px] this batch replaced", () => {
+    expect(code).not.toMatch(/gap-\[14px\]/);
+  });
+
+  it("books-screen.tsx still uses gap-[var(--p-space-4)]", () => {
+    expect(code).toMatch(/gap-\[var\(--p-space-4\)\]/);
+  });
+
+  it("--p-space-4 still resolves to 14px", () => {
+    expect(primitiveValue(primitives, "--p-space-4")).toBe("14px");
+  });
+});

@@ -1,7 +1,11 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { TemplateList } from "@/components/template-picker";
+import {
+  TemplateList,
+  TemplateLibraryBody,
+} from "@/components/template-picker";
+import type { TemplateLibraryStatus } from "@/hooks/use-template-library";
 import { loadObsTemplate } from "@/lib/templates/obs";
 import { strings } from "@/lib/strings";
 
@@ -67,6 +71,63 @@ describe("TemplateList", () => {
 
   it("marks the rows busy while a create is in flight", async () => {
     const root = await list("/", true);
+    expect(one(root, "button.template-row").getAttribute("aria-busy")).toBe(
+      "true"
+    );
+  });
+});
+
+async function body(
+  status: TemplateLibraryStatus,
+  creating = false
+): Promise<Element> {
+  const entry = await loadObsTemplate();
+  return render(
+    createElement(TemplateLibraryBody, {
+      status,
+      creating,
+      entries: [entry],
+      base: "/",
+      language: "en",
+      onPick: () => {},
+    })
+  );
+}
+
+describe("TemplateLibraryBody (#1747)", () => {
+  it("while a (re)load is read: the loading sentence as a busy status, no failure Notice, the list and its rows busy", async () => {
+    const root = await body("loading");
+    const notices = Array.from(root.querySelectorAll(".notice"));
+    expect(notices).toHaveLength(1);
+    const notice = notices[0] as Element;
+    expect(notice.getAttribute("data-tone")).toBe("busy");
+    expect(notice.getAttribute("role")).toBe("status");
+    expect(notice.textContent).toBe("Loading the templates.");
+    expect(notice.textContent).toBe(strings.loadingTemplates);
+    expect(one(root, ".settings-list").getAttribute("aria-busy")).toBe("true");
+    expect(one(root, "button.template-row").getAttribute("aria-busy")).toBe(
+      "true"
+    );
+  });
+
+  it("once nothing loaded: the failure Notice, as an alert", async () => {
+    const root = await body("failed");
+    const notice = one(root, ".notice");
+    expect(notice.getAttribute("role")).toBe("alert");
+    expect(notice.textContent).toBe(strings.loadFailed);
+  });
+
+  it("once ready: no Notice, rows not busy", async () => {
+    const root = await body("ready");
+    expect(root.querySelector(".notice")).toBeNull();
+    expect(one(root, ".settings-list").getAttribute("aria-busy")).toBe("false");
+    expect(one(root, "button.template-row").getAttribute("aria-busy")).toBe(
+      "false"
+    );
+  });
+
+  it("while a create is in flight, ready or not: rows busy", async () => {
+    const root = await body("ready", true);
     expect(one(root, "button.template-row").getAttribute("aria-busy")).toBe(
       "true"
     );

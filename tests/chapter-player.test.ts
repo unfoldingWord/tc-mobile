@@ -434,6 +434,39 @@ describe("chapter player: failures reach the funnel", () => {
     expect(w.session.live).toBeNull();
   });
 
+  it("a chapter whose members are all broken ends failed, not idle (#1747)", async () => {
+    const broken = (id: string): PlaylistCandidate => ({
+      segmentId: seg(id),
+      startChapterId: CH_A,
+      audio: { kind: "broken" },
+    });
+    const w = world({
+      [CH_A]: [
+        broken("x"),
+        {
+          segmentId: seg("u"),
+          startChapterId: CH_A,
+          audio: { kind: "unrecorded" },
+        },
+        broken("y"),
+      ],
+    });
+    w.player.play(CH_A);
+    await flush();
+
+    expect(w.player.state()).toEqual({
+      chapterId: CH_A,
+      status: "failed",
+      pausedFraction: null,
+    });
+    expect(w.reports.map((r) => r.context)).toEqual([
+      "playback-dangling",
+      "playback-dangling",
+    ]);
+    expect(w.session.live).toBeNull();
+    expect(w.log.filter((l) => l === "unhold")).toHaveLength(1);
+  });
+
   it("a playlist read that rejects is reported, and the floor given back", async () => {
     const session = createAudioSession();
     const reports: string[] = [];
@@ -561,4 +594,39 @@ describe("chapter player: the slice (a) contract carry-overs", () => {
     expect(p as number).toBeGreaterThan(0);
     expect(p as number).toBeLessThan(1);
   });
+
+  it.each([
+    ["a NaN", Number.NaN],
+    ["an infinite", Number.POSITIVE_INFINITY],
+    ["a negative", -CANONICAL_SAMPLE_RATE],
+  ])(
+    "%s frame count never makes progress NaN (#1747)",
+    async (_label, frames) => {
+      const w = world({
+        [CH_A]: [
+          {
+            segmentId: seg("s1"),
+            startChapterId: CH_A,
+            audio: { kind: "playable", frames },
+          },
+          playable("s2"),
+        ],
+      });
+      w.player.play(CH_A);
+      await flush();
+
+      // The clip with no usable length still plays.
+      expect(w.log.filter((l) => l.startsWith("play:"))).toEqual(["play:s1@0"]);
+      const during = w.player.progress();
+      expect(Number.isFinite(during)).toBe(true);
+      expect(during as number).toBeGreaterThanOrEqual(0);
+      expect(during as number).toBeLessThanOrEqual(1);
+
+      await w.endLast();
+      const after = w.player.progress();
+      expect(Number.isFinite(after)).toBe(true);
+      expect(after as number).toBeGreaterThanOrEqual(0);
+      expect(after as number).toBeLessThanOrEqual(1);
+    }
+  );
 });

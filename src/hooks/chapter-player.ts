@@ -53,6 +53,7 @@ import {
   type ChapterQueue,
   type ChapterQueueDeps,
   type PlaylistCandidate,
+  type PlaylistEntry,
   type QueueHandle,
 } from "@/lib/audio/chapter-queue";
 import type { AudioSession } from "@/lib/audio/session";
@@ -135,6 +136,18 @@ interface Entry {
   token: number;
 }
 
+/**
+ * A clip's length as the queue's progress timeline reads it. A frame count
+ * that is not a finite, non-negative number would make the chapter's total
+ * NaN (or run progress backwards) for the whole chapter, so it counts as no
+ * length: the clip still plays, and progress stays a number in 0..1.
+ */
+function withUsableLength(entry: PlaylistEntry): PlaylistEntry {
+  return Number.isFinite(entry.frames) && entry.frames >= 0
+    ? entry
+    : { ...entry, frames: 0 };
+}
+
 export function createChapterPlayer(deps: ChapterPlayerDeps): ChapterPlayer {
   const newQueue = deps.createQueue ?? createChapterQueue<ChapterClip>;
   let state = CHAPTER_IDLE;
@@ -194,14 +207,24 @@ export function createChapterPlayer(deps: ChapterPlayerDeps): ChapterPlayer {
     );
   }
 
+  /**
+   * `nothingPlayable` marks a run whose playlist had no clip to play but did
+   * have broken members: its queue ends "empty", and that ends the chapter
+   * failed, not idle, since something that should have sounded did not.
+   */
   function follow(
     entry: Entry,
     run: Promise<string>,
-    unhold: () => void
+    unhold: () => void,
+    nothingPlayable = false
   ): void {
     run
       .then(
-        (outcome) => reconcile(entry, outcome === "failed"),
+        (outcome) =>
+          reconcile(
+            entry,
+            outcome === "failed" || (nothingPlayable && outcome === "empty")
+          ),
         (cause: unknown) => {
           deps.report(cause, "chapter-play");
           reconcile(entry, false);
@@ -277,10 +300,18 @@ export function createChapterPlayer(deps: ChapterPlayerDeps): ChapterPlayer {
         "playback-dangling"
       );
     }
-    const queue = newQueue(playlist.entries, queueDeps(entry));
+    const queue = newQueue(
+      playlist.entries.map(withUsableLength),
+      queueDeps(entry)
+    );
     entry.queue = queue;
     deps.session.settle(entry.token, guard(queue));
-    follow(entry, queue.play(), unhold);
+    follow(
+      entry,
+      queue.play(),
+      unhold,
+      playlist.entries.length === 0 && playlist.broken.length > 0
+    );
   }
 
   return {
