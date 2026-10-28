@@ -25,6 +25,7 @@
 
 import type { IDBPDatabase } from "idb";
 
+import { clipBytes, withClipBytes } from "./clip-bytes";
 import { getDb, type TcMobileDb } from "./db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { NewTake } from "@/lib/takes/pending-take";
@@ -144,14 +145,13 @@ export function encodePendingBase(
 /** The hold's scope (the note, §3 "The hold"). */
 function openHoldTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
-    [
+    withClipBytes([
       "segments",
       "takes",
       "clipMeta",
-      "clipData",
       "pendingTakes",
       "takeDispositions",
-    ],
+    ]),
     "readwrite",
     DURABILITY
   );
@@ -281,7 +281,7 @@ async function checkedSource(
 ): Promise<StoredClipSource | null> {
   if (!source) return null;
   const meta = await tx.objectStore("clipMeta").get(source.id);
-  const data = await tx.objectStore("clipData").get(source.id);
+  const data = await clipBytes.read(tx, source.id);
   return baseClipIntact(meta, data, source) ? source : null;
 }
 
@@ -348,7 +348,7 @@ export async function loadPendingRecipe(
 /** The read `loadPendingRecipe` makes; `RecipeTx` is derived from it. */
 function openRecipeTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
-    ["segments", "takes", "clipMeta", "clipData"],
+    withClipBytes(["segments", "takes", "clipMeta"]),
     "readonly"
   );
 }
@@ -368,7 +368,7 @@ async function readRecipe(
   } else {
     const base = row.base;
     const meta = await tx.objectStore("clipMeta").get(base.sourceClipId);
-    const data = await tx.objectStore("clipData").get(base.sourceClipId);
+    const data = await clipBytes.read(tx, base.sourceClipId);
     if (!meta || !data) return { kind: "base-missing" };
     if (!baseClipIntact(meta, data, base)) return { kind: "base-changed" };
     existing = new Int16Array(data);

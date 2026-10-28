@@ -5,6 +5,7 @@
 import type { IDBPDatabase, IDBPTransaction, StoreNames } from "idb";
 
 import { framesToMs } from "@/lib/audio/format";
+import { clipBytes, withClipBytes } from "./clip-bytes";
 import { getDb, type TcMobileDb } from "./db";
 import type { Clip, ClipMeta } from "@/types/audio";
 import type { ClipId } from "@/types/domain";
@@ -76,10 +77,10 @@ export async function getClipMeta(id: ClipId): Promise<ClipMeta | undefined> {
 
 export async function getClip(id: ClipId): Promise<Clip | undefined> {
   const db = await getDb();
-  const tx = db.transaction(["clipMeta", "clipData"], "readonly");
+  const tx = db.transaction(withClipBytes(["clipMeta"]), "readonly");
   const [meta, data] = await Promise.all([
     tx.objectStore("clipMeta").get(id),
-    tx.objectStore("clipData").get(id),
+    clipBytes.read(tx, id),
   ]);
   await tx.done;
   if (!meta || !data) return undefined;
@@ -89,7 +90,7 @@ export async function getClip(id: ClipId): Promise<Clip | undefined> {
 /** The smallest transaction the clip-use check runs on. */
 function openClipUseTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
-    ["takes", "pendingTakes", "clipMeta", "clipData"],
+    withClipBytes(["takes", "pendingTakes", "clipMeta"]),
     "readwrite",
     { durability: "strict" }
   );
@@ -152,7 +153,7 @@ export async function deleteClipIfUnreferenced(
 ): Promise<void> {
   if (await clipInUse(tx, clipId, takeClips)) return;
   await tx.objectStore("clipMeta").delete(clipId);
-  await tx.objectStore("clipData").delete(clipId);
+  await clipBytes.delete(tx, clipId);
 }
 
 /**

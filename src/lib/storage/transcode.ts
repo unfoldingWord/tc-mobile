@@ -26,18 +26,18 @@
  */
 
 import { isFinished } from "./takes";
+import { clipBytes, ownedClipBytes, withClipBytes } from "./clip-bytes";
 import { getDb } from "./db";
 import type { ClipProcessing, Peaks } from "@/types/audio";
 import type { ClipId, SegmentId } from "@/types/domain";
 
 /** The stores the commit touches — the clip's two halves, the pointers to it. */
-const COMMIT_STORES = [
+const COMMIT_STORES = withClipBytes([
   "segments",
   "takes",
   "clipMeta",
-  "clipData",
   "pendingTakes",
-] as const;
+]);
 
 /**
  * What a `commitTranscode` did.
@@ -164,7 +164,7 @@ export async function commitTranscode(
   // onto a larger buffer would serialise the whole backing store (the same
   // trap `saveTake` guards), and an allocation failure here must not abort a
   // transaction that has already opened.
-  const bytes = new Uint8Array(mp3);
+  const bytes = ownedClipBytes(mp3);
 
   const db = await getDb();
   const tx = db.transaction(COMMIT_STORES, "readwrite", {
@@ -203,7 +203,7 @@ export async function commitTranscode(
     // No `modifiedAt` (#1463, v12 J6): it marks a put of a book, chapter or
     // segment row, and this writes only `clipData` and `clipMeta`. The
     // segment row above is read, never put.
-    await tx.objectStore("clipData").put(bytes.buffer, clipId);
+    await clipBytes.write(tx, clipId, bytes);
     await tx.objectStore("clipMeta").put({
       ...meta,
       encoding: "mp3",

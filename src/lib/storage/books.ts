@@ -24,6 +24,7 @@ import { highestSlot, slotOf } from "@/lib/chapter-slot";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
+import { withClipBytes } from "./clip-bytes";
 import { deleteClipIfUnreferenced, type ClipUseTx } from "./clips";
 import { isFinished } from "./takes";
 import type {
@@ -458,17 +459,16 @@ export function isStaleBookFailure(
  * rows a clip's use is counted from, and the disposition records of the
  * segments it deletes.
  */
-const DELETE_BOOK_STORES = [
+const DELETE_BOOK_STORES = withClipBytes([
   "books",
   "chapters",
   "segments",
   "takes",
   "clipMeta",
-  "clipData",
   "tombstones",
   "pendingTakes",
   "takeDispositions",
-] as const;
+]);
 
 /**
  * Open the transaction a book delete needs. Strict durability: this removes the
@@ -1295,17 +1295,16 @@ async function renumberSegments(
  * whose `updatedAt` it bumps (#590), and the tombstone it leaves (#1463).
  * v13 (#38): as {@link DELETE_BOOK_STORES}.
  */
-const DELETE_SEGMENT_STORES = [
+const DELETE_SEGMENT_STORES = withClipBytes([
   "books",
   "chapters",
   "segments",
   "takes",
   "clipMeta",
-  "clipData",
   "tombstones",
   "pendingTakes",
   "takeDispositions",
-] as const;
+]);
 
 /**
  * Delete one segment — the row itself, not only its audio (#590, reversing
