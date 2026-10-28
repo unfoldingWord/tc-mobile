@@ -68,17 +68,12 @@ const ASSETS_DIR = path.join(ROOT, "dist", "assets");
 const STYLES = path.join(ROOT, "src", "app", "styles");
 const AREA_DIR = path.join(STYLES, "o4");
 
-function builtCssPath(): string | null {
-  if (!existsSync(ASSETS_DIR)) return null;
-  const files = readdirSync(ASSETS_DIR).filter((n) => n.endsWith(".css"));
-  if (files.length > 1) {
-    throw new Error(`more than one built stylesheet: ${files.join(", ")}`);
-  }
-  return files[0] ? path.join(ASSETS_DIR, files[0]) : null;
-}
-
-const CSS_PATH = builtCssPath();
-const GATE = resolveDistGate(CSS_PATH !== null, "dist/assets/*.css");
+/** Every built stylesheet. More than one fails inside the gated suite, not
+ *  at import, so `npm test` can still skip this file. */
+const CSS_FILES = existsSync(ASSETS_DIR)
+  ? readdirSync(ASSETS_DIR).filter((n) => n.endsWith(".css"))
+  : [];
+const GATE = resolveDistGate(CSS_FILES.length > 0, "dist/assets/*.css");
 
 const LAYER = "@layer components";
 
@@ -89,17 +84,67 @@ const SENTINEL = ":root{--o4-scope:1}";
 interface SourceRule {
   key: string;
   selector: string;
+  declarations: BuiltCssRule["declarations"];
 }
 
-/** The rules of a source stylesheet that carry at least one declaration —
+/** The rules of a stylesheet's text that carry at least one declaration —
  *  the minifier drops a rule with none. */
-function sourceRules(file: string): SourceRule[] {
-  return builtCssRules(readFileSync(file, "utf8"))
+function sourceRules(css: string): SourceRule[] {
+  return builtCssRules(css)
     .filter((rule) => rule.declarations.length > 0)
     .map((rule) => ({
       key: ruleKey(rule.selector, rule.context),
       selector: rule.selector,
+      declarations: rule.declarations,
     }));
+}
+
+/** Source rules by key; a key a file writes twice keeps both rules'
+ *  declarations. */
+function byKey(rules: readonly SourceRule[]): Map<string, SourceRule> {
+  const map = new Map<string, SourceRule>();
+  for (const rule of rules) {
+    const seen = map.get(rule.key);
+    map.set(
+      rule.key,
+      seen
+        ? { ...seen, declarations: [...seen.declarations, ...rule.declarations] }
+        : rule
+    );
+  }
+  return map;
+}
+
+/**
+ * Which side a built rule came from, when both sources write its key (an
+ * area rule restyling a base selector at the same weight, once #954 takes
+ * the `:root` prefix off). Told apart by the built declarations, never by
+ * order — order is what the layer-order check tests. A side fits when it
+ * writes every built property at the same importance; when both fit, the
+ * value decides, compared without whitespace. Undecided is `null`, which
+ * the caller reports as unmapped: fail closed.
+ */
+function sideByDeclarations(
+  built: BuiltCssRule["declarations"],
+  sides: readonly ["base" | "area", SourceRule][]
+): "base" | "area" | null {
+  const bare = (v: string) => v.replace(/\s+/g, "").toLowerCase();
+  const pick = (exact: boolean) =>
+    sides.filter(([, src]) =>
+      built.every((bd) =>
+        src.declarations.some(
+          (sd) =>
+            sd.property === bd.property &&
+            sd.important === bd.important &&
+            (!exact || bare(sd.value) === bare(bd.value))
+        )
+      )
+    );
+  const fits = pick(false);
+  if (fits.length === 1) return fits[0]![0];
+  if (fits.length === 0) return null;
+  const exact = pick(true);
+  return exact.length === 1 ? exact[0]![0] : null;
 }
 
 /** Selector plus every at-rule inside the components layer, so a selector
@@ -168,70 +213,189 @@ function sourceMembers(selector: string): string[] {
   return [selector];
 }
 
+/** Each built components rule, sided by its source. The sentinel's `:root`
+ *  is the last rule; any other `:root` is the base's. A key both sources
+ *  write is sided by `sideByDeclarations`. */
+function place(
+  css: string,
+  baseByKey: ReadonlyMap<string, SourceRule>,
+  areaByKey: ReadonlyMap<string, SourceRule>
+): { placed: Placed[]; unmapped: string[] } {
+  const rules = builtCssRules(css).filter((r) => r.context[0] === LAYER);
+  const sentinelKey = ruleKey(":root", []);
+  const placed: Placed[] = [];
+  const unmapped: string[] = [];
+  const lastOrder = rules.at(-1)?.order;
+  for (const rule of rules) {
+    for (const member of sourceMembers(rule.selector)) {
+      let context = rule.context.filter((c) => c !== LAYER);
+      let key = ruleKey(member, context);
+      if (
+        !baseByKey.has(key) &&
+        !areaByKey.has(key) &&
+        context.includes(GENERATED_SUPPORTS)
+      ) {
+        context = context.filter((c) => c !== GENERATED_SUPPORTS);
+        key = ruleKey(member, context);
+      }
+      const inBase = baseByKey.get(key);
+      const inArea = areaByKey.get(key);
+      const at = {
+        order: rule.order,
+        key,
+        shipped: rule.selector,
+        context,
+        declarations: rule.declarations,
+      };
+      if (rule.order === lastOrder && key === sentinelKey) {
+        placed.push({ ...at, side: "sentinel", source: ":root" });
+        continue;
+      }
+      const side =
+        inBase !== undefined && inArea !== undefined
+          ? sideByDeclarations(rule.declarations, [
+              ["base", inBase],
+              ["area", inArea],
+            ])
+          : inBase !== undefined
+            ? "base"
+            : inArea !== undefined
+              ? "area"
+              : null;
+      const src = side === "base" ? inBase : side === "area" ? inArea : null;
+      if (side !== null && src) {
+        placed.push({ ...at, side, source: src.selector });
+      } else {
+        unmapped.push(
+          inBase && inArea ? `${key} (written in both sources, unsided)` : key
+        );
+      }
+    }
+  }
+  return { placed, unmapped };
+}
+
+/** Area rules the build writes before the last base rule. */
+function earlyArea(placed: readonly Placed[]): string[] {
+  const lastBase = Math.max(
+    ...placed.filter((p) => p.side === "base").map((p) => p.order)
+  );
+  return placed
+    .filter((p) => p.side === "area" && p.order < lastBase)
+    .map((p) => p.source);
+}
+
+/** Source rules of one side the build never wrote on that side. */
+function missing(
+  rules: readonly SourceRule[],
+  side: "base" | "area",
+  placed: readonly Placed[]
+): SourceRule[] {
+  const built = new Set(
+    placed.filter((p) => p.side === side).map((p) => p.key)
+  );
+  return rules.filter((r) => !built.has(r.key));
+}
+
+// Fixture CSS, not the build: runs under `npm test` too. A selector both
+// sources write, as it ships once #954 takes the `:root` prefix off.
+describe("a selector written in both sources (#954)", () => {
+  const BASE = ".x{color:red;padding:1px}.y{margin:0}";
+  const AREA = ".x{color:blue}";
+  const sides = (baseCss: string, areaCss = AREA) => ({
+    base: sourceRules(baseCss),
+    baseByKey: byKey(sourceRules(baseCss)),
+    areaByKey: byKey(sourceRules(areaCss)),
+  });
+  const wrap = (body: string) => `@layer components{${body}}`;
+
+  it("maps an equal-weight override to both sides, and contests nothing", () => {
+    const s = sides(BASE);
+    const { placed, unmapped } = place(
+      wrap(`${BASE}.x{color:blue}`),
+      s.baseByKey,
+      s.areaByKey
+    );
+    expect(unmapped).toEqual([]);
+    expect(placed.map((p) => p.side)).toEqual(["base", "base", "area"]);
+    expect(missing(s.base, "base", placed)).toEqual([]);
+    expect(earlyArea(placed)).toEqual([]);
+    expect(contestedPairs(placed)).toEqual([]);
+  });
+
+  it("contests the override when the base side is !important", () => {
+    const baseCss = ".x{color:red!important;padding:1px}.y{margin:0}";
+    const s = sides(baseCss);
+    const { placed, unmapped } = place(
+      wrap(`${baseCss}.x{color:blue}`),
+      s.baseByKey,
+      s.areaByKey
+    );
+    expect(unmapped).toEqual([]);
+    expect(contestedPairs(placed)).toEqual([".x ⟵ .x [color]"]);
+  });
+
+  it("contests the override when a base rule is more specific", () => {
+    const baseCss = `${BASE}.y .x{color:red}`;
+    const s = sides(baseCss);
+    const { placed } = place(
+      wrap(`${baseCss}.x{color:blue}`),
+      s.baseByKey,
+      s.areaByKey
+    );
+    expect(contestedPairs(placed)).toEqual([".x ⟵ .y .x [color]"]);
+  });
+
+  it("sees the area occurrence written before the base occurrence", () => {
+    const s = sides(BASE);
+    const { placed, unmapped } = place(
+      wrap(`.x{color:blue}${BASE}`),
+      s.baseByKey,
+      s.areaByKey
+    );
+    expect(unmapped).toEqual([]);
+    expect(earlyArea(placed)).toEqual([".x"]);
+  });
+
+  it("fails closed when the build merged the two, or cannot tell them apart", () => {
+    // Merged into one rule: it fits only the base, so the area rule is
+    // never found on its side.
+    const s = sides(BASE);
+    const merged = place(
+      wrap(".x{color:blue;padding:1px}.y{margin:0}"),
+      s.baseByKey,
+      s.areaByKey
+    ).placed;
+    expect(missing(sourceRules(AREA), "area", merged)).toHaveLength(1);
+    const same = sides(".x{color:red}", ".x{color:red}");
+    expect(
+      place(wrap(".x{color:red}.x{color:red}"), same.baseByKey, same.areaByKey)
+        .unmapped
+    ).toHaveLength(2);
+  });
+});
+
 describe.skipIf(GATE === "skip")(
   "the component layer's cascade (dist/assets/*.css, requires a prior `npm run build`)",
   () => {
-    // Guarded: vitest still runs this factory when the gate skips.
-    const css = CSS_PATH !== null ? readFileSync(CSS_PATH, "utf8") : "";
+    // Guarded: vitest still runs this factory when the gate skips; more
+    // than one stylesheet fails the first case below, not the import.
+    const css =
+      CSS_FILES.length === 1
+        ? readFileSync(path.join(ASSETS_DIR, CSS_FILES[0]!), "utf8")
+        : "";
 
-    const base = sourceRules(path.join(STYLES, "3-components.css"));
-    const area = areaFiles().flatMap((name) =>
-      sourceRules(path.join(AREA_DIR, name))
-    );
-    const baseByKey = new Map(base.map((r) => [r.key, r.selector]));
-    const areaByKey = new Map(area.map((r) => [r.key, r.selector]));
-    const sentinelKey = ruleKey(":root", []);
+    const read = (file: string) => sourceRules(readFileSync(file, "utf8"));
+    const base = read(path.join(STYLES, "3-components.css"));
+    const area = areaFiles().flatMap((name) => read(path.join(AREA_DIR, name)));
+    const { placed, unmapped } =
+      css === ""
+        ? { placed: [], unmapped: [] }
+        : place(css, byKey(base), byKey(area));
 
-    const built = css === "" ? [] : builtCssRules(css);
-    const layerRules = built.filter((rule) => rule.context[0] === LAYER);
-
-    /** Each built components rule, sided by its source. The sentinel's
-     *  `:root` is the last rule; any other `:root` is the base's. */
-    function place(rules: readonly BuiltCssRule[]): {
-      placed: Placed[];
-      unmapped: string[];
-    } {
-      const placed: Placed[] = [];
-      const unmapped: string[] = [];
-      const lastOrder = rules.at(-1)?.order;
-      for (const rule of rules) {
-        for (const member of sourceMembers(rule.selector)) {
-          let context = rule.context.filter((c) => c !== LAYER);
-          let key = ruleKey(member, context);
-          if (
-            !baseByKey.has(key) &&
-            !areaByKey.has(key) &&
-            context.includes(GENERATED_SUPPORTS)
-          ) {
-            context = context.filter((c) => c !== GENERATED_SUPPORTS);
-            key = ruleKey(member, context);
-          }
-          const inBase = baseByKey.get(key);
-          const inArea = areaByKey.get(key);
-          const at = {
-            order: rule.order,
-            key,
-            shipped: rule.selector,
-            context,
-            declarations: rule.declarations,
-          };
-          if (rule.order === lastOrder && key === sentinelKey) {
-            placed.push({ ...at, side: "sentinel", source: ":root" });
-          } else if (inBase !== undefined && inArea !== undefined) {
-            unmapped.push(`${key} (written in both sources)`);
-          } else if (inBase !== undefined) {
-            placed.push({ ...at, side: "base", source: inBase });
-          } else if (inArea !== undefined) {
-            placed.push({ ...at, side: "area", source: inArea });
-          } else {
-            unmapped.push(key);
-          }
-        }
-      }
-      return { placed, unmapped };
-    }
-
-    const { placed, unmapped } = place(layerRules);
+    it("reads one built stylesheet", () => {
+      expect(CSS_FILES).toHaveLength(1);
+    });
 
     describe("layer order", () => {
       it("has one components block, opened before the utilities layer", () => {
@@ -254,21 +418,14 @@ describe.skipIf(GATE === "skip")(
       });
 
       it("finds every base and area source rule in the build", () => {
-        const builtKeys = new Set(placed.map((p) => p.key));
         expect(base.length).toBeGreaterThan(0);
         expect(area.length).toBeGreaterThan(0);
-        expect(base.filter((r) => !builtKeys.has(r.key))).toEqual([]);
-        expect(area.filter((r) => !builtKeys.has(r.key))).toEqual([]);
+        expect(missing(base, "base", placed)).toEqual([]);
+        expect(missing(area, "area", placed)).toEqual([]);
       });
 
       it("writes every base rule before every area rule", () => {
-        const lastBase = Math.max(
-          ...placed.filter((p) => p.side === "base").map((p) => p.order)
-        );
-        const early = placed.filter(
-          (p) => p.side === "area" && p.order < lastBase
-        );
-        expect(early.map((p) => p.source)).toEqual([]);
+        expect(earlyArea(placed)).toEqual([]);
       });
     });
 
