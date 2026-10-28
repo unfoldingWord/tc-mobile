@@ -7,6 +7,7 @@ import { Notice } from "./notice";
 import {
   useTemplateLibrary,
   type TemplateEntry,
+  type TemplateLibraryStatus,
 } from "@/hooks/use-template-library";
 import type { FailureKey } from "@/hooks/save-failure";
 import { activeLocale } from "@/lib/locale";
@@ -50,7 +51,7 @@ export function TemplateList({
   onPick: (entry: TemplateEntry) => void;
 }) {
   return (
-    <div className="settings-list">
+    <div className="settings-list" aria-busy={busy}>
       {entries.map((entry) => {
         const title = titleOf(entry, language);
         const thumb = previewThumbnail(entry.pkg);
@@ -89,6 +90,35 @@ export function TemplateList({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * The list step: the failure Notice when nothing loaded, then the rows
+ * (#1747). Every open reads the list again, and while it does the rows are
+ * busy in place (marked and inert) instead of the last load's failure staying
+ * on screen. No sentence is shown for the wait: a loading line would be a new
+ * string, and a key missing from a translated table takes that language out of
+ * the resolver (`completeLocales`), so it waits on its translations.
+ * Presentational: one render shows it.
+ */
+export function TemplateLibraryBody({
+  status,
+  creating,
+  ...list
+}: {
+  status: TemplateLibraryStatus;
+  creating: boolean;
+  entries: readonly TemplateEntry[];
+  base: string;
+  language: string;
+  onPick: (entry: TemplateEntry) => void;
+}) {
+  return (
+    <>
+      {status === "failed" && <Notice>{strings.loadFailed}</Notice>}
+      <TemplateList {...list} busy={creating || status === "loading"} />
+    </>
   );
 }
 
@@ -160,16 +190,14 @@ export function TemplatePicker({
   return (
     <Menu open={open} onClose={close} title={strings.templatesTitle}>
       {chosen === null ? (
-        <>
-          {status === "failed" && <Notice>{strings.loadFailed}</Notice>}
-          <TemplateList
-            entries={entries}
-            base={import.meta.env.BASE_URL}
-            language={language}
-            busy={creating}
-            onPick={setChosen}
-          />
-        </>
+        <TemplateLibraryBody
+          status={status}
+          creating={creating}
+          entries={entries}
+          base={import.meta.env.BASE_URL}
+          language={language}
+          onPick={setChosen}
+        />
       ) : (
         <>
           <NameEdit

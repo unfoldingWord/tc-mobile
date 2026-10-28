@@ -88,6 +88,15 @@ export function useTemplateLibrary(
     entry: TemplateEntry;
     intent: TemplateIntent;
   } | null>(null);
+  // Every open loads again, so every open reads "loading" until that load
+  // settles: a reopen must not show the last load's failure, or nothing, while
+  // the list is read (#1655 follow-up, #1747). Adjusted during render on the
+  // rising edge, so the effect below still sets no state before its await.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setStatus("loading");
+  }
 
   useEffect(() => {
     if (!open) {
