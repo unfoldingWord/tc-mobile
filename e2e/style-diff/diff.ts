@@ -71,6 +71,9 @@ export interface Difference {
 }
 
 export interface DiffReport {
+  /** States each run recorded, before any matching. */
+  statesInA: number;
+  statesInB: number;
   statesCompared: number;
   statesOnlyInA: string[];
   statesOnlyInB: string[];
@@ -114,6 +117,8 @@ export function diffRuns(
     for (const s of t.states) statesB.set(stateId(t, s), s);
 
   const report: DiffReport = {
+    statesInA: statesA.size,
+    statesInB: statesB.size,
     statesCompared: 0,
     statesOnlyInA: [...statesA.keys()].filter((k) => !statesB.has(k)).sort(),
     statesOnlyInB: [...statesB.keys()].filter((k) => !statesA.has(k)).sort(),
@@ -271,6 +276,45 @@ export function loadRun(dir: string): CaptureRun {
   return { tests, styles, selectors };
 }
 
+/**
+ * Why a comparison is not clean, one reason per entry; empty means clean.
+ * A run that recorded nothing, matched nothing or lost a capture to an error
+ * proves nothing, so each of those is a reason in its own right, not a pass.
+ */
+export function verdict(report: DiffReport): string[] {
+  const reasons: string[] = [];
+  if (report.differences.length > 0) {
+    reasons.push(`differences: ${report.differences.length}`);
+  }
+  if (report.statesOnlyInA.length > 0) {
+    reasons.push(`states only in A: ${report.statesOnlyInA.length}`);
+  }
+  if (report.statesOnlyInB.length > 0) {
+    reasons.push(`states only in B: ${report.statesOnlyInB.length}`);
+  }
+  if (report.failedTests.length > 0) {
+    reasons.push(`failed tests: ${report.failedTests.length}`);
+  }
+  if (report.captureErrors.A > 0 || report.captureErrors.B > 0) {
+    reasons.push(
+      `capture errors (A ${report.captureErrors.A} / B ${report.captureErrors.B})`
+    );
+  }
+  if (report.statesInA === 0) reasons.push("no states recorded in A");
+  if (report.statesInB === 0) reasons.push("no states recorded in B");
+  if (report.statesCompared === 0) {
+    reasons.push("no state matched between the runs");
+  }
+  return reasons;
+}
+
+/** The verdict as one line, the first the CLI prints. */
+export function verdictLine(reasons: readonly string[]): string {
+  return reasons.length === 0
+    ? "Verdict: clean"
+    : `Verdict: not clean — ${reasons.join("; ")}`;
+}
+
 export interface ReportContext {
   baseLabel: string;
   headLabel: string;
@@ -288,8 +332,11 @@ export function formatReport(
   const lines: string[] = [
     `Computed-style diff: A = ${context.baseLabel}, B = ${context.headLabel}`,
     "",
+    verdictLine(verdict(report)),
+    "",
     "| Figure | Value |",
     "| --- | --- |",
+    `| States recorded (A / B) | ${report.statesInA} / ${report.statesInB} |`,
     `| States compared | ${report.statesCompared} |`,
     `| States only in A | ${report.statesOnlyInA.length} |`,
     `| States only in B | ${report.statesOnlyInB.length} |`,
@@ -419,15 +466,11 @@ const isMain =
 if (isMain) {
   const args = parseArgs(process.argv.slice(2));
   const report = diffRuns(loadRun(args.a), loadRun(args.b), args.options);
+  const reasons = verdict(report);
   process.stdout.write(
     args.json
-      ? `${JSON.stringify(report, null, 2)}\n`
+      ? `${JSON.stringify({ ...report, verdict: reasons }, null, 2)}\n`
       : `${formatReport(report, { baseLabel: args.baseLabel, headLabel: args.headLabel })}\n`
   );
-  const clean =
-    report.differences.length === 0 &&
-    report.statesOnlyInA.length === 0 &&
-    report.statesOnlyInB.length === 0 &&
-    report.failedTests.length === 0;
-  process.exitCode = clean ? 0 : 1;
+  process.exitCode = reasons.length === 0 ? 0 : 1;
 }
