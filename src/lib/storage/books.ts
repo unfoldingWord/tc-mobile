@@ -1551,20 +1551,24 @@ export async function chapterPlayCandidates(
   const chapter = await db.get("chapters", chapterId);
   if (!chapter) return [];
 
-  const candidates: PlaylistCandidate[] = [];
-  for (const segmentId of chapter.segmentIds) {
-    const audio = await resolveSegmentAudio(segmentId);
-    candidates.push({
-      segmentId,
-      startChapterId:
-        audio.kind === "no-segment" ? chapterId : audio.segment.chapterId,
-      audio:
-        audio.kind === "resolved"
-          ? { kind: "playable", frames: audio.clip.frameCount }
-          : audio.kind === "no-active-take"
-            ? { kind: "unrecorded" }
-            : { kind: "broken" },
-    });
-  }
-  return candidates;
+  // Every probe is started at once (#1747). Chapter play holds the floor
+  // across this read, and a serial walk waited on each member's probe in
+  // turn. Each probe is its own readonly transaction; `Promise.all` keeps
+  // the membership order whatever order the answers arrive in.
+  return Promise.all(
+    chapter.segmentIds.map(async (segmentId): Promise<PlaylistCandidate> => {
+      const audio = await resolveSegmentAudio(segmentId);
+      return {
+        segmentId,
+        startChapterId:
+          audio.kind === "no-segment" ? chapterId : audio.segment.chapterId,
+        audio:
+          audio.kind === "resolved"
+            ? { kind: "playable", frames: audio.clip.frameCount }
+            : audio.kind === "no-active-take"
+              ? { kind: "unrecorded" }
+              : { kind: "broken" },
+      };
+    })
+  );
 }
