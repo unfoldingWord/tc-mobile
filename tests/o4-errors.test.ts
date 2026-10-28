@@ -10,7 +10,7 @@ import { SaveFailed } from "@/components/save-failed";
 import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
-import { stripCssComments } from "./support";
+import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
  * The O4 look of the three recovery surfaces (#948, epic #936): mic denied
@@ -173,5 +173,25 @@ describe("o4/errors.css", () => {
     expect(declarations.length).toBeGreaterThanOrEqual(5);
     for (const [, prop, value] of declarations)
       expect(value, `${prop}: ${value}`).toMatch(/^var\(--s-[a-z-]+\)$/);
+  });
+
+  // #1747 (from #1630): each weight reads the type-scale primitive, not a
+  // literal number.
+  it.each([
+    [":root .o4-err-title", "var(--p-weight-heavy)"],
+    [":root .o4-err-sub", "var(--p-weight-strong)"],
+    [":root .o4-err-step", "var(--p-weight-strong)"],
+    [":root .o4-err-step::before", "var(--p-weight-heavy)"],
+  ])("%s takes its font-weight from a token", (selector, token) => {
+    expect(declarationValue(cssRule(css, selector), "font-weight")).toBe(token);
+  });
+
+  it("declares no literal font-weight anywhere in the file", () => {
+    const weights = rules.flatMap(({ body }) => [
+      ...body.matchAll(/(?<=^|[;{\s])font-weight\s*:\s*([^;]+)/g),
+    ]);
+    expect(weights.length).toBeGreaterThanOrEqual(4);
+    for (const [, value] of weights)
+      expect(value!.trim()).toMatch(/^var\(--p-weight-[a-z]+\)$/);
   });
 });

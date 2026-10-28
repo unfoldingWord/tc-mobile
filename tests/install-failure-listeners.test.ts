@@ -87,7 +87,13 @@ describe("install-failure-listeners", () => {
     );
     fire("vite:preloadError", { payload: cause });
 
-    expect(seen).toEqual([{ context: "stale-chunk", cause }]);
+    // The row's cause names why it did not reload and carries the payload
+    // as its own `cause` (#1747).
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.context).toBe("stale-chunk");
+    const reported = seen[0]?.cause as Error;
+    expect(reported.message).toBe("Stale chunk not reloaded: no-guard");
+    expect(reported.cause).toBe(cause);
   });
 
   it("drops Chromium's ResizeObserver loop notice — either wording", () => {

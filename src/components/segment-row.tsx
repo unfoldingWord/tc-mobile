@@ -13,7 +13,7 @@ import { NameEdit } from "./name-edit";
 import { NameReveal } from "./name-reveal";
 import { Notice } from "./notice";
 import { O4SheetHead } from "./o4-crumbs";
-import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { MoveTiles, Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
 import { useHoldReveal } from "@/hooks/use-hold-reveal";
@@ -829,30 +829,15 @@ export function SegmentRow({
               // segment. A move closes the menu the way its Close does —
               // focus back on this row's ⋮ — so the next move is one more
               // open away; the screen says where the row landed.
-              <TileGrid>
-                {(
-                  [
-                    [-1, "arrow-up", strings.moveUp, isFirst, "alreadyFirst"],
-                    [1, "arrow-down", strings.moveDown, isLast, "alreadyLast"],
-                  ] as const
-                ).map(([step, icon, label, blocked, reason]) => (
-                  <Tile
-                    key={step}
-                    tone="plain"
-                    icon={icon}
-                    label={label}
-                    caption={label}
-                    disabled={blocked}
-                    hint={blocked ? { label: strings[reason] } : null}
-                    onClick={() => {
-                      if (blocked) return;
-                      pendingFocus.current = "menu";
-                      closeMenu();
-                      onMove(step);
-                    }}
-                  />
-                ))}
-              </TileGrid>
+              <MoveTiles
+                isFirst={isFirst}
+                isLast={isLast}
+                onMove={(step) => {
+                  pendingFocus.current = "menu";
+                  closeMenu();
+                  onMove(step);
+                }}
+              />
             )}
           </>
         )}

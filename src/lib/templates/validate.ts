@@ -21,6 +21,17 @@ import type {
 
 /** The one value D5 admits for `recordingLicence` in v0. */
 const RECORDING_LICENCE = "CC-BY-SA-4.0" satisfies LicenceId;
+/**
+ * The data licences a package may carry: exactly the `LicenceId` ids. A
+ * record keyed by the union, so a new id is a compile error here until it is
+ * listed (#1747).
+ */
+const DATA_LICENCES: Readonly<Record<LicenceId, true>> = {
+  "CC-BY-SA-4.0": true,
+  "CC-BY-4.0": true,
+  "CC0-1.0": true,
+  "all-rights-reserved": true,
+};
 /** The contract versions this reader understands. */
 const KNOWN_FORMAT_VERSION = 0;
 
@@ -83,16 +94,58 @@ function array(value: unknown, field: string): readonly unknown[] {
   return value as readonly unknown[];
 }
 
+/**
+ * A non-empty string with no leading or trailing whitespace. Padding is
+ * refused, not trimmed: what a later check reads (`new URL` trims) and what
+ * the package stores are then the same string (#1747).
+ */
 function text(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     return fail(field, "must be a non-empty string");
   }
+  if (value !== value.trim()) {
+    return fail(field, "must not start or end with whitespace");
+  }
   return value;
+}
+
+/**
+ * A value for an error message. Only the types JSON gives are printed; any
+ * other value is named by its type, so building the message cannot throw
+ * (`JSON.stringify` throws on a bigint or a cycle).
+ */
+function describeValue(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null
+  ) {
+    return String(value);
+  }
+  if (Array.isArray(value)) return "an array";
+  return typeof value === "object" ? "an object" : `a ${typeof value}`;
 }
 
 function matching(value: unknown, field: string, re: RegExp, what: string) {
   const s = text(value, field);
   if (!re.test(s)) fail(field, `must be ${what}`);
+  return s;
+}
+
+/** Own keys only, so "toString" and "constructor" are not licences. */
+function isLicence(s: string): s is LicenceId {
+  return Object.hasOwn(DATA_LICENCES, s);
+}
+
+function licence(value: unknown, field: string): LicenceId {
+  const s = text(value, field);
+  if (!isLicence(s)) {
+    return fail(
+      field,
+      `must be one of ${Object.keys(DATA_LICENCES).join(", ")}`
+    );
+  }
   return s;
 }
 
@@ -229,7 +282,7 @@ export function parseTemplatePackage(json: unknown): TemplatePackage {
   if (r["formatVersion"] !== KNOWN_FORMAT_VERSION) {
     fail(
       "formatVersion",
-      `unknown version ${JSON.stringify(r["formatVersion"])}; this reader knows ${KNOWN_FORMAT_VERSION}`
+      `unknown version ${describeValue(r["formatVersion"])}; this reader knows ${KNOWN_FORMAT_VERSION}`
     );
   }
   const id = matching(r["id"], "id", ID, "a stable id");
@@ -254,7 +307,7 @@ export function parseTemplatePackage(json: unknown): TemplatePackage {
     title[lang] = text(name, field);
   }
 
-  const dataLicence = text(r["dataLicence"], "dataLicence");
+  const dataLicence = licence(r["dataLicence"], "dataLicence");
   if (r["recordingLicence"] !== RECORDING_LICENCE) {
     fail("recordingLicence", `must be "${RECORDING_LICENCE}"`);
   }
@@ -276,6 +329,9 @@ export function parseTemplatePackage(json: unknown): TemplatePackage {
   const rawChapters = array(r["chapters"], "chapters");
   if (rawChapters.length === 0)
     fail("chapters", "a package needs at least one chapter");
+  // Chapter keys and segment keys are two namespaces on purpose: each is
+  // unique within its own set, and a chapter key may equal a segment key.
+  // Title tables and `titleFor` look a key up within one scope (#1747).
   const chapterKeys = new Set<string>();
   const numbers = new Set<number>();
   const segmentKeys = new Set<string>();

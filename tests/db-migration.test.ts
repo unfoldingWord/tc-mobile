@@ -33,6 +33,18 @@ const V12_ROW = { createdAt: null, modifiedAt: null, templateKey: null };
 const V13_SEGMENT = { ...V12_ROW, audioRevision: 0 };
 /** A clip row climbing to v14 gains `processing: null` (#1433), and only that. */
 const V14_CLIP = { processing: null };
+/**
+ * A Finished segment's active clip still owed as PCM gets a record with no
+ * stage instead (U6c), so its owed transcode encodes it as it was.
+ */
+const V14_OWED_CLIP = {
+  processing: {
+    stages: [],
+    measuredLufs: null,
+    measuredTruePeakDbtp: null,
+    appliedGainDb: 0,
+  },
+};
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -1481,12 +1493,16 @@ const SHELF_V11: readonly SeedBook[] = SHELF_V10.map((b) => ({
  */
 function expectNarrowedToBefore(
   after: Awaited<ReturnType<typeof snapshotNonBookStores>>,
-  before: Awaited<ReturnType<typeof snapshotNonBookStores>>
+  before: Awaited<ReturnType<typeof snapshotNonBookStores>>,
+  owedClipIds: readonly string[] = []
 ): void {
   expect(after.data).toEqual(before.data);
   expect(after.rows.takes).toEqual(before.rows.takes);
   expect(after.rows.clipMeta).toEqual(
-    (before.rows.clipMeta as object[]).map((row) => ({ ...row, ...V14_CLIP }))
+    (before.rows.clipMeta as { id: string }[]).map((row) => ({
+      ...row,
+      ...(owedClipIds.includes(row.id) ? V14_OWED_CLIP : V14_CLIP),
+    }))
   );
   for (const store of ["chapters", "segments"] as const) {
     const added = store === "segments" ? V13_SEGMENT : V12_ROW;
@@ -1555,7 +1571,7 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
     vi.restoreAllMocks();
   });
 
-  it("v9 → v13: every non-book row and clip byte is identical and every recording resolves", async () => {
+  it("v9 → v14: every non-book row and clip byte is identical and every recording resolves", async () => {
     const v9 = await openLegacyV9();
     const clips = await seedShelf(v9, SHELF);
     const before = await snapshotNonBookStores(
@@ -1594,7 +1610,7 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
     await expectV12Books(db);
   });
 
-  it("v10 → v13: the same shelf, with slots already written", async () => {
+  it("v10 → v14: the same shelf, with slots already written", async () => {
     const v10 = await openLegacyV10();
     const clips = await seedShelf(v10, SHELF_V10);
     const before = await snapshotNonBookStores(
@@ -1610,7 +1626,7 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
     await expectV12Books(db);
   });
 
-  it("v11 → v13: the same shelf, with slots and positions already written", async () => {
+  it("v11 → v14: the same shelf, with slots and positions already written", async () => {
     const v11 = await openLegacyV11();
     const clips = await seedShelf(v11, SHELF_V11);
     const before = await snapshotNonBookStores(
@@ -1621,6 +1637,39 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
     const db = await getDb();
     expect(db.version).toBe(APP_VERSION);
     expectNarrowedToBefore(await snapshotNonBookStores(db), before);
+    await expectEveryRecordingResolves(clips);
+    expect((await listBooks()).map((b) => b.id)).toEqual(SHELF_ORDER_1_0_X);
+    await expectV12Books(db);
+  });
+
+  it("v11 → v14: a Finished segment whose clip is still owed as PCM gets the no-stage record, and nothing else moves", async () => {
+    const v11 = await openLegacyV11();
+    const clips = await seedShelf(v11, SHELF_V11);
+    // Mark one PCM segment Finished: its transcode is still owed, the state a
+    // stall, a quota skip or an app closed before the sweep leaves behind.
+    const owed = clips.find((c) => c.encoding === "pcm")!;
+    const segment = (await v11.get("segments", owed.segmentId)) as Record<
+      string,
+      unknown
+    >;
+    expect(segment.status).toBe("draft");
+    await v11.put("segments", { ...segment, status: "affirmed" });
+    const before = await snapshotNonBookStores(
+      v11 as unknown as IDBPDatabase<TcMobileDb>
+    );
+    v11.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    const after = await snapshotNonBookStores(db);
+    expectNarrowedToBefore(after, before, [owed.clipId]);
+    // Exactly one row carries a record; every other clip, PCM drafts and
+    // Finished MP3s alike, is null.
+    const recorded = (
+      after.rows.clipMeta as { id: string; processing: unknown }[]
+    ).filter((row) => row.processing !== null);
+    expect(recorded.map((row) => row.id)).toEqual([owed.clipId]);
+    expect(recorded[0]!.processing).toEqual(V14_OWED_CLIP.processing);
     await expectEveryRecordingResolves(clips);
     expect((await listBooks()).map((b) => b.id)).toEqual(SHELF_ORDER_1_0_X);
     await expectV12Books(db);

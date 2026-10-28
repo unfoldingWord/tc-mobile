@@ -41,7 +41,8 @@
     flex-direction: column;
     align-items: center;
     gap: 22px; /* #939 token */
-    padding-top: 22px; /* #939 token */
+    /* No padding-top: `.o4-err`'s own gap already spaces the footer from the
+       body, and a second 22px doubled the space above Retry (#1747). */
   }
   :root .o4-err-circle {
     position: relative;
@@ -95,7 +96,7 @@
   }
   :root .o4-err-title {
     font-size: 22px; /* #939 token */
-    font-weight: 800;
+    font-weight: var(--p-weight-heavy);
     letter-spacing: -0.02em;
   }
   /* The refusal sentence under the mic-denied title (D15). The workbench draws
@@ -105,7 +106,7 @@
     display: block;
     margin-top: 10px; /* #939 token */
     font-size: 17px; /* #939 token */
-    font-weight: 600;
+    font-weight: var(--p-weight-strong);
     letter-spacing: normal;
     line-height: 1.35;
     color: var(--s-ink-muted);
@@ -140,7 +141,9 @@
     padding: 0;
     list-style: none;
     counter-reset: o4-step;
-    max-width: 320px;
+    /* 320px on a wide sheet, never wider than the panel's content box: at a
+       360px screen that box is narrower than 320px (#1747). */
+    max-width: min(320px, 100%);
     text-align: start;
   }
   :root .o4-err-step {
@@ -149,7 +152,7 @@
     gap: 14px;
     counter-increment: o4-step;
     font-size: 17px; /* #939 token */
-    font-weight: 600;
+    font-weight: var(--p-weight-strong);
     line-height: 1.3;
     color: var(--s-ink);
   }
@@ -160,9 +163,16 @@
     content: counter(o4-step) / "";
     flex-shrink: 0;
     width: 24px;
-    font-weight: 800;
+    font-weight: var(--p-weight-heavy);
     color: var(--s-ink-muted);
     text-align: center;
+  }
+  /* The step's words. A flex item will not shrink below its longest word by
+     default, so a long translated word would push the row past the list;
+     `min-width: 0` lets it shrink and `overflow-wrap` breaks the word. */
+  :root .o4-err-step-text {
+    min-width: 0;
+    overflow-wrap: break-word;
   }
   :root .o4-err-step-icon {
     display: flex;

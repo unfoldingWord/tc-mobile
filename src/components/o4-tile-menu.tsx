@@ -2,6 +2,7 @@ import { forwardRef, type ComponentProps, type ReactNode } from "react";
 
 import { Control } from "./control";
 import { TILE_GLYPH, tileClass, type TileTone } from "./o4-tile-look";
+import { strings } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 
 /**
@@ -78,4 +79,44 @@ export function TileGrid({
  */
 export function TileSpacer() {
   return <span className="o4-tiles-gap" aria-hidden="true" />;
+}
+
+/**
+ * Move up / Move down (#1344) as a row of their own, under a menu's actions,
+ * so the action row keeps its fit. The first row's Move up and the last row's
+ * Move down are greyed with their reason (#135). A greyed tile is a hinted
+ * `Control`, whose own activation guard refuses the tap, so `onMove` runs only
+ * for a move that can happen. The book and segment menus share this one pair
+ * (#1747, from #1731).
+ */
+export function MoveTiles({
+  isFirst,
+  isLast,
+  onMove,
+}: {
+  isFirst: boolean;
+  isLast: boolean;
+  onMove: (step: -1 | 1) => void;
+}) {
+  return (
+    <TileGrid>
+      {(
+        [
+          [-1, "arrow-up", strings.moveUp, isFirst, "alreadyFirst"],
+          [1, "arrow-down", strings.moveDown, isLast, "alreadyLast"],
+        ] as const
+      ).map(([step, icon, label, blocked, reason]) => (
+        <Tile
+          key={step}
+          tone="plain"
+          icon={icon}
+          label={label}
+          caption={label}
+          disabled={blocked}
+          hint={blocked ? { label: strings[reason] } : null}
+          onClick={() => onMove(step)}
+        />
+      ))}
+    </TileGrid>
+  );
 }

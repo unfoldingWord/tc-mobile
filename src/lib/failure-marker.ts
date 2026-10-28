@@ -23,14 +23,16 @@ const INFORMATIONAL_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-take-cap",
   // A take left waiting when the app closed, saved by the launch replay (#38).
   // The one record that it existed, so a tester can confirm it through Send
-  // (the DRI's pick on PR #1706: "A: one text round + log row (Recommended)").
+  // (the DRI's pick, verbatim: "A: one text round + log row (Recommended)",
+  // https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6425490363).
   "pending-take-replayed",
   "stale-chunk-reload",
 ]);
 
 /**
- * Should a failed in-tap audio resume light ≡? The DRI's pick on #1692, verbatim:
- * "Log only, no ≡ (Recommended)".
+ * Should a failed in-tap audio resume light ≡? The DRI's pick, verbatim:
+ * "Log only, no ≡ (Recommended)"
+ * (https://github.com/unfoldingWord/tc-mobile/pull/1692#issuecomment-6421765458).
  *
  * `false`: these two rows are logged and go out with Send, but do not mark ≡,
  * because a refused resume can happen routinely on iOS and a marker that
@@ -49,7 +51,8 @@ const RESUME_CONTEXTS: readonly string[] = [
 
 /**
  * Recorder-sheet failures that are routine and recoverable, so they are logged
- * and go out with Send but do not light ≡ (the #1692 rule above):
+ * and go out with Send but do not light ≡ (the in-tap resume pick's rule
+ * above):
  *
  * - `"recorder-finished-flag"`: the Finished mark was refused (a segment
  *   deleted under the sheet, a quota refusal). The sheet says so in place and

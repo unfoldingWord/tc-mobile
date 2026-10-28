@@ -2,13 +2,16 @@
 //
 // A language with no translated key is "all"; any other lists the English keys
 // it does not have. ENFORCE_COMPLETE is read back from the current file and
-// kept, so regenerating never flips the release gate.
+// kept, so regenerating never flips the release gate. The rewrite itself is
+// i18n-pending-core.mjs, which throws on a file whose anchors it cannot find.
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import prettier from "prettier";
 import { createServer } from "vite";
+
+import { rewritePending } from "./i18n-pending-core.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const target = path.join(root, "src/lib/i18n/pending.ts");
@@ -31,28 +34,15 @@ try {
   );
   // S11: English-only keys are never pending (lib/i18n/english-only.ts).
   const keys = Object.keys(stringsEn).filter((key) => !ENGLISH_ONLY.has(key));
-  const previous = readFileSync(target, "utf8");
-  const enforce = /export const ENFORCE_COMPLETE = (true|false);/.exec(
-    previous
+  const text = rewritePending(
+    readFileSync(target, "utf8"),
+    LOCALE_OVERRIDES,
+    keys
   );
-  if (!enforce) throw new Error("pending.ts: no ENFORCE_COMPLETE constant");
-  const head = previous.slice(0, previous.indexOf("export const PENDING"));
-  const tail = previous.slice(previous.indexOf("/**", previous.indexOf("};")));
-  const rows = Object.keys(LOCALE_OVERRIDES)
-    .sort()
-    .map((tag) => {
-      const own = LOCALE_OVERRIDES[tag];
-      const value =
-        Object.keys(own).length === 0
-          ? '"all"'
-          : JSON.stringify(keys.filter((key) => !(key in own)));
-      return `  ${JSON.stringify(tag)}: ${value},`;
-    });
-  const body = `export const PENDING: Readonly<Record<string, readonly string[] | "all">> = {\n${rows.join("\n")}\n};\n\n`;
   const options = (await prettier.resolveConfig(target)) ?? {};
   writeFileSync(
     target,
-    await prettier.format(head + body + tail, { ...options, filepath: target })
+    await prettier.format(text, { ...options, filepath: target })
   );
 } finally {
   await server.close();
