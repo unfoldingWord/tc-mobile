@@ -137,7 +137,7 @@ test("a moved chapter takes its new slot's number and the badges still read 1, 2
   // their new slots, and the badges still read 1, 2, 3 top to bottom.
   const order = () =>
     page
-      .getByRole("button", { name: /^Open / })
+      .locator("button.books-chapter")
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
   const badges = () => page.locator(".books-chapter-num").allTextContents();
   const moved = ["Open Chapter 1", "Open Chapter 2", "Open Intro"];
