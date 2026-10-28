@@ -224,7 +224,8 @@ describe("normalizeSelector (#954)", () => {
   });
 
   it("keeps the descendant combinator", () => {
-    expect(normalizeSelector(".a .b")).not.toBe(normalizeSelector(".a.b"));
+    expect(normalizeSelector(".a   .b")).toBe(".a .b");
+    expect(normalizeSelector(".a.b")).toBe(".a.b");
   });
 });
 

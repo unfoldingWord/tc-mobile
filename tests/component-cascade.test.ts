@@ -10,7 +10,6 @@ import {
   compareSpecificity,
   normalizeSelector,
   specificity,
-  stripCssComments,
   subjectCompound,
   type BuiltCssRule,
 } from "./support";
@@ -112,12 +111,14 @@ function ruleKey(selector: string, context: readonly string[]): string {
 
 /** The area files, in `o4/index.css`'s import order. */
 function areaFiles(): string[] {
-  const index = stripCssComments(
+  const index = postcss.parse(
     readFileSync(path.join(AREA_DIR, "index.css"), "utf8")
   );
-  const files = [...index.matchAll(/@import\s+"\.\/([^"]+)";/g)].map(
-    (m) => m[1]!
-  );
+  const files = index.nodes
+    .filter(
+      (n): n is postcss.AtRule => n.type === "atrule" && n.name === "import"
+    )
+    .map((n) => n.params.replace(/^["']\.\/|["']$/g, ""));
   if (files.length === 0) throw new Error("o4/index.css imports no files");
   return files;
 }
@@ -286,8 +287,10 @@ describe.skipIf(GATE === "skip")(
       });
 
       it("gives every reviewed pair a reason", () => {
-        for (const [pair, reason] of Object.entries(REVIEWED))
-          expect(reason.trim(), pair).not.toBe("");
+        const bare = Object.entries(REVIEWED)
+          .filter(([, reason]) => reason.trim() === "")
+          .map(([pair]) => pair);
+        expect(bare).toEqual([]);
       });
     });
   }
