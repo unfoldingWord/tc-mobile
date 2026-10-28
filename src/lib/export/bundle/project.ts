@@ -5,6 +5,8 @@
  * `schemaVersion`, and it is what a later import would read. Pure.
  */
 
+import { templateChapterNumber } from "@/lib/chapter-slot";
+
 import {
   exportTimeIso,
   missingAudioReason,
@@ -132,8 +134,11 @@ export function buildProjectManifest(input: BundleBookInput): ProjectManifest {
       );
       return {
         id: chapter.id,
+        // The slot (#1272): `input.chapters` is `resolveBookChapters`'s list.
         position: ci + 1,
-        number: chapter.number,
+        // The template's number, or `null` for a hand-made chapter (the DRI
+        // on #1272, Q5 (b): "None, same format version").
+        number: templateChapterNumber(chapter),
         name: chapter.name,
         templateKey: chapter.templateKey,
         createdAt: chapter.createdAt,

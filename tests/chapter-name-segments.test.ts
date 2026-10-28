@@ -231,9 +231,13 @@ describe("Share Chapter's MP3 name (#1218)", () => {
     expect(mocks.prepare).toHaveBeenCalledTimes(1);
     const [chapter, nameFile] = mocks.prepare.mock.calls[0]!;
     expect(chapter).toBe("chapter");
-    // The hook supplies the book's highest chapter number (#1233).
-    expect(nameFile(3)).toBe(strings.shareFilename("Mark", 3, "The sower"));
-    expect(nameFile(150)).toBe(
+    // The hook supplies the chapter's slot and the book's chapter count
+    // (#1233, #1272): the name takes the slot, never the view's stored
+    // number (3 here), so a moved chapter's file sorts in the book's order.
+    expect(nameFile(2, 4)).toBe(
+      strings.shareFilename("Mark", 2, "The sower", 4)
+    );
+    expect(nameFile(3, 150)).toBe(
       strings.shareFilename("Mark", 3, "The sower", 150)
     );
   });

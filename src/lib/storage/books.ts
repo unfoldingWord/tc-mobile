@@ -20,6 +20,7 @@
 import type { IDBPDatabase } from "idb";
 
 import type { PlaylistCandidate } from "@/lib/audio/chapter-queue";
+import { highestSlot, slotOf } from "@/lib/chapter-slot";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
@@ -1083,18 +1084,21 @@ export async function resolveBookChapters(
 }
 
 /**
- * The highest chapter number in the book that holds `chapterId`, or 0 when
- * the chapter or its book is gone. Share Chapter pads its file's number to
- * this width (#1233), the same width Share Book uses for that book, so one
- * chapter's file name does not depend on what else is being shared.
+ * Where `chapterId` sits in its book (#1272): its slot and the book's chapter
+ * count, both over {@link resolveBookChapters}'s list (`lib/chapter-slot.ts`).
+ * `null` when the chapter is gone or its book no longer lists it. Share
+ * Chapter numbers its file by the slot and pads it to the count (#1233), the
+ * same name Share Book gives that chapter, so one chapter's file name does not
+ * depend on what else is being shared.
  */
-export async function highestChapterNumber(
+export async function chapterPlacement(
   chapterId: ChapterId
-): Promise<number> {
+): Promise<{ slot: number; chapterCount: number } | null> {
   const chapter = await getChapter(chapterId);
-  if (!chapter) return 0;
+  if (!chapter) return null;
   const { chapters } = await resolveBookChapters(chapter.bookId);
-  return Math.max(chapter.number, ...chapters.map((c) => c.number));
+  const slot = slotOf(chapters, chapterId);
+  return slot === null ? null : { slot, chapterCount: highestSlot(chapters) };
 }
 
 // ── Segments ─────────────────────────────────────────────────────────────

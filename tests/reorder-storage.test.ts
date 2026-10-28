@@ -123,7 +123,10 @@ describe("moveToIndex", () => {
 });
 
 describe("moveChapter (#953)", () => {
-  it("reorders the book's array and leaves every chapter's own number alone (#1272, U2a)", async () => {
+  // #1272 B, S1: a move writes only the order, so the stored `number` (read
+  // only as a template's number) stays put; what a chapter shows and shares is
+  // its slot (`lib/chapter-slot.ts`), never this stored value.
+  it("reorders the book's array and leaves every stored chapter number alone (#1272, S1)", async () => {
     const { bookId, chapterIds } = await bookOf(4);
     const [c1, c2, c3, c4] = chapterIds as [
       ChapterId,
@@ -136,7 +139,7 @@ describe("moveChapter (#953)", () => {
 
     expect(await storedChapterIds(bookId)).toEqual([c1, c4, c2, c3]);
     expect(await numbersOf([c1, c4, c2, c3])).toEqual([1, 4, 2, 3]);
-    // The return is the new visible order, each with the number it keeps.
+    // The return is the new visible order, each with its stored number.
     expect(order.map((c) => [c.id, c.number])).toEqual([
       [c1, 1],
       [c4, 4],

@@ -6,7 +6,10 @@
  * - TIT2 is the chapter's own name and TALB the book's, and only when someone
  *   typed one: an unnamed chapter or book gets no frame, not the English
  *   placeholder the screen renders, which would freeze one UI language into a
- *   file that leaves the phone (#169). TRCK still says which chapter it is.
+ *   file that leaves the phone (#169). TRCK still says which chapter it is:
+ *   its slot in the book (`lib/chapter-slot.ts`), not its stored number (the
+ *   DRI on #1272, Q2 (a): "shared MP3 file names and the track tag use the
+ *   slot").
  * - COMM is the template's attribution as it read when the book was made, and
  *   only for a book made from a template (ADR 0006 implication 2). A blank
  *   book has nothing to attribute.
@@ -19,18 +22,20 @@
 
 import { type Id3Fields, withId3v2 } from "@/lib/audio/id3";
 import { licenceLabel } from "@/lib/export/licence-tag";
-import { getBook, getChapter } from "@/lib/storage/books";
+import { slotOf } from "@/lib/chapter-slot";
+import { getBook, getChapter, resolveBookChapters } from "@/lib/storage/books";
 import type { Book, Chapter, ChapterId } from "@/types/domain";
 
-/** The tag fields for one chapter of `book`. */
+/** The tag fields for one chapter of `book`, the one in slot `slot`. */
 export function chapterId3Fields(
   book: Pick<Book, "name" | "provenance"> & Partial<Pick<Book, "licence">>,
-  chapter: Pick<Chapter, "name" | "number">
+  chapter: Pick<Chapter, "name">,
+  slot: number
 ): Id3Fields {
   return {
     title: chapter.name,
     album: book.name,
-    track: chapter.number,
+    track: slot,
     copyright: licenceLabel(book.licence ?? null),
     comment:
       book.provenance.kind === "template" ? book.provenance.attribution : null,
@@ -40,7 +45,8 @@ export function chapterId3Fields(
 /**
  * A shared chapter file as its parts (`withId3v2`): the chapter's tag, read
  * from storage, then `mp3` itself, the same buffer. `mp3` alone when the
- * chapter or its book is gone, rather than failing a share over its label.
+ * chapter or its book is gone, or the book no longer lists the chapter (so it
+ * has no slot), rather than failing a share over its label.
  * Share Chapter hands these straight to `new File(parts)`.
  */
 export async function chapterFileParts(
@@ -50,5 +56,7 @@ export async function chapterFileParts(
   const chapter = await getChapter(chapterId);
   const book = chapter ? await getBook(chapter.bookId) : undefined;
   if (!chapter || !book) return [mp3];
-  return withId3v2(mp3, chapterId3Fields(book, chapter));
+  const slot = slotOf((await resolveBookChapters(book.id)).chapters, chapterId);
+  if (slot === null) return [mp3];
+  return withId3v2(mp3, chapterId3Fields(book, chapter, slot));
 }

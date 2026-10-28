@@ -198,6 +198,16 @@ LICENSE.md                                      only when attribution text is ne
 - The **real chapter number** (R7) is data, not path: it lives in `project.json`
   and, for a referenced segment, in the ingredient's `scope`. A chapter's
   position and its number can differ; the metadata is authoritative.
+
+  **Amendment, 2026-10-28 (#1272).** A chapter's number is now its slot (the
+  requirements owner's answer B on #1272), and the stored `Chapter.number` is
+  read only as the number a template gave the chapter. So `project.json`'s
+  chapter `position` is the slot and its `number` is the template's number for
+  a chapter with a `templateKey`, and `null` for a chapter added by hand. The
+  DRI on #1272, Q5, verbatim: "None, same format version (Recommended)", so
+  `schemaVersion` stays 1. The reason given in the scope: Export project has
+  not reached a tester build, so nothing outside has read version 1.
+
 - A finished segment is written as the MP3 the phone already holds
   (`audio/mpeg`, bytes unchanged). A segment still in PCM is written as a WAV,
   Int16 mono at 44 100 Hz, with no re-encoding, so export adds no lossy pass

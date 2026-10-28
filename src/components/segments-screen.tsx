@@ -752,12 +752,15 @@ export const SegmentsScreen = forwardRef<
       // superseded run) this resolves `null`, and the guard below leaves the
       // menu exactly as every one of those already did.
       void share
-        .prepare(chapterId, (highest) =>
+        // The hook hands over the chapter's slot and its book's chapter
+        // count (#1272, #1233): a file is numbered by its slot, never by the
+        // stored number this view reads.
+        .prepare(chapterId, (slot, chapterCount) =>
           strings.shareFilename(
             bookName,
-            chapterNumber,
+            slot,
             chapterName,
-            highest,
+            chapterCount,
             shareLicence
           )
         )
@@ -766,7 +769,7 @@ export const SegmentsScreen = forwardRef<
             onCloseChapterMenu();
         });
     },
-    [share, chapterId, bookName, chapterNumber, chapterName, onCloseChapterMenu]
+    [share, chapterId, bookName, chapterName, onCloseChapterMenu]
   );
   // No licence chosen: the tap asks first (#1455). While the book's id is
   // still being read (a window shorter than the chapter view's own load,

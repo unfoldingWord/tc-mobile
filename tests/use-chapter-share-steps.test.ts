@@ -14,6 +14,7 @@ import {
   addSegment,
   createBook,
   getChapter,
+  moveChapter,
 } from "@/lib/storage/books";
 import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
@@ -169,13 +170,11 @@ it("the mounted hook places a vanished segment's hollow dot where it is", async 
   });
 });
 
-it("names the file with the book's highest chapter number, not the chapter's own (#1233)", async () => {
-  // A book of chapters 1 and 150: chapter 1's file is padded to three digits,
-  // the same width Share Book gives it, whatever else is being shared.
-  const chapterId = await chapterWith(1);
-  const chapter = await getChapter(chapterId);
-  await addChapter(chapter!.bookId, 150);
-  const nameFile = vi.fn((highest: number) => `c${highest}.mp3`);
+/** Prepare a share of `chapterId` with `nameFile`, and let it finish. */
+async function shareWith(
+  chapterId: ChapterId,
+  nameFile: (slot: number, chapterCount: number) => string
+): Promise<void> {
   let prepared!: Promise<unknown>;
   act(() => {
     prepared = hook().prepare(chapterId, nameFile);
@@ -185,5 +184,38 @@ it("names the file with the book's highest chapter number, not the chapter's own
     finish();
     await prepared;
   });
-  expect(nameFile).toHaveBeenCalledWith(150);
+}
+
+it("names the file with the chapter's slot, not its stored number (#1272)", async () => {
+  // The scope's `[1, 4, 2, 3]` case: the fourth chapter moved to second place
+  // still stores 4, and its file is named for slot 2 of 4 (the DRI on #1272,
+  // Q2 (a): "shared MP3 file names and the track tag use the slot").
+  const first = await chapterWith(0);
+  const { bookId } = (await getChapter(first))!;
+  await addChapter(bookId);
+  await addChapter(bookId);
+  const fourth = await addChapter(bookId);
+  const seg = await addSegment(fourth.id);
+  await saveTake(
+    seg.id,
+    newClipId(),
+    new Int16Array(100).fill(500),
+    CANONICAL_SAMPLE_RATE
+  );
+  await moveChapter(fourth.id, 1);
+  expect((await getChapter(fourth.id))!.number).toBe(4);
+  const nameFile = vi.fn((slot: number, count: number) => `${slot}-${count}`);
+  await shareWith(fourth.id, nameFile);
+  expect(nameFile).toHaveBeenCalledWith(2, 4);
+});
+
+it("pads the file to the book's chapter count, not its highest stored number (#1233, #1272)", async () => {
+  // A book of a chapter 1 and a chapter 150 has two slots: chapter 1's file
+  // takes the width Share Book gives it, whatever else is being shared.
+  const chapterId = await chapterWith(1);
+  const chapter = await getChapter(chapterId);
+  await addChapter(chapter!.bookId, 150);
+  const nameFile = vi.fn((slot: number, count: number) => `${slot}-${count}`);
+  await shareWith(chapterId, nameFile);
+  expect(nameFile).toHaveBeenCalledWith(1, 2);
 });

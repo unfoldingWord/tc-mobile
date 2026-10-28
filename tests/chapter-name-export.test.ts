@@ -167,7 +167,7 @@ describe("strings.shareFilename (#1218, #1233)", () => {
 });
 
 describe("the chapter name reaches the zip entry (#1218)", () => {
-  it("Share Book names each MP3 from the book and the chapter's number and name", async () => {
+  it("Share Book names each MP3 from the book and the chapter's slot and name", async () => {
     const bookId = await bookNamed("Mark", ["The sower", null, "99"]);
     const sink = memoryArchiveSink();
     const result = await exportBookZip(
@@ -184,7 +184,9 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
     ]);
   });
 
-  it("pads every file in a book to its highest chapter number's width", async () => {
+  it("pads every file in a book to its chapter count, not a stored number (#1272)", async () => {
+    // A stored 100 (a template may number past the count) neither names the
+    // third file nor widens the others: a file is numbered by its slot.
     const bookId = await bookNamed(
       "Psalms",
       ["Aleph", null, "Last"],
@@ -198,9 +200,9 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
       sink
     );
     expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
-      "Psalms - 001 Aleph.mp3",
-      `Psalms - 002 ${strings.chapterName(2)}.mp3`,
-      "Psalms - 100 Last.mp3",
+      "Psalms - 01 Aleph.mp3",
+      `Psalms - 02 ${strings.chapterName(2)}.mp3`,
+      "Psalms - 03 Last.mp3",
     ]);
   });
 
@@ -219,9 +221,9 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
     ]);
   });
 
-  it("keeps both chapters' audio when two chapters share a number and a name", async () => {
-    // `addChapter` permits an explicit duplicate number, so the number alone
-    // cannot always keep two files apart.
+  it("numbers two chapters that store one number and share a name by their slots (#1272)", async () => {
+    // `addChapter` permits an explicit duplicate number; the slots still
+    // differ, so the two files do too.
     const bookId = await bookNamed("Mark", ["Intro", "Intro"], [1, 1]);
     const sink = memoryArchiveSink();
     await exportBookZip(
@@ -232,31 +234,26 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
     );
     expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
       "Mark - 01 Intro.mp3",
-      "Mark - 01 Intro (2).mp3",
+      "Mark - 02 Intro.mp3",
     ]);
   });
 
   it("keeps both chapters' audio when two names differ only in case", async () => {
     // Case-insensitive filesystems (iOS Files, Windows, macOS) would extract
-    // these onto one path, so the zip must already keep them apart. The
-    // numbers repeat on purpose, so only the names could tell the files apart.
-    const bookId = await bookNamed(
-      "Mark",
-      ["Intro", "intro", null, "chapter 3"],
-      [1, 1, 3, 3]
-    );
+    // these onto one path, so the zip must already keep them apart. Slots
+    // never repeat (#1272), so this namer leaves the number out on purpose:
+    // only the names could tell the files apart.
+    const bookId = await bookNamed("Mark", ["Intro", "intro"]);
     const sink = memoryArchiveSink();
     await exportBookZip(
       bookId,
-      (n, name) => strings.shareFilename("Mark", n, name),
+      (_n, name) => `Mark - ${name ?? ""}.mp3`,
       testCodec(),
       sink
     );
     expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
-      "Mark - 01 Intro.mp3",
-      "Mark - 01 intro (2).mp3",
-      `Mark - 03 ${strings.chapterName(3)}.mp3`,
-      "Mark - 03 chapter 3 (2).mp3",
+      "Mark - Intro.mp3",
+      "Mark - intro (2).mp3",
     ]);
   });
 

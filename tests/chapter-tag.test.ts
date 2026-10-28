@@ -14,6 +14,7 @@ import {
   addChapter,
   addSegment,
   createBook,
+  moveChapter,
   renameBook,
   renameChapter,
   resolveBookChapters,
@@ -116,7 +117,7 @@ describe("chapterId3Fields (#252)", () => {
   const blank = { name: "Mark", provenance: { kind: "blank" } } as const;
 
   it("names the chapter and book, numbers the track, and attributes nothing for a blank book", () => {
-    expect(chapterId3Fields(blank, { name: "Mark 6", number: 6 })).toEqual({
+    expect(chapterId3Fields(blank, { name: "Mark 6" }, 6)).toEqual({
       title: "Mark 6",
       album: "Mark",
       track: 6,
@@ -131,16 +132,14 @@ describe("chapterId3Fields (#252)", () => {
     ["CC0-1.0", "CC0 1.0"],
   ] as const)("writes TCOP %s as %s (#1579)", (licence, label) => {
     expect(
-      chapterId3Fields({ ...blank, licence }, { name: null, number: 1 })
-        .copyright
+      chapterId3Fields({ ...blank, licence }, { name: null }, 1).copyright
     ).toBe(label);
   });
 
   it("writes no TCOP for all-rights-reserved or no licence (#1579)", () => {
     for (const licence of [null, "all-rights-reserved"] as const) {
       expect(
-        chapterId3Fields({ ...blank, licence }, { name: null, number: 1 })
-          .copyright
+        chapterId3Fields({ ...blank, licence }, { name: null }, 1).copyright
       ).toBeNull();
     }
   });
@@ -148,7 +147,8 @@ describe("chapterId3Fields (#252)", () => {
   it("writes no placeholder for an unnamed chapter or book (#169)", () => {
     const fields = chapterId3Fields(
       { ...blank, name: null },
-      { name: null, number: 2 }
+      { name: null },
+      2
     );
     expect([fields.title, fields.album, fields.track]).toEqual([null, null, 2]);
   });
@@ -162,7 +162,7 @@ describe("chapterId3Fields (#252)", () => {
         attribution: ATTRIBUTION,
       },
     } as const;
-    expect(chapterId3Fields(template, { name: null, number: 1 }).comment).toBe(
+    expect(chapterId3Fields(template, { name: null }, 1).comment).toBe(
       ATTRIBUTION
     );
   });
@@ -232,5 +232,59 @@ describe("a shared chapter carries exactly one tag (#252)", () => {
   it("shares the MP3 alone when its chapter is gone", async () => {
     const mp3 = encodeMp3(new Int16Array(4_410));
     expect(await chapterFileParts("gone" as ChapterId, mp3)).toEqual([mp3]);
+  });
+});
+
+/** The text of the leading tag's `id` frame (encoding 1: UTF-16 with a BOM). */
+function frameText(file: Uint8Array, id: string): string | null {
+  const end = 10 + ((file[8]! << 7) | file[9]!); // small tags only
+  for (let at = 10; at < end;) {
+    const size = new DataView(
+      file.buffer,
+      file.byteOffset + at + 4,
+      4
+    ).getUint32(0);
+    if (String.fromCharCode(...file.subarray(at, at + 4)) === id) {
+      const body = file.subarray(at + 11, at + 10 + size);
+      return new TextDecoder("utf-16").decode(body).replace(/\0+$/, "");
+    }
+    at += 10 + size;
+  }
+  return null;
+}
+
+/**
+ * #1272 B: the track number is the chapter's slot (the DRI, Q2 (a): "shared
+ * MP3 file names and the track tag use the slot"). The book is the scope's
+ * `[1, 4, 2, 3]` case: the fourth chapter moved to second place, so the
+ * stored numbers no longer equal the slots.
+ */
+describe("the track number is the chapter's slot (#1272)", () => {
+  async function movedBook() {
+    const made = await bookOf([4_410, 4_410, 4_410, 4_410]);
+    await moveChapter(made.chapterIds[3]!, 1);
+    const { chapters } = await resolveBookChapters(made.bookId);
+    expect(chapters.map((c) => c.number)).toEqual([1, 4, 2, 3]);
+    return made;
+  }
+
+  it("Share Chapter: the moved chapter's TRCK is its new slot", async () => {
+    const { chapterIds } = await movedBook();
+    const result = await exportChapterMp3(chapterIds[3]!, testCodec());
+    const file = joined(await chapterFileParts(chapterIds[3]!, result!.mp3));
+    expect(frameText(file, "TRCK")).toBe("2");
+  });
+
+  it("Share Book: every entry's TRCK reads 1..N in book order", async () => {
+    const { bookId } = await movedBook();
+    const sink = memoryArchiveSink();
+    await exportBookZip(bookId, (n) => `${n}.mp3`, testCodec(), sink);
+    const entries = Object.values(unzipSync(joined(sink.chunks)));
+    expect(entries.map((entry) => frameText(entry, "TRCK"))).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
   });
 });
