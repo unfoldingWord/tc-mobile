@@ -432,8 +432,8 @@ it cannot mean that, by design:
   it into the archive.
 
 The build number is the run's **unix timestamp**, so builds always increase and
-never collide. TestFlight shows the marketing version **`1.1.1`**
-(`MARKETING_VERSION`), deliberately **not** the PWA's `0.1.x` — see
+never collide. TestFlight shows the marketing version **`1.2`**
+(`MARKETING_VERSION`), deliberately **not** the PWA's `package.json` version — see
 [README §6](README.md#6-versioning). Do not "fix" that mismatch; it is
 intentional.
 

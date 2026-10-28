@@ -78,7 +78,13 @@ the steps of one release must not mix refs.
 - [ ] Agent-allowed: branch from
       the `origin/develop` tip, then run
       `npm version 1.0.0-rc.N --no-git-tag-version` (or `1.0.0` for the final).
-      Only `package.json` and `package-lock.json` change.
+      That changes `package.json` and `package-lock.json`. In the same PR,
+      raise iOS `MARKETING_VERSION` at both sites in
+      `ios/App/App.xcodeproj/project.pbxproj` to the release being shipped
+      when it is a new user-facing version (`1.2` for v1.2.0), with the docs
+      that name it, and move the `RELEASE_NOTES_UNRELEASED.md` block into
+      the body and empty the file to its header and headings (runbook §3a
+      step 2).
 - [ ] Agent-allowed: body with every PR carried, what a tester will see, not
       in this build, not run, and the DRI's cut pick (verbatim).
 - [ ] Agent-allowed: storage check.
