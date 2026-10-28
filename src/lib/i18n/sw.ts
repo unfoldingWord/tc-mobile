@@ -239,6 +239,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "Weka upya kipande na uanze tena",
   rerecord: "Weka upya na urekodi tena",
   segmentMenu: (n: number): string => `Vitendo zaidi vya kipande ${n}`,
+  chapterRowMenu: (n: number): string => `Vitendo zaidi vya sura ${n}`,
   reorderLifted: (n: number): string => `Inahamisha kipande ${n}.`,
   reorderMoved: (from: number, to: number): string =>
     `Kipande ${from} sasa ni kipande ${to}.`,

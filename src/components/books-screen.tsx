@@ -26,6 +26,7 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { NameReveal } from "./name-reveal";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
+import { O4SheetHead } from "./o4-crumbs";
 import { CoverPicker } from "./cover-picker";
 import { LanguageAsk } from "./language-ask";
 import { LicenceAsk } from "./licence-ask";
@@ -143,6 +144,7 @@ type BooksLayerId =
   | "books:new-book"
   | "books:new-chapter"
   | "books:book-menu"
+  | "books:chapter-menu"
   | "books:delete-confirm"
   | "books:about"
   | "books:about-text"
@@ -380,6 +382,9 @@ export function BooksScreen({
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
   // resolves the id back to a row, auto-closing the menu if that book vanishes.
   const [shareMenuBookId, setShareMenuBookId] = useState<BookId | null>(null);
+  // The chapter row's ⋮ menu (#1730): which chapter's menu is open. It holds
+  // Move up / Move down only, and writes nothing until a tile is tapped.
+  const [chapterMenuId, setChapterMenuId] = useState<ChapterId | null>(null);
   // Whether the open book ⋮ menu is in rename mode (the name field showing) or
   // its action list. Resets to the action list every time the menu closes.
   const [renamingBook, setRenamingBook] = useState(false);
@@ -739,6 +744,12 @@ export function BooksScreen({
       dismiss: () => {
         closeBookMenuState();
       },
+    },
+    "books:chapter-menu": {
+      // Move up / Move down close the sheet in the tap that writes (#1730),
+      // so nothing behind it is ever in flight: Back is never refused.
+      busy: () => false,
+      dismiss: () => setChapterMenuId(null),
     },
     "books:library-share": {
       // No enclosing menu to fold this into (see the `BooksLayerId` docblock
@@ -2057,6 +2068,7 @@ export function BooksScreen({
     settingsOpen ||
     templatesOpen ||
     shareMenuBook !== null ||
+    chapterMenuId !== null ||
     deleteTargetId !== null ||
     newBookSeed !== null ||
     newChapter !== null ||
@@ -2081,12 +2093,32 @@ export function BooksScreen({
   // optimistically, re-slots every badge so they still read 1..N (#1272 B;
   // names such as "Mark 6" stay as they are), leaves the book where it is on the shelf (#953 scope Q4),
   // and on failure puts the stored order back and reports "chapter-reorder",
-  // with nothing extra on screen (#172). Every cancel writes nothing.
+  // with nothing extra on screen (#172). Every cancel writes nothing. The
+  // chapter menu's Move up / Move down (#1730, below) is the tap path beside
+  // the drag, through the same write and line (`commitChapterMove`).
   //
   // Off while an overlay has the shelf `inert`, and before the first load
   // has finished.
   const shelfRef = useRef<HTMLDivElement | null>(null);
   const [reorderStatus, setReorderStatus] = useState("");
+  // The one write and the one spoken line for a chapter's move, from a drop
+  // or from the chapter menu (#1730). Slot to slot (#1272, Q4 (a)): the moved
+  // chapter takes the number of the slot it landed in, among the card's rows
+  // (the ones `moveChapter` indexes), the way a segment's line says it. A
+  // write that did not land puts the row back (`moveChapter` resolves false,
+  // having reported "chapter-reorder"), so the spoken line must not keep
+  // saying it moved. Only if nothing newer has been said since.
+  const commitChapterMove = (row: ChapterRow, toIndex: number) => {
+    const moved = strings.chapterReorderMoved(row.number, toIndex + 1);
+    setReorderStatus(moved);
+    void moveChapter(row.chapterId, toIndex).then((landed) => {
+      if (!landed) {
+        setReorderStatus((s) =>
+          s === moved ? strings.chapterReorderStayed(row.number) : s
+        );
+      }
+    });
+  };
   const chapterReorder: ChapterReorder = {
     enabled: !shelfInert && !loading,
     scrollRef: shelfRef,
@@ -2102,24 +2134,80 @@ export function BooksScreen({
       if (active === document.body || (node && node.contains(active))) {
         rowReveal.armFocus(row.chapterId);
       }
-      // Slot to slot (#1272, Q4 (a)): the moved chapter takes the number of
-      // the slot it landed in, among the card's rows (the ones `moveChapter`
-      // indexes), the way a segment's line says it.
-      const moved = strings.chapterReorderMoved(row.number, toIndex + 1);
-      setReorderStatus(moved);
-      // A write that did not land puts the row back (`moveChapter` resolves
-      // false, having reported it), so the spoken line must not keep saying
-      // it moved. Only if nothing newer has been said since.
-      void moveChapter(row.chapterId, toIndex).then((landed) => {
-        if (!landed) {
-          setReorderStatus((s) =>
-            s === moved ? strings.chapterReorderStayed(row.number) : s
-          );
-        }
-      });
+      commitChapterMove(row, toIndex);
     },
     onCancel: (row) =>
       setReorderStatus(strings.chapterReorderStayed(row.number)),
+  };
+
+  // ── The chapter row's ⋮ menu (#1730) ─────────────────────────────────────
+  //
+  // The DRI's "Books chapter row ⋮ menu" pick: a chapter gets the tap path to
+  // reorder that books and segments have (#1344), Move up / Move down, in a
+  // sheet opened from a ⋮ on its row. Each tap moves the chapter one place
+  // through `commitChapterMove`, the drop's own write and line, and closes
+  // the sheet. Focus then goes to the moved row's ⋮ at its new place.
+  const chapterMenu = useMemo(
+    () => findChapter(books, chapterMenuId),
+    [books, chapterMenuId]
+  );
+  // The chapter whose ⋮ takes focus back once the sheet is gone, or `null`
+  // when the sheet was opened with nothing focused (a touch tap with no
+  // ring): handing a ring back on close would invent a state the translator
+  // never had (`useFocusRestore`'s rule). Read fresh from the row on close,
+  // not kept as an element: a move re-orders the rows, and a node the
+  // browser moved while it had focus loses it.
+  const chapterMenuReturn = useRef<ChapterId | null>(null);
+  const onOpenChapterMenu = useCallback(
+    (chapterId: ChapterId) => {
+      // In the tap's own handler, before the shelf goes `inert` and blurs it.
+      const active = document.activeElement;
+      chapterMenuReturn.current =
+        active instanceof HTMLElement && active !== document.body
+          ? chapterId
+          : null;
+      setChapterMenuId(chapterId);
+      layers.open("books:chapter-menu");
+    },
+    [layers]
+  );
+  const closeChapterMenu = useCallback(() => {
+    setChapterMenuId(null);
+    layers.close("books:chapter-menu");
+  }, [layers]);
+  // Back to the ⋮ once the sheet is closed — Close, Escape, a scrim tap, a
+  // system Back or a move — in the commit that lifts the shelf's `inert`, and
+  // after a move has re-ordered the rows.
+  useLayoutEffect(() => {
+    if (chapterMenuId !== null) return;
+    const id = chapterMenuReturn.current;
+    if (id === null) return;
+    chapterMenuReturn.current = null;
+    rowReveal
+      .nodeFor(id)
+      ?.querySelector<HTMLElement>(".books-more")
+      ?.focus({ preventScroll: true });
+  }, [chapterMenuId, rowReveal]);
+  // The chapter left the shelf under the open sheet (another tab): close it
+  // and its layer, as the book menu's own effect does, a microtask later.
+  useEffect(() => {
+    if (chapterMenuId === null || chapterMenu !== null) return;
+    void Promise.resolve().then(() => {
+      setChapterMenuId(null);
+      layers.close("books:chapter-menu");
+    });
+  }, [chapterMenu, chapterMenuId, layers]);
+  // Move up / Move down from the chapter menu: one place, to the neighbour's
+  // index among the book's rows. The menu greys the tile that would leave the
+  // book, and this refuses it again.
+  const moveChapterFromMenu = (step: -1 | 1) => {
+    if (!chapterMenu) return;
+    const { book, index, row } = chapterMenu;
+    const toIndex = index + step;
+    if (toIndex < 0 || toIndex >= book.chapters.length) return;
+    closeChapterMenu();
+    rowReveal.armScroll(row.chapterId);
+    commitChapterMove(row, toIndex);
   };
 
   // ── Press-and-hold reorder of books (#338) ────────────────────────────────
@@ -2134,7 +2222,7 @@ export function BooksScreen({
   // One write, on the drop: `moveBook` patches the shelf optimistically, does
   // not count as activity on the book, and on failure puts the stored order
   // back and reports "book-reorder", with nothing extra on screen (#172).
-  // Every cancel writes nothing. Unlike the chapter reorder, a book has a
+  // Every cancel writes nothing. As a chapter does (#1730), a book has a
   // tap path too: Move up / Move down in its ⋮ menu (#1344, the DRI's "Yes,
   // menu Move up/down" pick, revisiting D11 for this case), through the same
   // write and the same spoken line (`commitBookMove`).
@@ -2419,6 +2507,7 @@ export function BooksScreen({
                 onNewChapter={() => onNewChapter(book.bookId)}
                 onOpenShareMenu={() => onOpenShareMenu(book.bookId)}
                 onOpenChapter={onOpenChapter}
+                onOpenChapterMenu={onOpenChapterMenu}
                 guidedAddChapter={
                   guide?.kind === "add-chapter" && guide.bookId === book.bookId
                 }
@@ -2440,8 +2529,8 @@ export function BooksScreen({
           share it — as on the Segments list: which row was lifted, where it
           landed, or that it went back. Outside the shelf's scroll box, and
           mounted for the screen's whole life so a screen reader hears the
-          first change. It tells what a drag did, and what a book menu's Move
-          up / Move down did (#1344); a chapter has no tap path to move yet. */}
+          first change. It tells what a drag did, and what a book or chapter
+          menu's Move up / Move down did (#1344, #1730). */}
       <span
         className="sr-only"
         role="status"
@@ -2840,6 +2929,29 @@ export function BooksScreen({
         )}
       </Menu>
 
+      {/* The chapter menu (#1730): the breadcrumb head and the shared Move
+          pair. Menu's open-edge focus lands on Move up, greyed with its
+          reason on the first chapter, as Move down is on the last (#135). */}
+      <Menu
+        open={chapterMenu !== null}
+        onClose={closeChapterMenu}
+        title={strings.chapterMenuTitle}
+      >
+        {chapterMenu && (
+          <>
+            <ChapterMenuHead
+              book={chapterMenu.book}
+              chapter={chapterMenu.row}
+            />
+            <MoveTiles
+              isFirst={chapterMenu.index <= 0}
+              isLast={chapterMenu.index >= chapterMenu.book.chapters.length - 1}
+              onMove={moveChapterFromMenu}
+            />
+          </>
+        )}
+      </Menu>
+
       {/* The share modal (#491), a sibling of the book menu — see the Segments
           screen for why: it outlives the menu's close, and `send()` resolves
           only after its outcome glyph has cleared. `onCancel` is wired to
@@ -2895,6 +3007,8 @@ interface BookItemProps {
   onNewChapter: () => void;
   onOpenShareMenu: () => void;
   onOpenChapter: (chapterId: ChapterId) => void;
+  /** Open a chapter row's ⋮ menu (#1730). */
+  onOpenChapterMenu: (chapterId: ChapterId) => void;
   /** This book's `+` is the guided step (#604). */
   guidedAddChapter: boolean;
   /**
@@ -2927,6 +3041,7 @@ function BookItem({
   onNewChapter,
   onOpenShareMenu,
   onOpenChapter,
+  onOpenChapterMenu,
   guidedAddChapter,
   guidedToggle,
   guidedChapterId,
@@ -3064,6 +3179,7 @@ function BookItem({
               chapter={chapter}
               audio={audio}
               onOpen={() => onOpenChapter(chapter.chapterId)}
+              onOpenMenu={() => onOpenChapterMenu(chapter.chapterId)}
               guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
               onHoldStart={gesture.holdStart(index)}
@@ -3091,6 +3207,8 @@ interface ChapterItemProps {
   chapter: ChapterRow;
   audio: ChapterAudio;
   onOpen: () => void;
+  /** Open this row's ⋮ menu (#1730). */
+  onOpenMenu: () => void;
   /** This row is the guided step (#604). */
   guided: boolean;
   setNode: (id: string, el: HTMLElement | null) => void;
@@ -3110,6 +3228,7 @@ function ChapterItem({
   chapter,
   audio,
   onOpen,
+  onOpenMenu,
   guided,
   setNode,
   onHoldStart,
@@ -3167,7 +3286,70 @@ function ChapterItem({
         }
         readProgress={audio.readChapterProgress}
       />
+      {/* The row's ⋮ (#1730): Move up / Move down, the tap path to reorder
+          beside press-and-hold. A sibling of the row button for the same
+          reason the play control is, laid over the end of the slot the row's
+          face keeps for both (`books-chapter-go`). Named by the slot, as the
+          move line is, so it reads the new number after a move. */}
+      <Control
+        icon="more"
+        label={strings.chapterRowMenu(chapter.number)}
+        variant="quiet"
+        size={20}
+        className="books-more"
+        onClick={onOpenMenu}
+      />
     </li>
+  );
+}
+
+/**
+ * The shelf's row for `chapterId`, with its book and its index among that
+ * book's rows (the index `moveChapter` takes), or `null` when no book lists
+ * it (#1730's chapter menu).
+ */
+function findChapter(
+  books: readonly BookCard[],
+  chapterId: ChapterId | null
+): { book: BookCard; index: number; row: ChapterRow } | null {
+  if (chapterId === null) return null;
+  for (const book of books) {
+    const index = book.chapters.findIndex((c) => c.chapterId === chapterId);
+    const row = book.chapters[index];
+    if (row) return { book, index, row };
+  }
+  return null;
+}
+
+/**
+ * The chapter menu's head (#1730): the book and the chapter as crumbs, with
+ * the book's cover, as the Segments screen's chapter menu draws it. A
+ * component of its own because the chapter's heading is a hook's
+ * (`useChapterHeading`, the S12 setting).
+ */
+function ChapterMenuHead({
+  book,
+  chapter,
+}: {
+  book: BookCard;
+  chapter: ChapterRow;
+}) {
+  const heading = useChapterHeading(
+    chapter.name,
+    chapter.number,
+    chapter.templateNumber
+  );
+  return (
+    <O4SheetHead
+      book={strings.bookHeading(book.name, book.number)}
+      bookCoverHex={coverColourHex(
+        resolveCoverKey({
+          id: book.bookId,
+          coverColourKey: book.coverColourKey ?? null,
+        })
+      )}
+      chapter={heading}
+    />
   );
 }
 
@@ -3280,18 +3462,19 @@ function dotStates(chapter: ChapterRow): SegmentRowState[] {
  * at any supported width (a wider column only ever wraps onto fewer rows).
  * The design reference's 206 is the column's cap (`.books-dots` max-width),
  * not a width a phone is guaranteed to give: at 360px the chain below leaves
- * 194.
+ * 166.
  *
  * 320 (the narrowest width this repo supports, `e2e/edit-history-cue.spec.ts`)
  * − 2 × 8 (`.app-shell`'s side padding, `--p-space-3`)
  * − 2 × (10 + 1) (`.books-card`'s padding and border)
  * − (12 + 16) (`.books-chapter`'s left and right padding)
  * − 44 (`.books-chapter-num`) − 2 × 14 (the row's two gaps)
- * − 44 (`.books-chapter-go`, the play control's slot, #1469) = 138. It was 154
- * while a 28px chevron held that slot. `tests/books-o4.test.ts` re-derives it
+ * − 72 (`.books-chapter-go`, the slot the play control and the row's ⋮
+ * share, #1469 and #1730) = 110. It was 154 while a 28px chevron held that
+ * slot, and 138 while play alone did. `tests/books-o4.test.ts` re-derives it
  * from the stylesheets.
  */
-const DOT_COLUMN = 138;
+const DOT_COLUMN = 110;
 /** Size/gap steps, largest first (the design reference, §3). */
 const DOT_STEPS: readonly (readonly [number, number])[] = [
   [13, 6],

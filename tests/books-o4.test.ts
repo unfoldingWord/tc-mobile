@@ -222,8 +222,8 @@ const NARROWEST_VIEWPORT = 320;
  * The dots' column on the narrowest supported phone, walked down the CSS
  * chain from the viewport: the shell's side padding (`.app-shell`), the
  * card's padding and border, the chapter row's own padding, the 44 badge,
- * the row's two gaps and the play control's slot (`.books-chapter-go`, which
- * took the chevron's place in #1469). The shelf's scroll box, the book list
+ * the row's two gaps and the end slot (`.books-chapter-go`, which took the
+ * chevron's place in #1469 and holds the row's ⋮ too since #1730). The shelf's scroll box, the book list
  * and the chapter list add no inline space (none sets a padding). Every term
  * is read from the stylesheets, so a change to any of them moves this number.
  */
@@ -432,10 +432,11 @@ describe("O4 Books list, state 03 (#942)", () => {
 
     const rows = all(".books-chapter");
     expect(rows).toHaveLength(26);
-    // 320 − 2×8 − 2×(10 + 1) − (12 + 16) − 44 − 2×14 − 44 = 138px. Pinned so
-    // a change anywhere in the chain is seen here, not only as a looser fit.
+    // 320 − 2×8 − 2×(10 + 1) − (12 + 16) − 44 − 2×14 − 72 = 110px: the end
+    // slot holds the play control and the row's ⋮ (#1730). Pinned so a change
+    // anywhere in the chain is seen here, not only as a looser fit.
     const column = narrowestDotColumn();
-    expect(column).toBe(138);
+    expect(column).toBe(110);
     const sizes = new Set<number>();
     for (const [i, row] of rows.entries()) {
       const { totalCount } = chapters[i]!;
@@ -477,10 +478,11 @@ describe("O4 Books list, state 03 (#942)", () => {
     const [eight, eleven, plain26, titled26, titled41] = all(".books-chapter");
     // Every row has the title line since #1219, so an unnamed chapter's dots
     // fit the same 19px a named one's do.
-    expect(dotGeometry(eight!)).toEqual({ size: 11, gap: 5 });
+    // At the 110px column the row's ⋮ leaves (#1730).
+    expect(dotGeometry(eight!)).toEqual({ size: 9, gap: 4 });
     expect(dotGeometry(eleven!)).toEqual({ size: 7, gap: 3 });
-    expect(dotGeometry(plain26!)).toEqual({ size: 7, gap: 3 });
-    expect(dotGeometry(titled26!)).toEqual({ size: 7, gap: 3 });
+    expect(dotGeometry(plain26!)).toEqual({ size: 5, gap: 2 });
+    expect(dotGeometry(titled26!)).toEqual({ size: 5, gap: 2 });
     expect(dotGeometry(titled41!)).toEqual({ size: 5, gap: 2 });
   });
 
@@ -520,8 +522,11 @@ describe("O4 Books list, state 03 (#942)", () => {
       // The play control follows its own row, a sibling after the row button
       // (#1469); a chapter with nothing recorded names why it is inert.
       strings.playChapter(strings.chapterName(1)),
+      // Then the row's ⋮ (#1730), named by the chapter's slot.
+      strings.chapterRowMenu(1),
       strings.openChapter("The sower"),
       strings.chapterNothingToPlay("The sower"),
+      strings.chapterRowMenu(2),
       strings.bookRow("Ruth", 0, false),
       strings.addChapter("Ruth"),
       strings.bookMenuOpen("Ruth"),

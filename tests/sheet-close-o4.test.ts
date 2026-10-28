@@ -179,7 +179,8 @@ describe("one ✕ closes every sheet (#1268 item 2)", () => {
     }
     expect(calls).toEqual({
       "components/about-panel.tsx": 1,
-      "components/books-screen.tsx": 4,
+      // The fifth is the chapter row's menu (#1730), closed by the ✕.
+      "components/books-screen.tsx": 5,
       "components/recorder-menu.tsx": 1,
       "components/segment-row.tsx": 1,
       "components/segments-screen.tsx": 1,

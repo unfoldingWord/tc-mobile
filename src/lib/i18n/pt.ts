@@ -238,6 +238,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "Redefinir segmento e começar de novo",
   rerecord: "Redefinir e gravar de novo",
   segmentMenu: (n: number): string => `Mais ações para o segmento ${n}`,
+  chapterRowMenu: (n: number): string => `Mais ações para o capítulo ${n}`,
   reorderLifted: (n: number): string => `Movendo o segmento ${n}.`,
   reorderMoved: (from: number, to: number): string =>
     `O segmento ${from} agora é o segmento ${to}.`,
