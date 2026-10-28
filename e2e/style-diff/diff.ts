@@ -98,9 +98,71 @@ const stateId = (test: CaptureTest, state: CaptureState) =>
 
 const isFailed = (test: CaptureTest) => test.status !== test.expectedStatus;
 
-/** A property an animation drove: the name itself, or a longhand of that shorthand. */
+const sides = ["top", "right", "bottom", "left"] as const;
+const corners = [
+  "top-left",
+  "top-right",
+  "bottom-right",
+  "bottom-left",
+] as const;
+
+/**
+ * The longhands of each shorthand an animation or transition may name. A
+ * name prefix is not a longhand: `border-radius` is not part of `border`,
+ * nor `transform-origin` of `transform`, nor `overflow-wrap` of `overflow`.
+ * A shorthand missing from this table excludes only its own name, so a gap
+ * here reports a change rather than hiding one.
+ */
+const LONGHANDS: Readonly<Record<string, readonly string[]>> = {
+  border: sides.flatMap((s) =>
+    ["width", "style", "color"].map((p) => `border-${s}-${p}`)
+  ),
+  ...Object.fromEntries(
+    sides.map((s) => [
+      `border-${s}`,
+      ["width", "style", "color"].map((p) => `border-${s}-${p}`),
+    ])
+  ),
+  ...Object.fromEntries(
+    ["width", "style", "color"].map((p) => [
+      `border-${p}`,
+      sides.map((s) => `border-${s}-${p}`),
+    ])
+  ),
+  "border-radius": corners.map((c) => `border-${c}-radius`),
+  margin: sides.map((s) => `margin-${s}`),
+  padding: sides.map((s) => `padding-${s}`),
+  inset: [...sides],
+  outline: ["outline-width", "outline-style", "outline-color"],
+  gap: ["row-gap", "column-gap"],
+  flex: ["flex-grow", "flex-shrink", "flex-basis"],
+  overflow: ["overflow-x", "overflow-y"],
+  background: [
+    "background-color",
+    "background-image",
+    "background-position",
+    "background-position-x",
+    "background-position-y",
+    "background-size",
+    "background-repeat",
+    "background-origin",
+    "background-clip",
+    "background-attachment",
+  ],
+  "background-position": ["background-position-x", "background-position-y"],
+  "text-decoration": [
+    "text-decoration-line",
+    "text-decoration-style",
+    "text-decoration-color",
+    "text-decoration-thickness",
+  ],
+};
+
+/** A property an animation drove: the name itself, or a listed longhand of that shorthand. */
 const drivenBy = (property: string, driven: readonly string[]) =>
-  driven.some((d) => property === d || property.startsWith(`${d}-`));
+  driven.some(
+    (d) => property === d || (LONGHANDS[d]?.includes(property) ?? false)
+  );
 
 export function diffRuns(
   a: CaptureRun,
@@ -157,8 +219,14 @@ export function diffRuns(
     const cacheKey = `${ha}|${hb}`;
     const hit = pairCache.get(cacheKey);
     if (hit) return hit;
-    const ma = renameMap(a.styles[ha] ?? {});
-    const mb = b.styles[hb] ?? {};
+    const sa = a.styles[ha];
+    const sb = b.styles[hb];
+    if (sa === undefined)
+      throw new Error(`run A names style ${ha}, which it did not load`);
+    if (sb === undefined)
+      throw new Error(`run B names style ${hb}, which it did not load`);
+    const ma = renameMap(sa);
+    const mb = sb;
     const props = new Set([...Object.keys(ma), ...Object.keys(mb)]);
     const changes: [string, string, string][] = [];
     for (const p of props) {

@@ -203,9 +203,50 @@ describe("diffRuns", () => {
     ).toEqual([["(element)", ABSENT, "present"]]);
   });
 
+  it("reports a property that only shares a driven name's prefix", () => {
+    const changed = {
+      "border-top-left-radius": ["1px", "2px"],
+      "flex-direction": ["row", "column"],
+      "overflow-wrap": ["normal", "anywhere"],
+      "transform-origin": ["0px 0px", "50px 50px"],
+    } as const;
+    const side = (i: 0 | 1) =>
+      Object.fromEntries(
+        Object.entries(changed).map(([p, v]) => [p, v[i]])
+      ) as StyleMap;
+    const animated = {
+      animated: {
+        [BOOKS_CARD]: ["border", "flex", "overflow", "transform"],
+      },
+    };
+    const a = run({ h1: { ...card, ...side(0) } }, [
+      test([state("001 p0 end", { [BOOKS_CARD]: "h1" }, animated)]),
+    ]);
+    const b = run({ h2: { ...card, ...side(1) } }, [
+      test([state("001 p0 end", { [BOOKS_CARD]: "h2" }, animated)]),
+    ]);
+    const report = diffRuns(a, b);
+    expect(report.differences.map((d) => d.property).sort()).toEqual(
+      Object.keys(changed).sort()
+    );
+    expect(report.animatedExcluded).toBe(0);
+  });
+
+  it("throws when a state names a style its run did not load", () => {
+    const a = run({ h1: card }, [
+      test([state("001 p0 end", { [BOOKS_CARD]: "h1" })]),
+    ]);
+    const b = run({ h1: card }, [
+      test([state("001 p0 end", { [BOOKS_CARD]: "missing" })]),
+    ]);
+    expect(() => diffRuns(a, b)).toThrow(
+      "run B names style missing, which it did not load"
+    );
+  });
+
   it("leaves out a property an animation drove in either run, longhands of a driven shorthand too, and counts it", () => {
     const a = run(
-      { h1: { ...card, opacity: "0.2", "border-top-left-radius": "1px" } },
+      { h1: { ...card, opacity: "0.2", "border-top-width": "1px" } },
       [
         test([
           state(
@@ -217,7 +258,7 @@ describe("diffRuns", () => {
       ]
     );
     const b = run(
-      { h2: { ...card, opacity: "0.7", "border-top-left-radius": "2px" } },
+      { h2: { ...card, opacity: "0.7", "border-top-width": "2px" } },
       [
         test([
           state(
