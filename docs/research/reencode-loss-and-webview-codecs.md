@@ -3,6 +3,10 @@
 **Status:** measurement and sourced facts for #355 (codec half of #1456). No
 decision is taken here. **Date:** 2026-10-26.
 
+Rows U6 to U8 of #355 (edit-friendly formats, encoder licences, storage
+arithmetic) are in
+[`edit-friendly-formats-and-encoders.md`](edit-friendly-formats-and-encoders.md).
+
 ## The question
 
 #355 asks how much a 64 kbps speech recording loses on each decode and
