@@ -221,6 +221,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "重置段落并重新开始",
   rerecord: "重置并重新录音",
   segmentMenu: (n: number): string => `第 ${n} 段的更多操作`,
+  chapterRowMenu: (n: number): string => `第 ${n} 章的更多操作`,
   reorderLifted: (n: number): string => `正在移动第 ${n} 段。`,
   reorderMoved: (from: number, to: number): string =>
     `第 ${from} 段现在是第 ${to} 段。`,

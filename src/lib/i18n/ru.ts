@@ -252,6 +252,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "Сбросить фрагмент и начать заново",
   rerecord: "Сбросить и записать снова",
   segmentMenu: (n: number): string => `Другие действия для фрагмента ${n}`,
+  chapterRowMenu: (n: number): string => `Другие действия для главы ${n}`,
   reorderLifted: (n: number): string => `Перемещение фрагмента ${n}.`,
   reorderMoved: (from: number, to: number): string =>
     `Фрагмент ${from} теперь фрагмент ${to}.`,

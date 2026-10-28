@@ -7,6 +7,12 @@ its body and empties it.
 
 ## Added
 
+- Each chapter row on the Books screen has a ⋮ menu with Move up and Move
+  down, to reorder a chapter without press-and-hold; each moves it one place
+  and is greyed on the first or last chapter. The ⋮ takes room on the row, so
+  a chapter's progress dots are drawn smaller. Not yet checked on a phone or
+  with a screen reader (#1730).
+
 ## Changed
 
 - While the Template Library reads its list, it says "Loading the templates."

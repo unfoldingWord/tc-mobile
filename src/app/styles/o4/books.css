@@ -219,21 +219,25 @@
     font-weight: var(--p-weight-heavy);
     color: var(--s-ink);
   }
-  /* The room the play control takes, in the row's own flow (#1469): the slot
-     the chevron held, now 44 wide. The control is not in it; it is laid over
-     it (.books-play below), so the row button stays one hit area with the
-     control a sibling. The dots' column is derived from this width
-     (DOT_COLUMN in books-screen.tsx), so it is the one place to change it. */
+  /* The room the play control and the row's ⋮ take, in the row's own flow:
+     the slot the chevron held, 44 wide for play (#1469), plus 28 for the ⋮
+     (#1730). Neither control is in it; both are laid over it (.books-play and
+     .books-more below), so the row button stays one hit area with the
+     controls its siblings. The ⋮'s 44px hit area is the slot's last 28 and
+     the row's 16 of end padding, so the ⋮ costs the dots 28px, not 44 + a
+     gap. The dots' column is derived from this width (DOT_COLUMN in
+     books-screen.tsx), so it is the one place to change it. */
   :root .books-chapter-go {
     display: block;
     flex: none;
-    width: 44px;
+    width: 72px;
     height: 44px;
   }
 
   /* --- the play control and its ring (#1469, Q8 pause-progress) ----------
-     Laid over the row's end slot: the row's padding-inline-end is 16, so the
-     control's inset is the same 16 and it covers exactly .books-chapter-go.
+     Laid over the start of the row's end slot: the ⋮ takes the row's last 44
+     (.books-more), so the play control's inset is 44 and it covers the
+     slot's first 44.
      Centred on the item, so a row grown by wrapped dots keeps it level.
      The fill is --play-progress (0..1), written by the control's frame loop
      while it plays and held by the markup otherwise. Colour is layer-2 roles
@@ -244,7 +248,7 @@
   }
   :root .books-play {
     position: absolute;
-    inset-inline-end: 16px;
+    inset-inline-end: 44px;
     inset-block-start: 50%;
     translate: 0 -50%;
     width: 44px;
@@ -281,6 +285,22 @@
     border-radius: var(--p-radius-full);
     background: transparent;
     color: var(--s-ink);
+  }
+
+  /* --- the row's ⋮ (#1730) ----------------------------------------------
+     Laid over the end of the row's end slot and its end padding, centred on
+     the item as the play control is. Muted ink, as the book row's own ⋮
+     (.books-ghost) wears. */
+  :root .books-more {
+    position: absolute;
+    inset-inline-end: 0;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--p-radius-12);
+    background: transparent;
+    color: var(--s-ink-muted);
   }
 
   /* --- press-and-hold reorder (#953, §3 lifted row, §4 reorder) ----------
