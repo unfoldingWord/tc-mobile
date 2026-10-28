@@ -214,15 +214,15 @@ export function call(table: Strings, name: string, args: unknown[]): string {
  * `table` with every function entry but `name` wrapped so the `plural()` forms
  * it records are dropped when it returns: an entry is checked for its own
  * forms, not for those of an entry it calls through `this`, which is checked
- * on its own row (or is still pending). `onDelegate` runs when a wrapped
- * callee did record a form, so a caller can tell "left the count to a callee"
- * from "never counted".
+ * on its own row (or is still pending). `onDelegate` gets the return of a
+ * wrapped callee that did record a form, so a caller can tell "left the count
+ * to a callee" (its sentence carries that return) from "never counted".
  */
 function isolate(
   table: Strings,
   name: string,
   recorded: Array<Record<string, string>>,
-  onDelegate: () => void = () => {}
+  onDelegate: (text: string) => void = () => {}
 ): Strings {
   const out: Record<string, unknown> = { ...table };
   for (const [key, value] of Object.entries(table)) {
@@ -230,10 +230,12 @@ function isolate(
     const fn = value as (...a: unknown[]) => unknown;
     out[key] = function (this: unknown, ...a: unknown[]): unknown {
       const mark = recorded.length;
+      let result: unknown;
       try {
-        return fn.apply(this, a);
+        result = fn.apply(this, a);
+        return result;
       } finally {
-        if (recorded.length > mark) onDelegate();
+        if (recorded.length > mark) onDelegate(String(result));
         recorded.length = mark;
       }
     };
@@ -299,8 +301,12 @@ export function pluralProblems(
     const missed = unparsed(tag, table, name);
     if (missed) problems.add(missed);
     if (!SIGNATURES.has(name)) continue;
-    let delegated = false;
-    const isolated = isolate(table, name, recorded, () => (delegated = true));
+    // A callee's counted text, which stands in for the caller's own plural()
+    // only when the caller's sentence carries it (George r1 #1756).
+    const counted: string[] = [];
+    const isolated = isolate(table, name, recorded, (text) =>
+      counted.push(text)
+    );
     const english = isolate(stringsEn, name, recorded);
     for (const n of COUNTS)
       for (const args of argVectors(name, n)) {
@@ -308,8 +314,9 @@ export function pluralProblems(
         call(english, name, args);
         const englishCounts = recorded.length > 0;
         recorded.length = 0;
-        delegated = false;
-        call(isolated, name, args);
+        counted.length = 0;
+        const out = call(isolated, name, args);
+        const delegated = counted.some((text) => out.includes(text));
         if (
           englishCounts &&
           needed.length > 1 &&

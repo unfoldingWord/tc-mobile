@@ -219,6 +219,26 @@ describe("the plural check, in both states", () => {
     ).toEqual([]);
   });
 
+  it("fails an entry that calls a counting entry and drops what it returns", () => {
+    // George r1 #1756: a callee's forms only stand in for the caller's when
+    // the caller's sentence carries the callee's text.
+    const fixture = {
+      ...complete(),
+      shareBookMissing(this: Strings, n: number): string {
+        void this.shareMissing(n);
+        return `${n} chapitres`;
+      },
+    } as Partial<Strings>;
+    expect(
+      pluralProblems(
+        "fr",
+        buildTable("fr", fixture),
+        ["shareBookMissing"],
+        recorded
+      )
+    ).toEqual(["fr: shareBookMissing counts with no plural()"]);
+  });
+
   it("passes a language with one category that counts with no plural()", () => {
     // zh-Hans has only "other": there is nothing for plural() to choose.
     const fixture = {
