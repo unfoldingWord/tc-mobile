@@ -143,7 +143,7 @@ test("always show chapter numbers: off keeps the name, on shows the number, and 
   await expect(page.locator(".books-chapter-title")).toHaveText("The sower");
 });
 
-test("even out the volume: on by default, off is stored as 0, and it survives a reload", async ({
+test("even out the volume: off by default, on is stored as 1, and it survives a reload", async ({
   page,
 }) => {
   const KEY = "tc-mobile.normalize-on-finished";
@@ -155,19 +155,19 @@ test("even out the volume: on by default, off is stored as 0, and it survives a 
 
   await page.goto("/");
   await gear(page).click();
-  await expect(row()).toHaveAttribute("aria-checked", "true");
+  await expect(row()).toHaveAttribute("aria-checked", "false");
   // Never written until the person chooses.
   expect(await stored()).toBeNull();
 
   await row().click();
-  await expect(row()).toHaveAttribute("aria-checked", "false");
-  expect(await stored()).toBe("0");
+  await expect(row()).toHaveAttribute("aria-checked", "true");
+  expect(await stored()).toBe("1");
 
   await page.reload();
   await gear(page).click();
-  await expect(row()).toHaveAttribute("aria-checked", "false");
+  await expect(row()).toHaveAttribute("aria-checked", "true");
 
   await row().click();
-  await expect(row()).toHaveAttribute("aria-checked", "true");
-  expect(await stored()).toBe("1");
+  await expect(row()).toHaveAttribute("aria-checked", "false");
+  expect(await stored()).toBe("0");
 });

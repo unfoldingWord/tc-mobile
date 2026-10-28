@@ -516,13 +516,15 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
   built in slices (#1506, #1550, #1561). Not run on a phone, and not run on
   iPhone, where audio start-up rules are the likeliest thing to differ.
   <!-- source: PR #1561 "play a whole chapter from its row (#1469)"; src/lib/strings.ts playChapter; AGENTS.md "Device testing" on iOS audio contexts -->
-- **Even out the volume when done.** Marking a segment Finished now evens out
-  its loudness before the MP3 is made. The Settings switch is named "Even out
-  the volume when done" and is on when nothing has been chosen. The label is
-  the developers' proposal and the requirements owner has not confirmed it.
-  A segment that was Finished before the upgrade, with its MP3 still owed, is
-  made from its original audio. Nobody has listened to the result on a phone.
-  <!-- source: PR #1679 (normalize on Finished, #1433, schema v14), PR #1685 (the switch); docs/progress_tracker.md 2026-10-23 to 10-24 "Completed" and "Not run" ("Normalization also owes a listening test") -->
+- **Even out the volume when done.** With this switch on, marking a segment
+  Finished evens out its loudness before the MP3 is made. The Settings switch
+  is named "Even out the volume when done" and is **off** when nothing has
+  been chosen. Once a segment is evened out, that cannot be undone for that
+  segment. The label is the developers' proposal and the requirements owner
+  has not confirmed it. A segment that was Finished before the upgrade, with
+  its MP3 still owed, is made from its original audio. Nobody has listened to
+  the result on a phone.
+  <!-- source: PR #1679 (normalize on Finished, #1433, schema v14), PR #1685 (the switch); PR #1746 comment 6474144416, DRI pick "Turn it off for 1.2 (Recommended)", src/lib/settings.ts readStoredNormalizeOnFinished; docs/progress_tracker.md 2026-10-23 to 10-24 "Completed" and "Not run" ("Normalization also owes a listening test") -->
 - **Export project.** The book's menu has a new "Export project" row below
   "Share book". It shares one zip in the Scripture Bundle format. This is
   export only: there is no import, so a project cannot be brought back in

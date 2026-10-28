@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { withEncoder } from "@/hooks/mp3-codec";
 import { NORMALIZE_STAGES, NO_STAGES_RUN } from "@/lib/audio/loudness";
+import {
+  NORMALIZE_ON_FINISHED_KEY,
+  storeNormalizeOnFinished,
+} from "@/lib/settings";
 import { addChapter, addSegment, createBook } from "@/lib/storage/books";
 import { getClipMeta, newClipId } from "@/lib/storage/clips";
 import { closeDb } from "@/lib/storage/db";
@@ -20,7 +24,8 @@ import type { ClipId } from "@/types/domain";
  * encoder stall, a full phone) is still PCM, so the first sweep after the
  * upgrade picks it up. It must be encoded as it was, never normalized:
  * "already-finished segments stay as they were". A segment Finished after
- * the upgrade still normalizes by default. Real storage end to end; only the
+ * the upgrade still normalizes with the preference on (it is off by default
+ * since PR #1746, so these cases store it on). Real storage end to end; only the
  * worker codec is faked, because it needs a browser.
  */
 
@@ -203,6 +208,14 @@ const SEEDS = [
 
 beforeEach(async () => {
   await wipe();
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) =>
+        key === NORMALIZE_ON_FINISHED_KEY
+          ? storeNormalizeOnFinished(true)
+          : null,
+    },
+  });
   encoded.length = 0;
   normalizePcm.mockClear();
   vi.mocked(withEncoder).mockImplementation(async (_signal, work) =>
@@ -217,7 +230,10 @@ beforeEach(async () => {
   );
 });
 
-afterEach(wipe);
+afterEach(async () => {
+  vi.unstubAllGlobals();
+  await wipe();
+});
 
 describe.each(SEEDS)(
   "normalize on Finished across the upgrade from v$from (#1433, U6c)",
@@ -226,7 +242,8 @@ describe.each(SEEDS)(
       const clipId = "old-clip";
       await seed(clipId);
 
-      // The preference is unset (no window here): normalization is on.
+      // The preference is stored on (beforeEach), so the skip is the
+      // pre-v14 guard's doing, not the off default's.
       await requestTranscodeSweep();
 
       expect(normalizePcm).not.toHaveBeenCalled();
