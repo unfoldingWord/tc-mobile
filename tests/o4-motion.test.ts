@@ -109,13 +109,7 @@ describe("o4/motion.css is read as a tree, not as a string (#950)", () => {
   });
 });
 
-describe("every O4 loop carries the :root prefix (#950)", () => {
-  it("opens every style rule, guards included, with :root", () => {
-    const all = [...styleRules, ...guardRules].flatMap(selectorsOf);
-    expect(all.length).toBeGreaterThanOrEqual(3);
-    for (const sel of all) expect(sel.startsWith(`${O4} `)).toBe(true);
-  });
-
+describe("every O4 loop (#950)", () => {
   it("runs only keyframes this file defines, and defines none it does not run", () => {
     const used = new Set(
       animated.map((b) => animationName(b.decls.get("animation")!))

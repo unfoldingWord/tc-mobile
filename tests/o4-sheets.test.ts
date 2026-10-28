@@ -93,14 +93,6 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     expect(count).toBeGreaterThanOrEqual(20);
   });
 
-  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
-    for (const { selectors } of RULES) {
-      for (const selector of selectors) {
-        expect(selector.startsWith(`${O4} `), selector).toBe(true);
-      }
-    }
-  });
-
   it("restyles only a panel that holds the name field, never every menu", () => {
     for (const { selectors } of RULES) {
       for (const selector of selectors) {

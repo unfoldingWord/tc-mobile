@@ -20,8 +20,7 @@ import { stripCssComments } from "./support";
  * (chapter with segments) and G10 (adding a segment).
  *
  * What this file does NOT cover: the cascade. It proves the markup the row
- * emits and that `o4/segments.css` holds `:root`-prefixed rules with the
- * issue's values;
+ * emits and that `o4/segments.css` holds rules with the issue's values;
  * whether those rules win on a real page is a browser question, and nothing
  * here has been run on a phone.
  */
@@ -263,14 +262,6 @@ describe("o4/segments.css (#944)", () => {
   it("holds its rules inside the components layer", () => {
     expect(layerOpen).toBeGreaterThanOrEqual(0);
     expect(rules.length).toBeGreaterThanOrEqual(10);
-  });
-
-  it("prefixes every selector with :root (o4/index.css's specificity hold)", () => {
-    for (const rule of rules) {
-      for (const sel of rule.selectors) {
-        expect(sel.startsWith(":root "), sel).toBe(true);
-      }
-    }
   });
 
   it("reads colour only through layer-2 roles", () => {

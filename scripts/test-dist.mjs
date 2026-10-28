@@ -28,6 +28,7 @@ const result = spawnSync(
     "tests/dist-stale-chunk.test.ts",
     "tests/precache-manifest.test.ts",
     "tests/build-target-floor.test.ts",
+    "tests/component-cascade.test.ts",
   ],
   { stdio: "inherit", env: process.env }
 );
