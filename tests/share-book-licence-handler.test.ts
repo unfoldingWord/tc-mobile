@@ -10,8 +10,14 @@ import { stripComments } from "./support";
  * chosen asks first and shares nothing from the tap; the share runs from the
  * ask only once the pick is stored, with the stored licence in the file name;
  * a cancel runs nothing. Read from source with comments stripped, as
- * `export-project-handler.test.ts` does: the screen is too large to render
- * here. The ask's hook is `use-licence-ask.test.ts`.
+ * `export-project-handler.test.ts` does. The ask's hook is
+ * `use-licence-ask.test.ts`.
+ *
+ * What a pick does is rendered, not read here: a source pattern cannot tell
+ * whether the save-only branch also shares, or whether its condition is the
+ * right one (#1707). `books-shelf-share-licence.test.ts` taps Share's own ask through
+ * the whole screen, including a pick whose stored licence differs from the
+ * row tapped; `books-licence-tile.test.ts` taps the save-only path.
  */
 const source = stripComments(
   readFileSync(path.join("src", "components", "books-screen.tsx"), "utf8")
@@ -38,14 +44,6 @@ describe("Share Book's licence ask", () => {
     );
     expect(body.indexOf("askLicence(")).toBeLessThan(
       body.indexOf("runBookShare(")
-    );
-  });
-
-  it("shares after the ask only once the pick is stored, with the stored licence", () => {
-    // The Licence tile's save-only branch (#1455) returns before the share;
-    // `books-licence-tile.test.ts` renders that path.
-    expect(callbackBody("onPickLicence")).toMatch(
-      /chooseLicence\(licence\)\.then\(\(book\) => \{\s*if \(!book\) return;[\s\S]*?return;\s*\}\s*runBookShare\(book\.licence\);/
     );
   });
 
