@@ -391,10 +391,11 @@ been measured on a device yet.
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). Each MP3 is named for the
-  book, then the chapter's number and name, such as "Jonah - 03 Jonah
-  runs.mp3", so a book's files sort in chapter order; a chapter with no name
-  of its own is "Jonah - 03 Chapter 3.mp3". A book with 100 chapters or more
-  uses three digits for all its files ("Psalms - 003 …"). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md; src/lib/strings.ts shareFilename (number and name, the requirements owner's R18 pick on gh issue #1233); not device-verified -->
+  book, then the chapter's place in the book and its name, such as "Jonah -
+  03 Jonah runs.mp3" for the third chapter, so a book's files sort in the
+  book's order, also after a chapter is moved; a chapter with no name of its
+  own is "Jonah - 03 Chapter 3.mp3". A book with 100 chapters or more uses
+  three digits for all its files ("Psalms - 003 …"). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md; src/lib/strings.ts shareFilename (number and name, the requirements owner's R18 pick on gh issue #1233); src/lib/chapter-slot.ts (the place in the book, the DRI's Q2 (a) on gh issue #1272); not device-verified -->
 - **Agree where to send recordings before the exercise.** The participant
   chooses an app or destination in the phone's share sheet. Check that chosen
   app to confirm the file arrived; tC Mobile does not keep a destination

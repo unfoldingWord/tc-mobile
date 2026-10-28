@@ -34,6 +34,7 @@ its body and empties it.
 - A long book, chapter or segment name is shown in full at the top of its menu, and the recorder's menu shows the full chapter name (#1617, #1673).
 - While a take is recording, the first tile in the recorder menu is Stop (#1513).
 - A chapter keeps its own number when it is moved, instead of taking its new position (#1634).
+- Shared chapter files and their track numbers follow the chapter's place in the book, so after a move a book's files still sort in the book's order; Export project records a template's own chapter number and none for a chapter you added (#1272).
 - The trim selection is its own blue, apart from the amber waveform (#1535).
 - Numbers and timers always use the digits 0 to 9, whatever the language (#1650).
 - If the microphone stops sending sound during a recording, for example when an alarm rings, the recorder stops and saves what it captured (#1511).
