@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
 import {
   cssRule,
   declarationValue,
@@ -104,7 +104,12 @@ describe("the chapter screen's crumb row is a control-sized target (#164 R-10)",
   // quiet control would make.
   it("takes its height from --c-control-md, not a literal or the 40px exception", () => {
     expect(declarationValue(body, "min-height")).toBe("var(--c-control-md)");
-    expect(body).not.toMatch(/--c-control-sm/);
+    // In any block of the file, not only the layer's own rule.
+    for (const [property, value] of selectorDeclarations(
+      "menus",
+      areaSelector("menus", ".o4-crumbs-bar")
+    ))
+      expect(`${property}: ${value}`).not.toMatch(/--c-control-sm/);
   });
 
   it("--c-control-md is still at or above the 44px floor the tokens claim", () => {

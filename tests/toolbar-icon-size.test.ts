@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -91,12 +91,19 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
   });
 
   it("adds no colour declaration to the glyph rules", () => {
+    // Every rule for each selector in the whole file, every nested block
+    // included, not only the layer's own.
     for (const selector of [
       sel(".recorder-toolbar .control svg"),
       sel(".recorder-toolbar.edit .control--quiet svg"),
     ]) {
-      const rule = cssRule(CSS, selector);
-      expect(rule, selector).not.toMatch(/color|fill|stroke|background/);
+      for (const [property, value] of selectorDeclarations(
+        "recorder",
+        selector
+      ))
+        expect(`${property}: ${value}`, selector).not.toMatch(
+          /color|fill|stroke|background/
+        );
     }
   });
 });

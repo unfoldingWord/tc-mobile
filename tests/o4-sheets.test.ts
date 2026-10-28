@@ -7,6 +7,7 @@ import {
   areaScope,
   areaSelector,
   declsFor,
+  fileRules,
   scopeDeclarations,
   scopeRules,
 } from "./o4-area-css";
@@ -39,8 +40,10 @@ const LAYER = areaScope("sheets");
 const REDUCED = areaScope("sheets", "@media (prefers-reduced-motion: reduce)");
 /** The layer's own rules, in source order. */
 const LAYER_RULES = scopeRules(LAYER);
-/** Every rule in both blocks, each with its declarations, for the sweeps. */
-const RULES = [...LAYER_RULES, ...scopeRules(REDUCED)].map((r) => ({
+/** Every rule in the whole file, every nested block included, each with its
+ *  declarations, for the sweeps: a ban that walked only the layer and its
+ *  reduced-motion block would pass a rule in any other block unread. */
+const RULES = fileRules("sheets").map((r) => ({
   selectors: r.selectors,
   declarations: new Map(scopeDeclarations(r.body)),
 }));

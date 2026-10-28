@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -674,7 +674,13 @@ describe("the trim selection has its own blue, --s-select (#1471)", () => {
     });
 
     it("none of the four rules reads the voice, guide or hear role", () => {
-      for (const rule of [band, stem, knob]) {
+      // The knob is an area rule: every rule for its selector in the whole
+      // of recorder.css is read, every nested block included.
+      const knobs = selectorDeclarations(
+        "recorder",
+        areaSelector("recorder", ".selection-handle::after")
+      ).map(([property, value]) => `${property}: ${value}`);
+      for (const rule of [band, stem, ...knobs]) {
         expect(stripCssComments(rule)).not.toMatch(
           /var\(--s-(?:voice|guide|hear)\b/
         );

@@ -120,6 +120,32 @@ export function fileRules(area: Area): ScopeRule[] {
   return out;
 }
 
+/**
+ * Every declaration, anywhere in `area`'s WHOLE file, of each rule whose
+ * selector list holds `selector` (whitespace collapsed). For a ban on one
+ * selector ("this rule sets no colour"): `areaRule` reads the one rule in one
+ * block, so the same selector given the banned declaration in a nested
+ * `@media` or `@supports` would pass it unread. Throws when no rule in the
+ * file holds `selector`, so a renamed selector fails instead of passing over
+ * nothing.
+ *
+ * The split this file keeps: a prohibition (a check that something is
+ * absent) walks the whole file, through this, `fileRules` or
+ * `scopeDeclarations(readAreaCss(area))`; only a positive pin of one named
+ * rule's value reads `areaRule` / `areaScope`.
+ */
+export function selectorDeclarations(
+  area: Area,
+  selector: string
+): [string, string][] {
+  const want = squash(selector);
+  const hits = fileRules(area).filter((r) => r.selectors.includes(want));
+  if (hits.length === 0) {
+    throw new Error(`selectorDeclarations: missing rule: ${want}`);
+  }
+  return hits.flatMap((r) => scopeDeclarations(r.body));
+}
+
 /** Every declaration in `scope` (a block's rules, or one rule's body) as
  *  `[property, value]`, the value's whitespace collapsed. For a sweep. */
 export function scopeDeclarations(scope: string): [string, string][] {

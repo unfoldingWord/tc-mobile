@@ -22,8 +22,10 @@ import {
   areaRule,
   areaScope,
   areaSelector,
+  readAreaCss,
   scopeDeclarations,
   scopeRules,
+  selectorDeclarations,
 } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
@@ -630,8 +632,9 @@ describe("o4/books.css (#942)", () => {
   // Read by selector, comments stripped (`areaScope`), so a header naming a
   // selector or a primitive can neither satisfy nor trip a check below
   // (AGENTS.md, the share-scrim trap).
+  // The positive pins read the layer's own rules; the bans below walk the
+  // whole file, every nested block included.
   const layer = areaScope("books");
-  const reduced = areaScope("books", "@media (prefers-reduced-motion: reduce)");
   const rules = scopeRules(layer);
   const sel = (selector: string) => areaSelector("books", selector);
 
@@ -646,11 +649,11 @@ describe("o4/books.css (#942)", () => {
   });
 
   it("reads colour only through layer-2 roles, and leaves the guide ring alone", () => {
-    // Every declaration in both blocks of the file, one string each.
-    const values = [
-      ...scopeDeclarations(layer),
-      ...scopeDeclarations(reduced),
-    ].map(([property, value]) => `${property}: ${value}`);
+    // Every declaration in the whole file, every block included, one string
+    // each.
+    const values = scopeDeclarations(readAreaCss("books")).map(
+      ([property, value]) => `${property}: ${value}`
+    );
     expect(values.length).toBeGreaterThanOrEqual(40);
     // Structural primitives (radius, type, space) are read directly, as
     // `3-components.css`'s header allows; any other `--p-*` is a colour
@@ -666,15 +669,17 @@ describe("o4/books.css (#942)", () => {
       expect(decl, decl).not.toMatch(/rgba?\(|hsla?\(/);
     }
     // `.is-guided` is an inset box-shadow; an O4 rule on a guided control's
-    // own selector that sets one would out-specify it and erase the ring.
+    // own selector that sets one would out-specify it and erase the ring —
+    // in the layer or in any block nested in the file.
     for (const selector of [
       sel(".books-card-hit"),
       sel(".books-chapter"),
       sel(".books-ghost"),
     ]) {
-      expect(() => block(selector, "box-shadow"), selector).toThrow(
-        "declarationValue: no box-shadow declaration"
+      const properties = selectorDeclarations("books", selector).map(
+        ([property]) => property
       );
+      expect(properties, selector).not.toContain("box-shadow");
     }
   });
 

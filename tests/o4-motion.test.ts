@@ -63,8 +63,17 @@ const TREE = postcss
 const LAYER = TREE.find((b) => b.prelude === "@layer components");
 const TOP = LAYER?.children ?? [];
 
+/** Every block in the file at any depth. The bans below ("every loop is
+ *  guarded", "every keyframe colours through a role", "no keyframe that
+ *  nothing runs") claim the file, so a loop or a keyframe in a nested
+ *  `@supports` must not pass them unread. */
+function descendants(blocks: readonly Block[]): Block[] {
+  return blocks.flatMap((b) => [b, ...descendants(b.children)]);
+}
+const EVERY = descendants(TREE);
+
 const keyframes = new Map(
-  TOP.filter((b) => b.prelude.startsWith("@keyframes ")).map((b) => [
+  EVERY.filter((b) => b.prelude.startsWith("@keyframes ")).map((b) => [
     b.prelude.slice("@keyframes ".length),
     b,
   ])
@@ -72,8 +81,9 @@ const keyframes = new Map(
 /** Style rules outside any at-rule. */
 const styleRules = TOP.filter((b) => !b.prelude.startsWith("@"));
 const selectorsOf = (b: Block) => b.prelude.split(",").map(squash);
-/** The rules that start an animation (anything but `animation: none`). */
-const animated = styleRules.filter((b) => {
+/** The rules that start an animation (anything but `animation: none`), at
+ *  any depth in the file. */
+const animated = EVERY.filter((b) => !b.prelude.startsWith("@")).filter((b) => {
   const a = b.decls.get("animation");
   return a !== undefined && a !== "none";
 });

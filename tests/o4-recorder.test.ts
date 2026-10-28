@@ -15,6 +15,7 @@ import {
   readAreaCss,
   scopeDeclarations,
   scopeRules,
+  selectorDeclarations,
 } from "./o4-area-css";
 import { render } from "./render";
 import {
@@ -98,7 +99,13 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
       sel('.recorder-stage[data-o4-look="recording"]::after')
     );
     expect(edge).toMatch(/box-shadow:\s*inset 0 0 0 2px var\(--s-live\)/);
-    expect(edge).not.toMatch(/animation/);
+    // No loop on the edge in any block of this file.
+    const properties = selectorDeclarations(
+      "recorder",
+      sel('.recorder-stage[data-o4-look="recording"]::after')
+    ).map(([property]) => property);
+    for (const property of properties)
+      expect(property).not.toMatch(/animation/);
   });
 
   it("09 recording: timer at 32/800 with tabular numerals", () => {
@@ -149,9 +156,15 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     const knob = cssRule(CSS, sel(".selection-handle::after"));
     expect(knob).toMatch(/(?:^|;)\s*bottom:\s*0(?:px)?\s*;/);
     // The vertical-middle rule this replaces, named so a partial revert (only
-    // one of the two declarations restored) still fails.
-    expect(knob).not.toMatch(/(?:^|;)\s*top:\s*50%/);
-    expect(knob).not.toMatch(/margin-top:\s*-28px/);
+    // one of the two declarations restored) still fails, in any block of the
+    // file.
+    for (const [property, value] of selectorDeclarations(
+      "recorder",
+      sel(".selection-handle::after")
+    )) {
+      expect(`${property}: ${value}`).not.toMatch(/^top:\s*50%/);
+      expect(`${property}: ${value}`).not.toMatch(/^margin-top:\s*-28px/);
+    }
   });
 
   it("12 editing: the Cut row spans the canvas width, so its percentage lines up with the waveform (#1102)", () => {
@@ -227,10 +240,14 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
         ".recorder-toolbar.pair .control:not(.control--record):not(.control--play)"
       ),
       sel(".recorder-toolbar.edit .control"),
-    ])
-      expect(() => declarationValue(cssRule(CSS, selector), "color")).toThrow(
-        "declarationValue: no color declaration"
+    ]) {
+      // Every rule for the selector in the whole file, every nested block
+      // included, not only the layer's own.
+      const properties = selectorDeclarations("recorder", selector).map(
+        ([property]) => property
       );
+      expect(properties, selector).not.toContain("color");
+    }
   });
 
   it("leaves the greyed-control rules alone (#857/#878): no opacity or filter here", () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
 import { strings } from "@/lib/strings";
-import { areaRule, areaScope, areaSelector, scopeRules } from "./o4-area-css";
+import { areaRule, areaScope, areaSelector, fileRules } from "./o4-area-css";
 import { declarationValue } from "./support";
 import { one, render } from "./render";
 
@@ -93,7 +93,6 @@ describe("O4BookDeleteAsk markup (#980)", () => {
 
 describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
   const books = areaScope("books");
-  const reduced = areaScope("books", "@media (prefers-reduced-motion: reduce)");
   const sel = (selector: string) => areaSelector("books", selector);
   const value = (scope: string, selector: string, property: string) =>
     declarationValue(areaRule(scope, selector), property);
@@ -124,8 +123,8 @@ describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
   it("adds no second copy of the menu sheets' head rules (#980)", () => {
     // The head is o4/menus.css's `o4-sheet-head`, which also hides the
     // sheet's own title while it is in the panel. books.css must not restate
-    // either rule under a Books-only name, in either of its blocks.
-    const rules = [...scopeRules(books), ...scopeRules(reduced)];
+    // either rule under a Books-only name, in any block of the file.
+    const rules = fileRules("books");
     expect(rules.length).toBeGreaterThanOrEqual(12);
     for (const r of rules) {
       for (const selector of r.selectors) {

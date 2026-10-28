@@ -6,9 +6,9 @@ import {
   areaScope,
   areaSelector,
   declsFor,
+  fileRules,
   readAreaCss,
   scopeDeclarations,
-  scopeRules,
 } from "./o4-area-css";
 
 /**
@@ -23,8 +23,7 @@ import {
  * built bundle; the device check is #974).
  */
 
-/** The layer's own rules, and the one block that turns smooth scrolling on. */
-const LAYER = areaScope("share");
+/** The one block that turns smooth scrolling on. */
 const SMOOTH = areaScope(
   "share",
   "@media (prefers-reduced-motion: no-preference)"
@@ -35,11 +34,14 @@ interface Rule {
   readonly decls: ReadonlyMap<string, string>;
 }
 
-/** Every rule in both blocks, each read by its selector list and its
- *  declarations (`scopeRules`, comments stripped). */
-const RULES: Rule[] = [...scopeRules(LAYER), ...scopeRules(SMOOTH)].map(
-  (r) => ({ selectors: r.selectors, decls: new Map(scopeDeclarations(r.body)) })
-);
+/** Every rule in the whole file, every nested block included, each read by
+ *  its selector list and its declarations (`fileRules`, comments stripped).
+ *  The bans below ("no rule names a waiting chip", "nothing else a ring")
+ *  claim the file, so they cannot stop at the layer and one named block. */
+const RULES: Rule[] = fileRules("share").map((r) => ({
+  selectors: r.selectors,
+  decls: new Map(scopeDeclarations(r.body)),
+}));
 
 /** The value `prop` gets from the rule naming exactly `selector`, if any. */
 function valueFor(selector: string, prop: string): string | undefined {

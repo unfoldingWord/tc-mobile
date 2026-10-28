@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
@@ -29,6 +29,15 @@ function declared(selector: string, property: string): string | null {
   }
 }
 
+/** Every value `selector` gets for `property` anywhere in books.css, every
+ *  nested block included: a fixed height in a nested `@media` or `@supports`
+ *  would cap the row as surely as one in the layer. */
+function declaredAnywhere(selector: string, property: string): string[] {
+  return selectorDeclarations("books", selector)
+    .filter(([p]) => p === property)
+    .map(([, value]) => value);
+}
+
 describe("the O4 chapter row's room for its dots (#1229)", () => {
   it("never lets the dots shrink the title line", () => {
     expect(declared(sel(".books-chapter-title"), "flex")).toBe("none");
@@ -37,15 +46,17 @@ describe("the O4 chapter row's room for its dots (#1229)", () => {
 
   it("gives the middle column a 44px floor, not a fixed height", () => {
     expect(declared(sel(".books-chapter-mid"), "min-height")).toBe("44px");
-    expect(declared(sel(".books-chapter-mid"), "height")).toBeNull();
-    expect(declared(sel(".books-chapter-mid"), "max-height")).toBeNull();
+    expect(declaredAnywhere(sel(".books-chapter-mid"), "height")).toEqual([]);
+    expect(declaredAnywhere(sel(".books-chapter-mid"), "max-height")).toEqual(
+      []
+    );
   });
 
   it("gives the row the design's 68px as a floor, 12 + 44 + 12, and lets it grow", () => {
     const row = sel(".books-chapter");
     expect(declared(row, "min-height")).toBe("68px");
-    expect(declared(row, "height")).toBeNull();
-    expect(declared(row, "max-height")).toBeNull();
+    expect(declaredAnywhere(row, "height")).toEqual([]);
+    expect(declaredAnywhere(row, "max-height")).toEqual([]);
     // `padding-block` is one value: the same top and bottom (#1552 split the
     // old four-value `padding` into block and inline).
     const block = parseFloat(declared(row, "padding-block")!);

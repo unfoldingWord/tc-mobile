@@ -9,6 +9,7 @@ import {
   areaRule,
   areaScope,
   areaSelector,
+  fileRules,
   readAreaCss,
   scopeDeclarations,
   scopeRules,
@@ -185,7 +186,9 @@ async function mountConfirmWithPreview() {
 }
 
 describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946, #979)", () => {
-  const selectors = RULES.flatMap((r) => r.selectors);
+  // Every selector in the whole file, every nested block included: "no
+  // selector matches nothing" is a ban, so it cannot stop at the layer.
+  const selectors = fileRules("dialogs").flatMap((r) => r.selectors);
   const isPreview = (s: string) => s.includes(".confirm-preview");
   const isRecord = (s: string) => s.includes(".confirm-panel-record");
 

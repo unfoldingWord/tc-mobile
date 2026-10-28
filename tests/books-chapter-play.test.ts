@@ -11,7 +11,12 @@ import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
 import { idleChapterAudio } from "./chapter-audio";
-import { areaScope, areaSelector, scopeRules } from "./o4-area-css";
+import {
+  areaScope,
+  areaSelector,
+  fileRules,
+  selectorDeclarations,
+} from "./o4-area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
@@ -525,14 +530,11 @@ describe("the stylesheet's promises (#1469)", () => {
   });
 
   it("keeps the guide, hear and primitive colours out of the control's rules", () => {
-    // Both blocks of the file: the layer's own rules and the reduced-motion
-    // block, so a colour moved into the second is still read.
-    const rules = [
-      css,
-      areaScope("books", "@media (prefers-reduced-motion: reduce)"),
-    ]
-      .flatMap(scopeRules)
-      .filter((r) => r.selectors.some((s) => s.includes(".books-play")));
+    // Every rule in the whole file, every nested block included, so a colour
+    // moved into any of them is still read.
+    const rules = fileRules("books").filter((r) =>
+      r.selectors.some((s) => s.includes(".books-play"))
+    );
     expect(rules.length).toBeGreaterThanOrEqual(4);
     for (const { body } of rules) {
       expect(body).not.toMatch(
@@ -547,6 +549,8 @@ describe("the stylesheet's promises (#1469)", () => {
     expect(declarationValue(box, "width")).toBe("44px");
     expect(declarationValue(box, "height")).toBe("44px");
     expect(declarationValue(box, "position")).toBe("absolute");
-    expect(box).not.toMatch(/\b(left|right)\s*:/);
+    // No physical side on the control, in any block of the file.
+    for (const [property] of selectorDeclarations("books", sel(".books-play")))
+      expect(property).not.toMatch(/\b(left|right)$/);
   });
 });

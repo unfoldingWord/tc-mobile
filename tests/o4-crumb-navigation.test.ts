@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
 import { strings } from "@/lib/strings";
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
 import { render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -182,6 +182,12 @@ describe("o4/menus.css, a linked crumb's hit area (#1269)", () => {
     );
     const first = cssRule(css, sel(".o4-crumb:first-child"));
     expect(declarationValue(first, "--o4-crumb-shape")).toMatch(/^polygon\(/);
-    expect(() => declarationValue(first, "clip-path")).toThrow();
+    // The first chip takes its shape only through the property, in any block
+    // of the file.
+    const firstProperties = selectorDeclarations(
+      "menus",
+      sel(".o4-crumb:first-child")
+    ).map(([property]) => property);
+    expect(firstProperties).not.toContain("clip-path");
   });
 });

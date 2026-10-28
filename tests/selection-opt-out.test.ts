@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope, areaSelector, fileRules } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -123,15 +123,32 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
     // moved somewhere this opt-out would now silently swallow.
     for (const [css, selector] of [
       [componentsCss, ".row"],
-      [menusO4Css, CRUMBS_BAR],
       [componentsCss, ".share-scrim"],
-      [booksO4Css, BOOKS_CARD],
     ] as const) {
       const body =
         selector === ".row" ? rowRuleBody(css) : cssRule(css, selector);
       expect(body, `${selector} unexpectedly declares .name-input`).not.toMatch(
         /name-input/
       );
+    }
+    // The two O4 roots: every rule for the selector in the whole area file,
+    // every nested block included, not only the layer's own.
+    for (const [area, selector] of [
+      ["menus", CRUMBS_BAR],
+      ["books", BOOKS_CARD],
+    ] as const) {
+      const bodies = fileRules(area)
+        .filter((r) => r.selectors.includes(selector))
+        .map((r) => r.body);
+      expect(
+        bodies.length,
+        `${selector}: no rule in ${area}.css`
+      ).toBeGreaterThanOrEqual(1);
+      for (const body of bodies)
+        expect(
+          body,
+          `${selector} unexpectedly declares .name-input`
+        ).not.toMatch(/name-input/);
     }
   });
 });
