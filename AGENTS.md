@@ -437,9 +437,11 @@ mic stream is released `"recorder-release-track"` #479, and a take sealed and
 saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
 the one durable record that a take was cut, so it goes out with the report
 and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
-#1076: "Log it, don't light ≡ (Recommended)"), and a take sealed and saved
-because the level tap read exact silence on a moving clock with no track
-or recorder event `"recorder-capture-stalled"` #1294 — the alarm case,
+#1076: "Log it, don't light ≡ (Recommended)"), and a take sealed because
+the level tap read exact silence on a moving clock with no track or recorder
+event `"recorder-capture-stalled"` #1294 — written at the seal, before the
+recorder sheet's commit saves the take, so a save that then fails has its own
+`"save-take"` row; the alarm case,
 requirements owner on R13: "A visible “recording stopped” state that saves
 what was captured"; this one does light ≡), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
@@ -493,7 +495,9 @@ drop still runs), a take Play's own in-tap `resumeAudioContext()` rejection
 (`hooks/use-audio-session.ts`, `"playback-tap-resume"`, #1559), the same in-tap
 resume on a buffer Play (`"playback-buffer-tap-resume"`) and on sheet open
 (`"sheet-open-resume"`) — both logged but **not** lighting the Books `≡` marker
-(the DRI's pick on #1692, "Log only, no ≡ (Recommended)": a routine iOS event;
+(the DRI's pick, verbatim, "Log only, no ≡ (Recommended)",
+<https://github.com/unfoldingWord/tc-mobile/pull/1692#issuecomment-6421765458>:
+a routine iOS event;
 `RESUME_FAILURES_LIGHT_MARKER` in `lib/failure-marker.ts`) —
 `startRecording`'s catch (`"recorder-start"`, which does light it), a share
 whose send failed (`hooks/share-flow.ts`, `"share-send"`), the recorder
@@ -554,7 +558,7 @@ names the DOMException), the level meter failing to open
 (`"recorder-decode-retry-resume"`). The last three keep their existing
 `console.error` beside the row; the start row logs only through
 `reportFailure`'s own console line. Which of them light ≡ is
-`lib/failure-marker.ts`'s, on the #1692 rule: the refusal and the two
+`lib/failure-marker.ts`'s, on the in-tap resume pick's rule above: the refusal and the two
 resumes are logged only; `"recorder-mic-start"` and `"recorder-tap-open"`
 light it. What is still **never written down** is the recorder sheet's own
 Stop notice (`captureFailureText` in `components/recorder.tsx`), which calls
