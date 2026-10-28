@@ -252,10 +252,16 @@ freeze note on every new PR to `develop`.
    own issue, reviewed by both uwreview lenses. The DRI merges it, pinned to
    its reviewed head (`--match-head-commit`).
 2. **Bump.** Merge every picked fix first. Then open a
-   `chore(release): v1.0.0-rc.N` PR on `develop` that changes only
+   `chore(release): v1.0.0-rc.N` PR on `develop`. It changes
    `package.json` and `package-lock.json`, made with
-   `npm version 1.0.0-rc.N --no-git-tag-version`. Its body lists every PR
-   carried, what a tester will see, and "not in this build". It states that
+   `npm version 1.0.0-rc.N --no-git-tag-version`; it raises iOS
+   `MARKETING_VERSION` (both configurations in
+   `ios/App/App.xcodeproj/project.pbxproj`) to the release being shipped
+   when that is a new user-facing version (`1.1` for v1.1.0, `1.2` for
+   v1.2.0); and it moves the `RELEASE_NOTES_UNRELEASED.md` block into its
+   body and empties the file back to its header and headings, as that
+   file's header says. Its body lists every PR carried, what a tester will
+   see, and "not in this build". It states that
    nothing under `src/lib/storage/` changed since the last RC's cut commit,
    or names the migration if something did. Check that
    `closingIssuesReferences` is `[]`. The DRI merges it by squash. That squash
