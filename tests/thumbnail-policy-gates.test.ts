@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -11,8 +12,10 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 /**
- * #783: the Android lane, the iOS lane and ci.yml check emitted OBS thumbnails
+ * #783: the Android APK and Play lanes, the iOS lane and ci.yml check emitted OBS thumbnails
  * against the reader-gated jpg policy (the iOS lane's own cases are also in
  * `ios-workflow-gates.test.ts`). Each gate is run as the workflow runs it,
  * in both states the policy allows and both it refuses.
@@ -61,13 +64,35 @@ const disagree =
 const decoy = `// ${current}\n${restored}`;
 const ambiguous = "More than one globPatterns array in vite.config.ts";
 
-describe.each([
+const GATES: ReadonlyArray<readonly [string, string]> = [
   ["android-apk.yml", STEP],
+  // #1750: the Play lane was left out of this table, kept #177's
+  // unconditional grep, and failed v1.2.0's Play run once #1655 restored jpg.
+  ["android-play.yml", STEP],
   ["ci.yml", CI_STEP],
   // #1674 (the twin #783 left): the iOS lane read the first match, so a
   // commented decoy above the live array failed open there.
   ["ios-testflight.yml", IOS_STEP],
-])("%s thumbnail gate", (file, name) => {
+];
+
+// #1750: a workflow that reads dist/sw.js for the thumbnails is a gate, and a
+// gate missing from GATES above is one nobody runs in both states. Every
+// workflow that names obs/thumbs must be in the table.
+it("every workflow that checks obs/thumbs is in the gate table", () => {
+  const dir = new URL("../.github/workflows/", import.meta.url);
+  const checking = readdirSync(dir)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .filter((f) =>
+      stripYamlComments(readFileSync(new URL(f, dir), "utf8")).includes(
+        "obs/thumbs"
+      )
+    )
+    .sort();
+  expect(checking.length).toBeGreaterThan(0);
+  expect(checking).toEqual(GATES.map(([file]) => file).sort());
+});
+
+describe.each(GATES)("%s thumbnail gate", (file, name) => {
   it.each([
     {
       label: "jpg configured, thumbnails emitted",

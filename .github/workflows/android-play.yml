@@ -277,15 +277,39 @@ jobs:
       # "pass" against it forever regardless of vite.config.ts's globPatterns
       # — silently stop being a real gate. The OBS thumbnails must not be in
       # the service-worker precache (ADR 0006 / #177) — ~598 files stalling
-      # the first native launch. Mirrors android-apk.yml's identical step.
+      # the first native launch. Mirrors android-apk.yml's identical step: the
+      # emitted thumbnails are checked against the reader-gated jpg policy
+      # (#783). A reader landed with the Template Library (#246, #1655), so
+      # `jpg` is configured and the thumbnails must be emitted; either one
+      # without the other fails. This lane kept the old unconditional grep
+      # until v1.2.1, and v1.2.0's Play run failed on it (#1750).
       - name: OBS thumbnails stay out of the precache (web build; ADR 0006 / #177)
         if: ${{ inputs.build_only || steps.guard.outputs.upload == 'true' }}
         run: |
           set -euo pipefail
-          if grep -q "obs/thumbs" dist/sw.js; then
-            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
-            exit 1
-          fi
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const config = readFileSync('vite.config.ts', 'utf8');
+          // The raw file is read, comments and all, so a commented-out array
+          // could be taken for the live one (#822). Refuse to choose instead.
+          const found = [...config.matchAll(/globPatterns:\s*\[([^\]]*)\]/g)];
+          if (found.length > 1) {
+            console.error('::error::More than one globPatterns array in vite.config.ts (a commented-out copy?); this gate cannot tell which is live');
+            process.exit(1);
+          }
+          const body = found[0]?.[1];
+          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
+          if (patterns.length === 0) {
+            console.error('::error::No globPatterns found in vite.config.ts');
+            process.exit(1);
+          }
+          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
+          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
+          if (thumbnailsEmitted !== jpgConfigured) {
+            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            process.exit(1);
+          }
+          NODE
 
       # #923: the web build above validates the PWA's own artifacts, but what
       # actually ships inside the native shell — including a Play .aab — must
