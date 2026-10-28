@@ -71,7 +71,11 @@ export interface TemplateSegment {
 }
 
 export interface TemplateChapter {
-  /** Stable across versions of one package id; unique within the package. */
+  /**
+   * Stable across versions of one package id; unique among the package's
+   * chapter keys. Segment keys are a separate namespace, so a chapter key may
+   * equal a segment key.
+   */
   readonly key: string;
   /**
    * The real number of this chapter, always present (R7): a template gives
@@ -95,8 +99,8 @@ export interface TemplatePackage {
   readonly title: LocalizedText;
   /** Every language a title table may cover. */
   readonly titleLanguages: readonly string[];
-  /** Licence of the package data itself. */
-  readonly dataLicence: string;
+  /** Licence of the package data itself; the validator refuses any other id. */
+  readonly dataLicence: LicenceId;
   /** D5: recordings made from a template are CC BY-SA 4.0; v0 admits only this. */
   readonly recordingLicence: "CC-BY-SA-4.0";
   /** Must travel with any display or export. */
