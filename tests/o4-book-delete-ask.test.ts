@@ -106,8 +106,9 @@ describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
   it("has one rule for each new class, and each matches the rendered ask", () => {
     const root = ask();
     for (const selector of added) {
-      // `areaRule` throws on a missing, doubled or empty rule.
-      expect(areaRule(books, sel(selector)), selector).not.toBe("");
+      // `areaRule` throws on a missing, doubled or empty rule, so reading it
+      // is the check.
+      areaRule(books, sel(selector));
       expect(root.querySelector(selector), selector).not.toBeNull();
     }
   });
