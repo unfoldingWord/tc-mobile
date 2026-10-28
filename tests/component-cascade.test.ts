@@ -108,7 +108,10 @@ function byKey(rules: readonly SourceRule[]): Map<string, SourceRule> {
     map.set(
       rule.key,
       seen
-        ? { ...seen, declarations: [...seen.declarations, ...rule.declarations] }
+        ? {
+            ...seen,
+            declarations: [...seen.declarations, ...rule.declarations],
+          }
         : rule
     );
   }
