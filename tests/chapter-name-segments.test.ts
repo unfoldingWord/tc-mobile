@@ -282,4 +282,26 @@ describe("Share Chapter's MP3 name (#1218)", () => {
     // The number first is the slot (Q2 (a)); the label is the title.
     expect(templated(3, 4)).toBe("Mark - 03 Chapter 7.mp3");
   });
+
+  it("labels an unnamed chapter by the slot the hook hands over, not the slot this view loaded with (#1272)", async () => {
+    // The view loaded at slot 3; by the time the file is named another copy of
+    // the app has moved the chapter to slot 2, which is what the hook reads.
+    await mount();
+    await click(strings.chapterMenuOpen);
+    await click(strings.shareChapter);
+    const nameFile = mocks.prepare.mock.calls[0]![1];
+    expect(nameFile(2, 4)).toBe("Mark - 02 Chapter 2.mp3");
+
+    // A template chapter's title keeps the template's number wherever it is.
+    await act(async () => root.unmount());
+    root = createRoot(document.getElementById("root")!);
+    layers.clear();
+    mocks.prepare.mockClear();
+    mocks.templateNumber = 7;
+    await mount();
+    await click(strings.chapterMenuOpen);
+    await click(strings.shareChapter);
+    const templated = mocks.prepare.mock.calls[0]![1];
+    expect(templated(2, 4)).toBe("Mark - 02 Chapter 7.mp3");
+  });
 });

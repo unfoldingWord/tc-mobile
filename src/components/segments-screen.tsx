@@ -773,8 +773,12 @@ export const SegmentsScreen = forwardRef<
           strings.shareFilename(
             bookName,
             slot,
-            // An unnamed chapter's file reads its title (#1272, Q1 (b)).
-            strings.chapterHeading(chapterName, titleNumber),
+            // An unnamed chapter's file reads its title (#1272, Q1 (b)), from
+            // the slot the hook just read, not the one this view loaded with.
+            strings.chapterHeading(
+              chapterName,
+              headingNumber(slot, chapterTemplateNumber, false)
+            ),
             chapterCount,
             shareLicence
           )
@@ -784,7 +788,14 @@ export const SegmentsScreen = forwardRef<
             onCloseChapterMenu();
         });
     },
-    [share, chapterId, bookName, chapterName, titleNumber, onCloseChapterMenu]
+    [
+      share,
+      chapterId,
+      bookName,
+      chapterName,
+      chapterTemplateNumber,
+      onCloseChapterMenu,
+    ]
   );
   // No licence chosen: the tap asks first (#1455). While the book's id is
   // still being read (a window shorter than the chapter view's own load,
