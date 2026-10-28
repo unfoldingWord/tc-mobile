@@ -80,7 +80,8 @@ export function useChapterPlayAnnouncement(
           .find((c) => c.chapterId === subject);
   const heading = useChapterHeading(
     chapter?.name ?? null,
-    chapter?.number ?? 0
+    chapter?.number ?? 0,
+    chapter?.templateNumber ?? null
   );
   if (play !== seen) {
     setSeen(play);

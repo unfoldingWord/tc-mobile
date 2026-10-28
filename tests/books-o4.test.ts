@@ -91,6 +91,7 @@ function chapter(
   return {
     chapterId: chapterId(b, n),
     number: n,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 0,
@@ -305,6 +306,38 @@ describe("O4 Books list, state 03 (#942)", () => {
     expect(markCover!.closest("button")).toBe(
       button(strings.bookRow("Mark", 0, false))
     );
+  });
+
+  it("badges read the slot, and an unnamed template chapter's title keeps the template's number (#1272 B, Q1 (b))", async () => {
+    await mount([
+      {
+        bookId: bookId(1),
+        name: "Mark",
+        number: 1,
+        coverColourKey: null,
+        chapters: [
+          chapter(1, 1),
+          chapter(1, 2, { name: "The sower" }),
+          chapter(1, 3, { templateNumber: 7 }),
+          chapter(1, 4),
+        ],
+      },
+    ]);
+    await act(async () => button(strings.bookRow("Mark", 4, false)).click());
+
+    const badges = all(".books-chapter-num").map((el) => el.textContent);
+    expect(badges).toEqual(["1", "2", "3", "4"]);
+    const titles = all(".books-chapter-title").map((el) => el.textContent);
+    expect(titles).toEqual([
+      strings.chapterName(1),
+      "The sower",
+      strings.chapterName(7),
+      strings.chapterName(4),
+    ]);
+    // The row's spoken name is the same title, so the badge and the name
+    // can differ for a template chapter: slot 3, "Chapter 7".
+    const templated = button(strings.openChapter(strings.chapterName(7)));
+    expect(only(".books-chapter-num", templated).textContent).toBe("3");
   });
 
   it("gives a chapter row a 44 badge, the play control's room, and a title line with its name, the default when it has none (#1219)", async () => {

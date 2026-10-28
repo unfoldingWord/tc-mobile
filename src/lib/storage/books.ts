@@ -806,8 +806,9 @@ export function nextChapterNumber(existingNumbers: Iterable<number>): number {
  * `null` when blank or whitespace-only. `null` is also what an untouched prompt
  * writes, because the screen sends `""` rather than the "Chapter N" string it
  * displayed — so a one-tap create stores nothing new and the row goes on
- * showing the ordinal this transaction derived, which is the right number even
- * when another copy of the app moved it after the prompt rendered. Unlike
+ * showing its slot (#1272 B), which is the right number even when another
+ * copy of the app added a chapter after the prompt rendered. The `number`
+ * written here is not shown for a chapter added by hand. Unlike
  * `createBook`'s blank fallback there is nothing to derive here and so no race
  * to be safe from: the default is an absence, not a name.
  */
@@ -943,15 +944,15 @@ export async function renameChapter(
  * The rules, and why:
  *
  *   - **ONE readwrite transaction** over `books` and `chapters`, get-then-put,
- *     aborted on a thrown error (the `deleteBook` guard) — the array and the
- *     numbers commit together or not at all. A crash between the two would
- *     leave badges and export file names that disagree with the order.
- *   - **No renumbering** (#1272, owner answer U2a, 2026-10-21: "The chapter's
- *     own number (22 if someone typed 22)", not "Its place in the list (1, 2,
- *     3)"). A chapter keeps the `number` the template gave or a person typed;
- *     only `book.chapterIds` changes, so no chapter row is written. This
- *     replaces #953's dense renumbering (its scope Q1). A dangling id has no
- *     record, and export still counts it as missing.
+ *     aborted on a thrown error (the `deleteBook` guard) — the new order
+ *     commits whole or not at all.
+ *   - **No chapter row is written** (#1272). Only `book.chapterIds`
+ *     changes. Every screen numbers a chapter by its slot (the requirements
+ *     owner's answer B, "the fifth chapter slot is always 5",
+ *     `lib/chapter-slot.ts`), so a moved chapter takes its new slot's number
+ *     without a write, and the stored `number` stays the template's (the
+ *     DRI's S1: no schema change). A dangling id has no record, and export
+ *     still counts it as missing.
  *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6".
  *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
  *     activity on the book. This is the one tree edit that differs from
@@ -960,8 +961,8 @@ export async function renameChapter(
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
- * Returns the book's resolvable chapters in their new order, each with the
- * number it keeps — what a caller patches its rows from.
+ * Returns the book's resolvable chapters in their new order, each as
+ * stored — what a caller patches its rows from.
  */
 export async function moveChapter(
   chapterId: ChapterId,
@@ -1099,6 +1100,18 @@ export async function chapterPlacement(
   const { chapters } = await resolveBookChapters(chapter.bookId);
   const slot = slotOf(chapters, chapterId);
   return slot === null ? null : { slot, chapterCount: highestSlot(chapters) };
+}
+
+/**
+ * The number a chapter's screens show (#1272 B): its slot in its book, over
+ * the same list as {@link chapterPlacement}. A chapter its book no longer
+ * lists has no slot, and the only number left to show is its stored one.
+ */
+export async function chapterSlot(
+  chapter: Pick<Chapter, "id" | "bookId" | "number">
+): Promise<number> {
+  const { chapters } = await resolveBookChapters(chapter.bookId);
+  return slotOf(chapters, chapter.id) ?? chapter.number;
 }
 
 // ── Segments ─────────────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ its body and empties it.
 - Shared chapter files put the chapter's number before its name, for example "Jonah - 03 Jonah runs.mp3", so they sort in chapter order (#1516).
 - A long book, chapter or segment name is shown in full at the top of its menu, and the recorder's menu shows the full chapter name (#1617, #1673).
 - While a take is recording, the first tile in the recorder menu is Stop (#1513).
-- A chapter keeps its own number when it is moved, instead of taking its new position (#1634).
+- The numbers down the side of a book always read 1, 2, 3 from the top. A moved chapter takes the number of the place it lands in, its name goes with it, and the spoken line says, for example, "Chapter 4 is now chapter 2." A chapter with no name that came from a template keeps the template's number in its title, such as "Chapter 7", and so does its shared file. Not yet checked on a phone (#1272).
 - Shared chapter files and their track numbers follow the chapter's place in the book, so after a move a book's files still sort in the book's order; Export project records a template's own chapter number and none for a chapter you added (#1272).
 - The trim selection is its own blue, apart from the amber waveform (#1535).
 - Numbers and timers always use the digits 0 to 9, whatever the language (#1650).

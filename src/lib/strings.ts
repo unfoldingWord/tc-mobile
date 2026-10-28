@@ -718,13 +718,15 @@ export const stringsEn = {
     `Segment ${from} is now segment ${to}.`,
   reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
   // The same three lines for a chapter on the Books screen (#953 PR2b). Said
-  // by the chapter's number, which a move keeps (#1272, U2a), and then by the
-  // position it landed in; a typed name such as "Mark 6" stays as it is (the
-  // DRI's pick), so it would not say which chapter moved. Whole sentences (#1483): each says "chapter" in its own
-  // words rather than wrapping `chapterName`'s.
+  // by the chapter's slot, the number its badge shows, slot to slot as the
+  // segment lines are (#1272, the requirements owner's answer B and the DRI's
+  // Q4 (a)): the moved chapter takes the number of the slot it landed in. A
+  // typed name such as "Mark 6" stays as it is (the DRI's pick), so it would
+  // not say which chapter moved. Whole sentences (#1483): each says "chapter"
+  // in its own words rather than wrapping `chapterName`'s.
   chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
-  chapterReorderMoved: (n: number, to: number): string =>
-    `Chapter ${n} moved to place ${to}.`,
+  chapterReorderMoved: (from: number, to: number): string =>
+    `Chapter ${from} is now chapter ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `Chapter ${n} stayed where it was.`,
   // The same three lines for a book on the Books screen (#338). Said by the

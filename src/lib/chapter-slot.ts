@@ -51,3 +51,19 @@ export function templateChapterNumber(
 ): number | null {
   return chapter.templateKey === null ? null : chapter.number;
 }
+
+/**
+ * The number in a chapter's default title, "Chapter N" (#1272). The DRI's
+ * Q1 (b): an unnamed template chapter keeps its template's number wherever it
+ * moves, and an unnamed chapter added by hand reads its slot. With "Always
+ * show chapter numbers" on (S12) the label is the sequential number, which is
+ * the slot for every chapter. The badge is always the slot; only this title
+ * can differ from it.
+ */
+export function headingNumber(
+  slot: number,
+  templateNumber: number | null,
+  alwaysNumber: boolean
+): number {
+  return alwaysNumber ? slot : (templateNumber ?? slot);
+}

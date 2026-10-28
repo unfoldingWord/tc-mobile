@@ -44,6 +44,7 @@ vi.mock("@/lib/storage/books", async (importOriginal) => {
 const row = (id: string, number: number): ChapterRow => ({
   chapterId: id as ChapterId,
   number,
+  templateNumber: null,
   name: null,
   finishedCount: 0,
   totalCount: 0,
@@ -63,12 +64,25 @@ describe("patchMovedChapter", () => {
     card("second", [row("b", 1), row("c", 2), row("d", 3)]),
   ];
 
-  it("moves the row within its card and keeps each badge's own number (#1272)", () => {
+  it("moves the row within its card and re-slots every badge 1..N (#1272 B)", () => {
     const next = patchMovedChapter(shelf, "d" as ChapterId, 0);
     expect(next[1]!.chapters.map((r) => [r.chapterId, r.number])).toEqual([
-      ["d", 3],
-      ["b", 1],
-      ["c", 2],
+      ["d", 1],
+      ["b", 2],
+      ["c", 3],
+    ]);
+  });
+
+  it("keeps a template chapter's own number beside its new slot (#1272, Q1 (b))", () => {
+    const templated = [
+      card("t", [row("p", 1), { ...row("q", 2), templateNumber: 7 }]),
+    ];
+    const next = patchMovedChapter(templated, "q" as ChapterId, 0);
+    expect(
+      next[0]!.chapters.map((r) => [r.chapterId, r.number, r.templateNumber])
+    ).toEqual([
+      ["q", 1, 7],
+      ["p", 2, null],
     ]);
   });
 
@@ -138,7 +152,7 @@ const rowsOf = (bookId: BookId) =>
     .chapters.map((r) => [r.chapterId, r.number]);
 
 describe("useBooks().moveChapter (#953)", () => {
-  it("moves the rows, keeps their own numbers, writes the store, and keeps the shelf order", async () => {
+  it("moves the rows, re-slots their badges, writes the store, and keeps the shelf order", async () => {
     const { bookId, chapterIds } = await mountShelf();
     const [c1, c2, c3] = chapterIds as [ChapterId, ChapterId, ChapterId];
     const shelfBefore = hook().books.map((c) => c.bookId);
@@ -151,14 +165,37 @@ describe("useBooks().moveChapter (#953)", () => {
     expect(ok).toBe(true);
     await vi.waitFor(() =>
       expect(rowsOf(bookId)).toEqual([
-        [c3, 3],
-        [c1, 1],
-        [c2, 2],
+        [c3, 1],
+        [c1, 2],
+        [c2, 3],
       ])
     );
     expect((await getBook(bookId))!.chapterIds).toEqual([c3, c1, c2]);
     expect(hook().books.map((c) => c.bookId)).toEqual(shelfBefore);
     expect(reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("badges read 1..N by slot after a move (#1272 B): stored [1, 4, 2, 3] loads as 1, 2, 3, 4", async () => {
+    const book = await createBook("Ruth");
+    const ids: ChapterId[] = [];
+    for (let i = 0; i < 4; i++) ids.push((await addChapter(book.id)).id);
+    // Moved in the store before the shelf loads, so this is the load path,
+    // not the optimistic patch: the stored numbers in book order are 1, 4, 2, 3.
+    await (
+      await vi.importActual<typeof import("@/lib/storage/books")>(
+        "@/lib/storage/books"
+      )
+    ).moveChapter(ids[3]!, 1);
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    await vi.waitFor(() => expect(hook().loaded).toBe(true));
+    expect(rowsOf(book.id)).toEqual([
+      [ids[0], 1],
+      [ids[3], 2],
+      [ids[1], 3],
+      [ids[2], 4],
+    ]);
   });
 
   it("reconciles with the store's order when another copy moved a chapter first", async () => {
@@ -179,9 +216,9 @@ describe("useBooks().moveChapter (#953)", () => {
     // The store applied c3 -> 0 to ITS order [c2, c3, c1]: [c3, c2, c1].
     await vi.waitFor(() =>
       expect(rowsOf(bookId)).toEqual([
-        [c3, 3],
+        [c3, 1],
         [c2, 2],
-        [c1, 1],
+        [c1, 3],
       ])
     );
   });
@@ -283,9 +320,9 @@ describe("useBooks().moveChapter (#953)", () => {
       );
     });
     expect(rowsOf(bookId)).toEqual([
-      [c3, 3],
-      [c1, 1],
-      [c2, 2],
+      [c3, 1],
+      [c1, 2],
+      [c2, 3],
     ]);
 
     await act(async () => {

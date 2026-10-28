@@ -10,6 +10,7 @@ import {
   storeAlwaysChapterNumber,
   storeNormalizeOnFinished,
 } from "@/lib/settings";
+import { headingNumber } from "@/lib/chapter-slot";
 import { strings } from "@/lib/strings";
 
 /**
@@ -59,13 +60,23 @@ function useAlwaysChapterNumber(): boolean {
 
 /**
  * A chapter's display heading with the setting applied (S12): the name when it
- * has one, else "Chapter {number}"; with the setting on, always the number.
- * Every screen that draws a chapter's label reads this rather than
- * `strings.chapterHeading` directly, so a toggle moves them all.
+ * has one, else "Chapter {n}"; with the setting on, always the sequential
+ * number. `slot` is the chapter's place in its book and `templateNumber` the
+ * number a template gave it (`null` for a chapter added by hand), and
+ * `headingNumber` picks between them (#1272, the DRI's Q1 (b)). Every screen
+ * that draws a chapter's label reads this rather than `strings.chapterHeading`
+ * directly, so a toggle moves them all.
  */
-export function useChapterHeading(name: string | null, n: number): string {
+export function useChapterHeading(
+  name: string | null,
+  slot: number,
+  templateNumber: number | null
+): string {
   const always = useAlwaysChapterNumber();
-  return strings.chapterHeading(chapterNameShown(name, always), n);
+  return strings.chapterHeading(
+    chapterNameShown(name, always),
+    headingNumber(slot, templateNumber, always)
+  );
 }
 
 /** The setting and its toggle, for the Settings row. */

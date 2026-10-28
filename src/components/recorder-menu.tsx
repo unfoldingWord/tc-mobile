@@ -88,7 +88,10 @@ export interface RecorderMenuProps {
    * `view?.bookCoverHex ?? undefined`.
    */
   bookCoverHex?: string;
-  /** The chapter's number, the sheet head's second crumb. */
+  /**
+   * The number an unnamed chapter's title reads (`headingNumber`, #1272), the
+   * sheet head's second crumb when no `chapterHeading` is given.
+   */
   chapterNumber?: number;
   /**
    * The chapter's resolved name (`strings.chapterHeading`), shown in place

@@ -26,6 +26,7 @@ import { restingErase } from "./support";
 
 const mocks = vi.hoisted(() => ({
   chapterName: null as string | null,
+  templateNumber: null as number | null,
   alwaysNumber: false,
   renameChapter: vi.fn(),
   prepare: vi.fn(),
@@ -37,14 +38,24 @@ vi.mock("@/hooks/use-settings", async () => {
   const { chapterNameShown } = await import("@/lib/settings");
   const { strings: table } = await import("@/lib/strings");
   return {
-    useChapterHeading: (name: string | null, n: number) =>
-      table.chapterHeading(chapterNameShown(name, mocks.alwaysNumber), n),
+    useChapterHeading: (
+      name: string | null,
+      slot: number,
+      templateNumber: number | null = null
+    ) =>
+      table.chapterHeading(
+        chapterNameShown(name, mocks.alwaysNumber),
+        // The rule `headingNumber` holds (#1272, Q1 (b)), spelt out so this
+        // mock does not lean on the module under test.
+        mocks.alwaysNumber ? slot : (templateNumber ?? slot)
+      ),
   };
 });
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: () => ({
     bookName: "Mark",
     chapterNumber: 3,
+    chapterTemplateNumber: mocks.templateNumber,
     chapterName: mocks.chapterName,
     rows: [],
     loading: false,
@@ -80,6 +91,7 @@ const erase = restingErase();
 
 beforeEach(() => {
   mocks.chapterName = null;
+  mocks.templateNumber = null;
   mocks.alwaysNumber = false;
   mocks.renameChapter.mockReset();
   mocks.renameChapter.mockResolvedValue(true);
@@ -211,6 +223,15 @@ describe("the chapter rename sheet (#1219)", () => {
     expect(mocks.renameChapter).toHaveBeenCalledWith("The sower");
   });
 
+  it("opens an unnamed template chapter on its template's number, not its slot (#1272, Q1 (b))", async () => {
+    mocks.templateNumber = 7;
+    await openRename();
+    expect(field().value).toBe(strings.chapterName(7));
+    // Confirmed untouched, that default is still "no label".
+    await click(strings.saveName);
+    expect(mocks.renameChapter).toHaveBeenCalledWith("");
+  });
+
   it("with Always show chapter numbers on, opens on the stored name and keeps it (#1623)", async () => {
     mocks.chapterName = "The sower";
     mocks.alwaysNumber = true;
@@ -240,5 +261,25 @@ describe("Share Chapter's MP3 name (#1218)", () => {
     expect(nameFile(3, 150)).toBe(
       strings.shareFilename("Mark", 3, "The sower", 150)
     );
+  });
+
+  it("labels an unnamed chapter's file the way its title reads: by slot, or a template's number (#1272, Q1 (b))", async () => {
+    await mount();
+    await click(strings.chapterMenuOpen);
+    await click(strings.shareChapter);
+    const nameFile = mocks.prepare.mock.calls[0]![1];
+    expect(nameFile(3, 4)).toBe("Mark - 03 Chapter 3.mp3");
+
+    await act(async () => root.unmount());
+    root = createRoot(document.getElementById("root")!);
+    layers.clear();
+    mocks.prepare.mockClear();
+    mocks.templateNumber = 7;
+    await mount();
+    await click(strings.chapterMenuOpen);
+    await click(strings.shareChapter);
+    const templated = mocks.prepare.mock.calls[0]![1];
+    // The number first is the slot (Q2 (a)); the label is the title.
+    expect(templated(3, 4)).toBe("Mark - 03 Chapter 7.mp3");
   });
 });

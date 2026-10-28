@@ -36,7 +36,11 @@ import {
   type StepReporter,
   exportChapterMp3,
 } from "@/lib/export/chapter";
-import { highestSlot, withSlots } from "@/lib/chapter-slot";
+import {
+  highestSlot,
+  templateChapterNumber,
+  withSlots,
+} from "@/lib/chapter-slot";
 import { chapterId3Fields } from "@/lib/export/chapter-tag";
 import {
   getBook,
@@ -150,9 +154,9 @@ function folderKey(name: string): string {
  * ` (2)`, ` (3)`, … suffix before the extension rather than letting the later
  * write clobber the earlier one.
  *
- * `nameChapter` derives the name from `chapter.number` and `chapter.name`;
- * `addChapter` permits an explicit duplicate number and two chapters may carry
- * the same name, so two chapters CAN map to the same path. Two
+ * `nameChapter` derives the name from the chapter's slot and `chapter.name`;
+ * two chapters may carry the same name, and a caller's namer is free text, so
+ * two chapters CAN map to the same path. Two
  * entries under one path is a corrupt-or-ambiguous archive (Frank R-B7-book P2).
  * Renaming keeps every chapter's audio; losing a recording is unrecoverable in
  * the field, a confusing filename is not.
@@ -233,7 +237,7 @@ interface ChaptersAdded {
 
 /**
  * Encode each of `chapters`, in order, and append it to `sink` as a stored
- * entry named `folder` + `nameChapter(slot, name, highest)`, its ID3 tag from `book`
+ * entry named `folder` + `nameChapter(slot, name, highest, templateNumber)`, its ID3 tag from `book`
  * first (#252; `null` when the book record is gone: untagged). The ONE chapter loop both
  * Share Book and Share your work run (#987): the library export calls it once
  * per book with that book's folder, Share Book once with no folder — which is
@@ -295,7 +299,7 @@ async function addChaptersToZip(
     if (shouldContinue && !shouldContinue()) return null;
     const name = uniqueEntryName(
       taken,
-      nameChapter(slot, chapter.name, highest)
+      nameChapter(slot, chapter.name, highest, templateChapterNumber(chapter))
     );
     taken.add(folderKey(name));
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
@@ -457,12 +461,16 @@ export type BookLabel = Pick<Book, "name" | "number"> &
  * Names one chapter's MP3 from its slot (#1272: its 1-based place in the book,
  * `lib/chapter-slot.ts`), its own name (`null` when it has none) and the
  * book's chapter count (its highest slot), which sets how wide the number is
- * padded so every file of one book sorts in the book's order (#1233).
+ * padded so every file of one book sorts in the book's order (#1233). The
+ * template's number (`null` for a chapter added by hand) is what an unnamed
+ * chapter's label reads, as its title on screen does (#1272, the DRI's Q1 (b));
+ * the number the name starts with is always the slot.
  */
 export type ChapterNamer = (
   chapterSlot: number,
   chapterName: string | null,
-  chapterCount: number
+  chapterCount: number,
+  templateNumber: number | null
 ) => string;
 
 /**
@@ -494,9 +502,7 @@ export async function exportLibraryZip(
   nameBook: (book: BookLabel) => string,
   nameChapter: (
     book: BookLabel,
-    chapterSlot: number,
-    chapterName: string | null,
-    chapterCount: number
+    ...chapter: Parameters<ChapterNamer>
   ) => string,
   codec: AudioCodec,
   sink: ArchiveSink,
@@ -525,7 +531,7 @@ export async function exportLibraryZip(
       book,
       chapters,
       `${folder}/`,
-      (n, name, highest) => nameChapter(book, n, name, highest),
+      (...chapter) => nameChapter(book, ...chapter),
       codec,
       shouldContinue
     );

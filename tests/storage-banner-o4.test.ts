@@ -48,9 +48,10 @@ const share = vi.hoisted(() => ({
       nameBook: (book: BookLabel) => string,
       nameChapter: (
         book: BookLabel,
-        chapterNumber: number,
+        chapterSlot: number,
         chapterName: string | null,
-        highestNumber: number
+        chapterCount: number,
+        templateNumber: number | null
       ) => string
     ) => Promise<null>
   >(() => Promise.resolve(null)),
@@ -279,15 +280,15 @@ describe("the button runs the library share", () => {
     expect(nameBook({ name: "Mark/Luke", number: 1 })).toBe(
       strings.shareAllFolder("Mark/Luke")
     );
-    expect(nameChapter(mark, 3, null, 3)).toBe(
+    expect(nameChapter(mark, 3, null, 3, null)).toBe(
       strings.shareFilename("Mark", 3)
     );
     // The book's highest chapter number sets the width (#1233).
-    expect(nameChapter(mark, 3, null, 150)).toBe(
+    expect(nameChapter(mark, 3, null, 150, null)).toBe(
       strings.shareFilename("Mark", 3, null, 150)
     );
     // The chapter's own name reaches the MP3, as in Share Book (#1218).
-    expect(nameChapter(mark, 3, "The sower", 3)).toBe(
+    expect(nameChapter(mark, 3, "The sower", 3, null)).toBe(
       "Mark - 03 The sower.mp3"
     );
     // An unnamed book is labelled by the placeholder its slot renders, the
@@ -296,9 +297,12 @@ describe("the button runs the library share", () => {
     expect(nameBook(unnamed)).toBe(
       strings.shareAllFolder(strings.bookHeading(null, 4))
     );
-    expect(nameChapter(unnamed, 2, null, 2)).toBe(
+    expect(nameChapter(unnamed, 2, null, 2, null)).toBe(
       strings.shareFilename(strings.bookHeading(null, 4), 2)
     );
+    // An unnamed template chapter's file reads its title, "Chapter 7", after
+    // its slot (#1272, Q1 (b)).
+    expect(nameChapter(mark, 3, null, 4, 7)).toBe("Mark - 03 Chapter 7.mp3");
     expect(share.send).not.toHaveBeenCalled();
   });
 
@@ -316,10 +320,16 @@ describe("the button runs the library share", () => {
     );
     const nameChapter = share.prepare.mock.calls[0]![2];
     expect(
-      nameChapter({ name: "Mark", number: 1, licence: "CC0-1.0" }, 3, null, 3)
+      nameChapter(
+        { name: "Mark", number: 1, licence: "CC0-1.0" },
+        3,
+        null,
+        3,
+        null
+      )
     ).toBe("Mark - 03 Chapter 3 (CC0 1.0).mp3");
     expect(
-      nameChapter({ name: "Mark", number: 1, licence: null }, 3, null, 3)
+      nameChapter({ name: "Mark", number: 1, licence: null }, 3, null, 3, null)
     ).toBe("Mark - 03 Chapter 3.mp3");
   });
 
@@ -381,6 +391,7 @@ describe("Books shows the banner where the #247 line was", () => {
       {
         chapterId: "chapter-1-4000-8000-000000000001" as ChapterId,
         number: 1,
+        templateNumber: null,
         name: null,
         finishedCount: 0,
         totalCount: 1,

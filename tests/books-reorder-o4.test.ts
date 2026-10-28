@@ -88,6 +88,7 @@ function chapter(i: number, extra: Partial<ChapterRow> = {}): ChapterRow {
   return {
     chapterId: `ch${i}` as ChapterId,
     number: i + 1,
+    templateNumber: null,
     name: null,
     finishedCount: 0,
     totalCount: 2,
@@ -291,6 +292,8 @@ describe("the drag and the one write", () => {
     expect(moveChapter).toHaveBeenCalledTimes(1);
     expect(moveChapter).toHaveBeenCalledWith("ch0", 2);
     expect(liveText()).toBe(strings.chapterReorderMoved(1, 3));
+    // Slot to slot (#1272, Q4 (a)): the chapter takes the number of its new slot.
+    expect(liveText()).toBe("Chapter 1 is now chapter 3.");
     expect(list.hasAttribute("data-reordering")).toBe(false);
   });
 

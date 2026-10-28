@@ -19,6 +19,7 @@ import {
 import { reportFailure } from "./report-failure";
 import { failureKey, isBookNameTaken, type FailureKey } from "./save-failure";
 import { bumpStoragePressure } from "./use-storage-pressure";
+import { templateChapterNumber, withSlots } from "@/lib/chapter-slot";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -40,25 +41,35 @@ async function loadBookCards(): Promise<BookCard[]> {
 
 async function loadBookCard(book: Book): Promise<BookCard> {
   const chapters = await Promise.all(
-    book.chapterIds.map(async (id): Promise<ChapterRow | null> => {
-      const chapter = await getChapter(id);
-      if (!chapter) return null; // drop a dangling id rather than render a blank
-      const { finished, total, recorded } = await chapterProgress(id);
-      return {
-        chapterId: chapter.id,
-        number: chapter.number,
-        name: chapter.name,
-        finishedCount: finished,
-        totalCount: total,
-        recordedCount: recorded,
-      };
-    })
+    book.chapterIds.map(
+      async (id): Promise<Omit<ChapterRow, "number"> | null> => {
+        const chapter = await getChapter(id);
+        if (!chapter) return null; // drop a dangling id rather than render a blank
+        const { finished, total, recorded } = await chapterProgress(id);
+        return {
+          chapterId: chapter.id,
+          templateNumber: templateChapterNumber(chapter),
+          name: chapter.name,
+          finishedCount: finished,
+          totalCount: total,
+          recordedCount: recorded,
+        };
+      }
+    )
+  );
+  // A row's number is its slot among the resolvable chapters (#1272 B), so it
+  // is counted after a dangling id is dropped, the way Share Book counts.
+  const resolved = chapters.filter(
+    (c): c is Omit<ChapterRow, "number"> => c !== null
   );
   return {
     bookId: book.id,
     name: book.name,
     number: book.number,
-    chapters: chapters.filter((c): c is ChapterRow => c !== null),
+    chapters: withSlots(resolved).map(({ chapter, slot }) => ({
+      ...chapter,
+      number: slot,
+    })),
     coverColourKey: book.coverColourKey,
     createdAt: book.createdAt,
     licence: book.licence,
@@ -219,7 +230,9 @@ export function patchNewChapter(
       ...original.chapters,
       {
         chapterId: chapter.id,
-        number: chapter.number,
+        // Appended, so it takes the next slot (#1272 B).
+        number: original.chapters.length + 1,
+        templateNumber: templateChapterNumber(chapter),
         name: chapter.name,
         // A brand-new chapter has no segments, so all three counts are known
         // without a read — mirrors `addSegment`'s optimistic row.
@@ -280,8 +293,11 @@ export function patchRenamedBook(
  * id) — and goes through the same `moveToIndex`, so the patch and the write
  * cannot put the row in different places.
  *
- * Numbers are kept, as the store keeps them (#1272, U2a): the badge a row
- * shows is the chapter's own number, whatever its position. Names are untouched.
+ * Every row is re-slotted (#1272, the requirements owner's answer B: "the
+ * fifth chapter slot is always 5"): its number becomes its new place + 1, so
+ * the badges still read 1..N. The store's write touches no chapter row; the
+ * slot is derived, here and in `loadBookCard`. A template chapter's own number
+ * and every name are untouched.
  *
  * The card keeps its index on the shelf, as every patch here does (#1185).
  *
@@ -306,7 +322,12 @@ export function patchMovedChapter(
     return books as BookCard[]; // dropped where it started
   }
   const next = books.slice();
-  next[index] = { ...original, chapters: moved };
+  next[index] = {
+    ...original,
+    chapters: moved.map((row, i) =>
+      row.number === i + 1 ? row : { ...row, number: i + 1 }
+    ),
+  };
   return next;
 }
 
@@ -797,7 +818,7 @@ export function useBooks() {
    * Move a chapter to an absolute position in its book (#953) — the storage
    * half of press-and-hold reorder; the gesture that calls it is a later PR.
    *
-   * Optimistic: the row moves (its badge keeps the chapter's own number) in THIS turn via
+   * Optimistic: the row moves (every badge re-slotted, #1272 B) in THIS turn via
    * `patchMovedChapter`, and the generation is bumped in the same step, so a
    * load already in flight — which read the pre-move order — is discarded
    * rather than snapping the row back over the patch (the `isLoadCurrent`
