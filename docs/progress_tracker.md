@@ -11,6 +11,64 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-27 → 2026-10-28 — Sprint 5 days 9–10: v1.2.0 cut and promoted to staging, the v1.2.1 Play-lane hotfix, production moved to Sprint 6 end, 29 PRs merged
+
+One coordinator session in orchestrator mode. Every merge to develop met the standing rule: both bench lenses clean at the exact head and every check green. No device results reached this session.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Production promotion:** "11-15, Sprint 6 end (Recommended)". The `staging` → `main` promotion of 1.2 moves to 2026-11-15.
+- **#954 (O4 fold):** the end state was delegated to the coordinator. The dev2 plan has PRs 0–10 (https://github.com/unfoldingWord/tc-mobile/issues/954#issuecomment-6479609005).
+- **Project-site review sync** (site tooling, not this repo): "Our Review page only", "New answers only (Recommended)" and "Fingerprints, no names (Recommended)". Decisions made on the site's Review page now become issue comments.
+
+### Completed
+
+- **v1.2.0 release:**
+  - Cut at `cf4b2037` (#1746, v1.2.0), on top of #1745 (staging's v1.1.1 merged back into develop) and #1748 (volume evening on Finished off by default for 1.2). #1746 also raised iOS `MARKETING_VERSION` to 1.2 and emptied `RELEASE_NOTES_UNRELEASED.md`.
+  - Promoted to staging by #1749, merged with a merge commit, `1fd7c3c4`. The coordinator reports a `check:deploy` PASS for it; that line is not in these notes, and staging now serves 1.2.1, so it cannot be re-run.
+  - The Google Play lane failed on it (run 40754572195) at `android-play.yml:285`, the old `obs/thumbs` grep from #177 that the other three lanes had already left behind (#1750, closed).
+- **v1.2.1 hotfix:**
+  - Promoted to staging by #1755, merge commit `f761cd599032b64346dfe1fed1aee9fa65a289d2`, and merged back to develop by #1757.
+  - `npm run check:deploy`: `Deployed: version=1.2.1 sha=f761cd5 builtAt=2026-10-28T20:01:24.773Z` / `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.`
+  - Play run 40759265133 succeeded, including the thumbnail step. #1750's closing comment records the internal-track draft it uploaded.
+- **9 → 14 upgrade rehearsal in headless Chromium (not a device pass):** v1.0.1 built with today's toolchain, the v1.2.1 service worker replaced v1.0.1's on the second reload, and a schema-9 database with recordings upgraded to 14 with no row, field or recording byte lost. It fills no Result cell (https://github.com/unfoldingWord/tc-mobile/pull/1762#issuecomment-6479683879).
+- **Merged to develop besides the release PRs (23):** #1706, #1752, #1753, #1754, #1756, #1758, #1759, #1760, #1761, #1762 (closes #1727), #1763, #1764, #1765, #1766, #1767, #1768 (closes #1751), #1769, #1770, #1771, #1772, #1773, #1774 (closes #1730) and #1775.
+- **#954:** PR0 (#1766) and PR2 (#1770) merged.
+- **Also merged on 2026-10-27 and 2026-10-28, not covered by this session's notes:** #1731, #1733 to #1744.
+
+### Not run
+
+- **Nothing merged this session was run on a phone.** The upgrade rehearsal above is headless Chromium on `localhost` with a fake microphone; every row in the device-pass sheet's section 12 still owes its Android, iOS and web stand-in runs.
+- **1.2.1 on the native lanes:** only the Play build has run. The APK and TestFlight builds are waiting.
+
+### In progress
+
+- **#1776 (#954 PR3):** open, waiting on George.
+- **#954 PR1 (the computed-style diff tool):** in build. PRs 4–10 are queued, one at a time.
+
+### Blockers (DRI only)
+
+- **Signing runs:** reject the 1.2.0 runs (APK 40754572234, TestFlight 40754572181) and approve the 1.2.1 runs (APK 40759265124, TestFlight 40759265114), which are queued behind them.
+- **TestFlight:** assign the tester group to the 1.2.1 build.
+- **Play:** optionally release the 1.2.1 internal draft.
+- Then the coordinator checks the APK's signer certificate and `version.json` and hands over the `tester-build-v1.2.1` release command.
+
+### Flags for the DRI
+
+- **#1773** adds one clause to the device-pass blocking table: an N on rows 12.1–12.8 needs the DRI's explicit acceptance on the promotion PR before the `staging` → `main` merge. Drop it from that cell if that counts as a rule change.
+- **#1774** draws a chapter's progress dots one step smaller, because the row's new ⋮ takes room from them. That consequence was not asked about separately.
+- **#1767 and #1761** each carry behaviour choices for the DRI to look at.
+
+### Next steps
+
+- **Sprint 5 ends 2026-11-01.** Every item still open in it moves explicitly to Sprint 6 or Backlog.
+- Finish #954 PR1, then PRs 4–10 in order.
+- Cut the `tester-build-v1.2.1` pre-release once the signing runs and checks above are done.
+
+---
+
 ## 2026-10-26 (day) — Sprint 5 day 8: the "Screen reader only" pick and its label work, pending takes that keep their base, the licence asks finished, a failure log with no console-only sinks left, 40 PRs merged
 
 One coordinator session in orchestrator mode, running lane waves and refilling each slot as it freed. Every merge met the standing rule: both bench lenses clean at the exact head and every check green, with a hand-written triage comment each round. No device results reached this session.
