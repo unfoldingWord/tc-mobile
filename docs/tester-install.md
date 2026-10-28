@@ -26,8 +26,8 @@ tried on an iPad. <!-- source: ios/App/App.xcodeproj/project.pbxproj TARGETED_DE
    it. Search for "TestFlight", made by Apple.
 3. **Open the invitation** from your email and tap **Accept**, then **Install**.
    This installs tC Mobile onto your iPhone. TestFlight shows the app's
-   version as `1.1` with a long build number; that is normal — the app's own
-   build stamp (below) is the thing to check. <!-- source: docs/native/README.md §4a (MARKETING_VERSION is 1.1, CFBundleVersion is the run's unix timestamp, independent of the web version) -->
+   version as `1.1.1` with a long build number; that is normal — the app's own
+   build stamp (below) is the thing to check. <!-- source: docs/native/README.md §4a (MARKETING_VERSION is 1.1.1, CFBundleVersion is the run's unix timestamp, independent of the web version) -->
 4. **Open tC Mobile from your home screen** — tap the tC Mobile icon, not the
    TestFlight app. TestFlight is only there to deliver the app; you use tC
    Mobile itself from the home screen like any other app.
