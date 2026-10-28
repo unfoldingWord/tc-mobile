@@ -165,8 +165,11 @@ export interface Chapter {
    * reads it that way, and so does an unnamed template chapter's default
    * title, "Chapter {template number}" (`headingNumber`, the DRI's Q1 (b)).
    * Everything else a person sees reads the slot: the Books badge, an unnamed
-   * hand-made chapter's title, the move line, the Share Book chips, and the
-   * shared MP3 names and track tag.
+   * hand-made chapter's title, the move line, the Share Book chips, and a
+   * shared MP3's number prefix and track tag. The words after that prefix are
+   * the chapter's title, so an unnamed template chapter's file reads its
+   * template number there (`headingNumber`): `Mark - 03 Chapter 7.mp3` for
+   * template chapter 7 in slot 3.
    */
   readonly number: number;
   /**

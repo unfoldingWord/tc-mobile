@@ -42,7 +42,8 @@ export interface RecorderSegmentView {
   readonly bookCoverHex: string | null;
   /**
    * The chapter's slot in its book (#1272 B), as the Segments view reads it
-   * (`chapterSlot`); 0 when the chapter is gone.
+   * (`chapterSlot`); its stored number when its book no longer lists it, and
+   * 0 when the chapter is gone.
    */
   readonly chapterNumber: number;
   /** The template's number for a template chapter, else `null` (Q1 (b)). */
@@ -155,7 +156,10 @@ export async function loadRecorderSegmentView(
           resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
         )
       : null,
-    chapterNumber: chapter ? await chapterSlot(chapter) : 0,
+    // An unlisted chapter has no slot and shows its stored number (#1747).
+    chapterNumber: chapter
+      ? ((await chapterSlot(chapter)) ?? chapter.number)
+      : 0,
     chapterTemplateNumber: chapter ? templateChapterNumber(chapter) : null,
     chapterName: chapter?.name ?? null,
     ordinal: segment.index,

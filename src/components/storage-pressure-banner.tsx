@@ -8,6 +8,7 @@ import { noticePresentation } from "./notice-tone";
 import { libraryShareErrorText, libraryShareGapText } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import type { StoragePressureNotice } from "./storage-pressure-notice";
+import { headingNumber } from "@/lib/chapter-slot";
 import { strings } from "@/lib/strings";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { readSharePlatform } from "@/hooks/share-target";
@@ -87,7 +88,10 @@ export function StoragePressureBanner({
         strings.shareFilename(
           strings.bookHeading(book.name, book.number),
           n,
-          strings.chapterHeading(chapterName, templateNumber ?? n),
+          strings.chapterHeading(
+            chapterName,
+            headingNumber(n, templateNumber, false)
+          ),
           highest,
           book.licence ?? null
         )
