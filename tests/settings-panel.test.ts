@@ -199,32 +199,32 @@ it("the chapter-number row shows its state, persists, and changes the shelf's la
   expect(chapterTitle()).toBe("Mark 6");
 });
 
-it("the loudness row shows ON with nothing stored, and a tap writes off", async () => {
+it("the loudness row shows OFF with nothing stored, and a tap writes on", async () => {
   await mount();
   await click(strings.settingsOpen);
   expect(
     button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
-  ).toBe("true");
-  expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBeNull();
-
-  await click(strings.settingsNormalizeOnFinished);
-  expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBe("0");
-  expect(
-    button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("false");
+  expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBeNull();
 
   await click(strings.settingsNormalizeOnFinished);
   expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBe("1");
   expect(
     button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("true");
+
+  await click(strings.settingsNormalizeOnFinished);
+  expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBe("0");
+  expect(
+    button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
+  ).toBe("false");
 });
 
-it("the loudness row reflects a stored off", async () => {
-  window.localStorage.setItem(NORMALIZE_ON_FINISHED_KEY, "0");
+it("the loudness row reflects a stored on", async () => {
+  window.localStorage.setItem(NORMALIZE_ON_FINISHED_KEY, "1");
   await mount();
   await click(strings.settingsOpen);
   expect(
     button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
-  ).toBe("false");
+  ).toBe("true");
 });

@@ -13,7 +13,7 @@ its body and empties it.
 - On the Books screen, holding a book name or chapter title that is cut short shows the whole name above it until you let go; a name that fits still holds to reorder as before; not yet checked on a phone (#1284).
 
 - A book's menu has a Licence tile that reopens the licence choice with the saved licence selected and saves a new pick without sharing; books made from a template do not have it, because their licence is fixed; not yet checked on a phone (#1455).
-- A Settings screen, opened by a gear in the Books header, holds the light and dark choice, an "Always show chapter numbers" switch, and a switch to even out the volume when a segment is done (on by default); not yet checked on a phone (#1623, #1685).
+- A Settings screen, opened by a gear in the Books header, holds the light and dark choice, an "Always show chapter numbers" switch, and a switch to even out the volume when a segment is done (off by default); not yet checked on a phone (#1623, #1685, #1746).
 - Each book's menu has an Export project row that shares the book as a Scripture Bundle zip; its file name suffix follows the app language; not yet checked on a phone (#1624, #1646).
 - Share Book asks which licence first when the book has none chosen (#1670). The licence is then part of the shared file name, and Share Book from the shelf names its files with it too; the file name in the share sheet is not yet checked on a phone (#1573, #1599).
 - Each chapter row on the Books screen has a play button: tap to play the whole chapter, tap again to pause, tap again to resume; not yet checked on a phone (#1561).
@@ -28,7 +28,7 @@ its body and empties it.
 
 ## Changed
 
-- A segment marked Finished has its loudness evened out before it is stored, so finished segments play back at a similar level; segments finished before this change are left as they were (#1679).
+- With "Even out the volume when done" turned on in Settings, a segment marked Finished has its loudness evened out before it is stored, aiming at a similar level across segments. It is off unless you turn it on, and once a segment is evened out that cannot be undone for that segment. Segments finished before this change are left as they were. How it sounds, and how long it takes on a low-end phone, are not yet checked on a phone (#1679, #1746).
 - Removing a segment's recording now says "Reset" everywhere, and the confirm button reads "Reset recording" (#1515).
 - Shared chapter files put the chapter's number before its name, for example "Jonah - 03 Jonah runs.mp3", so they sort in chapter order (#1516).
 - A long book, chapter or segment name is shown in full at the top of its menu, and the recorder's menu shows the full chapter name (#1617, #1673).

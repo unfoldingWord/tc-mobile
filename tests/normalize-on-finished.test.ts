@@ -138,8 +138,25 @@ afterEach(() => {
 });
 
 describe("normalize on Finished — the sweep (#1433)", () => {
-  it("with the preference unset, runs the chain, encodes its output and commits its record", async () => {
+  it("with the preference unset, encodes the stored samples untouched (off by default, PR #1746)", async () => {
     storePreference(null);
+    const samples = Int16Array.of(10, 20, 30);
+    loadWith(samples, null);
+
+    await requestTranscodeSweep();
+
+    expect(normalizePcm).not.toHaveBeenCalled();
+    expect(encodeMp3.mock.calls[0]?.[0]).toBe(samples);
+    expect(vi.mocked(commitTranscode).mock.calls[0]?.[4]).toEqual({
+      stages: [],
+      measuredLufs: null,
+      measuredTruePeakDbtp: null,
+      appliedGainDb: 0,
+    });
+  });
+
+  it("with the preference explicitly on, runs the chain, encodes its output and commits its record", async () => {
+    storePreference("1");
     loadWith(Int16Array.of(10, 20, 30), null);
 
     await requestTranscodeSweep();
@@ -183,7 +200,8 @@ describe("normalize on Finished — the sweep (#1433)", () => {
   });
 
   it("skips the chain for a clip whose record already names stages, and keeps that record", async () => {
-    storePreference(null);
+    // Explicitly on, so the skip is the record's doing, not the default's.
+    storePreference("1");
     const samples = Int16Array.of(10, 20, 30);
     loadWith(samples, RECORD);
 

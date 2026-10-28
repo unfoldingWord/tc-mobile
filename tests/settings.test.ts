@@ -49,11 +49,13 @@ describe("the always-chapter-number setting (S12, #1575)", () => {
 });
 
 describe("the normalize-on-Finished preference (#1433, U6b)", () => {
-  it("is on when nothing is stored, and on anything but an explicit off", () => {
-    expect(readStoredNormalizeOnFinished(null)).toBe(true);
-    expect(readStoredNormalizeOnFinished("1")).toBe(true);
-    expect(readStoredNormalizeOnFinished("")).toBe(true);
+  it("is off when nothing is stored, and on only for an explicit on", () => {
+    // Off by default for the v1.2.0 tester build (PR #1746). A stored "1"
+    // is a person's own choice and holds.
+    expect(readStoredNormalizeOnFinished(null)).toBe(false);
+    expect(readStoredNormalizeOnFinished("")).toBe(false);
     expect(readStoredNormalizeOnFinished("0")).toBe(false);
+    expect(readStoredNormalizeOnFinished("1")).toBe(true);
   });
 });
 
