@@ -354,7 +354,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileTemplates: "Modèles",
   licenceAskSave: "Enregistrer",
   licenceAskSaveLead:
-    "Qui peut partager ces enregistrements ? Vous pouvez le modifier plus tard.",
+    "Qui peut partager ces enregistrements ? Vous pourrez modifier ce choix plus tard.",
   licenceNameCcBySa:
     "Licence Creative Commons Attribution, Partage dans les mêmes conditions 4.0",
   licenceNameCcBy: "Licence Creative Commons Attribution 4.0",

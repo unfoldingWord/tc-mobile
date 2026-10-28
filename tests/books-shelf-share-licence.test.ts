@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   books: [] as BookCard[],
   setBookLicence: vi.fn(),
   reload: vi.fn(),
+  // Unset: the real reader. Set by the template-lock case, which reads back.
+  getBook: null as null | ((id: string) => Promise<unknown>),
   prepare: vi.fn<
     (
       bookId: string,
@@ -70,6 +72,14 @@ vi.mock("@/hooks/use-book-share", () => ({
 vi.mock("@/lib/storage/licence", () => ({
   setBookLicence: mocks.setBookLicence,
 }));
+vi.mock("@/lib/storage/books", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/storage/books")>();
+  return {
+    ...real,
+    getBook: (id: BookId) =>
+      mocks.getBook ? mocks.getBook(id) : real.getBook(id),
+  };
+});
 vi.mock("@/hooks/failure-log", () => ({
   useFailureCount: () => 0,
   useMarkedFailureCount: () => 0,
@@ -86,6 +96,7 @@ beforeEach(() => {
   mocks.prepare.mockClear();
   mocks.setBookLicence.mockReset();
   mocks.reload.mockReset();
+  mocks.getBook = null;
   document.body.innerHTML = "<div id='root'></div>";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   root = createRoot(document.getElementById("root")!);
@@ -153,6 +164,60 @@ describe("the shelf's Share Book names its files with the licence (#1579)", () =
       zip: "Mark (CC BY 4.0).zip",
       chapter: "Mark - 04 Chapter 4 (CC BY 4.0).mp3",
     });
+  });
+
+  it("names the files with the licence the store holds, not the row tapped (#1455)", async () => {
+    // A template book's licence is fixed (D5): the writer refuses the pick and
+    // the ask reads the book back. What is shared is that stored licence; a
+    // share built from the tapped row would label the files CC0.
+    mocks.books = [
+      { bookId: mark, name: "Mark", number: 1, licence: null, chapters: [] },
+    ];
+    mocks.setBookLicence.mockImplementation(async () => {
+      throw Object.assign(new Error("locked"), {
+        name: "TemplateLicenceLockedError",
+      });
+    });
+    mocks.getBook = async () => ({
+      id: mark,
+      name: "Mark",
+      licence: "CC-BY-SA-4.0",
+      provenance: { kind: "template" },
+    });
+    await act(async () => {
+      root.render(
+        createElement(BooksScreen, {
+          audio: idleChapterAudio(),
+          onOpenChapter: vi.fn(),
+          pushLayer: vi.fn<(layer: Layer) => void>(),
+          popLayer: vi.fn<(id: string) => void>(),
+        })
+      );
+    });
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (b) => b.getAttribute("aria-label") === label
+      )!;
+    const click = async (el: HTMLElement) =>
+      act(async () => {
+        el.focus();
+        el.click();
+      });
+    await click(byLabel(strings.bookMenuOpen("Mark")));
+    await click(byLabel(strings.shareBook));
+    await click(
+      document.querySelector<HTMLElement>(
+        '[role="radio"][data-licence="CC0-1.0"]'
+      )!
+    );
+    await click(byLabel(strings.licenceAskContinue));
+    expect(mocks.setBookLicence).toHaveBeenCalledWith(mark, "CC0-1.0");
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    const [, zip, nameChapter] = mocks.prepare.mock.calls[0]!;
+    expect(zip).toBe("Mark (CC BY-SA 4.0).zip");
+    expect(nameChapter(4, null, 4)).toBe(
+      "Mark - 04 Chapter 4 (CC BY-SA 4.0).mp3"
+    );
   });
 
   it("shares and writes nothing when the ask is cancelled (#1455)", async () => {
