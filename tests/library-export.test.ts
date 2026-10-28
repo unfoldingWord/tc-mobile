@@ -416,6 +416,18 @@ describe("estimateLibraryZipBytes", () => {
     expect(estimate!).toBeLessThan(actual * 1.5);
   });
 
+  it("sizes each tag from the chapter's slot, not its stored number (#1272)", async () => {
+    const bookId = await bookWith("A", [[{ n: 100, v: 100 }]]);
+    const before = await estimateLibraryZipBytes();
+    // A template may number its one chapter far past its slot; the track
+    // number the export writes is still 1, so the estimate must not move.
+    const db = await getDb();
+    const [chapterId] = (await db.get("books", bookId))!.chapterIds;
+    const chapter = (await db.get("chapters", chapterId!))!;
+    await db.put("chapters", { ...chapter, number: 123_456_789 });
+    expect(await estimateLibraryZipBytes()).toBe(before);
+  });
+
   it("returns null once cancelled", async () => {
     await bookWith("A", [[{ n: 100, v: 100 }]]);
     expect(await estimateLibraryZipBytes(() => false)).toBeNull();

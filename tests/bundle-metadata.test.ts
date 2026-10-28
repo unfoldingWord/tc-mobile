@@ -505,7 +505,21 @@ describe("project.json lists every segment, with the reason where audio is missi
     ]);
   });
 
-  it("carries its own schemaVersion, the real chapter number, and the OBS story and frame", () => {
+  it("writes no number for a hand-made chapter, still at schemaVersion 1 (#1272)", () => {
+    // The DRI on #1272, Q5 (b): "None, same format version". A hand-made
+    // chapter's stored number is not a template's, so none is written.
+    const input = bookInput([seg(1, MARK_1_1_8, MP3)]);
+    const chapter = { ...input.chapters[0]!.chapter, number: 3 };
+    const manifest = buildProjectManifest({
+      ...input,
+      chapters: [{ ...input.chapters[0]!, chapter }],
+    });
+    expect(manifest.schemaVersion).toBe(1);
+    const c = manifest.chapters[0] as { number: number | null };
+    expect(c.number).toBeNull();
+  });
+
+  it("carries its own schemaVersion, the template's chapter number, and the OBS story and frame", () => {
     const span: SegmentSpan = {
       book: "OBS",
       startChapter: 3,
@@ -514,7 +528,11 @@ describe("project.json lists every segment, with the reason where audio is missi
       endVerse: 2,
     };
     const input = bookInput([seg(1, span, MP3)]);
-    const chapter = { ...input.chapters[0]!.chapter, number: 3 };
+    const chapter = {
+      ...input.chapters[0]!.chapter,
+      number: 3,
+      templateKey: "03",
+    };
     const manifest = buildProjectManifest({
       ...input,
       chapters: [{ ...input.chapters[0]!, chapter }],

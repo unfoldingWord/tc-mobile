@@ -23,7 +23,10 @@ import { restingErase } from "./support";
 const mocks = vi.hoisted(() => ({
   licence: null as LicenceId | null,
   prepare: vi.fn<
-    (chapterId: string, nameFile: (highest: number) => string) => Promise<null>
+    (
+      chapterId: string,
+      nameFile: (slot: number, chapterCount: number) => string
+    ) => Promise<null>
   >(() => Promise.resolve(null)),
 }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
@@ -116,7 +119,7 @@ async function sharedName(): Promise<string> {
   await tap(strings.chapterMenuOpen);
   await tap(strings.shareChapter);
   expect(mocks.prepare).toHaveBeenCalledTimes(1);
-  return mocks.prepare.mock.calls[0]![1](4);
+  return mocks.prepare.mock.calls[0]![1](4, 4);
 }
 
 describe("Share Chapter's file name carries the book's licence (#1579)", () => {
