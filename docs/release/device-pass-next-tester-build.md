@@ -219,16 +219,26 @@ the low-end Android phone and the iPhone. Source for the section: #1470 (the dev
 
 ## 12. Production upgrade: v1.0.1 straight to 1.2.x (schema 9 → 14)
 
-**This section must pass before the `staging` → `main` promotion.** The DRI's pick (verbatim):
-"11-15, Sprint 6 end (Recommended)", recorded on
+**This section gates the `staging` → `main` promotion, as the table below says.** The DRI's pick
+(verbatim): "11-15, Sprint 6 end (Recommended)", recorded on
 [#1706](https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6479102128). Rows 12.1
 to 12.9 are marked "Both, Web": each runs on Android, on iOS and on the web stand-in below (desktop
-Chromium, and iOS Safari through a tunnel where it can be run). Passing means each of those rows
-has a result on all three and none is F; for the web, the Chromium result is the one that
-counts, and a Safari result is written beside it. Row 12.9 is N unless a Finished segment was
-still owed its conversion; that N is expected and does not block. Any other N is not a pass: the
-promotion PR names it for the DRI. Row 12.10 is a confirmation after the promotion and does not
-gate it.
+Chromium, and iOS Safari through a tunnel where it can be run). The Safari result is written beside
+the Chromium one.
+
+**What blocks the promotion.** This table is the only place this sheet says what blocks it. Every
+other sentence in this section that says a result blocks, passes or is N points here.
+
+| Result                                                     | Android                                                                                                            | iOS  | Desktop Chromium (web stand-in) | iOS Safari (web stand-in)                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---- | ------------------------------- | --------------------------------------------------------- |
+| No result on 12.1–12.9                                     | blocks                                                                                                             | same | same                            | does not block (Safari runs only where it can)            |
+| F on 12.1–12.9                                             | blocks                                                                                                             | same | same                            | recorded, does not block                                  |
+| N on 12.1–12.8                                             | not a pass: the promotion PR names it, and the DRI accepts it explicitly on that PR before the merge, or it blocks | same | same                            | recorded, does not block (this includes a dropped tunnel) |
+| N on 12.9, no Finished segment was owed its conversion     | expected, does not block                                                                                           | same | same                            | same                                                      |
+| N on 12.9, a Finished segment was owed its conversion      | as N on 12.1–12.8                                                                                                  | same | same                            | recorded, does not block                                  |
+| Any result on 12.10 (live `tcmobile.app`, after promotion) | —                                                                                                                  | —    | not part of the gate            | not part of the gate                                      |
+
+A Safari F does not block, but it is still filed as an issue.
 
 Production is v1.0.1, and its database is schema 9 (`git show v1.0.1:src/lib/storage/db.ts`, line
 108). This build is schema 14 (`src/lib/storage/db.ts:180`). A phone on production therefore runs
@@ -249,16 +259,18 @@ free"). Plant test recordings only, never real work.
 - **Android:** install `app-release.apk` from the `v1.0.1` GitHub release. The candidate installs
   over it only when both are signed with the one release keystore and the candidate carries a
   higher version code ([docs/native/README.md](../native/README.md), "One keystore, forever"). If
-  the installer refuses, the platform is N. Do not uninstall to get past it.
+  the installer refuses, the platform is N, scored as the blocking table above says. Do not
+  uninstall to get past it.
 - **iOS:** install the 1.0.1 build from TestFlight's earlier builds, if TestFlight still offers
   it, then update to the candidate build. Assumption, not checked: that TestFlight still offers
   1.0.1. If it does not, every iOS cell is N. The web stand-in in iOS Safari then covers iOS WebKit
   only in part: same code and the same engine, but Safari rather than the native shell's WebView,
-  a different origin, and a service worker instead of a native bundle. It does not turn the iOS N
-  into a pass.
-- **Web, the stand-in (gates):** production web users on `tcmobile.app` are the largest group that
-  will go from 9 to 14. Browser storage is per origin, so before the promotion their path can only
-  be run on one fixed origin that serves v1.0.1 first and then the candidate:
+  a different origin, and a service worker instead of a native bundle. The iOS N stays an iOS N,
+  scored as the blocking table above says.
+- **Web, the stand-in (scored by the blocking table above):** production web users on
+  `tcmobile.app` are the largest group that will go from 9 to 14. Browser storage is per origin, so
+  before the promotion their path can only be run on one fixed origin that serves v1.0.1 first and
+  then the candidate:
   1. In a checkout of the `v1.0.1` tag (a worktree or a detached checkout), run `npm ci` and
      `npm run build`, then `npm run preview -- --port <P> --strictPort`. Pick one port and keep it
      for the whole run.
@@ -266,7 +278,7 @@ free"). Plant test recordings only, never real work.
      (`cloudflared tunnel --url` pointed at `http://localhost:<P>`; see [AGENTS.md](../../AGENTS.md),
      "Device testing"), because a phone can record only over HTTPS. Keep that one tunnel running to
      the end: a new tunnel is a new URL, so a new origin with empty storage. If the tunnel drops,
-     the Safari run is N.
+     the Safari run is N; the blocking table above says what that means.
   3. Open `http://localhost:<P>` in a fresh desktop Chromium profile (and the tunnel URL in iOS
      Safari), with the browser's language set to English. Check that the footer reads v1.0.1, and
      plant the shelf below.
@@ -329,8 +341,8 @@ Two limits of that evidence:
 | 12.6  | Both, Web | Move a book with the press-and-hold reorder. Close the app and reopen it.                                                                                                                                             | The book stays where you moved it.                                                                                                                                                                                         | v11 above; #338               |        |
 | 12.7  | Both, Web | Share Book on a planted book.                                                                                                                                                                                         | The licence ask opens first: the upgrade leaves every book with no licence. Then the OS share sheet opens (row 7.4), or, in a browser that refuses a zip, the message that points to the app (row 7.10).                   | v12 above; #1462, #1455       |        |
 | 12.8  | Both, Web | Record a new segment in a planted chapter, save it, and mark it Finished. Close and reopen.                                                                                                                           | It saves, plays and stays Finished, and the planted segments are unchanged.                                                                                                                                                | v13, v14 above; #38, #1433    |        |
-| 12.9  | Both, Web | Only if a Finished segment was still waiting for its conversion on v1.0.1 (this happens only after a stalled conversion or a full phone, so you cannot arrange it): listen to it after the upgrade, once it converts. | P only if it sounds as it did before the upgrade, by ear. A volume change is F. With no such segment, mark N.                                                                                                              | v14 above; #1433              |        |
-| 12.10 | Web       | After the promotion only, a confirmation that does not gate it: in a browser profile that holds v1.0.1 data at `tcmobile.app`, open the site once production serves 1.2.x.                                            | Record what it shows. Any planted recording missing or unable to play is F; the row still does not gate. The sources give no expected screen for a browser.                                                                | #1295, #1464                  |        |
+| 12.9  | Both, Web | Only if a Finished segment was still waiting for its conversion on v1.0.1 (this happens only after a stalled conversion or a full phone, so you cannot arrange it): listen to it after the upgrade, once it converts. | P only if it sounds as it did before the upgrade, by ear. A volume change is F. With no such segment, mark N (the blocking table above).                                                                                   | v14 above; #1433              |        |
+| 12.10 | Web       | After the promotion only, a confirmation (the blocking table above): in a browser profile that holds v1.0.1 data at `tcmobile.app`, open the site once production serves 1.2.x.                                       | Record what it shows. Any planted recording missing or unable to play is F. The sources give no expected screen for a browser.                                                                                             | #1295, #1464                  |        |
 
 ## Dropped or deferred, with the reason
 
