@@ -1,8 +1,9 @@
 import { expect, test, type Locator, type Page } from "./support/test";
 
 /**
- * Hold a cut-off name on the Books and Segments screens to read it whole (S14, #1284,
- * #1711), against the shipped `dist/` build.
+ * Hold a cut-off name on the Books and Segments screens, or a cut-off crumb in
+ * the Segments and recorder headers, to read it whole (S14, #1284, #1711),
+ * against the shipped `dist/` build.
  *
  * WHY THIS EXISTS. `tests/hold-reveal.test.ts` and
  * `tests/hold-reveal-books.test.ts` run in Node and jsdom, which have no
@@ -230,6 +231,51 @@ test.describe("Segments at 360px", () => {
     await expectBubbleWhole(page, LONG_CHAPTER);
     await page.mouse.up();
     await expect(page.locator(".name-reveal")).toHaveCount(0);
+  });
+
+  /** The header's `n`th crumb's text: book, chapter, then the segment. */
+  const crumbText = (header: Locator, n: number) =>
+    header.locator(".o4-crumb > span").nth(n);
+
+  test("a cut-off chapter crumb in the header holds to a bubble with the whole name", async ({
+    page,
+  }) => {
+    const header = page.locator("header").filter({
+      has: page.getByRole("button", { name: "Back to books" }),
+    });
+    const crumb = crumbText(header, 1);
+    expect(await isCutOff(crumb)).toBe(true);
+    await holdOn(page, crumb);
+    await expectBubbleWhole(page, LONG_CHAPTER);
+    await page.mouse.up();
+    await expect(page.locator(".name-reveal")).toHaveCount(0);
+    // Still on this chapter's screen.
+    await expect(page.locator(".segments-title")).toHaveText(LONG_CHAPTER);
+  });
+
+  test("a cut-off chapter crumb in the recorder header holds to a bubble, and the release does not leave", async ({
+    page,
+  }) => {
+    await page
+      .getByRole("button", { name: "Open recorder for segment 1" })
+      .click();
+    const header = page.locator("header").filter({
+      has: page.getByRole("button", { name: "Close recorder" }),
+    });
+    await expect(header).toBeVisible();
+    const crumb = crumbText(header, 1);
+    expect(await isCutOff(crumb)).toBe(true);
+    await holdOn(page, crumb);
+    await expectBubbleWhole(page, LONG_CHAPTER);
+    await page.mouse.up();
+    await expect(page.locator(".name-reveal")).toHaveCount(0);
+    // The crumb is a button to the chapter; the release's click was
+    // swallowed, so the recorder is still open once a close would have run.
+    await page.waitForTimeout(PAST_HOLD_MS);
+    await expect(header).toBeVisible();
+    await expect(
+      header.getByRole("button", { name: `Go to ${LONG_CHAPTER}` })
+    ).toBeVisible();
   });
 
   test("a title that fits shows no bubble and its press still lifts the row", async ({

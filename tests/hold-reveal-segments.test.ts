@@ -265,3 +265,47 @@ describe("the chapter name (S14, #1284)", () => {
     expect(bubble()).toBeNull();
   });
 });
+
+describe("the header crumbs (S14, #1284)", () => {
+  /** The text span inside the header's `n`th crumb: book, then chapter. */
+  const crumbText = (n: number) =>
+    document
+      .querySelector(".o4-crumbs-bar")!
+      .querySelectorAll<HTMLElement>(".o4-crumb > span")[n]!;
+
+  it("a cut-off chapter crumb held 450 ms shows the whole name", async () => {
+    await mount();
+    const text = crumbText(1);
+    expect(text.textContent).toBe(LONG_CHAPTER);
+    cutOff(text);
+    await hold(text);
+    expect(bubble()?.textContent).toBe(LONG_CHAPTER);
+    await act(async () => pointer(window, "pointerup"));
+    expect(bubble()).toBeNull();
+  });
+
+  it("a cut-off book crumb shows the whole name, and its release does not go back", async () => {
+    const onBack = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(SegmentsScreen, {
+          chapterId: "chapter" as ChapterId,
+          audio,
+          erase,
+          onBack,
+          onOpenRecorder,
+          pushLayer: vi.fn(),
+          popLayer: vi.fn(),
+        })
+      )
+    );
+    const text = crumbText(0);
+    expect(text.textContent).toBe("Book");
+    cutOff(text);
+    await hold(text);
+    expect(bubble()?.textContent).toBe("Book");
+    await act(async () => pointer(window, "pointerup"));
+    await act(async () => text.click());
+    expect(onBack).not.toHaveBeenCalled();
+  });
+});

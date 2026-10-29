@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 
 import { Icon } from "./icon";
+import { NameReveal } from "./name-reveal";
+import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { strings } from "@/lib/strings";
 import type { SegmentRowState } from "@/types/view";
 
@@ -74,6 +76,17 @@ export interface O4CrumbsProps {
  * marker (#1278). The header hands each link its own Back handler, so a
  * crumb never leaves by a path Back does not take. A linked crumb is a 44px
  * target drawn as the same 40px chip (`o4/menus.css`, `button.o4-crumb`).
+ *
+ * In a screen header (the same `links` signal) a cut-off book or chapter
+ * crumb can be held to read it whole (S14, #1284): the same
+ * `useHoldReveal`/`NameReveal` pair as the Books and Segments names, so the
+ * same 450 ms hold, the same bubble and the same rule (only a name that is
+ * actually cut off claims the press; the release's click is swallowed, so a
+ * hold never navigates). The bubble is `aria-hidden`: a linked crumb's
+ * accessible name (`goToBook` / `goToChapter`) and an unlinked crumb's text
+ * already carry the whole name. A sheet head has no `links` and gets no
+ * hold: its menu draws the full name already (#1617), and its head is where
+ * drag-to-close starts.
  */
 export function O4Crumbs({
   book,
@@ -84,11 +97,12 @@ export function O4Crumbs({
   current,
   className,
 }: O4CrumbsProps) {
+  const Name = links ? HeldName : PlainName;
   return (
     <div className={className ? `o4-crumbs ${className}` : "o4-crumbs"}>
       {book !== undefined && (
         <Crumb link={links?.book} disabled={disabled}>
-          <span dir="auto">{book}</span>
+          <Name text={book} />
         </Crumb>
       )}
       {chapter !== undefined && (
@@ -97,7 +111,7 @@ export function O4Crumbs({
           disabled={disabled}
           current={current === "chapter"}
         >
-          <span dir="auto">{chapter}</span>
+          <Name text={String(chapter)} />
         </Crumb>
       )}
       {segment && (
@@ -106,6 +120,24 @@ export function O4Crumbs({
         </Crumb>
       )}
     </div>
+  );
+}
+
+/** A crumb's typed name, as a sheet head draws it: text only. */
+function PlainName({ text }: { text: string }) {
+  return <span dir="auto">{text}</span>;
+}
+
+/** A header crumb's typed name: hold it, when it is cut off, to read it whole. */
+function HeldName({ text }: { text: string }) {
+  const reveal = useHoldReveal();
+  return (
+    <>
+      <span dir="auto" onPointerDown={reveal.holdStart}>
+        {text}
+      </span>
+      <NameReveal text={text} place={reveal.place} />
+    </>
   );
 }
 
