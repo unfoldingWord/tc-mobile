@@ -69,8 +69,8 @@ export const TOLERATED: readonly ToleratedState[] = [
     test: "chromium-back-navigation | (a) a failed-save exit while a goBack is in flight absorbs that Back's landing rather than issuing a second back() (#763)",
     state: "010 p0 locator.click",
     reason:
-      "Close recorder, clicked while the take started at 009 is still recording; unsettled in every run measured",
-    settles: "never",
+      "Close recorder, clicked while the take started at 009 is still recording; the read lands before the close settles in some runs and after it in others",
+    settles: "sometimes",
   },
   {
     test: 'chromium-back-navigation | a failed-save exit while an untracked suppressed Back (trap-forward\'s cancel) is in flight defers the consume to that landing, which then issues exactly one back() — the "defer" row (#833 item 3)',
