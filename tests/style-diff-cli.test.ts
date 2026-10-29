@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { CaptureState, CaptureTest } from "../e2e/style-diff/diff";
+import { TOLERATED } from "../e2e/style-diff/tolerated";
 
 /**
  * The comparator's command line, run the way `npm run style:diff` runs it:
@@ -14,8 +15,11 @@ import type { CaptureState, CaptureTest } from "../e2e/style-diff/diff";
  * (#954, Frank R1 P2 on #1778).
  *
  * A run is clean only when both sides recorded states, at least one state
- * matched, neither side had a capture error, and nothing differs. Each case
- * here breaks exactly one of those and reads the reason the report gives.
+ * matched, neither side had a capture error, nothing differs, and every state
+ * that did not settle is one `TOLERATED` names, which the CLI always applies.
+ * Each capture here therefore holds every listed state, unsettled, unless a
+ * case says otherwise; each case breaks exactly one condition and reads the
+ * reason the report gives.
  */
 
 const ROOT = join(import.meta.dirname, "..");
@@ -27,19 +31,26 @@ afterEach(() => {
   scratch = "";
 });
 
-function captureDir(
-  name: string,
+interface Listed {
+  /** Leave the listed states out of the capture entirely. */
+  absent?: boolean;
+  /** Listed state ids (`<test> | <state>`) captured settled. */
+  settled?: string[];
+  /** Listed state ids left out of the capture. */
+  omit?: string[];
+}
+
+function testFile(
+  id: string,
   states: CaptureState[],
   captureErrors = 0
-): string {
-  const dir = join(scratch, name);
-  mkdirSync(join(dir, "tests"), { recursive: true });
-  mkdirSync(join(dir, "styles"), { recursive: true });
-  const test: CaptureTest = {
-    id: "shipped | books › a card",
-    project: "shipped",
-    spec: "books.spec.ts",
-    title: "books › a card",
+): CaptureTest {
+  const [project = "", ...title] = id.split(" | ");
+  return {
+    id,
+    project,
+    spec: "a.spec.ts",
+    title: title.join(" | "),
     status: "passed",
     expectedStatus: "passed",
     captureErrors,
@@ -48,7 +59,32 @@ function captureDir(
     selectors: [],
     states,
   };
-  writeFileSync(join(dir, "tests", "t.json"), JSON.stringify(test));
+}
+
+function captureDir(
+  name: string,
+  states: CaptureState[],
+  captureErrors = 0,
+  listed: Listed = {}
+): string {
+  const dir = join(scratch, name);
+  mkdirSync(join(dir, "tests"), { recursive: true });
+  mkdirSync(join(dir, "styles"), { recursive: true });
+  const tests = [testFile("shipped | books › a card", states, captureErrors)];
+  if (!listed.absent) {
+    const byTest = new Map<string, CaptureState[]>();
+    for (const t of TOLERATED) {
+      const id = `${t.test} | ${t.state}`;
+      if (listed.omit?.includes(id)) continue;
+      const s = state(t.state);
+      if (!listed.settled?.includes(id)) s.unsettled = ["DOM still changing"];
+      byTest.set(t.test, [...(byTest.get(t.test) ?? []), s]);
+    }
+    for (const [id, s] of byTest) tests.push(testFile(id, s));
+  }
+  tests.forEach((t, i) =>
+    writeFileSync(join(dir, "tests", `t${i}.json`), JSON.stringify(t))
+  );
   writeFileSync(
     join(dir, "styles", "h1.json"),
     JSON.stringify({ color: "red" })
@@ -72,8 +108,14 @@ function cli(a: string, b: string) {
   });
   const verdict =
     run.stdout.split("\n").find((l) => l.startsWith("Verdict:")) ?? "";
-  return { code: run.status, verdict, stderr: run.stderr };
+  return { code: run.status, verdict, stdout: run.stdout, stderr: run.stderr };
 }
+
+const idOf = (i: number) => {
+  const t = TOLERATED[i];
+  if (!t) throw new Error(`TOLERATED has no entry ${i}`);
+  return { id: `${t.test} | ${t.state}`, entry: t };
+};
 
 describe("style:diff exit code and verdict", () => {
   it("exits 0 on a valid identical pair and says it is clean", () => {
@@ -99,10 +141,11 @@ describe("style:diff exit code and verdict", () => {
 
   it("exits nonzero when a side recorded no states, and names it", () => {
     scratch = mkdtempSync(join(tmpdir(), "style-diff-cli-"));
-    const r = cli(captureDir("a", []), captureDir("b", []));
+    const none = { absent: true };
+    const r = cli(captureDir("a", [], 0, none), captureDir("b", [], 0, none));
     expect(r.code).toBe(1);
     expect(r.verdict).toBe(
-      "Verdict: not clean — no states recorded in A; no states recorded in B; no state matched between the runs"
+      `Verdict: not clean — tolerated states not captured: ${TOLERATED.length * 2}; no states recorded in A; no states recorded in B; no state matched between the runs`
     );
   });
 
@@ -115,6 +158,56 @@ describe("style:diff exit code and verdict", () => {
     expect(r.code).toBe(1);
     expect(r.verdict).toBe(
       "Verdict: not clean — states only in A: 1; states only in B: 1; no state matched between the runs"
+    );
+  });
+});
+
+describe("style:diff and the tolerated list", () => {
+  it("exits nonzero when a listed state was not captured, and names it", () => {
+    // Neither run holds it, as after a renamed test: a dead entry.
+    scratch = mkdtempSync(join(tmpdir(), "style-diff-cli-"));
+    const { id } = idOf(0);
+    const r = cli(
+      captureDir("a", [state("001 p0 page.goto")], 0, { omit: [id] }),
+      captureDir("b", [state("001 p0 page.goto")], 0, { omit: [id] })
+    );
+    expect(r.code).toBe(1);
+    expect(r.verdict).toBe(
+      "Verdict: not clean — tolerated states not captured: 2"
+    );
+    expect(r.stdout).toContain(
+      `- tolerated state not captured in A: \`${id}\``
+    );
+    expect(r.stdout).toContain(
+      `- tolerated state not captured in B: \`${id}\``
+    );
+  });
+
+  it("exits nonzero when a never-settling listed state settled, and prints the stale line", () => {
+    scratch = mkdtempSync(join(tmpdir(), "style-diff-cli-"));
+    const never = TOLERATED.findIndex((t) => t.settles === "never");
+    const { id, entry } = idOf(never);
+    const r = cli(
+      captureDir("a", [state("001 p0 page.goto")], 0, { settled: [id] }),
+      captureDir("b", [state("001 p0 page.goto")])
+    );
+    expect(r.code).toBe(1);
+    expect(r.verdict).toBe("Verdict: not clean — stale tolerances: 1");
+    expect(r.stdout).toContain(
+      `Stale tolerance in A: \`${id}\` settled — fails: listed as never settling (${entry.reason})`
+    );
+  });
+
+  it("still fails on an unsettled state the list does not name", () => {
+    scratch = mkdtempSync(join(tmpdir(), "style-diff-cli-"));
+    const moving = { ...state("002 p0 locator.click"), unsettled: ["x"] };
+    const r = cli(
+      captureDir("a", [state("001 p0 page.goto"), moving]),
+      captureDir("b", [state("001 p0 page.goto"), moving])
+    );
+    expect(r.code).toBe(1);
+    expect(r.verdict).toBe(
+      "Verdict: not clean — states that did not settle (A 1 / B 1)"
     );
   });
 });
