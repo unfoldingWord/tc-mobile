@@ -715,7 +715,7 @@ describe("the tolerated list", () => {
     for (const t of TOLERATED) {
       expect(t.state).toMatch(/^\d{3} p\d+ \S+$/);
       expect(t.test).toMatch(/^[\w-]+ \| \S/);
-      expect(t.reason.trim()).not.toBe("");
+      expect(t.reason).toMatch(/^\S.*\S$/);
     }
   });
 });
