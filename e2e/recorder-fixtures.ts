@@ -37,10 +37,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * `click()` actionability only reads the native `disabled` DOM property,
  * never `aria-busy`/`aria-disabled`, so it clicks a control whose `onClick`
  * prop is `undefined` — the click "succeeds" and does nothing, and the next
- * assertion times out waiting for an effect that was never triggered. This
- * was reproduced locally (CPU-throttled, see the PR body) with the same
- * accessible-name snapshot every CI failure recorded: "Record" and
- * "Edit recording" both present, no selection frame, no error.
+ * assertion times out waiting for an effect that was never triggered.
  *
  * `aria-busy` is the one attribute that tracks the real gate: it is set from
  * `isClosing` in the same render `editReason`/`committing` reads

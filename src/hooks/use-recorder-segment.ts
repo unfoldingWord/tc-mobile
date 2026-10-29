@@ -105,10 +105,9 @@ export interface RecorderSegmentView {
  *
  * The React-free core of {@link useRecorderSegment}, extracted so the walk, the
  * decode alignment and the empty/PCM branches are covered in Node against
- * fake-indexeddb — the same split `performErase` uses (this repo has no
- * jsdom/renderer). The MP3 decode itself is the one browser-only step — it can
- * only run on a device and has not been exercised on one at this head; the PCM
- * and empty paths — the ones a translator hits every session — are node-tested.
+ * fake-indexeddb — the same split `performErase` uses. The MP3 decode itself is
+ * the one browser-only step, and Node does not cover it; the PCM and empty
+ * paths — the ones a translator hits every session — are node-tested.
  *
  * `hasClip` follows `loadSegmentClip` resolving, not `activeTakeId`, so a
  * dangling take opens as an empty segment (record-only), never a waveform over
