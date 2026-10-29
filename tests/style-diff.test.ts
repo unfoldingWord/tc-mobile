@@ -334,6 +334,7 @@ describe("roundValue", () => {
       "1.5px",
       "#0b1016",
       'url("/assets/index-a1.23456.js")',
+      'url("/fonts/inter-v1.23456")',
       "rgb(11, 16, 22)",
     ]) {
       expect(roundValue(value)).toBe(value);

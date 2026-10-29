@@ -20,9 +20,10 @@ import base from "./playwright.config";
  *      directory, from the HEAD checkout (its specs drive all three runs):
  *        STYLE_CAPTURE_DIR=<dir> STYLE_DIFF_DIST=<dist> \
  *          STYLE_DIFF_DIST_E2E=<dist-e2e> npm run style:capture
- *   3. `npm run style:diff -- <A1> <A2>` is the noise floor. It must report
- *      nothing; otherwise each noisy key is listed with its cause, and is
- *      left out only by an explicit `--ignore <prop>`, which the report prints.
+ *   3. `npm run style:diff -- <A1> <A2>` is the self-check. Its verdict must
+ *      be clean. A difference, an unmatched state or a state that did not
+ *      settle is named with its cause on the PR, never left out by default;
+ *      `--ignore <prop>` stays explicit, and the report prints it.
  *   4. `npm run style:diff -- <A1> <B> --base <sha> --head <sha>` is the
  *      result. `--rename-prop old=new` maps a renamed custom property.
  * The output goes in a PR comment, never into a file in the tree (AGENTS.md).
