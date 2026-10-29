@@ -362,9 +362,12 @@ export default tseslint.config(
   {
     // `dist-e2e` is build output too (`npm run build:e2e`, #251) and was
     // missing here while `dist` was listed — round-1 George G5.
+    // `dist-templates` is the opted-in template build (`npm run
+    // build:templates`, #1450).
     ignores: [
       "dist",
       "dist-e2e",
+      "dist-templates",
       "dev-dist",
       ".wrangler",
       "public",

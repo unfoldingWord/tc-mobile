@@ -61,6 +61,7 @@ npm run dev            # dev server
 npm run dev:lan        # bind 0.0.0.0 for phone testing (see HTTPS caveat below)
 npm run build          # production build
 npm run preview        # preview the build
+npm run build:templates # a build into dist-templates/ that bakes provisional template packages (e2e only, #1450)
 npm run lint           # ESLint, zero warnings allowed
 npm run typecheck      # tsc -b (project references)
 npm run typecheck:lib  # lib/ + types/ compiled with NO DOM lib — see below

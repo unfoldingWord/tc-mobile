@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-e2e
+dist-templates
 dev-dist
 package-lock.json
 *.min.js

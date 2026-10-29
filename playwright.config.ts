@@ -17,7 +17,15 @@ import { defineConfig, devices } from "@playwright/test";
  *     precache assertion touches no harness, so it runs against `dist/` and
  *     asserts the manifest users actually get.
  *
- * `npm run test:e2e` produces both before Playwright starts. Separate ports
+ * A third, `dist-templates/` (`npm run build:templates`), is a production
+ * build that opts in to the provisional template packages
+ * (TC_BAKE_PROVISIONAL_TEMPLATES=1 and TC_BAKE_BRANCH=e2e-templates,
+ * `scripts/bake-template-packages.mjs`), so
+ * the Template Library's Bible-book row can be driven without the default
+ * `npm run build` ever baking one (#1450). Only `template-bible-book.spec.ts`
+ * runs against it.
+ *
+ * `npm run test:e2e` produces all three before Playwright starts. Separate ports
  * are separate origins, so each build's service worker, Cache Storage and
  * IndexedDB stay isolated from the other's.
  *
@@ -41,6 +49,8 @@ const PINNED_CHROMIUM =
 const PORT_E2E = 4300;
 /** `dist/`: the real shipped build, for the service-worker precache assertion. */
 const PORT_DIST = 4301;
+/** `dist-templates/`: the build opted in to provisional template packages. */
+const PORT_TEMPLATES = 4302;
 
 const chromium = {
   ...devices["Desktop Chrome"],
@@ -66,6 +76,12 @@ export default defineConfig({
     {
       command: `npm run preview -- --port ${PORT_DIST} --strictPort`,
       url: `http://127.0.0.1:${PORT_DIST}`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    {
+      command: `npm run preview:templates -- --port ${PORT_TEMPLATES} --strictPort`,
+      url: `http://127.0.0.1:${PORT_TEMPLATES}`,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },
@@ -125,6 +141,15 @@ export default defineConfig({
       name: "chromium-guided-highlight",
       testMatch: /guided-highlight\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
+    },
+    {
+      // The Template Library's Bible-book row (#1450 R7), against the build
+      // opted in to provisional packages. Its own build and origin, because
+      // the default `dist/` must stay without them, and the shipped-build
+      // project's `template-library.spec.ts` asserts that it does.
+      name: "chromium-template-packages",
+      testMatch: /template-bible-book\.spec\.ts$/,
+      use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_TEMPLATES}` },
     },
   ],
 });
