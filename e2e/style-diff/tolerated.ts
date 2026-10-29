@@ -69,8 +69,15 @@ export const TOLERATED: readonly ToleratedState[] = [
     test: "chromium-back-navigation | (a) a failed-save exit while a goBack is in flight absorbs that Back's landing rather than issuing a second back() (#763)",
     state: "010 p0 locator.click",
     reason:
-      "Close recorder, clicked while the take started at 009 records: the live level display redraws every frame",
+      "Close recorder, clicked while the take started at 009 is still recording; unsettled in every run measured",
     settles: "never",
+  },
+  {
+    test: 'chromium-back-navigation | a failed-save exit while an untracked suppressed Back (trap-forward\'s cancel) is in flight defers the consume to that landing, which then issues exactly one back() — the "defer" row (#833 item 3)',
+    state: "011 p0 page.goForward",
+    reason:
+      "Forward while the take started at 010 records: vu-meter.tsx's fill style was the only mutation traced, and it settles in some runs",
+    settles: "sometimes",
   },
   {
     test: `${SHIPPED} | a short drag springs the sheet back and leaves it open`,
