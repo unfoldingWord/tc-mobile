@@ -5,11 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { subscribeToFailures } from "@/hooks/report-failure";
 import { readSavedChecks, SAVED_CHECKS_KEY } from "@/hooks/phone-check-probes";
-import {
-  isPhoneCheckRunning,
-  usePhoneCheck,
-  type PhoneCheckState,
-} from "@/hooks/use-phone-check";
+import { isPhoneCheckRunning } from "@/hooks/phone-check-run-slot";
+import { usePhoneCheck, type PhoneCheckState } from "@/hooks/use-phone-check";
 import type { SavedChecks } from "@/lib/phone-check/saved-results";
 import type { DspBenchResult } from "@/types/audio";
 
