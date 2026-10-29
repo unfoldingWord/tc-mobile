@@ -56,6 +56,19 @@ interface PlayheadOverlayProps {
 }
 
 /**
+ * Hide the line and drop its position, so a hidden line is in the same state
+ * as one that never played (#954). The position a frame writes comes from the
+ * audio clock, so a hidden line that kept it rested wherever the last frame
+ * happened to fall. Nothing can see a hidden line's position, and the next
+ * showing frame writes `left` before it sets `opacity`, so the reveal is
+ * unchanged.
+ */
+function hideLine(line: HTMLDivElement) {
+  line.style.opacity = "0";
+  line.style.removeProperty("left");
+}
+
+/**
  * The recorder's playback playhead, as a DOM overlay rather than a bar in
  * `Waveform`'s canvas (#102).
  *
@@ -105,7 +118,7 @@ export function PlayheadOverlay({
     if (!line) return;
     // Idle / paused / empty: hide the line and run no loop.
     if (!active || durationMs <= 0) {
-      line.style.opacity = "0";
+      hideLine(line);
       return;
     }
     const span = endFraction - startFraction;
@@ -121,7 +134,7 @@ export function PlayheadOverlay({
       // exists to prevent (Frank R7). Hide rather than treat a 0 as "draw at
       // clip start" too, which would teleport the line for that frame (George R2).
       if (ms === null || span <= 0) {
-        line.style.opacity = "0";
+        hideLine(line);
         raf = requestAnimationFrame(tick);
         return;
       }
@@ -137,7 +150,7 @@ export function PlayheadOverlay({
       // sounding audio the pan/zoom window is simply too narrow to show, and
       // the cue this feature exists to add must stay up rather than vanish.
       if ((px < 0 || px > 1) && !clampToEdge) {
-        line.style.opacity = "0";
+        hideLine(line);
       } else {
         const clamped = Math.min(1, Math.max(0, px));
         // Clamp the CSS position so the whole 2px line stays inside the stage's
