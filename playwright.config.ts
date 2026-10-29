@@ -19,7 +19,8 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * A third, `dist-templates/` (`npm run build:templates`), is a production
  * build that opts in to the provisional template packages
- * (TC_BAKE_PROVISIONAL_TEMPLATES=1, `scripts/bake-template-packages.mjs`), so
+ * (TC_BAKE_PROVISIONAL_TEMPLATES=1 and TC_BAKE_BRANCH=e2e-templates,
+ * `scripts/bake-template-packages.mjs`), so
  * the Template Library's Bible-book row can be driven without the default
  * `npm run build` ever baking one (#1450). Only `template-bible-book.spec.ts`
  * runs against it.

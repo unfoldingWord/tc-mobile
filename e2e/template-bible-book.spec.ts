@@ -3,7 +3,8 @@ import { expect, test, type Page } from "./support/test";
 /**
  * A Bible book from the Template Library (#1450 R7), against `dist-templates/`:
  * a production-mode build that opts in to the provisional template packages
- * (`npm run build:templates`, which sets TC_BAKE_PROVISIONAL_TEMPLATES=1; see
+ * (`npm run build:templates`, which sets TC_BAKE_PROVISIONAL_TEMPLATES=1 and
+ * names a non-main branch in TC_BAKE_BRANCH for a build outside CI; see
  * `scripts/bake-template-packages.mjs`). Only that build carries the
  * provisional Titus package, so this spec has a build and a preview of its
  * own, and the default `npm run build` stays as it was. That the default
