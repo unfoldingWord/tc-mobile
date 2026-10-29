@@ -29,6 +29,11 @@ export interface CaptureState {
   animated: Record<string, string[]>;
   /** Indices into the test's `selectors` table that matched an element. */
   matched: number[];
+  /**
+   * The animations and transitions still running when the settle bound ran
+   * out, one description each. Absent or empty: the page settled.
+   */
+  unsettled?: string[];
 }
 
 /** One test's capture file. */
@@ -78,6 +83,12 @@ export interface DiffReport {
   statesOnlyInA: string[];
   statesOnlyInB: string[];
   failedTests: { run: "A" | "B"; id: string; status: string }[];
+  /**
+   * States taken before the page settled, in either run. A matched pair with
+   * one of these on either side is not compared value by value: it is
+   * reported here, as its own kind, and not as differences.
+   */
+  unsettled: { run: "A" | "B"; state: string; animations: string[] }[];
   captureErrors: { A: number; B: number };
   elementsCompared: number;
   valuesCompared: number;
@@ -93,10 +104,52 @@ export interface DiffReport {
 export const ABSENT = "(absent)";
 const SAMPLE_LIMIT = 3;
 
+/** Decimal places a computed number is compared at. */
+export const PRECISION = 3;
+
+/**
+ * A decimal number with more than `PRECISION` places that stands alone as a
+ * number: not part of a word, a hex colour or a file name (`index-a1.2345.js`).
+ */
+const LONG_DECIMAL = new RegExp(
+  `(?<![\\w.#])-?\\d*\\.\\d{${PRECISION + 1},}(?![\\d.])`,
+  "g"
+);
+
+/**
+ * One computed value with every long decimal rounded to `PRECISION` places,
+ * so `37.37500000000001%` and `37.375%` compare equal. A value with no long
+ * decimal comes back as it was, character for character.
+ */
+export function roundValue(value: string): string {
+  return value.replace(LONG_DECIMAL, (n) => {
+    const r = Number(Number(n).toFixed(PRECISION));
+    return String(Object.is(r, -0) ? 0 : r);
+  });
+}
+
+/** `roundValue` over every value of one style map. */
+export function roundStyle(map: StyleMap): StyleMap {
+  const out: StyleMap = {};
+  for (const [k, v] of Object.entries(map)) out[k] = roundValue(v);
+  return out;
+}
+
 const stateId = (test: CaptureTest, state: CaptureState) =>
   `${test.id} | ${state.key}`;
 
 const isFailed = (test: CaptureTest) => test.status !== test.expectedStatus;
+
+const unsettledIn = (run: "A" | "B", r: CaptureRun) =>
+  r.tests.flatMap((t) =>
+    t.states
+      .filter((s) => (s.unsettled ?? []).length > 0)
+      .map((s) => ({
+        run,
+        state: stateId(t, s),
+        animations: s.unsettled ?? [],
+      }))
+  );
 
 const sides = ["top", "right", "bottom", "left"] as const;
 const corners = [
@@ -184,6 +237,7 @@ export function diffRuns(
     statesCompared: 0,
     statesOnlyInA: [...statesA.keys()].filter((k) => !statesB.has(k)).sort(),
     statesOnlyInB: [...statesB.keys()].filter((k) => !statesA.has(k)).sort(),
+    unsettled: [...unsettledIn("A", a), ...unsettledIn("B", b)],
     failedTests: [
       ...a.tests
         .filter(isFailed)
@@ -230,8 +284,8 @@ export function diffRuns(
     const props = new Set([...Object.keys(ma), ...Object.keys(mb)]);
     const changes: [string, string, string][] = [];
     for (const p of props) {
-      const va = ma[p] ?? ABSENT;
-      const vb = mb[p] ?? ABSENT;
+      const va = roundValue(ma[p] ?? ABSENT);
+      const vb = roundValue(mb[p] ?? ABSENT);
       if (va !== vb) changes.push([p, va, vb]);
     }
     const result = { total: props.size, changes };
@@ -261,6 +315,10 @@ export function diffRuns(
   for (const [id, sa] of statesA) {
     const sb = statesB.get(id);
     if (!sb) continue;
+    // Reported in `unsettled` instead: a mid-transition read is not evidence
+    // of a style either way.
+    if ((sa.unsettled ?? []).length > 0 || (sb.unsettled ?? []).length > 0)
+      continue;
     report.statesCompared += 1;
     const paths = new Set([
       ...Object.keys(sa.elements),
@@ -363,6 +421,11 @@ export function verdict(report: DiffReport): string[] {
   if (report.failedTests.length > 0) {
     reasons.push(`failed tests: ${report.failedTests.length}`);
   }
+  if (report.unsettled.length > 0) {
+    reasons.push(
+      `states that did not settle (A ${unsettledCount(report, "A")} / B ${unsettledCount(report, "B")})`
+    );
+  }
   if (report.captureErrors.A > 0 || report.captureErrors.B > 0) {
     reasons.push(
       `capture errors (A ${report.captureErrors.A} / B ${report.captureErrors.B})`
@@ -375,6 +438,9 @@ export function verdict(report: DiffReport): string[] {
   }
   return reasons;
 }
+
+const unsettledCount = (report: DiffReport, run: "A" | "B") =>
+  report.unsettled.filter((u) => u.run === run).length;
 
 /** The verdict as one line, the first the CLI prints. */
 export function verdictLine(reasons: readonly string[]): string {
@@ -410,6 +476,7 @@ export function formatReport(
     `| States only in B | ${report.statesOnlyInB.length} |`,
     `| Tests failed (A / B) | ${report.failedTests.filter((f) => f.run === "A").length} / ${report.failedTests.filter((f) => f.run === "B").length} |`,
     `| Capture errors (A / B) | ${report.captureErrors.A} / ${report.captureErrors.B} |`,
+    `| States that did not settle (A / B) | ${unsettledCount(report, "A")} / ${unsettledCount(report, "B")} |`,
     `| Elements compared | ${report.elementsCompared} |`,
     `| Values compared | ${report.valuesCompared} |`,
     `| Values left out as animated | ${report.animatedExcluded} |`,
@@ -439,10 +506,14 @@ export function formatReport(
     detail.push(`- state only in B: \`${s}\``);
   for (const f of report.failedTests)
     detail.push(`- test failed in ${f.run} (${f.status}): \`${f.id}\``);
+  for (const u of report.unsettled)
+    detail.push(
+      `- state did not settle in ${u.run}: \`${u.state}\` — still running: ${u.animations.map((x) => `\`${x}\``).join(", ")}`
+    );
   if (detail.length > 0) {
     const shown = detail.slice(0, cap);
     lines.push(
-      "<details><summary>Differences, unmatched states and failed tests" +
+      "<details><summary>Differences, unmatched states, failed tests and unsettled states" +
         (detail.length > cap
           ? ` (first ${cap} of ${detail.length} lines)`
           : ` (${detail.length} lines)`) +

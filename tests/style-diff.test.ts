@@ -4,12 +4,15 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { blocksSettle, keptChildren, SKIP } from "../e2e/style-diff/capture";
 import {
   ABSENT,
   diffRuns,
   formatReport,
   loadRun,
   parseArgs,
+  roundValue,
+  verdict,
   type CaptureRun,
   type CaptureState,
   type CaptureTest,
@@ -21,8 +24,9 @@ import {
  *
  * Every case builds two small capture runs by hand and asks `diffRuns` what
  * differs. The capture half (`e2e/style-diff/capture.ts`) runs only inside
- * Playwright, so nothing here exercises it; what it reaches in a real run is
- * reported on the PR that runs it, never here.
+ * Playwright; of it, only the two pure helpers it also sends into the page
+ * (`keptChildren`, `blocksSettle`) are exercised here. What a real run
+ * reaches is reported on the PR that runs it, never here.
  */
 
 const BOOKS_CARD = "html>body[1]>div[1]";
@@ -312,6 +316,140 @@ describe("diffRuns", () => {
       ".err-wide",
       ":root .books-card:hover",
     ]);
+  });
+});
+
+describe("roundValue", () => {
+  it("rounds a long decimal to three places, in place", () => {
+    expect(roundValue("37.37500000000001%")).toBe("37.375%");
+    expect(roundValue("matrix(1, 0, 0, 1, 12.33333, -0.6666667)")).toBe(
+      "matrix(1, 0, 0, 1, 12.333, -0.667)"
+    );
+    expect(roundValue("-0.00001px")).toBe("0px");
+  });
+
+  it("leaves a short decimal and any number inside a word alone", () => {
+    for (const value of [
+      "37.375%",
+      "1.5px",
+      "#0b1016",
+      'url("/assets/index-a1.23456.js")',
+      "rgb(11, 16, 22)",
+    ]) {
+      expect(roundValue(value)).toBe(value);
+    }
+  });
+});
+
+describe("diffRuns and rounding", () => {
+  const cut = (left: string) =>
+    run({ h: { ...card, "--o4-cut-left": left } }, [
+      test([state("001 p0 end", { [BOOKS_CARD]: "h" })]),
+    ]);
+
+  it("reports no difference between values that differ only past three places", () => {
+    const report = diffRuns(cut("37.375%"), cut("37.37500000000001%"));
+    expect(report.differences).toEqual([]);
+  });
+
+  it("still reports a difference at the third place", () => {
+    const report = diffRuns(cut("37.375%"), cut("37.376%"));
+    expect(
+      report.differences.map((d) => [d.property, d.before, d.after])
+    ).toEqual([["--o4-cut-left", "37.375%", "37.376%"]]);
+  });
+});
+
+describe("keptChildren", () => {
+  const el = (localName: string, id = "") => ({ localName, id });
+
+  it("numbers the app's root the same with the launch overlay present or gone", () => {
+    const root = el("div", "root");
+    const withOverlay = keptChildren(
+      [el("div", "launch-intro"), el("script"), root, el("div")],
+      SKIP
+    );
+    const without = keptChildren([el("script"), root, el("div")], SKIP);
+    expect(withOverlay).toEqual(without);
+    expect(without.map(([c, i]) => [c.id || c.localName, i])).toEqual([
+      ["root", 1],
+      ["div", 2],
+    ]);
+  });
+
+  it("skips head and the elements that never render", () => {
+    const kept = keptChildren(
+      ["head", "style", "link", "meta", "template", "noscript", "body"].map(
+        (n) => el(n)
+      ),
+      SKIP
+    );
+    expect(kept.map(([c, i]) => [c.localName, i])).toEqual([["body", 1]]);
+  });
+});
+
+describe("blocksSettle", () => {
+  it("holds the snapshot for a running or pending animation that ends", () => {
+    expect(
+      blocksSettle({ playState: "running", pending: false, endTime: 300 })
+    ).toBe(true);
+    expect(
+      blocksSettle({ playState: "paused", pending: true, endTime: 300 })
+    ).toBe(true);
+  });
+
+  it("does not hold it for an infinite, finished or paused one", () => {
+    expect(
+      blocksSettle({ playState: "running", pending: false, endTime: Infinity })
+    ).toBe(false);
+    expect(
+      blocksSettle({ playState: "finished", pending: false, endTime: 300 })
+    ).toBe(false);
+    expect(
+      blocksSettle({ playState: "paused", pending: false, endTime: 300 })
+    ).toBe(false);
+  });
+});
+
+describe("an unsettled state", () => {
+  const sheet = (opacity: string, unsettled?: string[]) =>
+    run({ h: { ...card, opacity } }, [
+      test([
+        state(
+          "002 p0 locator.click",
+          { [BOOKS_CARD]: "h" },
+          unsettled ? { unsettled } : {}
+        ),
+      ]),
+    ]);
+
+  it("is reported as its own kind, not compared, and keeps the verdict from clean", () => {
+    const report = diffRuns(
+      sheet("1"),
+      sheet("0.4", ["div transition opacity"])
+    );
+    expect(report.unsettled).toEqual([
+      {
+        run: "B",
+        state: "shipped | books › a card | 002 p0 locator.click",
+        animations: ["div transition opacity"],
+      },
+    ]);
+    expect(report.differences).toEqual([]);
+    expect(report.statesCompared).toBe(0);
+    expect(verdict(report)).toContain("states that did not settle (A 0 / B 1)");
+    const text = formatReport(report, { baseLabel: "a", headLabel: "b" });
+    expect(text).toContain("| States that did not settle (A / B) | 0 / 1 |");
+    expect(text).toContain(
+      "- state did not settle in B: `shipped | books › a card | 002 p0 locator.click` — still running: `div transition opacity`"
+    );
+  });
+
+  it("does not count a settled state as unsettled", () => {
+    const report = diffRuns(sheet("1"), sheet("1", []));
+    expect(report.unsettled).toEqual([]);
+    expect(report.statesCompared).toBe(1);
+    expect(verdict(report)).toEqual([]);
   });
 });
 
