@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, normalizePath, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
 // Extension spelled out, unlike the `@/`-aliased imports inside `src/`. This
@@ -120,11 +120,10 @@ function versionJsonPlugin(): Plugin {
 // precache's `js` glob covers. `template-bake.json` (outside the precache,
 // like version.json) names that chunk and the package ids it holds, for
 // tests/precache-manifest.test.ts and for anyone asking what a deploy carries.
-const BAKED_MODULE = path.join(
-  import.meta.dirname,
-  "src",
-  "data",
-  "baked-template-packages.json"
+// `normalizePath`, because Vite hands `load` and `moduleIds` forward-slash ids
+// and `path.join` gives backslashes on Windows (Frank, round 2 on #1798).
+const BAKED_MODULE = normalizePath(
+  path.join(import.meta.dirname, "src", "data", "baked-template-packages.json")
 );
 
 function bakedTemplatePackagesPlugin(): Plugin {
