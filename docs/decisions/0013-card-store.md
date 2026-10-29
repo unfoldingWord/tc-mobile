@@ -176,7 +176,8 @@ mounted, is owed to P1.
 ### 2. The schema: where a clip lives
 
 `clipMeta` gains a location: IndexedDB, or the card, naming the card's volume
-by the UUID that P1 is asked to show is stable across reboot and reinsertion.
+by the UUID that P1 is asked to show is stable across reboot and reinsertion,
+and the exact file (§3). A card location also carries the file's CRC32.
 That is a schema step, `DB_VERSION` 15 at the earliest (`db.ts:180` is 14),
 and it is the "Schema v13: where a clip's audio lives" child in #1456's list,
 renumbered because v13 and v14 have shipped.
@@ -193,45 +194,66 @@ renumbered because v13 and v14 have shipped.
 
 ### 3. The commit protocol
 
+**Every write attempt owns its file.** An attempt writes
+`<clipId>.<n>.<pcm|mp3>`, with `<n>` fresh for that attempt, and the `clipMeta`
+location names that exact file. A save may be retried under the same `clipId`
+(`takes.ts:307-308`), so a shared name would let a failed retry overwrite or
+delete the bytes an earlier attempt committed; per-attempt names rule that out.
+A `clipId` is a `crypto.randomUUID()` (`clips.ts:14`), one safe path segment.
+
 A save to the card, in order:
 
-1. **Before any transaction**, the plugin writes `<clipId>.<pcm|mp3>.part`,
-   verifies its length and CRC32 against the bytes it was given, syncs it to
-   the card, and renames it to the final name. A final-named file is therefore
-   never partial; that the rename makes this true on a card after a kill or a
-   power-off is owed to P4.
+1. **Before any transaction**, the plugin writes `<name>.part`, syncs it, reads
+   it back, checks the length and CRC32 of what it read against the bytes it
+   was given, and renames it to `<name>`. A final-named file is therefore never
+   partial. That the sync and the read-back reach the card rather than a cache,
+   and that the rename holds after a kill or a power-off, is owed to P4.
 2. **One strict IndexedDB transaction** writes the take row, the `clipMeta`
-   row with its card location, and the pending-row change, the scope today's `saveTake`
-   opens (`openTakeTx`, `takes.ts:65-76`).
-3. **If that transaction fails**, the final file is removed and the take stays
-   held in its `pendingTakes` row, as a failed save is today (`"save-take"`,
-   #456). The take is not lost.
-4. **After it commits**, a superseded clip's file is deleted, through the same
+   row with its card location and CRC32, and the pending-row change, the scope
+   today's `saveTake` opens (`openTakeTx`, `takes.ts:65-76`).
+3. **If that transaction ends without naming `<name>`** (it failed, or found
+   the take already saved or discarded), the attempt deletes `<name>` and
+   nothing else; no committed row names it. The take stays held in its
+   `pendingTakes` row if it has one, as a failed save is today (`"save-take"`,
+   #456).
+4. **After it commits**, a superseded file is deleted, through the same
    reference check `deleteClipIfUnreferenced` makes (`clips.ts:149`). A delete
    that fails leaves an orphan, never a dangling row.
 
-The transcode on Finished (`commitTranscode`, `transcode.ts:153`) follows the
-same four steps, writing `<clipId>.mp3` beside the PCM file and deleting the
-PCM file only after its commit. Today it replaces the PCM under the same key in
-one transaction (`transcode.ts:202`); on the card the PCM and the MP3 briefly
-coexist, so the card needs room for both.
+A read checks the file's length and CRC32 against its row; a mismatch takes
+the missing-file path in §4 (reported, row kept, not played as audio).
 
-**The orphan sweep.** A file on the card with no `clipMeta` row is an orphan. A
-sweep may delete it, but never a `.part` file or a final file whose write
-started in this page's lifetime, and never a file named by a `pendingTakes`
-row. It runs before the first card write of a launch or not at all. How it
-learns which writes are in flight is the commit-protocol child's design.
+The transcode on Finished (`commitTranscode`, `transcode.ts:153`) follows the
+same steps, writing a new `<clipId>.<n>.mp3` beside the PCM file. Today it
+replaces the PCM under the same key in one transaction (`transcode.ts:202`); on
+the card the PCM and the MP3 briefly coexist, so the card needs room for both.
+This path has no `pendingTakes` row: if its transaction fails, step 3 deletes
+the new MP3 only, and `clipMeta` still names the PCM file. Once it commits, no
+row names the PCM file, so step 4 or the sweep deletes it.
+
+**The orphan sweep.** A card file that no `clipMeta` location names exactly is
+an orphan: a `.part`, an attempt a kill stopped before step 2 or 3, or a PCM
+file a transcode superseded. The sweep runs once per launch, before that
+launch's first card write, so no write of this launch is in flight, and it
+deletes every orphan it finds; it runs then or not at all. That one page at a
+time writes the card folder is an assumption (the Android app has one
+WebView), for the commit-protocol child to check.
 
 **Where a held take lives.** The `pendingTakes` row holds the take's PCM in
 IndexedDB (`domain.ts:312`). So even with the card store on, a take is held on
 the phone until its save commits, and a phone with no free space may be unable
 to hold it (inference, from #339's field evidence). Whether the held copy moves
 to the card is out of #1751's scope by its own words, and is an **open
-technical question for the DRI** (below).
+technical question for the DRI** (below). The hold is a separate write the save
+does not wait for (`use-save-take.ts:102`), and it can keep nothing (another
+take's row holds the segment, `"pending-take-write"`). A take with no row has
+no other durable copy before step 2 commits, so a kill there loses it, as it
+would today (inference), and the next sweep deletes its unnamed file.
 
 **Bridge throughput.** The plugin is called through Capacitor's bridge. Writing
-a 20-minute take (about 106 MB of PCM, at 5.3 MB a minute) in 384 KiB chunks,
-and the JS heap that takes, is owed to P2. Reading it back by base64 chunks or
+a 20-minute take (about 106 MB: mono 16-bit PCM at 44.1 kHz,
+`src/lib/audio/format.ts:4`, `:15`, is 5.3 MB a minute) in 384 KiB chunks, and
+the JS heap that takes, is owed to P2. Reading it back by base64 chunks or
 by `fetch(Capacitor.convertFileSrc(path))` is owed to P3. If P2 misses the
 threshold the DRI sets, ADR 0016's trigger 2 fires
 (`0016-capacitor-or-expo.md:77-80`).
@@ -248,8 +270,8 @@ filed yet (#1456's child list).
 | **Card full**                                                | A free-space read before step 1 predicts it; if the write still fails, the typed "full" code takes the same path as a missing card.                                                                         | "a full card is refused before the write and the take stays held" — same child                           | P6                                     |
 | **Card read-only**                                           | The same path, with its own code if the plugin can tell it apart. The spike's codes (`FULL`, `UNMOUNTED`, `IO`, `NO_SESSION`, `NOT_FOUND`, `GRANT`) name none for it.                                       | "a read-only card keeps the take held" — same child                                                      | Not probed by #1472; needs a row added |
 | **Card swapped** between sessions                            | A row whose location names another volume reads as "card not present", never as lost. No row is deleted and no file is written to the other card's folder for that clip.                                    | "a clip on another card reads as not present and its row survives" — same child                          | P1, P9                                 |
-| **Row pointing at a missing file** (card present, file gone) | The segment shows its audio as missing, the read reports to the failure log (as `"playback-dangling"` does today, `src/hooks/use-audio-session.ts:550`), and the row is never deleted automatically.        | "a missing card file leaves the row and reports it" — commit protocol child                              | P1                                     |
-| **Partial file after a kill** while it was the only copy     | Cannot be final-named (step 1). A `.part` left by a dead launch is an orphan for the sweep; the take it came from is still in its `pendingTakes` row until step 2 commits.                                  | "a kill between the write and the commit leaves the take held and no final file" — commit protocol child | P4                                     |
+| **Row pointing at a missing file** (card present, file gone) | The segment shows its audio as missing, the read reports to the failure log (as `"playback-dangling"` does today, `src/hooks/use-audio-session.ts:550`), and the row is never deleted automatically.        | "a missing or CRC-mismatched card file leaves the row and reports it" — commit protocol child            | P1                                     |
+| **Partial file after a kill** while it was the only copy     | A `.part`, or a final file no `clipMeta` row names, is an orphan the next launch's sweep deletes (§3). The take stays in its `pendingTakes` row, if it has one, until step 2 commits.                       | "a kill before the commit leaves no file a row names, and the take held" — commit protocol child         | P4                                     |
 | **Card pulled mid-recording**                                | Nothing is written while recording, so storage is untouched. The facilitator is warned against it when the card store is switched on, per D2-microsd's note.                                                | None beyond the missing-card test; the warning is copy                                                   | P5                                     |
 
 Where the card's state changes while the app runs, which events reach the
@@ -264,9 +286,11 @@ own folder, which is expected to go on uninstall. Its content is the Scripture
 Bundle that [ADR 0014](0014-scripture-bundle-profile.md) and #1474 define; this
 ADR covers only where it is written and how.
 
-- One file per book, written whole, read back and checked for length and CRC32.
-- An overwrite truncates (`openFileDescriptor(uri, "rwt")`). That no tail of
-  the longer file remains is owed to P8.
+- One file per book, written whole under a new name beside the previous
+  backup, synced, read back and checked for length and CRC32, and only then
+  put in the previous backup's place. The previous backup is never truncated
+  first (`openFileDescriptor(uri, "rwt")` is not used), so a kill part-way
+  leaves it whole. How the replace is done through the grant is owed to P8.
 - The grant is persisted. Whether it survives an app restart, a reboot, and
   the card out and in, and that it stops resolving on a different card, is
   owed to P8.
@@ -340,6 +364,8 @@ T1 to T3; picks are not answers.
 - **Where a held take's bytes live** when the card store is on: IndexedDB as
   today, or the card. #1751 left pending-take bytes out of scope for the
   commit-protocol child to decide.
+- **A take with no `pendingTakes` row, killed before its save commits**:
+  whether the sweep keeps its card file for a recovery path or deletes it (§3).
 - **`hasFragileUserData`**, once P7 reports.
 - **What the backup's `confidential` flag says about card copies**:
   [#1580](https://github.com/unfoldingWord/tc-mobile/issues/1580), open in ADR 0011.
