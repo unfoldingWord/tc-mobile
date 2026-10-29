@@ -230,10 +230,6 @@ with each form a whole phrase carrying `{n}` — so a language with three count
 forms, or one that puts its numeral last, adds keys rather than rewriting call
 sites.
 
-What #169 still asks for beyond these is a `strings[locale]` dimension,
-sentences that are not assembled from translated fragments, and book names
-stored as numbers rather than written into IndexedDB as English data.
-
 ## Testing
 
 - `tests/` at the repo root, `*.test.ts`, run in the Node environment.
