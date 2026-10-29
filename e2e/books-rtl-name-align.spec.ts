@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * A SHORT book name on the new-look (O4) Books shelf sits at the edge its own

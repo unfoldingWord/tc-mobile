@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * The Template Library (#246, part of #1450), against the shipped `dist/`

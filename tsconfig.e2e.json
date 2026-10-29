@@ -15,5 +15,5 @@
     "noUncheckedIndexedAccess": true,
     "types": ["node"]
   },
-  "include": ["e2e", "playwright.config.ts"]
+  "include": ["e2e", "playwright.config.ts", "playwright.style-diff.config.ts"]
 }

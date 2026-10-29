@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 /**
  * The durable failure log's browser-only half (#205), against the SHIPPED

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * Normalize-on-Finished in a real browser (#1433, the browser half; "Part of

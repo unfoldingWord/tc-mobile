@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * The mic panel's second-refusal state at a small phone (#1569), on the

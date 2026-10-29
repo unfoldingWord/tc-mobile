@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * A real browser decode of a joined chapter MP3 (#1004 residual 4, "Part of

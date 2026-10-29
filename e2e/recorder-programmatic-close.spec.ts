@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * The programmatic recorder close against a Back that has not landed yet

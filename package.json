@@ -32,6 +32,8 @@
     "test:dist:native": "npm run build:native && node scripts/test-dist-native.mjs",
     "test:watch": "vitest",
     "test:e2e": "npm run build && npm run build:e2e && playwright test",
+    "style:capture": "playwright test -c playwright.style-diff.config.ts",
+    "style:diff": "node e2e/style-diff/diff.ts",
     "verify": "npm run check:prepush && npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run typecheck:lib && npm run test && npm run build && npm run test:dist",
     "deploy": "npm run build && wrangler deploy",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
