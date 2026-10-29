@@ -142,7 +142,7 @@ it("drops the last frame's left when active goes false", () => {
   act(() => root.render(createElement(Positioned, { active: true, read })));
   act(() => runFrames());
   // Precondition: the line was placed by a frame.
-  expect(line().style.left).not.toBe("");
+  expect(line().style.left).toBe("min(43.7%, 100% - 2px)");
   expect(line().style.opacity).toBe("1");
 
   act(() => root.render(createElement(Positioned, { active: false, read })));
@@ -156,7 +156,7 @@ it("drops the left on the null hide sentinel, before active goes false", () => {
   const read = () => ms;
   act(() => root.render(createElement(Positioned, { active: true, read })));
   act(() => runFrames());
-  expect(line().style.left).not.toBe("");
+  expect(line().style.left).toBe("min(43.7%, 100% - 2px)");
 
   ms = null;
   act(() => runFrames());
@@ -181,7 +181,7 @@ it("drops the left when the position leaves a swapped view", () => {
   );
   act(() => runFrames());
   expect(line().style.opacity).toBe("1");
-  expect(line().style.left).not.toBe("");
+  expect(line().style.left).toBe("min(50%, 100% - 2px)");
 
   ms = 900;
   act(() => runFrames());
