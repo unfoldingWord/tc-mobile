@@ -33,6 +33,7 @@ import {
   unversionedPackages,
 } from "./scripts/licence-versions.mjs";
 import {
+  type BakeResult,
   bakeTemplatePackages,
   describeBake,
 } from "./scripts/bake-template-packages.mjs";
@@ -120,29 +121,42 @@ function versionJsonPlugin(): Plugin {
 // precache's `js` glob covers. `template-bake.json` (outside the precache,
 // like version.json) names that chunk and the package ids it holds, for
 // tests/precache-manifest.test.ts and for anyone asking what a deploy carries.
-// `normalizePath`, because Vite hands `load` and `moduleIds` forward-slash ids
-// and `path.join` gives backslashes on Windows (Frank, round 2 on #1798).
 const BAKED_MODULE = normalizePath(
   path.join(import.meta.dirname, "src", "data", "baked-template-packages.json")
 );
 
-function bakedTemplatePackagesPlugin(): Plugin {
+// Vite hands hooks module ids with forward slashes, on Windows too, while
+// `path.join` gives backslashes there (Frank round 2 P2 on #1798). The bench's
+// round-1 fix normalizes BAKED_MODULE above; both sides of every comparison
+// also go through `moduleId`. `toPosixPath` comes first
+// because Vite's `normalizePath` converts backslashes only when the HOST is
+// Windows, so on its own it could not be tested from a POSIX host.
+// Exported for tests/baked-template-plugin.test.ts, which hands it a
+// Windows-built module path and a bake result of its own.
+const moduleId = (p: string) => normalizePath(toPosixPath(p));
+
+export function bakedTemplatePackagesPlugin(
+  bakedModule: string = BAKED_MODULE,
+  bake: () => BakeResult = bakeTemplatePackages
+): Plugin {
+  const target = moduleId(bakedModule);
+  const isTarget = (id: string) => moduleId(id) === target;
   let baked: { id: string; pkg: unknown; titles: unknown[] }[] = [];
   return {
     name: "baked-template-packages",
     enforce: "pre",
     buildStart() {
-      const result = bakeTemplatePackages();
+      const result = bake();
       describeBake(result).forEach((line) => this.info(line));
       baked = result.baked;
     },
     load(id) {
-      if (id !== BAKED_MODULE) return null;
+      if (!isTarget(id)) return null;
       return JSON.stringify(baked.map(({ pkg, titles }) => ({ pkg, titles })));
     },
     generateBundle(_options, bundle) {
       const chunk = Object.values(bundle).find(
-        (out) => out.type === "chunk" && out.moduleIds.includes(BAKED_MODULE)
+        (out) => out.type === "chunk" && out.moduleIds.some(isTarget)
       );
       this.emitFile({
         type: "asset",
