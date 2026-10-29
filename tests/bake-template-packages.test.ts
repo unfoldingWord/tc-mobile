@@ -27,6 +27,9 @@ import { describe, expect, it } from "vitest";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SCRIPT = path.join(ROOT, "scripts", "bake-template-packages.mjs");
 const FLAG = "TC_BAKE_PROVISIONAL_TEMPLATES";
+const LOCAL_BRANCH = "TC_BAKE_BRANCH";
+/** Opted in, on a branch a developer names locally: provisional bakes. */
+const OPTED_IN = { [FLAG]: "1", [LOCAL_BRANCH]: "develop" };
 const TITUS_FIXTURE = path.join(
   ROOT,
   "tests",
@@ -117,8 +120,8 @@ describe("the pinned manifest, at the script's default path", () => {
     expect(run.out).not.toMatch(/^baked /m);
   });
 
-  it("bakes Titus when the build opts in to provisional packages", () => {
-    const run = bake([], { [FLAG]: "1" });
+  it("bakes Titus when the build opts in on a named non-main branch", () => {
+    const run = bake([], OPTED_IN);
     expect(run.err).toBe("");
     expect(run.status).toBe(0);
     expect(run.out).toMatch(/^baked bible-passages:TIT \(provisional\)/m);
@@ -140,7 +143,7 @@ describe("the pinned manifest, at the script's default path", () => {
   });
 });
 
-describe("the production guard: provisional packages never reach main", () => {
+describe("the production guard: provisional bakes only on a named non-main branch", () => {
   for (const branchVar of ["WORKERS_CI_BRANCH", "GITHUB_REF_NAME"]) {
     it(`leaves Titus out of an opted-in build whose ${branchVar} is main, and says why`, () => {
       const run = bake([], { [FLAG]: "1", [branchVar]: "main" });
@@ -158,10 +161,114 @@ describe("the production guard: provisional packages never reach main", () => {
       expect(run.out).toMatch(/left out bible-passages:TIT/);
     });
 
-    it(`bakes Titus on a branch other than main when opted in (${branchVar})`, () => {
-      const run = bake([], { [FLAG]: "1", [branchVar]: "staging" });
+    for (const branch of ["staging", "develop"]) {
+      it(`bakes Titus when opted in and ${branchVar} is ${branch}`, () => {
+        const run = bake([], { [FLAG]: "1", [branchVar]: branch });
+        expect(run.err).toBe("");
+        expect(run.status).toBe(0);
+        expect(run.out).toMatch(/^baked bible-passages:TIT \(provisional\)$/m);
+      });
+    }
+
+    it(`leaves Titus out when opted in and ${branchVar} is empty`, () => {
+      const run = bake([], { [FLAG]: "1", [branchVar]: "" });
       expect(run.status).toBe(0);
-      expect(run.out).toMatch(/^baked bible-passages:TIT/m);
+      expect(run.out).toContain(
+        "left out bible-passages:TIT (provisional, and no branch variable names a branch other than main"
+      );
+      expect(run.out).not.toMatch(/^baked /m);
+    });
+  }
+
+  it("leaves Titus out when the two branch variables disagree and one is main", () => {
+    const run = bake([], {
+      [FLAG]: "1",
+      WORKERS_CI_BRANCH: "staging",
+      GITHUB_REF_NAME: "main",
+    });
+    expect(run.status).toBe(0);
+    expect(run.out).toContain("GITHUB_REF_NAME=main is a production build");
+    expect(run.out).not.toMatch(/^baked /m);
+  });
+
+  it("leaves Titus out of an opted-in build with no branch variable, and says why", () => {
+    const run = bake([], { [FLAG]: "1" });
+    expect(run.err).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.out).toContain(
+      "left out bible-passages:TIT (provisional, and no branch variable names a branch other than main"
+    );
+    expect(run.out).not.toMatch(/^baked /m);
+  });
+
+  it("leaves Titus out of an opted-in CI build with no branch variable", () => {
+    const run = bake([], {
+      [FLAG]: "1",
+      CI: "true",
+      WORKERS_CI: "1",
+      GITHUB_ACTIONS: "true",
+    });
+    expect(run.status).toBe(0);
+    expect(run.out).toMatch(
+      /left out bible-passages:TIT \(provisional, and no/
+    );
+    expect(run.out).not.toMatch(/^baked /m);
+  });
+
+  it("leaves Titus out of an opted-in tag build (GITHUB_REF_TYPE=tag), and says why", () => {
+    const run = bake([], {
+      [FLAG]: "1",
+      GITHUB_REF_TYPE: "tag",
+      GITHUB_REF_NAME: "v1.2.3",
+      GITHUB_REF: "refs/tags/v1.2.3",
+    });
+    expect(run.err).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.out).toContain(
+      "left out bible-passages:TIT (provisional, and GITHUB_REF_TYPE=tag is a tag build"
+    );
+    expect(run.out).not.toMatch(/^baked /m);
+  });
+
+  it("leaves Titus out of an opted-in tag build that only GITHUB_REF shows", () => {
+    const run = bake([], {
+      [FLAG]: "1",
+      GITHUB_REF_NAME: "v1.2.3",
+      GITHUB_REF: "refs/tags/v1.2.3",
+    });
+    expect(run.status).toBe(0);
+    expect(run.out).toContain(
+      "left out bible-passages:TIT (provisional, and GITHUB_REF=refs/tags/v1.2.3 is a tag build"
+    );
+    expect(run.out).not.toMatch(/^baked /m);
+  });
+
+  it(`bakes Titus with the local override, ${LOCAL_BRANCH}, outside CI`, () => {
+    const run = bake([], { [FLAG]: "1", [LOCAL_BRANCH]: "feat/my-work" });
+    expect(run.err).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.out).toMatch(/^baked bible-passages:TIT \(provisional\)$/m);
+  });
+
+  it(`leaves Titus out when ${LOCAL_BRANCH} names main`, () => {
+    const run = bake([], { [FLAG]: "1", [LOCAL_BRANCH]: "main" });
+    expect(run.status).toBe(0);
+    expect(run.out).toContain(`${LOCAL_BRANCH}=main is a production build`);
+    expect(run.out).not.toMatch(/^baked /m);
+  });
+
+  for (const ci of ["CI", "WORKERS_CI", "GITHUB_ACTIONS"]) {
+    it(`ignores ${LOCAL_BRANCH} in a CI build (${ci} set), so it cannot stand in for the CI branch`, () => {
+      const run = bake([], {
+        [FLAG]: "1",
+        [LOCAL_BRANCH]: "staging",
+        [ci]: "1",
+      });
+      expect(run.status).toBe(0);
+      expect(run.out).toMatch(
+        /left out bible-passages:TIT \(provisional, and no/
+      );
+      expect(run.out).not.toMatch(/^baked /m);
     });
   }
 
@@ -241,7 +348,9 @@ describe("refusals (R6), each beside the state it must allow", () => {
   it('allows "unreleased" and 0.0.0 only on a provisional entry', () => {
     const text = readFileSync(TITUS_FIXTURE, "utf8");
     const { manifest } = workspace([titusEntry(text)], { "TIT.json": text });
-    expect(bake(["--manifest", manifest], { [FLAG]: "1" }).status).toBe(0);
+    const run = bake(["--manifest", manifest], OPTED_IN);
+    expect(run.status).toBe(0);
+    expect(run.out).toMatch(/^baked bible-passages:TIT \(provisional\)$/m);
     const { manifest: hardened } = workspace(
       [titusEntry(text, { provisional: false, revision: "v0.1.0" })],
       { "TIT.json": text }
@@ -287,7 +396,7 @@ describe("refusals (R6), each beside the state it must allow", () => {
   });
 
   it("bakes a title table that fits its package", () => {
-    const run = bake(["--manifest", withTable(table())], { [FLAG]: "1" });
+    const run = bake(["--manifest", withTable(table())], OPTED_IN);
     expect(run.err).toBe("");
     expect(run.status).toBe(0);
     expect(run.out).toMatch(
@@ -337,5 +446,74 @@ describe("refusals (R6), each beside the state it must allow", () => {
     ]);
     expect(run.status).toBe(1);
     expect(run.err).toMatch(/no-such-manifest\.json/);
+  });
+});
+
+describe("readPinned keeps every file inside the manifest's directory", () => {
+  it("refuses an absolute package path, even to valid bytes", () => {
+    const text = readFileSync(TITUS_FIXTURE, "utf8");
+    const { manifest } = workspace(
+      [titusEntry(text, { file: TITUS_FIXTURE })],
+      {}
+    );
+    const run = bake(["--manifest", manifest], OPTED_IN);
+    expect(run.status).toBe(1);
+    expect(run.err).toMatch(/must be a relative path/);
+  });
+
+  it("refuses a package path that climbs out with ..", () => {
+    const text = readFileSync(TITUS_FIXTURE, "utf8");
+    const { manifest } = workspace(
+      [titusEntry(text, { file: "../TIT.json" })],
+      {
+        "TIT.json": text,
+        "sub/.keep": "",
+      }
+    );
+    const nested = path.join(path.dirname(manifest), "sub", "manifest.json");
+    writeFileSync(nested, readFileSync(manifest));
+    const run = bake(["--manifest", nested], OPTED_IN);
+    expect(run.status).toBe(1);
+    expect(run.err).toMatch(/is outside the manifest's directory/);
+  });
+
+  it("refuses an absolute title-table path", () => {
+    const text = readFileSync(TITUS_FIXTURE, "utf8");
+    const tableText = JSON.stringify({
+      packageId: "bible-passages:TIT",
+      version: "0.0.0",
+      language: "en",
+      chapters: {},
+      segments: {},
+    });
+    const { manifest } = workspace([titusEntry(text)], {
+      "TIT.json": text,
+      "t.json": tableText,
+    });
+    const entries = JSON.parse(readFileSync(manifest, "utf8")) as {
+      packages: Entry[];
+    };
+    entries.packages[0]!.titles = [
+      {
+        path: "t",
+        file: path.join(path.dirname(manifest), "t.json"),
+        sha256: sha256(tableText),
+      },
+    ];
+    writeFileSync(manifest, JSON.stringify(entries));
+    const run = bake(["--manifest", manifest], OPTED_IN);
+    expect(run.status).toBe(1);
+    expect(run.err).toMatch(/must be a relative path/);
+  });
+
+  it("still reads a relative path in a subdirectory", () => {
+    const text = readFileSync(TITUS_FIXTURE, "utf8");
+    const { manifest } = workspace(
+      [titusEntry(text, { file: "bible-passages/./TIT.json" })],
+      { "bible-passages/TIT.json": text }
+    );
+    const run = bake(["--manifest", manifest], OPTED_IN);
+    expect(run.err).toBe("");
+    expect(run.status).toBe(0);
   });
 });

@@ -22,9 +22,35 @@ Each entry gives:
 
 A provisional entry may pin a commit, and its package may say
 `source.revision: "unreleased"` and `version: "0.0.0"`. A build bakes it only
-with `TC_BAKE_PROVISIONAL_TEMPLATES=1` on a branch other than `main`. With
-nothing set, or on `main` (`WORKERS_CI_BRANCH` or `GITHUB_REF_NAME`) even with
-it set, the package is left out and the build log says why.
+when both hold:
+
+- `TC_BAKE_PROVISIONAL_TEMPLATES=1` is set, and
+- the build names a branch other than `main`: `WORKERS_CI_BRANCH` (Cloudflare
+  Workers Builds) or `GITHUB_REF_NAME` (GitHub Actions) is non-empty, and none
+  of them is `main`.
+
+Anything else fails closed: the package is left out, the build goes on, and
+the build log says why. That covers no branch variable, an empty one, `main`
+in any of them, and a tag build (`GITHUB_REF_TYPE=tag`, or `GITHUB_REF`
+starting with `refs/tags/`).
+
+Every `file` in the manifest must be a relative path inside this directory.
+An absolute path or one that climbs out with `..` stops the build.
+
+### Baking locally
+
+A local build has no CI branch variable, so name the branch yourself with
+`TC_BAKE_BRANCH`:
+
+```bash
+TC_BAKE_PROVISIONAL_TEMPLATES=1 TC_BAKE_BRANCH=my-branch npm run build
+TC_BAKE_PROVISIONAL_TEMPLATES=1 TC_BAKE_BRANCH=my-branch node scripts/bake-template-packages.mjs
+```
+
+`TC_BAKE_BRANCH=main` leaves provisional packages out, like a CI build of
+`main`. The override is ignored in CI (when `CI`, `WORKERS_CI` or
+`GITHUB_ACTIONS` is set), so it cannot stand in for a branch variable a CI
+build did not provide.
 
 ## `bible-passages/TIT.json`
 
