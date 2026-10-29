@@ -8,7 +8,12 @@ import {
   blocksSettle,
   countsAsChange,
   keptChildren,
+  SETTLE_DOM_MS,
+  SETTLE_MS,
+  SETTLE_QUIET_MS,
+  settleVerdict,
   SKIP,
+  unsettledReasons,
 } from "../e2e/style-diff/capture";
 import {
   ABSENT,
@@ -31,7 +36,8 @@ import { TOLERATED, type ToleratedState } from "../e2e/style-diff/tolerated";
  * Every case builds two small capture runs by hand and asks `diffRuns` what
  * differs. The capture half (`e2e/style-diff/capture.ts`) runs only inside
  * Playwright; of it, only the pure helpers it also sends into the page
- * (`keptChildren`, `blocksSettle`, `countsAsChange`) are exercised here.
+ * (`keptChildren`, `blocksSettle`, `countsAsChange`, `settleVerdict`,
+ * `unsettledReasons`) are exercised here.
  * What a real run reaches is reported on the PR that runs it, never here.
  */
 
@@ -554,6 +560,116 @@ describe("countsAsChange", () => {
     expect(
       countsAsChange(record("body", ["div"], ["launch-intro"]), skipped)
     ).toBe(true);
+  });
+});
+
+describe("settleVerdict", () => {
+  const bounds = {
+    quietMs: SETTLE_QUIET_MS,
+    domMs: SETTLE_DOM_MS,
+    settleMs: SETTLE_MS,
+  };
+  // A page that has been quiet, with nothing animating, since the wait began.
+  const quiet = { frames: 2, elapsed: 120, sinceBusy: 120, sinceAnimated: 120 };
+  const at = (clock: Partial<typeof quiet>) =>
+    settleVerdict({ ...quiet, ...clock }, bounds);
+
+  it("keeps the bounds the tolerated list was reasoned from", () => {
+    // `tolerated.ts`'s spring-back reason adds the quiet window to a 200 ms
+    // mutation and lands on the DOM bound, so a change here moves it.
+    expect(bounds).toEqual({ quietMs: 100, domMs: 300, settleMs: 2000 });
+  });
+
+  it("settles once the page has been quiet for the window, over two frames", () => {
+    expect(at({ sinceBusy: 100 })).toBe("settled");
+    expect(at({ sinceBusy: 99.9 })).toBe("wait");
+    expect(at({ frames: 1, sinceBusy: 150 })).toBe("wait");
+  });
+
+  it("settles even past both bounds when the last frame was quiet", () => {
+    expect(at({ frames: 40, elapsed: 2500, sinceBusy: 100 })).toBe("settled");
+  });
+
+  it("stops at the DOM bound when the DOM keeps changing with nothing animating", () => {
+    expect(at({ frames: 20, elapsed: 300.1, sinceBusy: 10 })).toBe("dom bound");
+    expect(at({ frames: 20, elapsed: 300, sinceBusy: 10 })).toBe("wait");
+    // An animation that ended a whole window ago no longer counts as running.
+    expect(
+      at({ frames: 20, elapsed: 300.1, sinceBusy: 10, sinceAnimated: 100 })
+    ).toBe("dom bound");
+  });
+
+  it("waits past the DOM bound while an animation ran inside the window", () => {
+    expect(
+      at({ frames: 60, elapsed: 1000, sinceBusy: 0, sinceAnimated: 99.9 })
+    ).toBe("wait");
+    expect(
+      at({ frames: 120, elapsed: 2000, sinceBusy: 0, sinceAnimated: 0 })
+    ).toBe("wait");
+  });
+
+  it("stops at the animation bound when an animation keeps running", () => {
+    expect(
+      at({ frames: 120, elapsed: 2000.1, sinceBusy: 0, sinceAnimated: 0 })
+    ).toBe("animation bound");
+  });
+
+  it("names the DOM bound when both have run out and nothing animates", () => {
+    expect(
+      at({ frames: 120, elapsed: 2000.1, sinceBusy: 10, sinceAnimated: 500 })
+    ).toBe("dom bound");
+  });
+
+  it("runs from its own source, as the page receives it", () => {
+    const fromSource = new Function(
+      `return (${settleVerdict.toString()})`
+    )() as typeof settleVerdict;
+    expect(fromSource({ ...quiet, sinceBusy: 100 }, bounds)).toBe("settled");
+    expect(
+      fromSource(
+        { ...quiet, elapsed: 2000.1, sinceBusy: 0, sinceAnimated: 0 },
+        bounds
+      )
+    ).toBe("animation bound");
+  });
+});
+
+describe("unsettledReasons", () => {
+  const quietMs = SETTLE_QUIET_MS;
+
+  it("says the DOM was still changing when it changed inside the window", () => {
+    expect(unsettledReasons(99.9, [], quietMs)).toEqual(["DOM still changing"]);
+    expect(
+      unsettledReasons(10, ["span pulse", "div transition opacity"], quietMs)
+    ).toEqual(["DOM still changing", "div transition opacity", "span pulse"]);
+  });
+
+  it("names what was running, and only that, when the DOM was quiet", () => {
+    expect(unsettledReasons(100, ["span pulse"], quietMs)).toEqual([
+      "span pulse",
+    ]);
+    expect(
+      unsettledReasons(Infinity, ["div transition opacity", "a b"], quietMs)
+    ).toEqual(["a b", "div transition opacity"]);
+  });
+
+  it("is never empty: an animation that ended inside the window says so", () => {
+    expect(unsettledReasons(Infinity, [], quietMs)).toEqual([
+      "an animation ended inside the quiet window",
+    ]);
+    expect(unsettledReasons(100, [], quietMs)).toEqual([
+      "an animation ended inside the quiet window",
+    ]);
+  });
+
+  it("runs from its own source, as the page receives it", () => {
+    const fromSource = new Function(
+      `return (${unsettledReasons.toString()})`
+    )() as typeof unsettledReasons;
+    expect(fromSource(10, ["span pulse"], quietMs)).toEqual([
+      "DOM still changing",
+      "span pulse",
+    ]);
   });
 });
 

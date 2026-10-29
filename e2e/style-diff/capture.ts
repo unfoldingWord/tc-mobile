@@ -103,11 +103,11 @@ export const SKIP: Skip = {
 };
 
 /** How long a snapshot waits for animations to settle before reading anyway. */
-const SETTLE_MS = 2000;
+export const SETTLE_MS = 2000;
 /** How long it waits for a DOM still changing with nothing animating. */
-const SETTLE_DOM_MS = 300;
+export const SETTLE_DOM_MS = 300;
 /** How long nothing may animate or mutate before the page counts as settled. */
-const SETTLE_QUIET_MS = 100;
+export const SETTLE_QUIET_MS = 100;
 
 /**
  * The children a path counts, each with its 1-based index among the kept
@@ -167,9 +167,55 @@ export function countsAsChange<N>(
 }
 
 /**
+ * What one frame of the settle wait decides, from how long ago the page was
+ * last busy (an animation ran, or the DOM changed), how long ago an animation
+ * last ran, and how long the wait has gone on: read now, keep waiting, or stop
+ * at one of the two bounds. Runs in the page as well as in Node, so it closes
+ * over nothing.
+ */
+export function settleVerdict(
+  clock: {
+    frames: number;
+    elapsed: number;
+    sinceBusy: number;
+    sinceAnimated: number;
+  },
+  bounds: { quietMs: number; domMs: number; settleMs: number }
+): "wait" | "settled" | "dom bound" | "animation bound" {
+  if (clock.frames >= 2 && clock.sinceBusy >= bounds.quietMs) return "settled";
+  const stillAnimating = clock.sinceAnimated < bounds.quietMs;
+  if (!stillAnimating && clock.elapsed > bounds.domMs) return "dom bound";
+  if (clock.elapsed > bounds.settleMs) return "animation bound";
+  return "wait";
+}
+
+/**
+ * What an unsettled state records: the animations still running, sorted, and
+ * whether the DOM changed inside the quiet window. Never empty: the window can
+ * have been reset by an animation that has since ended, with nothing running
+ * at the bound. Runs in the page as well as in Node, so it closes over
+ * nothing.
+ */
+export function unsettledReasons(
+  sinceMutation: number,
+  running: readonly string[],
+  quietMs: number
+): string[] {
+  return [
+    ...(sinceMutation < quietMs
+      ? ["DOM still changing"]
+      : running.length === 0
+        ? ["an animation ended inside the quiet window"]
+        : []),
+    ...running,
+  ].sort();
+}
+
+/**
  * Runs inside the page, so it closes over nothing: `keptChildren`,
- * `blocksSettle` and `countsAsChange` are passed in as source
- * (`snapshotExpression`), and every other helper is declared in its own body.
+ * `blocksSettle`, `countsAsChange`, `settleVerdict` and `unsettledReasons`
+ * are passed in as source (`snapshotExpression`), and every other helper is
+ * declared in its own body.
  */
 async function snapshotInPage(
   arg: {
@@ -181,9 +227,16 @@ async function snapshotInPage(
   },
   kept: typeof keptChildren,
   blocks: typeof blocksSettle,
-  counts: typeof countsAsChange
+  counts: typeof countsAsChange,
+  verdictOf: typeof settleVerdict,
+  reasonsOf: typeof unsettledReasons
 ): Promise<PageSnapshot> {
-  // A frame, or 100 ms if frames have stopped, so the bound below holds.
+  // A frame, or 100 ms if frames have stopped, so the bound below holds. The
+  // timeout is kept on purpose (#1780): a page whose frames stop (a hidden or
+  // backgrounded one) runs no `requestAnimationFrame` callback, and without
+  // the timeout this wait would never return, so the capture would hang the
+  // test instead of recording the state as unsettled at a bound. While frames
+  // run, the frame resolves first and the timeout does nothing.
   const frame = () =>
     new Promise<void>((done) => {
       requestAnimationFrame(() => done());
@@ -225,8 +278,8 @@ async function snapshotInPage(
   let frames = 0;
   let running: Animation[] = [];
   let lastMutation = -Infinity;
-  let settled = false;
-  for (;;) {
+  let verdict: ReturnType<typeof settleVerdict> = "wait";
+  while (verdict === "wait") {
     await frame();
     frames += 1;
     const now = performance.now();
@@ -235,37 +288,35 @@ async function snapshotInPage(
     if (running.length > 0 || mutated > 0) busySince = now;
     if (running.length > 0) animatedSince = now;
     mutated = 0;
-    if (frames >= 2 && now - busySince >= arg.quietMs) {
-      settled = true;
-      break;
-    }
-    const stillAnimating = now - animatedSince < arg.quietMs;
-    if (!stillAnimating && now - started > arg.domMs) break;
-    if (now - started > arg.settleMs) break;
+    verdict = verdictOf(
+      {
+        frames,
+        elapsed: now - started,
+        sinceBusy: now - busySince,
+        sinceAnimated: now - animatedSince,
+      },
+      arg
+    );
   }
   observer.disconnect();
-  const unsettled = settled
-    ? []
-    : [
-        // Never empty when unsettled: the window can have been reset by an
-        // animation that has since ended, with nothing running at the bound.
-        ...(performance.now() - lastMutation < arg.quietMs
-          ? ["DOM still changing"]
-          : running.length === 0
-            ? ["an animation ended inside the quiet window"]
-            : []),
-        ...running.map((animation) => {
-          const effect = animation.effect as KeyframeEffect;
-          const el = effect.target as Element;
-          const name =
-            animation instanceof CSSAnimation
-              ? animation.animationName
-              : animation instanceof CSSTransition
-                ? `transition ${animation.transitionProperty}`
-                : "animation";
-          return `${el.localName}${el.id ? `#${el.id}` : ""}${effect.pseudoElement ?? ""} ${name}`;
-        }),
-      ].sort();
+  const unsettled =
+    verdict === "settled"
+      ? []
+      : reasonsOf(
+          performance.now() - lastMutation,
+          running.map((animation) => {
+            const effect = animation.effect as KeyframeEffect;
+            const el = effect.target as Element;
+            const name =
+              animation instanceof CSSAnimation
+                ? animation.animationName
+                : animation instanceof CSSTransition
+                  ? `transition ${animation.transitionProperty}`
+                  : "animation";
+            return `${el.localName}${el.id ? `#${el.id}` : ""}${effect.pseudoElement ?? ""} ${name}`;
+          }),
+          arg.quietMs
+        );
 
   const known = new Set(arg.known);
   const hash = (text: string): string => {
@@ -412,8 +463,8 @@ async function snapshotInPage(
 }
 
 /**
- * `snapshotInPage` as one expression, with its two shared helpers passed in
- * as source: `page.evaluate` sends a function's text, so a helper it merely
+ * `snapshotInPage` as one expression, with its shared helpers passed in as
+ * source: `page.evaluate` sends a function's text, so a helper it merely
  * referenced would not exist in the page.
  */
 const snapshotExpression = (known: string[]) =>
@@ -423,7 +474,7 @@ const snapshotExpression = (known: string[]) =>
     settleMs: SETTLE_MS,
     domMs: SETTLE_DOM_MS,
     quietMs: SETTLE_QUIET_MS,
-  })}, ${keptChildren.toString()}, ${blocksSettle.toString()}, ${countsAsChange.toString()})`;
+  })}, ${[keptChildren, blocksSettle, countsAsChange, settleVerdict, unsettledReasons].map((fn) => fn.toString()).join(", ")})`;
 
 /**
  * An init script: `crypto.randomUUID` from a per-origin counter, so ids (and
