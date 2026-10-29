@@ -49,6 +49,12 @@ export interface CaptureTest {
   collapsed: number;
   selectors: string[];
   states: CaptureState[];
+  /**
+   * A state the capture collapsed because it read the same as the one before
+   * it on its page: its key to that kept state's key. Absent in a capture
+   * written before collapses were recorded.
+   */
+  sameAs?: Record<string, string>;
 }
 
 /** One whole capture directory, loaded. */
@@ -76,7 +82,7 @@ export interface Difference {
 }
 
 export interface DiffReport {
-  /** States each run recorded, before any matching. */
+  /** States each run recorded, collapsed ones included, before any matching. */
   statesInA: number;
   statesInB: number;
   statesCompared: number;
@@ -144,18 +150,38 @@ export function roundStyle(map: StyleMap): StyleMap {
   return out;
 }
 
-const stateId = (test: CaptureTest, state: CaptureState) =>
-  `${test.id} | ${state.key}`;
+const stateId = (test: CaptureTest, key: string) => `${test.id} | ${key}`;
+
+/**
+ * Every state of a test under its own key, each collapsed one included under
+ * its key with the state it repeated. Whether a read collapses depends on the
+ * read before it (an unsettled read never equals a settled one), so one run
+ * can keep a state the other collapsed; matched this way, the pair is still
+ * compared instead of being reported as a state only one run has.
+ */
+function statesOf(test: CaptureTest): [string, CaptureState][] {
+  const byKey = new Map(test.states.map((s) => [s.key, s]));
+  const out: [string, CaptureState][] = test.states.map((s) => [s.key, s]);
+  for (const [key, kept] of Object.entries(test.sameAs ?? {})) {
+    const state = byKey.get(kept);
+    if (state === undefined)
+      throw new Error(
+        `${test.id}: ${key} is recorded as the same as ${kept}, which it does not hold`
+      );
+    out.push([key, state]);
+  }
+  return out;
+}
 
 const isFailed = (test: CaptureTest) => test.status !== test.expectedStatus;
 
 const unsettledIn = (run: "A" | "B", r: CaptureRun) =>
   r.tests.flatMap((t) =>
-    t.states
-      .filter((s) => (s.unsettled ?? []).length > 0)
-      .map((s) => ({
+    statesOf(t)
+      .filter(([, s]) => (s.unsettled ?? []).length > 0)
+      .map(([key, s]) => ({
         run,
-        state: stateId(t, s),
+        state: stateId(t, key),
         animations: s.unsettled ?? [],
       }))
   );
@@ -236,9 +262,9 @@ export function diffRuns(
   const statesA = new Map<string, CaptureState>();
   const statesB = new Map<string, CaptureState>();
   for (const t of a.tests)
-    for (const s of t.states) statesA.set(stateId(t, s), s);
+    for (const [key, s] of statesOf(t)) statesA.set(stateId(t, key), s);
   for (const t of b.tests)
-    for (const s of t.states) statesB.set(stateId(t, s), s);
+    for (const [key, s] of statesOf(t)) statesB.set(stateId(t, key), s);
 
   const report: DiffReport = {
     statesInA: statesA.size,
