@@ -462,8 +462,8 @@ function applyPendingIdleDrop(): void {
  *     phone and unlocking it leaves the context reporting `"running"` while
  *     Play and the meter are dead. Dropping the context on the way out means
  *     the page comes back with no context at all, and the first tap after the
- *     return builds one. That this avoids the stuck state is an inference; it has
- *     not been run on a device.
+ *     return builds one. That this avoids the stuck state is an inference; it
+ *     has not been run on a device.
  *   - **An audio device coming or going** (`devicechange`, see
  *     `ensureRouteWatch`). #1251 names headphones connecting as a second
  *     trigger. Secondary.
@@ -692,8 +692,8 @@ function watchClock(
  *
  * In #1251, a return from the lock screen leaves the context reporting
  * `"running"` while Play and the meter are dead. The drop on hide
- * (`dropSharedContextWhenIdle`) normally leaves no context to check here; this covers a return where that drop had to
- * wait, or was never asked for. Without it, the first Play after such a
+ * (`dropSharedContextWhenIdle`) normally leaves no context to check here;
+ * this covers a return where that drop had to wait, or was never asked for. Without it, the first Play after such a
  * return is the one that finds out, waits out `CLOCK_STALL_TIMEOUT_MS` and
  * fails; only the second press works. With it, a return that leaves the
  * clock stopped is caught before anyone presses Play, as long as the check
