@@ -15,7 +15,9 @@ import { stripComments } from "./support";
 
 /**
  * Template package v0 (#1465): one source-agnostic shape and its validator.
- * The fixtures are small and invented; none of them is a real dataset. The
+ * The fixtures are small and invented, except `bible-passages-TIT.json`, a
+ * pinned copy of a real dataset package that
+ * `tests/template-bible-passages-fixture.test.ts` covers. The
  * fourth source (`hymnal-min.json`) exists to show that a source nobody wrote
  * code for goes through the same validator unchanged.
  */
@@ -116,6 +118,8 @@ describe("parseTemplatePackage: fixtures", () => {
       ...SOURCES,
       "pair-v0.1.0.json",
       "pair-v0.2.0.json",
+      // Covered in tests/template-bible-passages-fixture.test.ts (#1450).
+      "bible-passages-TIT.json",
     ]);
     expect(packages.filter((f) => !covered.has(f))).toEqual([]);
   });
