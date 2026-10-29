@@ -14,6 +14,7 @@ import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import { one, render } from "./render";
+import { areaScope, areaSelector } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -91,13 +92,8 @@ describe("the O4 crumbs (#1267)", () => {
     expect(chip.hasAttribute("dir")).toBe(false);
     expect(one(chip, "span").getAttribute("dir")).toBe("auto");
     const rule = cssRule(
-      stripCssComments(
-        readFileSync(
-          path.resolve(import.meta.dirname, "../src/app/styles/o4/menus.css"),
-          "utf8"
-        )
-      ),
-      ":root .o4-crumb > span"
+      areaScope("menus"),
+      areaSelector("menus", ".o4-crumb > span")
     );
     expect(declarationValue(rule, "text-overflow")).toBe("ellipsis");
   });

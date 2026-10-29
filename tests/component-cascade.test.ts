@@ -5,6 +5,7 @@ import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
+import { AREA_DIR, readAreaCss } from "./o4-area-css";
 import {
   builtCssRules,
   compareSpecificity,
@@ -66,7 +67,6 @@ import {
 const ROOT = path.resolve(import.meta.dirname, "..");
 const ASSETS_DIR = path.join(ROOT, "dist", "assets");
 const STYLES = path.join(ROOT, "src", "app", "styles");
-const AREA_DIR = path.join(STYLES, "o4");
 
 /** Every built stylesheet. More than one fails inside the gated suite, not
  *  at import, so `npm test` can still skip this file. */
@@ -159,9 +159,7 @@ function ruleKey(selector: string, context: readonly string[]): string {
 
 /** The area files, in `o4/index.css`'s import order. */
 function areaFiles(): string[] {
-  const index = postcss.parse(
-    readFileSync(path.join(AREA_DIR, "index.css"), "utf8")
-  );
+  const index = postcss.parse(readAreaCss("index"));
   const files = index.nodes
     .filter(
       (n): n is postcss.AtRule => n.type === "atrule" && n.name === "import"

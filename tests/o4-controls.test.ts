@@ -8,8 +8,15 @@ import {
   TransportButton,
 } from "@/components/o4-controls";
 
-import { areaRules, declsFor } from "./o4-area-css";
+import {
+  areaRule,
+  areaScope,
+  areaSelector,
+  readAreaCss,
+  scopeDeclarations,
+} from "./o4-area-css";
 import { one, render } from "./render";
+import { declarationValue } from "./support";
 
 /**
  * #941: the O4 shared control wrappers (square 56 r14, row
@@ -102,11 +109,17 @@ describe("the O4 control wrappers (#941)", () => {
 });
 
 describe("o4/controls.css (#941)", () => {
-  const rules = areaRules("controls");
+  const layer = areaScope("controls");
+  /** The one rule for `selector`, read a property at a time. */
+  const rule = (selector: string) => {
+    const body = areaRule(layer, areaSelector("controls", selector));
+    return { get: (property: string) => declarationValue(body, property) };
+  };
 
   it("paints colour only through layer-2 roles", () => {
-    const colours = rules.flatMap((r) =>
-      [...r.decls].filter(([prop]) => /color|background|shadow/.test(prop))
+    // The whole file, nested blocks included, not only the layer's rules.
+    const colours = scopeDeclarations(readAreaCss("controls")).filter(
+      ([prop]) => /color|background|shadow/.test(prop)
     );
     expect(colours.length).toBeGreaterThanOrEqual(4);
     for (const [prop, value] of colours) {
@@ -116,7 +129,7 @@ describe("o4/controls.css (#941)", () => {
   });
 
   it("sizes the square 56 with radius 14, on the well", () => {
-    const d = declsFor(rules, ":root .o4-square");
+    const d = rule(".o4-square");
     expect(d.get("width")).toBe("56px");
     expect(d.get("height")).toBe("56px");
     expect(d.get("border-radius")).toBe("var(--p-radius-lg)");
@@ -124,13 +137,13 @@ describe("o4/controls.css (#941)", () => {
   });
 
   it("sizes the row transport 72", () => {
-    const d = declsFor(rules, ":root .o4-transport");
+    const d = rule(".o4-transport");
     expect(d.get("width")).toBe("72px");
     expect(d.get("height")).toBe("72px");
   });
 
   it("sizes the pill 60 tall with radius 30, 17/700, on the well", () => {
-    const d = declsFor(rules, ":root .o4-pill");
+    const d = rule(".o4-pill");
     expect(d.get("height")).toBe("60px");
     expect(d.get("border-radius")).toBe("30px");
     expect(d.get("font-size")).toBe("17px");

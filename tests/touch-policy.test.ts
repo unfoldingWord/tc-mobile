@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
 import {
   cssRule,
   declarationValue,
@@ -37,10 +38,7 @@ const components = stripCssComments(
     "utf8"
   )
 );
-const menusCss = readFileSync(
-  path.join(ROOT, "src", "app", "styles", "o4", "menus.css"),
-  "utf8"
-);
+const menusCss = areaScope("menus");
 
 describe("the viewport does not forbid pinch zoom (#164 R-11)", () => {
   const viewport = /<meta\s+name="viewport"[^>]*content="([^"]+)"/s.exec(html);
@@ -96,7 +94,7 @@ describe("the chapter screen's crumb row is a control-sized target (#164 R-10)",
   // The `.breadcrumb` button this gate was written for went with the old
   // look (#954); the row that took its place in the Segments header is
   // `.o4-crumbs-bar` (#1269), in the O4 menus stylesheet.
-  const body = cssRule(menusCss, ":root .o4-crumbs-bar");
+  const body = cssRule(menusCss, areaSelector("menus", ".o4-crumbs-bar"));
 
   // Reads the TOKEN, not a raw pixel value: the 44px floor is stated once in
   // 3-components.css's token block, and a rule that hard-codes 44 drifts
@@ -106,7 +104,12 @@ describe("the chapter screen's crumb row is a control-sized target (#164 R-10)",
   // quiet control would make.
   it("takes its height from --c-control-md, not a literal or the 40px exception", () => {
     expect(declarationValue(body, "min-height")).toBe("var(--c-control-md)");
-    expect(body).not.toMatch(/--c-control-sm/);
+    // In any block of the file, not only the layer's own rule.
+    for (const [property, value] of selectorDeclarations(
+      "menus",
+      areaSelector("menus", ".o4-crumbs-bar")
+    ))
+      expect(`${property}: ${value}`).not.toMatch(/--c-control-sm/);
   });
 
   it("--c-control-md is still at or above the 44px floor the tokens claim", () => {

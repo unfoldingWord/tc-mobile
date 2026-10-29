@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { Icon } from "../src/components/icon";
 
+import { AREA_DIR, areaSelector, type Area } from "./o4-area-css";
 import { one, render } from "./render";
 import {
   cssRule,
@@ -32,9 +33,13 @@ const root = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(root, rel), "utf8");
 
 const COMPONENTS = "src/app/styles/3-components.css";
-const MENUS = "src/app/styles/o4/menus.css";
-const RECORDER = "src/app/styles/o4/recorder.css";
-const BOOKS = "src/app/styles/o4/books.css";
+/** An area file's path as `walk` below spells it, from the one folder
+ *  constant in `o4-area-css.ts`. */
+const area = (name: Area) =>
+  path.relative(root, path.join(AREA_DIR, `${name}.css`));
+const MENUS = area("menus");
+const RECORDER = area("recorder");
+const BOOKS = area("books");
 
 describe("converted rules read logically", () => {
   const cases: Array<{
@@ -45,7 +50,7 @@ describe("converted rules read logically", () => {
   }> = [
     {
       file: MENUS,
-      selector: ":root .o4-crumb",
+      selector: areaSelector("menus", ".o4-crumb"),
       logical: {
         "margin-inline-start": "-6px",
         "padding-inline": "24px 20px",
@@ -54,7 +59,7 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: ":root .o4-crumb:first-child",
+      selector: areaSelector("menus", ".o4-crumb:first-child"),
       logical: {
         "margin-inline-start": "0",
         "padding-inline-start": "12px",
@@ -65,25 +70,25 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: ":root .o4-menu-preview",
+      selector: areaSelector("menus", ".o4-menu-preview"),
       logical: { "padding-inline": "10px 8px" },
       gone: ["padding"],
     },
     {
       file: RECORDER,
-      selector: ":root .recorder-status",
+      selector: areaSelector("recorder", ".recorder-status"),
       logical: { "inset-inline-start": "18px" },
       gone: ["left"],
     },
     {
       file: RECORDER,
-      selector: ":root .recorder-stamp",
+      selector: areaSelector("recorder", ".recorder-stamp"),
       logical: { "inset-inline-end": "18px" },
       gone: ["right"],
     },
     {
       file: RECORDER,
-      selector: ":root .recorder-editing",
+      selector: areaSelector("recorder", ".recorder-editing"),
       logical: { "inset-inline-end": "18px" },
       gone: ["right"],
     },
@@ -113,37 +118,37 @@ describe("converted rules read logically", () => {
     },
     {
       file: BOOKS,
-      selector: ":root .books-header",
+      selector: areaSelector("books", ".books-header"),
       logical: { "padding-inline": "10px 12px" },
       gone: ["padding"],
     },
     {
       file: BOOKS,
-      selector: ":root .books-card-hit",
+      selector: areaSelector("books", ".books-card-hit"),
       logical: { "text-align": "start" },
       gone: [],
     },
     {
       file: BOOKS,
-      selector: ":root .books-chapter",
+      selector: areaSelector("books", ".books-chapter"),
       logical: { "text-align": "start", "padding-inline": "12px 16px" },
       gone: ["padding"],
     },
     {
       file: BOOKS,
-      selector: ":root .books-cover::before",
+      selector: areaSelector("books", ".books-cover::before"),
       logical: { "inset-inline-start": "0" },
       gone: ["inset"],
     },
     {
-      file: "src/app/styles/o4/dialogs.css",
-      selector: ":root .confirm-preview",
+      file: area("dialogs"),
+      selector: areaSelector("dialogs", ".confirm-preview"),
       logical: { "padding-inline": "14px 10px" },
       gone: ["padding"],
     },
     {
-      file: "src/app/styles/o4/segments.css",
-      selector: ":root .row",
+      file: area("segments"),
+      selector: areaSelector("segments", ".row"),
       logical: { "padding-inline": "10px 6px" },
       gone: ["padding"],
     },
@@ -224,7 +229,7 @@ const KEPT_PHYSICAL: Array<{ file: string; needle: string; reason: string }> = [
     reason: "level meter fill grows from the low end of a gauge, not text",
   },
   {
-    file: "src/app/styles/o4/segments.css",
+    file: area("segments"),
     needle: "to right,",
     reason: "played-region mask follows playback time, left to right",
   },
