@@ -243,10 +243,15 @@ sweep deletes it (rows T1 to T3).
 read from the code:
 
 - `saveTake` (`takes.ts:310`): the take's `pendingTakes` row, if the hold kept
-  one. The hold is a separate write the save does not wait for
-  (`use-save-take.ts:102`), and it can keep nothing (another take's row holds
-  the segment, `"pending-take-write"`). Without a row, the only copy is in
-  memory until step 2 commits, as it is today.
+  one. The hook does not await the hold's promise (`use-save-take.ts:102`),
+  but the database commit can still queue behind its transaction: the two
+  share stores and the hold's is opened first, so IndexedDB orders the save's
+  transaction after it (`use-save-take.ts:81-89`). Step 1's card write is not
+  an IndexedDB request, so it is not ordered against the hold; whether the
+  row is durable when step 1 starts is not guaranteed (inference). The hold
+  can also keep nothing (another take's row holds the segment,
+  `"pending-take-write"`). Without a row, the only copy is in memory until
+  step 2 commits, as it is today.
 - `saveReplayedTake` (`takes.ts:433`): the launch replay saves a waiting take
   from its `pendingTakes` row, so that row is the durable copy (inference from
   its docblock, `takes.ts:396-408`).
