@@ -142,11 +142,13 @@ describe("the pinned manifest, at the script's default path", () => {
 
 describe("the production guard: provisional packages never reach main", () => {
   for (const branchVar of ["WORKERS_CI_BRANCH", "GITHUB_REF_NAME"]) {
-    it(`refuses an opted-in build whose ${branchVar} is main`, () => {
+    it(`leaves Titus out of an opted-in build whose ${branchVar} is main, and says why`, () => {
       const run = bake([], { [FLAG]: "1", [branchVar]: "main" });
-      expect(run.status).toBe(1);
-      expect(run.err).toMatch(/bible-passages:TIT/);
-      expect(run.err).toMatch(/provisional/);
+      expect(run.err).toBe("");
+      expect(run.status).toBe(0);
+      expect(run.out).toContain(
+        `left out bible-passages:TIT (provisional, and ${branchVar}=main is a production build`
+      );
       expect(run.out).not.toMatch(/^baked /m);
     });
 

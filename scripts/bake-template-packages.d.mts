@@ -12,7 +12,7 @@ export interface BakedPackage {
 
 export interface BakeResult {
   baked: BakedPackage[];
-  leftOut: string[];
+  leftOut: { id: string; why: string }[];
 }
 
 export declare const DEFAULT_MANIFEST: string;

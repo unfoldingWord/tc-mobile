@@ -23,9 +23,11 @@
  *
  * A provisional entry is test data: it may pin a commit, and its package may
  * say `source.revision: "unreleased"` and `version: "0.0.0"`. It is baked only
- * when the build opts in with TC_BAKE_PROVISIONAL_TEMPLATES=1, and an opted-in
- * build on `main` is refused, so a provisional package never reaches
- * production. With nothing set it is left out and the build goes on. The DRI's
+ * when the build opts in with TC_BAKE_PROVISIONAL_TEMPLATES=1 on a branch
+ * other than `main`. With nothing set, or on `main` even when opted in, it is
+ * left out with a log line saying why, and the build goes on: a preview build
+ * of `main` on the staging Worker (which sets the flag) must not fail, and
+ * either way a provisional package never reaches production. The DRI's
  * pick on #1450 (2026-10-30), verbatim: "Test build now, titles later
  * (Recommended)".
  */
@@ -175,14 +177,18 @@ export function bakeTemplatePackages({
       return table;
     });
     if (entry.provisional && !policy.optedIn) {
-      leftOut.push(entry.id);
+      leftOut.push({
+        id: entry.id,
+        why: `provisional; set ${PROVISIONAL_FLAG}=1 to bake it`,
+      });
       continue;
     }
     if (entry.provisional && policy.production) {
-      refuse(
-        where,
-        `is provisional, and a production build (${policy.production}) never bakes a provisional package`
-      );
+      leftOut.push({
+        id: entry.id,
+        why: `provisional, and ${policy.production} is a production build, which never bakes a provisional package, even with ${PROVISIONAL_FLAG}=1`,
+      });
+      continue;
     }
     baked.push({
       id: pkg.id,
@@ -204,10 +210,7 @@ export function describeBake({ baked, leftOut }) {
       (b) =>
         `baked ${b.id} ${b.provisional ? "(provisional)" : b.version}${tables(b.titles.length)}`
     ),
-    ...leftOut.map(
-      (id) =>
-        `left out ${id} (provisional; set ${PROVISIONAL_FLAG}=1 to bake it)`
-    ),
+    ...leftOut.map(({ id, why }) => `left out ${id} (${why})`),
   ];
 }
 

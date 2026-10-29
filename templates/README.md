@@ -22,9 +22,9 @@ Each entry gives:
 
 A provisional entry may pin a commit, and its package may say
 `source.revision: "unreleased"` and `version: "0.0.0"`. A build bakes it only
-with `TC_BAKE_PROVISIONAL_TEMPLATES=1`, and a build with that set on `main`
-(`WORKERS_CI_BRANCH` or `GITHUB_REF_NAME`) is refused. With nothing set it is
-left out.
+with `TC_BAKE_PROVISIONAL_TEMPLATES=1` on a branch other than `main`. With
+nothing set, or on `main` (`WORKERS_CI_BRANCH` or `GITHUB_REF_NAME`) even with
+it set, the package is left out and the build log says why.
 
 ## `bible-passages/TIT.json`
 
