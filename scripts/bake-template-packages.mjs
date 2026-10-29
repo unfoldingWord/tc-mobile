@@ -21,15 +21,19 @@
  *   `source.revision` is not that tag, or its `version` is not the tag
  *   without its `v`.
  *
+ * Every `file` in the manifest, a package's or a title table's, must be a
+ * relative path that stays inside the manifest's directory (#1797).
+ *
  * A provisional entry is test data: it may pin a commit, and its package may
  * say `source.revision: "unreleased"` and `version: "0.0.0"`. It is baked only
- * when the build opts in with TC_BAKE_PROVISIONAL_TEMPLATES=1 on a branch
- * other than `main`. With nothing set, or on `main` even when opted in, it is
- * left out with a log line saying why, and the build goes on: a preview build
- * of `main` on the staging Worker (which sets the flag) must not fail, and
- * either way a provisional package never reaches production. The DRI's
- * pick on #1450 (2026-10-30), verbatim: "Test build now, titles later
- * (Recommended)".
+ * when the build opts in with TC_BAKE_PROVISIONAL_TEMPLATES=1 AND the build
+ * positively names a branch other than `main` (`branchPolicy` below). Anything
+ * it cannot identify fails closed: no branch variable, an empty one, a tag
+ * build, or `main` in any branch variable leaves the package out with a log
+ * line saying why, and the build goes on, so a preview build of `main` on the
+ * staging Worker (which sets the flag) does not fail. The DRI's pick on #1450
+ * (2026-10-30), verbatim: "Test build now, titles later (Recommended)"; the
+ * fail-closed rule is #1797's first follow-up from #1798's review.
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -50,11 +54,25 @@ export const DEFAULT_MANIFEST = path.join(ROOT, "templates", "manifest.json");
 export const PROVISIONAL_FLAG = "TC_BAKE_PROVISIONAL_TEMPLATES";
 
 /**
- * The branch variables a build can read: Cloudflare Workers Builds sets
- * WORKERS_CI_BRANCH, and GitHub Actions (the native lanes) sets
- * GITHUB_REF_NAME. Either one naming `main` makes the build a production one.
+ * The branch variables a CI build can read. Cloudflare Workers Builds
+ * documents WORKERS_CI_BRANCH ("branch-name-from-push-event"), and GitHub
+ * Actions (the native lanes) documents GITHUB_REF_NAME, the short name of the
+ * branch or tag. Any one of them naming `main` makes the build a production
+ * one, even when another names something else.
  */
 const BRANCH_VARS = ["WORKERS_CI_BRANCH", "GITHUB_REF_NAME"];
+
+/**
+ * The local override: a developer's own build names its branch here, so a
+ * local build or a test can bake provisional packages without faking a CI
+ * variable. It is ignored in CI (any of CI_VARS set), so it can never stand in
+ * for a branch variable a CI build failed to provide.
+ */
+export const LOCAL_BRANCH_VAR = "TC_BAKE_BRANCH";
+
+/** Set by Workers Builds (CI=true, WORKERS_CI=1) or GitHub Actions. */
+const CI_VARS = ["CI", "WORKERS_CI", "GITHUB_ACTIONS"];
+
 const PRODUCTION_BRANCH = "main";
 
 const TAG = /^v(\d+\.\d+\.\d+)$/;
@@ -77,18 +95,59 @@ function policyFrom(env) {
       `must be "1" or unset, not ${JSON.stringify(flag)}`
     );
   }
-  const branchVar = BRANCH_VARS.find((v) => env[v] === PRODUCTION_BRANCH);
-  return {
-    optedIn: flag === "1",
-    production: branchVar ? `${branchVar}=${PRODUCTION_BRANCH}` : null,
-  };
+  return { optedIn: flag === "1", blocked: branchPolicy(env) };
+}
+
+const present = (env, name) => (env[name] ?? "") !== "";
+
+/**
+ * Why this build may not bake a provisional package, or null when it may.
+ * It may only when it positively names a branch other than `main` and is not
+ * a tag build; everything else is a reason to leave the package out.
+ */
+function branchPolicy(env) {
+  if (env.GITHUB_REF_TYPE === "tag") {
+    return "GITHUB_REF_TYPE=tag is a tag build";
+  }
+  if ((env.GITHUB_REF ?? "").startsWith("refs/tags/")) {
+    return `GITHUB_REF=${env.GITHUB_REF} is a tag build`;
+  }
+  const inCi = CI_VARS.some((v) => present(env, v));
+  const names = [...BRANCH_VARS, ...(inCi ? [] : [LOCAL_BRANCH_VAR])].filter(
+    (v) => present(env, v)
+  );
+  const onMain = names.find((v) => env[v] === PRODUCTION_BRANCH);
+  if (onMain) return `${onMain}=${PRODUCTION_BRANCH} is a production build`;
+  if (names.length === 0) {
+    return `no branch variable names a branch other than ${PRODUCTION_BRANCH} (${BRANCH_VARS.join(", ")}${inCi ? "" : `, or ${LOCAL_BRANCH_VAR} for a local build`})`;
+  }
+  return null;
+}
+
+/**
+ * `file` resolved inside `dir`, refused when it is absolute or climbs out.
+ * The manifest's directory is the only place a build reads pinned bytes from.
+ */
+function resolveInside(dir, file, where) {
+  if (typeof file !== "string" || file === "" || path.isAbsolute(file)) {
+    refuse(where, `file must be a relative path, not ${JSON.stringify(file)}`);
+  }
+  const root = path.resolve(dir);
+  const target = path.resolve(root, file);
+  const rel = path.relative(root, target);
+  const climbs = rel === ".." || rel.startsWith(`..${path.sep}`);
+  if (rel === "" || climbs || path.isAbsolute(rel)) {
+    refuse(where, `${file} is outside the manifest's directory`);
+  }
+  return target;
 }
 
 /** JSON from `file`, refused unless its bytes hash to `sha256`. */
 function readPinned(dir, file, sha256, where) {
+  const target = resolveInside(dir, file, where);
   let bytes;
   try {
-    bytes = readFileSync(path.resolve(dir, String(file)));
+    bytes = readFileSync(target);
   } catch (cause) {
     refuse(where, `cannot read ${file}: ${reason(cause)}`);
   }
@@ -183,10 +242,10 @@ export function bakeTemplatePackages({
       });
       continue;
     }
-    if (entry.provisional && policy.production) {
+    if (entry.provisional && policy.blocked) {
       leftOut.push({
         id: entry.id,
-        why: `provisional, and ${policy.production} is a production build, which never bakes a provisional package, even with ${PROVISIONAL_FLAG}=1`,
+        why: `provisional, and ${policy.blocked}; only a named branch other than ${PRODUCTION_BRANCH} bakes a provisional package, even with ${PROVISIONAL_FLAG}=1`,
       });
       continue;
     }
