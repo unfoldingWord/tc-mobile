@@ -12,7 +12,12 @@ import type {
   Touchscreen,
 } from "@playwright/test";
 
-import type { CaptureState, CaptureTest, StyleMap } from "./diff";
+import {
+  roundStyle,
+  type CaptureState,
+  type CaptureTest,
+  type StyleMap,
+} from "./diff";
 
 /**
  * The capture half of the computed-style diff tool (#954).
@@ -23,10 +28,10 @@ import type { CaptureState, CaptureTest, StyleMap } from "./diff";
  * every action a spec takes is followed by one snapshot of the page's computed
  * style. The fixture restores the prototypes when the test ends.
  *
- * One snapshot records, for every element under `<html>` except `<head>` and
- * the elements that never render (`script`, `style`, `link`, `meta`,
- * `template`, `noscript`), and for its `::before` and `::after` when they are
- * generated:
+ * One snapshot records, for every element under `<html>` except the ones
+ * `SKIP` names (`<head>`, the elements that never render, and the launch
+ * overlay from `index.html`, which fades out on its own clock), and for its
+ * `::before` and `::after` when they are generated:
  *   - its structural path (`html>body[1]>div[1]`, each index counting only the
  *     kept siblings), with no class or attribute in it, so a class rename
  *     keeps the key;
@@ -42,11 +47,29 @@ import type { CaptureState, CaptureTest, StyleMap } from "./diff";
  * closed mid-read) is counted on the test, never raised into it, and the
  * time a capture takes is added back to the test's timeout.
  *
- * Each snapshot waits two animation frames before it reads, so a render the
- * action scheduled has landed. In the test's own context, `crypto.randomUUID`
- * is replaced by a counter kept in `localStorage`, so a new book gets the same
- * id, and so the same id-derived cover colour, in every run. A context a spec
- * opens itself keeps the real one.
+ * Each snapshot first lets the page settle: it waits a frame at a time until,
+ * for `SETTLE_QUIET_MS` and at least two frames, no finite animation or
+ * transition outside the skipped elements has been running or pending and
+ * nothing outside them has mutated the DOM (an action's async work, such as a
+ * database write, commits its render on its own clock). An infinite animation
+ * (a spinner, a pulse) never ends, so it does not hold the read; the
+ * comparator leaves out what it drives, as above. The wait is bounded twice:
+ * `SETTLE_MS` for animations, and the shorter `SETTLE_DOM_MS` for a DOM that
+ * keeps changing with nothing animating, which is a page on its own clock
+ * (audio playing). A longer wait there moves the spec's own timing: a Play
+ * that the spec stops after a set time plays on through the wait. When either
+ * bound runs out, the state records what was still running or changing, and
+ * the comparator reports it as unsettled rather than comparing a
+ * mid-transition read.
+ *
+ * Every value is rounded (`roundStyle` in `diff.ts`) before its map is hashed,
+ * so float noise past `PRECISION` places neither makes a new style nor stops
+ * two identical captures collapsing.
+ *
+ * In the test's own context, `crypto.randomUUID` is replaced by a counter kept
+ * in `localStorage`, so a new book gets the same id, and so the same
+ * id-derived cover colour, in every run. A context a spec opens itself keeps
+ * the real one.
  *
  * How to run it, and what the comparator reports, is in
  * `playwright.style-diff.config.ts`.
@@ -59,18 +82,162 @@ interface PageSnapshot {
   animated: Record<string, string[]>;
   selectors: string[];
   matched: string[];
+  unsettled: string[];
+}
+
+/** Elements left out of a snapshot, with everything under them. */
+export interface Skip {
+  tags: readonly string[];
+  ids: readonly string[];
+}
+
+export const SKIP: Skip = {
+  tags: ["head", "script", "style", "link", "meta", "template", "noscript"],
+  // `index.html`'s launch overlay: the first child of `<body>` until its own
+  // fade-out removes it, so with it in the paths every element after it was
+  // renumbered depending on when the capture ran.
+  ids: ["launch-intro"],
+};
+
+/** How long a snapshot waits for animations to settle before reading anyway. */
+const SETTLE_MS = 2000;
+/** How long it waits for a DOM still changing with nothing animating. */
+const SETTLE_DOM_MS = 300;
+/** How long nothing may animate or mutate before the page counts as settled. */
+const SETTLE_QUIET_MS = 100;
+
+/**
+ * The children a path counts, each with its 1-based index among the kept
+ * siblings, so a skipped element ahead of the app's root does not renumber
+ * the elements after it. Runs in the page as well as in Node, so it closes
+ * over nothing.
+ */
+export function keptChildren<T extends { localName: string; id: string }>(
+  children: readonly T[],
+  skip: Skip
+): [T, number][] {
+  const kept: [T, number][] = [];
+  for (const child of children) {
+    if (skip.tags.includes(child.localName) || skip.ids.includes(child.id)) {
+      continue;
+    }
+    kept.push([child, kept.length + 1]);
+  }
+  return kept;
 }
 
 /**
- * Runs inside the page through `page.evaluate`, so it closes over nothing:
- * every helper it needs is declared in its own body.
+ * Whether an animation holds a snapshot back: one that is running or about
+ * to, and ends. Runs in the page as well as in Node, so it closes over
+ * nothing.
  */
-async function snapshotInPage(arg: { known: string[] }): Promise<PageSnapshot> {
-  // Two frames, so a render the action scheduled has committed and been
-  // styled before anything is read.
-  for (let i = 0; i < 2; i++) {
-    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+export function blocksSettle(timing: {
+  playState: string;
+  pending: boolean;
+  endTime: number;
+}): boolean {
+  const live = timing.playState === "running" || timing.pending;
+  return live && Number.isFinite(timing.endTime);
+}
+
+/**
+ * Runs inside the page, so it closes over nothing: `keptChildren` and
+ * `blocksSettle` are passed in as source (`snapshotExpression`), and every
+ * other helper is declared in its own body.
+ */
+async function snapshotInPage(
+  arg: {
+    known: string[];
+    skip: Skip;
+    settleMs: number;
+    domMs: number;
+    quietMs: number;
+  },
+  kept: typeof keptChildren,
+  blocks: typeof blocksSettle
+): Promise<PageSnapshot> {
+  // A frame, or 100 ms if frames have stopped, so the bound below holds.
+  const frame = () =>
+    new Promise<void>((done) => {
+      requestAnimationFrame(() => done());
+      setTimeout(done, 100);
+    });
+  const skipSelector = arg.skip.ids.map((id) => `#${CSS.escape(id)}`).join(",");
+  const watched = (animation: Animation): boolean => {
+    const effect = animation.effect as KeyframeEffect | null;
+    const target = effect?.target;
+    if (!effect || !target || !target.isConnected) return false;
+    if (skipSelector !== "" && target.closest(skipSelector)) return false;
+    return blocks({
+      playState: animation.playState,
+      pending: animation.pending,
+      endTime: Number(effect.getComputedTiming().endTime ?? Infinity),
+    });
+  };
+  // Mutations outside the skipped elements since the last frame.
+  let mutated = 0;
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      const node = record.target;
+      const el = node instanceof Element ? node : node.parentElement;
+      if (skipSelector !== "" && el?.closest(skipSelector)) continue;
+      mutated += 1;
+    }
+  });
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true,
+  });
+  const started = performance.now();
+  let busySince = started;
+  let animatedSince = started;
+  let frames = 0;
+  let running: Animation[] = [];
+  let lastMutation = -Infinity;
+  let settled = false;
+  for (;;) {
+    await frame();
+    frames += 1;
+    const now = performance.now();
+    running = document.getAnimations().filter(watched);
+    if (mutated > 0) lastMutation = now;
+    if (running.length > 0 || mutated > 0) busySince = now;
+    if (running.length > 0) animatedSince = now;
+    mutated = 0;
+    if (frames >= 2 && now - busySince >= arg.quietMs) {
+      settled = true;
+      break;
+    }
+    const stillAnimating = now - animatedSince < arg.quietMs;
+    if (!stillAnimating && now - started > arg.domMs) break;
+    if (now - started > arg.settleMs) break;
   }
+  observer.disconnect();
+  const unsettled = settled
+    ? []
+    : [
+        // Never empty when unsettled: the window can have been reset by an
+        // animation that has since ended, with nothing running at the bound.
+        ...(performance.now() - lastMutation < arg.quietMs
+          ? ["DOM still changing"]
+          : running.length === 0
+            ? ["an animation ended inside the quiet window"]
+            : []),
+        ...running.map((animation) => {
+          const effect = animation.effect as KeyframeEffect;
+          const el = effect.target as Element;
+          const name =
+            animation instanceof CSSAnimation
+              ? animation.animationName
+              : animation instanceof CSSTransition
+                ? `transition ${animation.transitionProperty}`
+                : "animation";
+          return `${el.localName}${el.id ? `#${el.id}` : ""}${effect.pseudoElement ?? ""} ${name}`;
+        }),
+      ].sort();
+
   const known = new Set(arg.known);
   const hash = (text: string): string => {
     let h1 = 0xdeadbeef;
@@ -143,15 +310,6 @@ async function snapshotInPage(arg: { known: string[] }): Promise<PageSnapshot> {
     if (!known.has(h)) styles[h] = sorted;
     elements.push([path, h]);
   };
-  const unrendered = new Set([
-    "head",
-    "script",
-    "style",
-    "link",
-    "meta",
-    "template",
-    "noscript",
-  ]);
   const visit = (el: Element, path: string): void => {
     pathOf.set(el, path);
     record(path, getComputedStyle(el));
@@ -160,13 +318,7 @@ async function snapshotInPage(arg: { known: string[] }): Promise<PageSnapshot> {
       const content = cs.getPropertyValue("content");
       if (content !== "none" && content !== "normal") record(path + pseudo, cs);
     }
-    // The index counts only the siblings that are kept, so a `<script>` or
-    // `<style>` inserted ahead of the app's root does not renumber every
-    // element after it.
-    let index = 0;
-    for (const child of Array.from(el.children)) {
-      if (unrendered.has(child.localName)) continue;
-      index += 1;
+    for (const [child, index] of kept(Array.from(el.children), arg.skip)) {
       visit(child, `${path}>${child.localName}[${index}]`);
     }
   };
@@ -226,8 +378,23 @@ async function snapshotInPage(arg: { known: string[] }): Promise<PageSnapshot> {
     animated,
     selectors: [...selectors],
     matched,
+    unsettled,
   };
 }
+
+/**
+ * `snapshotInPage` as one expression, with its two shared helpers passed in
+ * as source: `page.evaluate` sends a function's text, so a helper it merely
+ * referenced would not exist in the page.
+ */
+const snapshotExpression = (known: string[]) =>
+  `(${snapshotInPage.toString()})(${JSON.stringify({
+    known,
+    skip: SKIP,
+    settleMs: SETTLE_MS,
+    domMs: SETTLE_DOM_MS,
+    quietMs: SETTLE_QUIET_MS,
+  })}, ${keptChildren.toString()}, ${blocksSettle.toString()})`;
 
 /**
  * An init script: `crypto.randomUUID` from a per-origin counter, so ids (and
@@ -324,8 +491,14 @@ const TOUCH_ACTIONS = ["tap"] as const;
 type AnyFn = (...args: unknown[]) => Promise<unknown>;
 type Owner = Keyboard | Mouse | Touchscreen;
 
-/** Style hashes already on disk in this run, shared by every test in the worker. */
-let knownHashes: Set<string> | undefined;
+/**
+ * In this worker: the page's hash of a raw style map to the hash of that map
+ * rounded, which is the name it is stored under. The page skips sending a map
+ * whose raw hash is a key here.
+ */
+const roundedOf = new Map<string, string>();
+/** Rounded style hashes already on disk in this run. */
+let storedHashes: Set<string> | undefined;
 /** Every `@layer components` selector seen in this run. */
 const runSelectors = new Set<string>();
 
@@ -350,10 +523,10 @@ export async function startCapture(
 ): Promise<() => Promise<void>> {
   const stylesDir = join(dir, "styles");
   mkdirSync(stylesDir, { recursive: true });
-  knownHashes ??= new Set(
+  storedHashes ??= new Set(
     readdirSync(stylesDir).map((name) => name.replace(/\.json$/, ""))
   );
-  const known = knownHashes;
+  const stored = storedHashes;
 
   const browser = context.browser();
   if (!browser) throw new Error("style capture needs a launched browser");
@@ -409,15 +582,28 @@ export async function startCapture(
     const here = ordinal;
     const started = Date.now();
     try {
-      const snap = await page.evaluate(snapshotInPage, { known: [...known] });
-      for (const [h, map] of Object.entries(snap.styles)) {
-        if (known.has(h)) continue;
-        writeFileSync(join(stylesDir, `${h}.json`), JSON.stringify(map));
-        known.add(h);
+      const snap = await page.evaluate<PageSnapshot>(
+        snapshotExpression([...roundedOf.keys()])
+      );
+      for (const [raw, map] of Object.entries(snap.styles)) {
+        const text = JSON.stringify(roundStyle(map));
+        const h = createHash("sha1").update(text).digest("hex").slice(0, 16);
+        roundedOf.set(raw, h);
+        if (stored.has(h)) continue;
+        writeFileSync(join(stylesDir, `${h}.json`), text);
+        stored.add(h);
       }
       for (const s of snap.selectors) runSelectors.add(s);
-      const elements = Object.fromEntries(snap.elements);
-      const print = digest(JSON.stringify([snap.elements, snap.animated]));
+      const elements = Object.fromEntries(
+        snap.elements.map(([path, raw]) => {
+          const h = roundedOf.get(raw);
+          if (h === undefined) throw new Error(`page sent no style for ${raw}`);
+          return [path, h];
+        })
+      );
+      const print = digest(
+        JSON.stringify([elements, snap.animated, snap.unsettled])
+      );
       if (lastPrint.get(page) === print) {
         collapsed += 1;
         return;
@@ -438,6 +624,7 @@ export async function startCapture(
         elements,
         animated: snap.animated,
         matched,
+        ...(snap.unsettled.length > 0 ? { unsettled: snap.unsettled } : {}),
       });
     } catch (cause) {
       captureErrors += 1;
