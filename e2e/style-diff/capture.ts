@@ -52,8 +52,9 @@ import {
  * Each snapshot first lets the page settle: it waits a frame at a time until,
  * for `SETTLE_QUIET_MS` and at least two frames, no finite animation or
  * transition outside the skipped elements has been running or pending and
- * nothing outside them has mutated the DOM (an action's async work, such as a
- * database write, commits its render on its own clock). An infinite animation
+ * nothing outside them has mutated the DOM, a skipped element arriving or
+ * leaving counting as neither (an action's async work, such as a database
+ * write, commits its render on its own clock). An infinite animation
  * (a spinner, a pulse) never ends, so it does not hold the read; the
  * comparator leaves out what it drives, as above. The wait is bounded twice:
  * `SETTLE_MS` for animations, and the shorter `SETTLE_DOM_MS` for a DOM that
@@ -143,9 +144,32 @@ export function blocksSettle(timing: {
 }
 
 /**
- * Runs inside the page, so it closes over nothing: `keptChildren` and
- * `blocksSettle` are passed in as source (`snapshotExpression`), and every
- * other helper is declared in its own body.
+ * Whether a mutation record holds a snapshot back: one whose target is outside
+ * the skipped elements and that is not only a skipped element being added or
+ * removed. The launch overlay leaves by its parent `<body>` losing a child, so
+ * a check on the target alone counted its exit as the page changing. Runs in
+ * the page as well as in Node, so it closes over nothing.
+ */
+export function countsAsChange<N>(
+  record: {
+    target: N;
+    addedNodes: ArrayLike<N>;
+    removedNodes: ArrayLike<N>;
+  },
+  skipped: (node: N) => boolean
+): boolean {
+  if (skipped(record.target)) return false;
+  const moved = [
+    ...Array.from(record.addedNodes),
+    ...Array.from(record.removedNodes),
+  ];
+  return moved.length === 0 || !moved.every(skipped);
+}
+
+/**
+ * Runs inside the page, so it closes over nothing: `keptChildren`,
+ * `blocksSettle` and `countsAsChange` are passed in as source
+ * (`snapshotExpression`), and every other helper is declared in its own body.
  */
 async function snapshotInPage(
   arg: {
@@ -156,7 +180,8 @@ async function snapshotInPage(
     quietMs: number;
   },
   kept: typeof keptChildren,
-  blocks: typeof blocksSettle
+  blocks: typeof blocksSettle,
+  counts: typeof countsAsChange
 ): Promise<PageSnapshot> {
   // A frame, or 100 ms if frames have stopped, so the bound below holds.
   const frame = () =>
@@ -176,14 +201,16 @@ async function snapshotInPage(
       endTime: Number(effect.getComputedTiming().endTime ?? Infinity),
     });
   };
+  const skipped = (node: Node): boolean => {
+    if (skipSelector === "") return false;
+    const el = node instanceof Element ? node : node.parentElement;
+    return el?.closest(skipSelector) != null;
+  };
   // Mutations outside the skipped elements since the last frame.
   let mutated = 0;
   const observer = new MutationObserver((records) => {
     for (const record of records) {
-      const node = record.target;
-      const el = node instanceof Element ? node : node.parentElement;
-      if (skipSelector !== "" && el?.closest(skipSelector)) continue;
-      mutated += 1;
+      if (counts(record, skipped)) mutated += 1;
     }
   });
   observer.observe(document.documentElement, {
@@ -396,7 +423,7 @@ const snapshotExpression = (known: string[]) =>
     settleMs: SETTLE_MS,
     domMs: SETTLE_DOM_MS,
     quietMs: SETTLE_QUIET_MS,
-  })}, ${keptChildren.toString()}, ${blocksSettle.toString()})`;
+  })}, ${keptChildren.toString()}, ${blocksSettle.toString()}, ${countsAsChange.toString()})`;
 
 /**
  * An init script: `crypto.randomUUID` from a per-origin counter, so ids (and
