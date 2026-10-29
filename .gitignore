@@ -9,6 +9,7 @@ node_modules
 # Build output
 dist/
 dist-e2e/
+dist-templates/
 dev-dist/
 *.tsbuildinfo
 

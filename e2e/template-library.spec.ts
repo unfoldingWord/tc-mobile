@@ -10,8 +10,10 @@ import { expect, test, type Page } from "./support/test";
  * existing name notice and writes nothing.
  *
  * Nothing is seeded: the app's own IndexedDB is read through the app, after a
- * reload. Not covered: any phone, the soft keyboard, a screen reader, and a
- * second bundled package (the build has one).
+ * reload. The default build bakes no provisional template package, so the
+ * list holds Open Bible Stories alone; `template-bible-book.spec.ts` drives
+ * the opted-in build that carries Titus. Not covered: any phone, the soft
+ * keyboard and a screen reader.
  */
 test.use({ viewport: { width: 360, height: 740 } });
 
@@ -42,6 +44,21 @@ async function pickObs(page: Page, name: string): Promise<void> {
   await page.getByRole("textbox", { name: "Book name" }).fill(name);
   await page.getByRole("button", { name: "Create book", exact: true }).click();
 }
+
+test("the default build lists Open Bible Stories alone: no provisional package such as Titus (#1450)", async ({
+  page,
+}) => {
+  await openLibrary(page);
+  // Wait for the loaded list, not its busy first render.
+  await expect(panel(page).locator(".settings-list")).toHaveAttribute(
+    "aria-busy",
+    "false"
+  );
+  await expect(
+    panel(page).locator("button.template-row .template-row-title")
+  ).toHaveText(["Open Bible Stories"]);
+  await expect(panel(page).getByText("Titus")).toHaveCount(0);
+});
 
 test("create from Open Bible Stories persists across a reload, and a duplicate name is refused (#1450)", async ({
   page,
