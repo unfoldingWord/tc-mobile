@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator, type Page } from "./support/test";
 
-import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+import {
+  clickEditRecording,
+  editRecordingButton,
+  expectTakeCut,
+  fixDecodedLength,
+} from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";
 
 /**
@@ -45,6 +50,12 @@ test.use({
   },
 });
 
+/**
+ * The take's decoded length, in seconds (`fixDecodedLength`). Recording runs
+ * past it, so the take is the same length in every run.
+ */
+const TAKE_SECONDS = 3;
+
 /** A take long enough that a quarter of it sounds for well over a second. */
 async function recordTake(page: Page) {
   await page.getByRole("button", { name: "Record", exact: true }).click();
@@ -53,8 +64,9 @@ async function recordTake(page: Page) {
     exact: true,
   });
   await expect(stop).toBeVisible();
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(TAKE_SECONDS * 1000 + 500);
   await stop.click();
+  await expectTakeCut(page);
 }
 
 const valueOf = async (handle: Locator) =>
@@ -85,6 +97,7 @@ test("an audition of a picked span draws its playhead inside the band (#361)", a
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 740 });
+  await fixDecodedLength(page, TAKE_SECONDS);
   await seedToRecorder(page);
   await recordTake(page);
   await clickEditRecording(page);

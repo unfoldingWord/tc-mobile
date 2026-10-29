@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator, type Page } from "./support/test";
 
-import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+import {
+  clickEditRecording,
+  editRecordingButton,
+  expectTakeCut,
+  fixDecodedLength,
+} from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";
 
 /**
@@ -46,51 +51,11 @@ test.use({
   },
 });
 
-/** The take's decoded length, in seconds. Recording runs past it. */
-const TAKE_SECONDS = 1;
-
-type Decoded = { frames: number; kept: number };
-type DecodeLog = { __decodes?: Decoded[] };
-
 /**
- * Cuts every decode in the page to `seconds`, so the take has the same length
- * in every run.
- *
- * The capture runs on the wall clock, and the encoder hands over whole frames,
- * so a take stopped after a set wait comes out one frame longer or shorter
- * from run to run. Every handle offset is a fraction of that length, and so is
- * the number of key presses `nudgeTo` takes, so the computed-style diff tool
- * (#954) saw this spec differ against itself. The take still goes through the
- * real MediaRecorder and the real `decodeAudioData`; only the tail past
- * `seconds` is dropped, before the app reads the buffer. Each decode is logged
- * on `window.__decodes`, and `recordShortTake` asserts the one it made was cut.
+ * The take's decoded length, in seconds (`fixDecodedLength`). Recording runs
+ * past it, so the take is the same length in every run.
  */
-async function fixDecodedLength(page: Page, seconds: number) {
-  await page.addInitScript((s: number) => {
-    const log: Decoded[] = [];
-    (window as DecodeLog).__decodes = log;
-    const proto = BaseAudioContext.prototype;
-    const decode = proto.decodeAudioData;
-    proto.decodeAudioData = async function (
-      this: BaseAudioContext,
-      data: ArrayBuffer
-    ) {
-      const full = await decode.call(this, data);
-      const length = Math.round(s * full.sampleRate);
-      log.push({ frames: full.length, kept: Math.min(length, full.length) });
-      if (full.length <= length) return full;
-      const cut = new AudioBuffer({
-        length,
-        numberOfChannels: full.numberOfChannels,
-        sampleRate: full.sampleRate,
-      });
-      for (let c = 0; c < full.numberOfChannels; c++) {
-        cut.copyToChannel(full.getChannelData(c).subarray(0, length), c);
-      }
-      return cut;
-    };
-  }, seconds);
-}
+const TAKE_SECONDS = 1;
 
 async function recordShortTake(page: Page) {
   await page.getByRole("button", { name: "Record", exact: true }).click();
@@ -102,12 +67,7 @@ async function recordShortTake(page: Page) {
   // Well past TAKE_SECONDS, so the cut, not the wall clock, sets the length.
   await page.waitForTimeout(TAKE_SECONDS * 1000 + 500);
   await stop.click();
-  // The premise of the cut: the take's one decode was longer than it kept.
-  const decodes = () =>
-    page.evaluate(() => (window as DecodeLog).__decodes ?? []);
-  await expect.poll(async () => (await decodes()).length).toBe(1);
-  const [take] = await decodes();
-  expect(take!.frames).toBeGreaterThan(take!.kept);
+  await expectTakeCut(page);
 }
 
 const valueOf = async (handle: Locator) =>
