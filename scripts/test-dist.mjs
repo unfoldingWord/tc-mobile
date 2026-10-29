@@ -23,6 +23,7 @@ const result = spawnSync(
     "node_modules/vitest/vitest.mjs",
     "run",
     "tests/dist-css.test.ts",
+    "tests/dist-dsp-worker-only.test.ts",
     "tests/dist-locale.test.ts",
     "tests/dist-source-offer.test.ts",
     "tests/dist-stale-chunk.test.ts",
