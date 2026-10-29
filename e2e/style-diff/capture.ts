@@ -47,14 +47,16 @@ import {
  * closed mid-read) is counted on the test, never raised into it, and the
  * time a capture takes is added back to the test's timeout.
  *
- * Each snapshot first lets the page settle: it waits a frame at a time until
- * no finite animation or transition outside the skipped elements is running
- * or pending, for `SETTLE_QUIET_FRAMES` frames in a row, bounded by
- * `SETTLE_MS`. An infinite one (a spinner, a pulse) never ends, so it does
- * not hold the read; the comparator leaves out what it drives, as above. When
- * the bound runs out first, the state records what was still running, and the
- * comparator reports it as unsettled rather than comparing a mid-transition
- * read. Every value is rounded (`roundStyle` in `diff.ts`) before its map is
+ * Each snapshot first lets the page settle: it waits a frame at a time until,
+ * for `SETTLE_QUIET_MS` and at least two frames, no finite animation or
+ * transition outside the skipped elements has been running or pending and
+ * nothing outside them has mutated the DOM (an action's async work, such as a
+ * database write, commits its render on its own clock), bounded by
+ * `SETTLE_MS`. An infinite animation (a spinner, a pulse) never ends, so it
+ * does not hold the read; the comparator leaves out what it drives, as above.
+ * When the bound runs out first, the state records what was still running or
+ * changing, and the comparator reports it as unsettled rather than comparing
+ * a mid-transition read. Every value is rounded (`roundStyle` in `diff.ts`) before its map is
  * hashed, so float noise past `PRECISION` places neither makes a new style nor
  * stops two identical captures collapsing.
  *
@@ -93,8 +95,8 @@ export const SKIP: Skip = {
 
 /** How long a snapshot waits for the page to settle before reading anyway. */
 const SETTLE_MS = 2000;
-/** Frames in a row with nothing settling that count as settled. */
-const SETTLE_QUIET_FRAMES = 2;
+/** How long nothing may animate or mutate before the page counts as settled. */
+const SETTLE_QUIET_MS = 100;
 
 /**
  * The children a path counts, each with its 1-based index among the kept
@@ -136,7 +138,7 @@ export function blocksSettle(timing: {
  * other helper is declared in its own body.
  */
 async function snapshotInPage(
-  arg: { known: string[]; skip: Skip; settleMs: number; quietFrames: number },
+  arg: { known: string[]; skip: Skip; settleMs: number; quietMs: number },
   kept: typeof keptChildren,
   blocks: typeof blocksSettle
 ): Promise<PageSnapshot> {
@@ -158,31 +160,65 @@ async function snapshotInPage(
       endTime: Number(effect.getComputedTiming().endTime ?? Infinity),
     });
   };
-  const deadline = performance.now() + arg.settleMs;
-  let quiet = 0;
+  // Mutations outside the skipped elements since the last frame.
+  let mutated = 0;
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      const node = record.target;
+      const el = node instanceof Element ? node : node.parentElement;
+      if (skipSelector !== "" && el?.closest(skipSelector)) continue;
+      mutated += 1;
+    }
+  });
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true,
+  });
+  const started = performance.now();
+  let busySince = started;
+  let frames = 0;
   let running: Animation[] = [];
-  while (quiet < arg.quietFrames) {
+  let lastMutation = -Infinity;
+  let settled = false;
+  for (;;) {
     await frame();
+    frames += 1;
+    const now = performance.now();
     running = document.getAnimations().filter(watched);
-    quiet = running.length === 0 ? quiet + 1 : 0;
-    if (quiet < arg.quietFrames && performance.now() > deadline) break;
+    if (mutated > 0) lastMutation = now;
+    if (running.length > 0 || mutated > 0) busySince = now;
+    mutated = 0;
+    if (frames >= 2 && now - busySince >= arg.quietMs) {
+      settled = true;
+      break;
+    }
+    if (now - started > arg.settleMs) break;
   }
-  const unsettled =
-    quiet >= arg.quietFrames
-      ? []
-      : running
-          .map((animation) => {
-            const effect = animation.effect as KeyframeEffect;
-            const el = effect.target as Element;
-            const name =
-              animation instanceof CSSAnimation
-                ? animation.animationName
-                : animation instanceof CSSTransition
-                  ? `transition ${animation.transitionProperty}`
-                  : "animation";
-            return `${el.localName}${el.id ? `#${el.id}` : ""}${effect.pseudoElement ?? ""} ${name}`;
-          })
-          .sort();
+  observer.disconnect();
+  const unsettled = settled
+    ? []
+    : [
+        // Never empty when unsettled: the window can have been reset by an
+        // animation that has since ended, with nothing running at the bound.
+        ...(performance.now() - lastMutation < arg.quietMs
+          ? ["DOM still changing"]
+          : running.length === 0
+            ? ["an animation ended inside the quiet window"]
+            : []),
+        ...running.map((animation) => {
+          const effect = animation.effect as KeyframeEffect;
+          const el = effect.target as Element;
+          const name =
+            animation instanceof CSSAnimation
+              ? animation.animationName
+              : animation instanceof CSSTransition
+                ? `transition ${animation.transitionProperty}`
+                : "animation";
+          return `${el.localName}${el.id ? `#${el.id}` : ""}${effect.pseudoElement ?? ""} ${name}`;
+        }),
+      ].sort();
 
   const known = new Set(arg.known);
   const hash = (text: string): string => {
@@ -338,7 +374,7 @@ const snapshotExpression = (known: string[]) =>
     known,
     skip: SKIP,
     settleMs: SETTLE_MS,
-    quietFrames: SETTLE_QUIET_FRAMES,
+    quietMs: SETTLE_QUIET_MS,
   })}, ${keptChildren.toString()}, ${blocksSettle.toString()})`;
 
 /**
