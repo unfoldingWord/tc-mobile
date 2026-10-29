@@ -36,3 +36,8 @@ tests/fixtures/scripture-bundle/examples/spec-audioTranslation.json
 # scripts/build-language-list.mjs one language per line so a release bump
 # reads as a diff of languages; prettier would put each field on its own line.
 src/data/language-list.json
+
+# A real template package from the Bible Passages dataset (#1450), copied
+# byte for byte at a pinned commit and checked by SHA-256; see
+# tests/fixtures/templates/README.md. Formatting it would modify it.
+tests/fixtures/templates/bible-passages-TIT.json
