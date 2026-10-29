@@ -43,9 +43,11 @@ import {
  *
  * Style maps are stored once each under `styles/<hash>.json`; a test's
  * states refer to them by hash. Two identical captures in a row of the same
- * page collapse into one. A capture that throws (the page navigated or
- * closed mid-read) is counted on the test, never raised into it, and the
- * time a capture takes is added back to the test's timeout.
+ * page collapse into one, and the test's `sameAs` records which kept state
+ * each collapsed key repeated, so the comparator can still match it. A
+ * capture that throws (the page navigated or closed mid-read) is counted on
+ * the test, never raised into it, and the time a capture takes is added back
+ * to the test's timeout.
  *
  * Each snapshot first lets the page settle: it waits a frame at a time until,
  * for `SETTLE_QUIET_MS` and at least two frames, no finite animation or
@@ -556,7 +558,7 @@ export async function startCapture(
 
   const owners = new WeakMap<Owner, Page>();
   const pageIds = new WeakMap<Page, number>();
-  const lastPrint = new WeakMap<Page, string>();
+  const lastPrint = new WeakMap<Page, { print: string; key: string }>();
   const tableIndex = new Map<string, number>();
   const selectorTable: string[] = [];
   const states: CaptureState[] = [];
@@ -565,6 +567,7 @@ export async function startCapture(
   let depth = 0;
   let captureErrors = 0;
   let collapsed = 0;
+  const sameAs: Record<string, string> = {};
   const errorSamples: string[] = [];
 
   const register = (page: Page): Page => {
@@ -604,11 +607,14 @@ export async function startCapture(
       const print = digest(
         JSON.stringify([elements, snap.animated, snap.unsettled])
       );
-      if (lastPrint.get(page) === print) {
+      const key = `${String(here).padStart(3, "0")} p${pageIds.get(page) ?? 0} ${action}`;
+      const last = lastPrint.get(page);
+      if (last?.print === print) {
         collapsed += 1;
+        sameAs[key] = last.key;
         return;
       }
-      lastPrint.set(page, print);
+      lastPrint.set(page, { print, key });
       const matched = snap.matched.map((s) => {
         let i = tableIndex.get(s);
         if (i === undefined) {
@@ -619,7 +625,7 @@ export async function startCapture(
         return i;
       });
       states.push({
-        key: `${String(here).padStart(3, "0")} p${pageIds.get(page) ?? 0} ${action}`,
+        key,
         url: snap.url,
         elements,
         animated: snap.animated,
@@ -688,6 +694,7 @@ export async function startCapture(
       collapsed,
       selectors: selectorTable,
       states,
+      sameAs,
     };
     const testsDir = join(dir, "tests");
     if (!existsSync(testsDir)) mkdirSync(testsDir, { recursive: true });

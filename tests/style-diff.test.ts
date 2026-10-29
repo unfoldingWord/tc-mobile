@@ -148,6 +148,73 @@ describe("diffRuns", () => {
     );
   });
 
+  it("compares a state one run collapsed into the state before it, rather than leaving it unmatched", () => {
+    // Run A kept "002" because "001" read differently there (it did not
+    // settle); run B's "002" repeated its "001" and was collapsed into it.
+    const a = run({ h1: card }, [
+      test([
+        state(
+          "001 p0 locator.click",
+          { [BOOKS_CARD]: "h1" },
+          { unsettled: ["DOM still changing"] }
+        ),
+        state("002 p0 end", { [BOOKS_CARD]: "h1" }),
+      ]),
+    ]);
+    const b = run({ h1: card, h2: { ...card, color: "rgb(1, 1, 1)" } }, [
+      test([state("001 p0 locator.click", { [BOOKS_CARD]: "h1" })], {
+        sameAs: { "002 p0 end": "001 p0 locator.click" },
+      }),
+    ]);
+    const report = diffRuns(a, b);
+    expect(report.statesOnlyInA).toEqual([]);
+    expect(report.statesOnlyInB).toEqual([]);
+    expect(report.statesCompared).toBe(1);
+    expect(report.differences).toEqual([]);
+
+    // The alias carries the state it repeated, so a real change still shows.
+    const changed = run({ h2: { ...card, color: "rgb(1, 1, 1)" } }, [
+      test([state("001 p0 locator.click", { [BOOKS_CARD]: "h2" })], {
+        sameAs: { "002 p0 end": "001 p0 locator.click" },
+      }),
+    ]);
+    expect(
+      diffRuns(a, changed).differences.map((d) => [d.property, d.count])
+    ).toEqual([["color", 1]]);
+  });
+
+  it("counts an alias of a state that did not settle as not settled too", () => {
+    const b = run({ h1: card }, [
+      test(
+        [
+          state(
+            "001 p0 locator.click",
+            { [BOOKS_CARD]: "h1" },
+            { unsettled: ["DOM still changing"] }
+          ),
+        ],
+        { sameAs: { "002 p0 end": "001 p0 locator.click" } }
+      ),
+    ]);
+    const report = diffRuns(b, b);
+    expect(report.unsettled.map((u) => [u.run, u.state])).toEqual([
+      ["A", "shipped | books › a card | 001 p0 locator.click"],
+      ["A", "shipped | books › a card | 002 p0 end"],
+      ["B", "shipped | books › a card | 001 p0 locator.click"],
+      ["B", "shipped | books › a card | 002 p0 end"],
+    ]);
+    expect(report.statesCompared).toBe(0);
+  });
+
+  it("refuses an alias that names no state of its test", () => {
+    const bad = run({ h1: card }, [
+      test([state("001 p0 page.goto", { [BOOKS_CARD]: "h1" })], {
+        sameAs: { "002 p0 end": "009 p0 nothing" },
+      }),
+    ]);
+    expect(() => diffRuns(bad, bad)).toThrow(/009 p0 nothing/);
+  });
+
   it("maps a renamed custom property to no difference with --rename-prop, and reports it without", () => {
     const a = run({ h1: { color: "red", "--o4-scope": "1" } }, [
       test([state("001 p0 end", { html: "h1" })]),
