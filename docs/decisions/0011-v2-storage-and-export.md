@@ -153,9 +153,9 @@ them on 2026-10-19 (the record is in
 
 These are for the requirements owner. This ADR does not decide them.
 
-How recordings live on the card (where, the commit protocol, the failure
-behaviours) is proposed in [ADR 0013](0013-card-store.md).
-
+- **How recordings live on the card** (where, the commit protocol, the
+  failure behaviours): proposed in [ADR 0013](0013-card-store.md), not decided
+  here.
 - **Where a backup goes on a phone with no card.** iPhones have no microSD
   slot, and some Android phones have none. Where a backup goes on those phones,
   short of the desired cloud sync, is not decided. R4 says only that data must
