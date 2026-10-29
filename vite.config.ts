@@ -147,7 +147,9 @@ if (unversioned.length > 0) {
 // runs before vite-plugin-pwa's `closeBundle` hashes the precache, so the
 // precached revision is the expanded file), and in the dev server. An unknown
 // package throws, so a notice for a package that left the tree fails loudly.
-function licenceNoticeVersionsPlugin(): Plugin {
+// Exported for tests/licence-notice-dev-server.test.ts, which starts a dev
+// server with only this plugin under a `base` other than `/` (#1415).
+export function licenceNoticeVersionsPlugin(): Plugin {
   const root = import.meta.dirname;
   const versionOf = (pkg: string) => installedVersion(root, pkg);
   const reasonOf = (pkg: string) => missingVersionReason(root, pkg);
