@@ -70,6 +70,10 @@ const RESUME_CONTEXTS: readonly string[] = [
  * - `"recorder-decode-retry-resume"`: `retryDecode()`'s fire-and-forget resume
  *   was refused. The decode goes ahead regardless, and the bytes are kept on
  *   every failure. Same reasoning.
+ * - `"book-provenance-read"`: not a recorder-sheet row, but the same rule.
+ *   The book menu could not read whether the open book was made from a
+ *   template, so it hides the Licence tile, the safe side. Nothing is lost,
+ *   and the next open of the menu reads again.
  * - `"recorder-mic-refused"`: the microphone request ended in a
  *   `NotAllowedError` — the person declined or dismissed the prompt, or the
  *   site or the phone's settings block the microphone. The screen says so and
@@ -100,6 +104,7 @@ const ROUTINE_RECOVERABLE_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-foreground-resume",
   "recorder-decode-retry-resume",
   "recorder-mic-refused",
+  "book-provenance-read",
 ]);
 
 /** True when a row with this context should mark the Books ≡ control. */

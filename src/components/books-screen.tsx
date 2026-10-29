@@ -54,6 +54,7 @@ import { SettingsPanel } from "./settings-panel";
 import { TemplatePicker } from "./template-picker";
 import { useChapterHeading } from "@/hooks/use-settings";
 import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
+import { reportFailure } from "@/hooks/report-failure";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
@@ -1289,8 +1290,10 @@ export function BooksScreen({
       },
       (cause: unknown) => {
         // Unknown provenance keeps the tile away, which is the safe side; the
-        // menu itself is unaffected.
+        // menu itself is unaffected, and the next open reads again. Logged
+        // without lighting the Books ≡ marker (lib/failure-marker.ts).
         console.error("Reading a book's provenance failed", cause);
+        reportFailure(cause, "book-provenance-read");
       }
     );
     return () => {
