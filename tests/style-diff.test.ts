@@ -4,7 +4,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { blocksSettle, keptChildren, SKIP } from "../e2e/style-diff/capture";
+import {
+  blocksSettle,
+  countsAsChange,
+  keptChildren,
+  SKIP,
+} from "../e2e/style-diff/capture";
 import {
   ABSENT,
   diffRuns,
@@ -24,9 +29,9 @@ import {
  *
  * Every case builds two small capture runs by hand and asks `diffRuns` what
  * differs. The capture half (`e2e/style-diff/capture.ts`) runs only inside
- * Playwright; of it, only the two pure helpers it also sends into the page
- * (`keptChildren`, `blocksSettle`) are exercised here. What a real run
- * reaches is reported on the PR that runs it, never here.
+ * Playwright; of it, only the pure helpers it also sends into the page
+ * (`keptChildren`, `blocksSettle`, `countsAsChange`) are exercised here.
+ * What a real run reaches is reported on the PR that runs it, never here.
  */
 
 const BOOKS_CARD = "html>body[1]>div[1]";
@@ -515,6 +520,39 @@ describe("blocksSettle", () => {
     expect(
       blocksSettle({ playState: "paused", pending: false, endTime: 300 })
     ).toBe(false);
+  });
+});
+
+describe("countsAsChange", () => {
+  // A node stands for itself by name; `skipped` says which names sit in a
+  // skipped element, as the page's `closest` check does.
+  const inOverlay = new Set(["launch-intro", "launch-intro img"]);
+  const skipped = (node: string) => inOverlay.has(node);
+  const record = (
+    target: string,
+    addedNodes: string[] = [],
+    removedNodes: string[] = []
+  ) => ({ target, addedNodes, removedNodes });
+
+  it("does not count the launch overlay leaving body", () => {
+    expect(countsAsChange(record("body", [], ["launch-intro"]), skipped)).toBe(
+      false
+    );
+    expect(countsAsChange(record("body", ["launch-intro"]), skipped)).toBe(
+      false
+    );
+  });
+
+  it("does not count a change inside a skipped element", () => {
+    expect(countsAsChange(record("launch-intro img"), skipped)).toBe(false);
+  });
+
+  it("counts a change outside, and a list change that moves any kept node", () => {
+    expect(countsAsChange(record("header"), skipped)).toBe(true);
+    expect(countsAsChange(record("body", ["div"]), skipped)).toBe(true);
+    expect(
+      countsAsChange(record("body", ["div"], ["launch-intro"]), skipped)
+    ).toBe(true);
   });
 });
 
