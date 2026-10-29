@@ -345,6 +345,21 @@ describe("roundValue", () => {
       expect(roundValue(value)).toBe(value);
     }
   });
+
+  it("leaves a CSS string and a url's contents alone, and rounds around them", () => {
+    for (const value of [
+      'url("/images/1.23441/icon.png")',
+      "url(/images/1.23441/icon.png)",
+      '"1.23441"',
+      "'1.23441'",
+      '"a \\" 1.23441"',
+    ]) {
+      expect(roundValue(value)).toBe(value);
+    }
+    expect(roundValue('url("/i/1.23441.png") 12.33333px "2.00001"')).toBe(
+      'url("/i/1.23441.png") 12.333px "2.00001"'
+    );
+  });
 });
 
 describe("diffRuns and rounding", () => {
@@ -356,6 +371,25 @@ describe("diffRuns and rounding", () => {
   it("reports no difference between values that differ only past three places", () => {
     const report = diffRuns(cut("37.375%"), cut("37.37500000000001%"));
     expect(report.differences).toEqual([]);
+  });
+
+  it("still reports a changed image url or string past three places", () => {
+    const styled = (prop: string, v: string) =>
+      run({ h: { ...card, [prop]: v } }, [
+        test([state("001 p0 end", { [BOOKS_CARD]: "h" })]),
+      ]);
+    const pairs: [string, string, string][] = [
+      [
+        "background-image",
+        'url("/i/1.23441/x.png")',
+        'url("/i/1.23449/x.png")',
+      ],
+      ["content", '"1.23441"', '"1.23449"'],
+    ];
+    for (const [prop, a, b] of pairs) {
+      const report = diffRuns(styled(prop, a), styled(prop, b));
+      expect(report.differences.map((d) => d.property)).toEqual([prop]);
+    }
   });
 
   it("still reports a difference at the third place", () => {

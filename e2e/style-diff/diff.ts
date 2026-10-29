@@ -112,18 +112,26 @@ export const PRECISION = 3;
  * (`6.875e-14`), that stands alone as a number: not part of a word, a hex
  * colour or a file name (`index-a1.2345.js`).
  */
-const LONG_DECIMAL = new RegExp(
-  `(?<![\\w.#])-?(?:\\d*\\.?\\d+e[-+]?\\d+|\\d*\\.\\d{${PRECISION + 1},})(?![\\d.])`,
-  "g"
-);
+const LONG_DECIMAL = `(?<![\\w.#])-?(?:\\d*\\.?\\d+e[-+]?\\d+|\\d*\\.\\d{${PRECISION + 1},})(?![\\d.])`;
+
+/**
+ * A CSS string or a `url(…)`: text, not a number, so it is matched first and
+ * passed through whole (`"1.23441"` and `url(/i/1.23441.png)` keep every
+ * digit).
+ */
+const QUOTED = `"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'`;
+const OPAQUE = `${QUOTED}|url\\(\\s*(?:${QUOTED}|[^)"']*)\\s*\\)`;
+const ROUNDABLE = new RegExp(`(${OPAQUE})|${LONG_DECIMAL}`, "g");
 
 /**
  * One computed value with every long decimal rounded to `PRECISION` places,
  * so `37.37500000000001%` and `37.375%` compare equal. A value with no long
- * decimal comes back as it was, character for character.
+ * decimal comes back as it was, character for character, and a string or a
+ * url inside it is never rounded.
  */
 export function roundValue(value: string): string {
-  return value.replace(LONG_DECIMAL, (n) => {
+  return value.replace(ROUNDABLE, (n, opaque?: string) => {
+    if (opaque !== undefined) return opaque;
     const r = Number(Number(n).toFixed(PRECISION));
     return String(Object.is(r, -0) ? 0 : r);
   });
