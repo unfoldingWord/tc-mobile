@@ -326,6 +326,11 @@ describe("roundValue", () => {
       "matrix(1, 0, 0, 1, 12.333, -0.667)"
     );
     expect(roundValue("-0.00001px")).toBe("0px");
+    expect(roundValue("6.875e-14%")).toBe("0%");
+    expect(roundValue("1.23456e+2px")).toBe("123.456px");
+    expect(roundValue("translate(1e-7px, 2.5px)")).toBe(
+      "translate(0px, 2.5px)"
+    );
   });
 
   it("leaves a short decimal and any number inside a word alone", () => {

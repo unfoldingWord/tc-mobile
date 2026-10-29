@@ -108,11 +108,12 @@ const SAMPLE_LIMIT = 3;
 export const PRECISION = 3;
 
 /**
- * A decimal number with more than `PRECISION` places that stands alone as a
- * number: not part of a word, a hex colour or a file name (`index-a1.2345.js`).
+ * A number with more than `PRECISION` decimal places, or in exponent form
+ * (`6.875e-14`), that stands alone as a number: not part of a word, a hex
+ * colour or a file name (`index-a1.2345.js`).
  */
 const LONG_DECIMAL = new RegExp(
-  `(?<![\\w.#])-?\\d*\\.\\d{${PRECISION + 1},}(?![\\d.])`,
+  `(?<![\\w.#])-?(?:\\d*\\.?\\d+e[-+]?\\d+|\\d*\\.\\d{${PRECISION + 1},})(?![\\d.])`,
   "g"
 );
 

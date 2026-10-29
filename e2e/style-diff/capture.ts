@@ -51,19 +51,25 @@ import {
  * for `SETTLE_QUIET_MS` and at least two frames, no finite animation or
  * transition outside the skipped elements has been running or pending and
  * nothing outside them has mutated the DOM (an action's async work, such as a
- * database write, commits its render on its own clock), bounded by
- * `SETTLE_MS`. An infinite animation (a spinner, a pulse) never ends, so it
- * does not hold the read; the comparator leaves out what it drives, as above.
- * When the bound runs out first, the state records what was still running or
- * changing, and the comparator reports it as unsettled rather than comparing
- * a mid-transition read. Every value is rounded (`roundStyle` in `diff.ts`) before its map is
- * hashed, so float noise past `PRECISION` places neither makes a new style nor
- * stops two identical captures collapsing.
+ * database write, commits its render on its own clock). An infinite animation
+ * (a spinner, a pulse) never ends, so it does not hold the read; the
+ * comparator leaves out what it drives, as above. The wait is bounded twice:
+ * `SETTLE_MS` for animations, and the shorter `SETTLE_DOM_MS` for a DOM that
+ * keeps changing with nothing animating, which is a page on its own clock
+ * (audio playing). A longer wait there moves the spec's own timing: a Play
+ * that the spec stops after a set time plays on through the wait. When either
+ * bound runs out, the state records what was still running or changing, and
+ * the comparator reports it as unsettled rather than comparing a
+ * mid-transition read.
  *
- * In the test's own context, `crypto.randomUUID`
- * is replaced by a counter kept in `localStorage`, so a new book gets the same
- * id, and so the same id-derived cover colour, in every run. A context a spec
- * opens itself keeps the real one.
+ * Every value is rounded (`roundStyle` in `diff.ts`) before its map is hashed,
+ * so float noise past `PRECISION` places neither makes a new style nor stops
+ * two identical captures collapsing.
+ *
+ * In the test's own context, `crypto.randomUUID` is replaced by a counter kept
+ * in `localStorage`, so a new book gets the same id, and so the same
+ * id-derived cover colour, in every run. A context a spec opens itself keeps
+ * the real one.
  *
  * How to run it, and what the comparator reports, is in
  * `playwright.style-diff.config.ts`.
@@ -93,8 +99,10 @@ export const SKIP: Skip = {
   ids: ["launch-intro"],
 };
 
-/** How long a snapshot waits for the page to settle before reading anyway. */
+/** How long a snapshot waits for animations to settle before reading anyway. */
 const SETTLE_MS = 2000;
+/** How long it waits for a DOM still changing with nothing animating. */
+const SETTLE_DOM_MS = 300;
 /** How long nothing may animate or mutate before the page counts as settled. */
 const SETTLE_QUIET_MS = 100;
 
@@ -138,7 +146,13 @@ export function blocksSettle(timing: {
  * other helper is declared in its own body.
  */
 async function snapshotInPage(
-  arg: { known: string[]; skip: Skip; settleMs: number; quietMs: number },
+  arg: {
+    known: string[];
+    skip: Skip;
+    settleMs: number;
+    domMs: number;
+    quietMs: number;
+  },
   kept: typeof keptChildren,
   blocks: typeof blocksSettle
 ): Promise<PageSnapshot> {
@@ -178,6 +192,7 @@ async function snapshotInPage(
   });
   const started = performance.now();
   let busySince = started;
+  let animatedSince = started;
   let frames = 0;
   let running: Animation[] = [];
   let lastMutation = -Infinity;
@@ -189,11 +204,14 @@ async function snapshotInPage(
     running = document.getAnimations().filter(watched);
     if (mutated > 0) lastMutation = now;
     if (running.length > 0 || mutated > 0) busySince = now;
+    if (running.length > 0) animatedSince = now;
     mutated = 0;
     if (frames >= 2 && now - busySince >= arg.quietMs) {
       settled = true;
       break;
     }
+    const stillAnimating = now - animatedSince < arg.quietMs;
+    if (!stillAnimating && now - started > arg.domMs) break;
     if (now - started > arg.settleMs) break;
   }
   observer.disconnect();
@@ -374,6 +392,7 @@ const snapshotExpression = (known: string[]) =>
     known,
     skip: SKIP,
     settleMs: SETTLE_MS,
+    domMs: SETTLE_DOM_MS,
     quietMs: SETTLE_QUIET_MS,
   })}, ${keptChildren.toString()}, ${blocksSettle.toString()})`;
 
