@@ -103,8 +103,20 @@ type Answer = {
   readonly transfer: Transferable[];
 } | null;
 
-/** The longest benchmark this worker will run, in seconds of audio. */
-const MAX_BENCH_SECONDS = 600;
+/**
+ * The longest benchmark this worker will run, in seconds of audio. The bound
+ * includes its end: this many seconds runs, any more is a `bench-error`.
+ * Exported so that boundary is a test and not a comment.
+ */
+export const MAX_BENCH_SECONDS = 600;
+
+/**
+ * The kernel's passes over the input (measure, then apply), which the
+ * heartbeat's fraction divides by. The `onChunk` below declares its pass as
+ * `1 | 2`, so a kernel that gains a pass no longer type-checks against it, and
+ * the worker test that reads every beat sees the last one land on exactly 1.
+ */
+const BENCH_PASSES = 2;
 
 /**
  * Run the DSP benchmark. Its own failures are `bench-error`, never `error`:
@@ -120,7 +132,7 @@ function benchAnswer(seconds: unknown): Answer {
       seconds > MAX_BENCH_SECONDS
     )
       throw new Error(
-        `The benchmark needs seconds between 0 and ${MAX_BENCH_SECONDS}`
+        `The benchmark needs more than 0 and at most ${MAX_BENCH_SECONDS} seconds`
       );
     // Built before the clock starts: the kernel times the chain, not the speech.
     const input = speechLikePcm(seconds, CANONICAL_SAMPLE_RATE);
@@ -129,8 +141,8 @@ function benchAnswer(seconds: unknown): Answer {
       input,
       sampleRate: CANONICAL_SAMPLE_RATE,
       now: () => performance.now(),
-      onChunk: (pass, done, total) =>
-        beat(((pass - 1) * total + done) / (2 * total)),
+      onChunk: (pass: 1 | 2, done: number, total: number) =>
+        beat(((pass - 1) * total + done) / (BENCH_PASSES * total)),
     });
     return { response: { kind: "bench-result", result }, transfer: [] };
   } catch (cause) {

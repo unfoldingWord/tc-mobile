@@ -1,11 +1,15 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
 
-import { stripCssComments } from "./support";
+import {
+  areaScope,
+  areaSelector,
+  declsFor,
+  fileRules,
+  readAreaCss,
+  scopeDeclarations,
+} from "./o4-area-css";
 
 /**
  * The O4 share circle's colours and rings (#947, D14 to D16), read from the
@@ -15,12 +19,14 @@ import { stripCssComments } from "./support";
  * the selector whose declaration it reads.
  *
  * What this cannot prove: the cascade. That the O4 rule wins in a browser is
- * the build's and the phone's to show (tests/o4-cascade.test.ts reads the
+ * the build's and the phone's to show (tests/component-cascade.test.ts reads the
  * built bundle; the device check is #974).
  */
 
-const CSS = stripCssComments(
-  readFileSync(path.join(process.cwd(), "src/app/styles/o4/share.css"), "utf8")
+/** The one block that turns smooth scrolling on. */
+const SMOOTH = areaScope(
+  "share",
+  "@media (prefers-reduced-motion: no-preference)"
 );
 
 interface Rule {
@@ -28,25 +34,14 @@ interface Rule {
   readonly decls: ReadonlyMap<string, string>;
 }
 
-/** Every innermost `selector { decls }` block, with the `@layer` wrapper skipped. */
-function rules(css: string): Rule[] {
-  const out: Rule[] = [];
-  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selectors = m[1]!
-      .split(",")
-      .map((s) => s.trim().replace(/\s+/g, " "))
-      .filter(Boolean);
-    const decls = new Map<string, string>();
-    for (const d of m[2]!.split(";")) {
-      const at = d.indexOf(":");
-      if (at > -1) decls.set(d.slice(0, at).trim(), d.slice(at + 1).trim());
-    }
-    out.push({ selectors, decls });
-  }
-  return out;
-}
-
-const RULES = rules(CSS);
+/** Every rule in the whole file, every nested block included, each read by
+ *  its selector list and its declarations (`fileRules`, comments stripped).
+ *  The bans below ("no rule names a waiting chip", "nothing else a ring")
+ *  claim the file, so they cannot stop at the layer and one named block. */
+const RULES: Rule[] = fileRules("share").map((r) => ({
+  selectors: r.selectors,
+  decls: new Map(scopeDeclarations(r.body)),
+}));
 
 /** The value `prop` gets from the rule naming exactly `selector`, if any. */
 function valueFor(selector: string, prop: string): string | undefined {
@@ -60,9 +55,9 @@ function valueFor(selector: string, prop: string): string | undefined {
   return hits[0]?.decls.get(prop);
 }
 
-const O4 = ":root";
+const sel = (selector: string) => areaSelector("share", selector);
 const outcome = (s: ShareSettled | "busy", part: string) =>
-  `${O4} .share-scrim[data-outcome="${s}"] ${part}`;
+  sel(`.share-scrim[data-outcome="${s}"] ${part}`);
 
 /** D16's table, plus D14 (sent) and D15 (busy), as core / glyph ink. */
 const CORE: Record<ShareSettled | "busy", readonly [string, string]> = {
@@ -77,12 +72,8 @@ const CORE: Record<ShareSettled | "busy", readonly [string, string]> = {
 };
 
 describe("O4 share circle stylesheet (#947)", () => {
-  it("has rules, and prefixes every one of them with :root (o4/index.css)", () => {
-    // A floor, so a parse that finds nothing cannot pass the loop below.
+  it("has rules (a floor, so a parse that finds nothing cannot pass below)", () => {
     expect(RULES.length).toBeGreaterThanOrEqual(10);
-    for (const rule of RULES)
-      for (const selector of rule.selectors)
-        expect(selector, `unscoped selector: ${selector}`).toMatch(/^:root /);
   });
 
   it("colours only through layer-2 roles", () => {
@@ -97,12 +88,8 @@ describe("O4 share circle stylesheet (#947)", () => {
   });
 
   it("the resting core is the send core with white ink (D14, D15)", () => {
-    expect(valueFor(`${O4} .share-o4-core`, "background")).toBe(
-      "var(--s-send)"
-    );
-    expect(valueFor(`${O4} .share-o4-glyph`, "color")).toBe(
-      "var(--s-tile-ink)"
-    );
+    expect(valueFor(sel(".share-o4-core"), "background")).toBe("var(--s-send)");
+    expect(valueFor(sel(".share-o4-glyph"), "color")).toBe("var(--s-tile-ink)");
   });
 
   it("every outcome's core and glyph ink follow D16's table", () => {
@@ -126,33 +113,31 @@ describe("O4 share circle stylesheet (#947)", () => {
     for (const s of [...SHARE_SETTLED, "busy" as const])
       if (s !== "sent" && s !== "partial")
         expect(ring(s), `${s} should draw no ring`).toBeUndefined();
-    expect(valueFor(`${O4} .share-o4-frame`, "box-shadow")).toBeUndefined();
+    expect(valueFor(sel(".share-o4-frame"), "box-shadow")).toBeUndefined();
   });
 
   it("keeps the workbench geometry: 140 core in a 176 frame, ring starting at twelve o'clock", () => {
     for (const prop of ["width", "height"]) {
-      expect(valueFor(`${O4} .share-o4-frame`, prop), prop).toBe("176px");
-      expect(valueFor(`${O4} .share-o4-core`, prop), prop).toBe("140px");
+      expect(valueFor(sel(".share-o4-frame"), prop), prop).toBe("176px");
+      expect(valueFor(sel(".share-o4-core"), prop), prop).toBe("140px");
     }
-    expect(valueFor(`${O4} .share-o4-ring`, "transform")).toBe(
-      "rotate(-90deg)"
-    );
+    expect(valueFor(sel(".share-o4-ring"), "transform")).toBe("rotate(-90deg)");
   });
 
   it("the progress ring fills in the send-ring colour over a well track", () => {
-    expect(valueFor(`${O4} .share-o4-track`, "stroke")).toBe("var(--s-well)");
-    expect(valueFor(`${O4} .share-o4-fill`, "stroke")).toBe(
+    expect(valueFor(sel(".share-o4-track"), "stroke")).toBe("var(--s-well)");
+    expect(valueFor(sel(".share-o4-fill"), "stroke")).toBe(
       "var(--s-send-ring)"
     );
   });
 
   it("chips: 38px circles in the workbench's wrapping row (D21)", () => {
-    const chip = `${O4} .share-o4-chip`;
+    const chip = sel(".share-o4-chip");
     expect(valueFor(chip, "width")).toBe("38px");
     expect(valueFor(chip, "height")).toBe("38px");
     expect(valueFor(chip, "border-radius")).toBe("50%");
-    expect(valueFor(`${O4} .share-o4-chips`, "flex-wrap")).toBe("wrap");
-    expect(valueFor(`${O4} .share-o4-chips`, "gap")).toBe("10px");
+    expect(valueFor(sel(".share-o4-chips"), "flex-wrap")).toBe("wrap");
+    expect(valueFor(sel(".share-o4-chips"), "gap")).toBe("10px");
   });
 
   it("a waiting chip draws exactly as a chip that stays: no rule names either state (Q1, vShare)", () => {
@@ -166,12 +151,12 @@ describe("O4 share circle stylesheet (#947)", () => {
     expect(named).toEqual([]);
     // A floor, so a parse that finds no chip rule at all cannot pass above.
     expect(
-      RULES.filter((r) => r.selectors.includes(`${O4} .share-o4-chip`))
+      RULES.filter((r) => r.selectors.includes(sel(".share-o4-chip")))
     ).toHaveLength(1);
   });
 
   it("chips: grey with faint ink unless finished (send, white ink) or current (amber) (D21 as corrected)", () => {
-    const chip = `${O4} .share-o4-chip`;
+    const chip = sel(".share-o4-chip");
     // The base chip: an item that does not go out, and, while packing, a
     // go-out item still waiting (the workbench's vShare gives both no class).
     expect(valueFor(chip, "background")).toBe("var(--s-well)");
@@ -202,7 +187,7 @@ describe("O4 share circle stylesheet (#947)", () => {
 });
 
 describe("a long book's chip row is bounded and scrolls (DRI pick (a) on #1023)", () => {
-  const chips = `${O4} .share-o4-chips`;
+  const chips = sel(".share-o4-chips");
 
   it("caps the row at three rows of chips and scrolls inside it", () => {
     // Three 38px rows and the two 10px gaps between them.
@@ -215,11 +200,11 @@ describe("a long book's chip row is bounded and scrolls (DRI pick (a) on #1023)"
   it("gives up height before the circle or the status line does", () => {
     // The panel never grows past the scrim; inside it only the chip row
     // shrinks (min-height 0), while the frame and the text keep their size.
-    expect(valueFor(`${O4} .share-progress`, "max-height")).toBe("100%");
+    expect(valueFor(sel(".share-progress"), "max-height")).toBe("100%");
     expect(valueFor(chips, "min-height")).toBe("0");
     expect(valueFor(chips, "flex")).toBe("0 1 auto");
-    expect(valueFor(`${O4} .share-o4-frame`, "flex")).toBe("none");
-    expect(valueFor(`${O4} .share-progress-text`, "flex")).toBe("none");
+    expect(valueFor(sel(".share-o4-frame"), "flex")).toBe("none");
+    expect(valueFor(sel(".share-progress-text"), "flex")).toBe("none");
   });
 
   it("smooth-scrolls only when reduced motion is not asked for", () => {
@@ -228,13 +213,13 @@ describe("a long book's chip row is bounded and scrolls (DRI pick (a) on #1023)"
     );
     expect(smooth).toHaveLength(1);
     expect(smooth[0]!.selectors).toEqual([chips]);
-    const media = CSS.match(
-      /@media\s*\(prefers-reduced-motion:\s*no-preference\)\s*\{([^{}]*\{[^{}]*\})\s*\}/
-    );
-    expect(media, "no no-preference media block").not.toBeNull();
-    expect(media![1]).toMatch(/scroll-behavior:\s*smooth/);
-    // Outside that block, nothing sets a scroll behaviour at all. The
-    // lookbehind keeps `overscroll-behavior` from matching.
-    expect(CSS.replace(media![0], "")).not.toMatch(/(?<![\w-])scroll-behavior/);
+    expect(declsFor(SMOOTH, chips).get("scroll-behavior")).toBe("smooth");
+    // Outside that block, nothing sets a scroll behaviour at all: the one
+    // declaration in the whole file, every block included, is that one.
+    expect(
+      scopeDeclarations(readAreaCss("share")).filter(
+        ([property]) => property === "scroll-behavior"
+      )
+    ).toEqual([["scroll-behavior", "smooth"]]);
   });
 });

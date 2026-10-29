@@ -35,6 +35,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesOpen: "Modelos",
   templatesTitle: "Modelos",
   templateLicenceLabel: (licence: string): string => `Licença: ${licence}`,
+  loadingTemplates: "Carregando os modelos.",
   settingsChapterNumbers: "Mostrar sempre o número do capítulo",
   settingsNormalizeOnFinished: "Igualar o volume ao concluir",
   booksEmpty: "Comece seu primeiro livro",
@@ -237,6 +238,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "Redefinir segmento e começar de novo",
   rerecord: "Redefinir e gravar de novo",
   segmentMenu: (n: number): string => `Mais ações para o segmento ${n}`,
+  chapterRowMenu: (n: number): string => `Mais ações para o capítulo ${n}`,
   reorderLifted: (n: number): string => `Movendo o segmento ${n}.`,
   reorderMoved: (from: number, to: number): string =>
     `O segmento ${from} agora é o segmento ${to}.`,

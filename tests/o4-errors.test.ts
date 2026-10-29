@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { createElement, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,8 +6,14 @@ import { PermissionPanel } from "@/components/permission-panel";
 import { SaveFailed } from "@/components/save-failed";
 import { strings } from "@/lib/strings";
 
+import {
+  areaScope,
+  areaSelector,
+  readAreaCss,
+  scopeDeclarations,
+} from "./o4-area-css";
 import { one, render } from "./render";
-import { stripCssComments } from "./support";
+import { cssRule, declarationValue } from "./support";
 
 /**
  * The O4 look of the three recovery surfaces (#948, epic #936): mic denied
@@ -154,31 +157,36 @@ describe("SaveFailed, O4", () => {
 });
 
 describe("o4/errors.css", () => {
-  const css = stripCssComments(
-    readFileSync(
-      path.resolve(import.meta.dirname, "..", "src/app/styles/o4/errors.css"),
-      "utf8"
-    )
-  );
-
-  // Every rule's selector list, comments stripped so prose cannot match.
-  const rules = [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map(
-    ([, selector, body]) => ({ selector: selector!.trim(), body: body! })
-  );
-
-  it("prefixes every selector with :root, holding the specificity o4/index.css documents", () => {
-    expect(rules.length).toBeGreaterThanOrEqual(6);
-    for (const { selector } of rules)
-      for (const part of selector.split(","))
-        expect(part.trim(), selector).toMatch(/^:root /);
-  });
+  // The layer's rules, comments stripped so prose cannot match, for the
+  // per-selector reads; and every declaration in the WHOLE file, nested
+  // blocks included, as `[property, value]`, for the file-wide bans.
+  const css = areaScope("errors");
+  const declared = scopeDeclarations(readAreaCss("errors"));
 
   it("takes every colour from a layer-2 role", () => {
-    const declarations = rules.flatMap(({ body }) => [
-      ...body.matchAll(/(color|background|border(?:-color)?):\s*([^;]+);/g),
-    ]);
+    const declarations = declared.filter(([prop]) =>
+      /color$|^background$|^border$/.test(prop)
+    );
     expect(declarations.length).toBeGreaterThanOrEqual(5);
-    for (const [, prop, value] of declarations)
+    for (const [prop, value] of declarations)
       expect(value, `${prop}: ${value}`).toMatch(/^var\(--s-[a-z-]+\)$/);
+  });
+
+  // #1747 (from #1630): each weight reads the type-scale primitive, not a
+  // literal number.
+  it.each([
+    [areaSelector("errors", ".o4-err-title"), "var(--p-weight-heavy)"],
+    [areaSelector("errors", ".o4-err-sub"), "var(--p-weight-strong)"],
+    [areaSelector("errors", ".o4-err-step"), "var(--p-weight-strong)"],
+    [areaSelector("errors", ".o4-err-step::before"), "var(--p-weight-heavy)"],
+  ])("%s takes its font-weight from a token", (selector, token) => {
+    expect(declarationValue(cssRule(css, selector), "font-weight")).toBe(token);
+  });
+
+  it("declares no literal font-weight anywhere in the file", () => {
+    const weights = declared.filter(([prop]) => prop === "font-weight");
+    expect(weights.length).toBeGreaterThanOrEqual(4);
+    for (const [, value] of weights)
+      expect(value).toMatch(/^var\(--p-weight-[a-z]+\)$/);
   });
 });

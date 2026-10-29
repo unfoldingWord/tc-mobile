@@ -31,6 +31,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesOpen: "Plantillas",
   templatesTitle: "Plantillas",
   templateLicenceLabel: (licence: string): string => `Licencia: ${licence}`,
+  loadingTemplates: "Cargando las plantillas.",
   settingsChapterNumbers: "Mostrar siempre el número de capítulo",
   settingsNormalizeOnFinished: "Igualar el volumen al marcar como hecho",
   booksEmpty: "Empieza tu primer libro",
@@ -231,6 +232,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "Restablecer segmento y empezar de nuevo",
   rerecord: "Restablecer y grabar de nuevo",
   segmentMenu: (n: number): string => `Más acciones para el segmento ${n}`,
+  chapterRowMenu: (n: number): string => `Más acciones para el capítulo ${n}`,
   reorderLifted: (n: number): string => `Moviendo el segmento ${n}.`,
   reorderMoved: (from: number, to: number): string =>
     `El segmento ${from} ahora es el segmento ${to}.`,
@@ -351,7 +353,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   tileTemplates: "Plantillas",
   licenceAskSave: "Guardar",
   licenceAskSaveLead:
-    "¿Quién puede compartir estas grabaciones? Puedes cambiarlo de nuevo más tarde.",
+    "¿Quién puede compartir estas grabaciones? Puedes volver a cambiar esta elección más tarde.",
   licenceNameCcBySa: "Creative Commons Atribución-CompartirIgual 4.0",
   licenceNameCcBy: "Creative Commons Atribución 4.0",
   licenceNameCc0: "Creative Commons Cero 1.0, dominio público",

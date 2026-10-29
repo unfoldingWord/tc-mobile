@@ -37,10 +37,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * `click()` actionability only reads the native `disabled` DOM property,
  * never `aria-busy`/`aria-disabled`, so it clicks a control whose `onClick`
  * prop is `undefined` — the click "succeeds" and does nothing, and the next
- * assertion times out waiting for an effect that was never triggered. This
- * was reproduced locally (CPU-throttled, see the PR body) with the same
- * accessible-name snapshot every CI failure recorded: "Record" and
- * "Edit recording" both present, no selection frame, no error.
+ * assertion times out waiting for an effect that was never triggered.
  *
  * `aria-busy` is the one attribute that tracks the real gate: it is set from
  * `isClosing` in the same render `editReason`/`committing` reads
@@ -78,4 +75,63 @@ export async function clickEditRecording(page: Page): Promise<void> {
   ).toBeVisible();
   await expect(button).not.toHaveAttribute("aria-busy", "true");
   await button.click();
+}
+
+type Decoded = { frames: number; kept: number };
+type DecodeLog = { __decodes?: Decoded[] };
+
+/**
+ * Cuts every decode in the page to `seconds`, so a recorded take has the same
+ * length in every run. Call it before the page loads (it is an init script).
+ *
+ * A take is recorded on the wall clock, and the encoder hands over whole
+ * frames, so a take stopped after a set wait can come out a frame longer or
+ * shorter from run to run, more so while the computed-style diff tool (#954)
+ * reads the page between actions. A spec whose handle offsets are fractions
+ * of the take, or whose number of key presses depends on it, then differs
+ * against itself. The take still goes through the real MediaRecorder and the
+ * real `decodeAudioData`; only the tail past `seconds` is dropped, before the
+ * app reads the buffer. Record for longer than `seconds`, then call
+ * `expectTakeCut`.
+ */
+export async function fixDecodedLength(
+  page: Page,
+  seconds: number
+): Promise<void> {
+  await page.addInitScript((s: number) => {
+    const log: Decoded[] = [];
+    (window as DecodeLog).__decodes = log;
+    const proto = BaseAudioContext.prototype;
+    const decode = proto.decodeAudioData;
+    proto.decodeAudioData = async function (
+      this: BaseAudioContext,
+      data: ArrayBuffer
+    ) {
+      const full = await decode.call(this, data);
+      const length = Math.round(s * full.sampleRate);
+      log.push({ frames: full.length, kept: Math.min(length, full.length) });
+      if (full.length <= length) return full;
+      const cut = new AudioBuffer({
+        length,
+        numberOfChannels: full.numberOfChannels,
+        sampleRate: full.sampleRate,
+      });
+      for (let c = 0; c < full.numberOfChannels; c++) {
+        cut.copyToChannel(full.getChannelData(c).subarray(0, length), c);
+      }
+      return cut;
+    };
+  }, seconds);
+}
+
+/**
+ * After Stop, under `fixDecodedLength`: the take's one decode was longer than
+ * what it kept, so the cut, not the wall clock, set the take's length.
+ */
+export async function expectTakeCut(page: Page): Promise<void> {
+  const decodes = () =>
+    page.evaluate(() => (window as DecodeLog).__decodes ?? []);
+  await expect.poll(async () => (await decodes()).length).toBe(1);
+  const [take] = await decodes();
+  expect(take!.frames).toBeGreaterThan(take!.kept);
 }

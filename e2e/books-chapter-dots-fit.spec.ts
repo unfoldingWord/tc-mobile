@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 import { seedToSegments } from "./support/seed";
 
@@ -37,8 +37,11 @@ test.use({
 
 /** The design's row height, 12 + 44 + 12 (`o4/books.css`). */
 const ROW_HEIGHT = 68;
-/** Three rows of 20 dots, what the 138px column holds at the 5/2 step. */
-const THREE_ROWS = 60;
+/**
+ * Three rows of 16 dots, what the 320px phone's 110px column holds at the 5/2
+ * step since the row's ⋮ shares the end slot with play (#1730).
+ */
+const THREE_ROWS = 48;
 
 async function addSegments(page: Page, from: number, to: number) {
   for (let i = from; i < to; i++) {
@@ -97,8 +100,8 @@ async function measureRow(page: Page) {
 }
 
 for (const width of [320, 360]) {
-  // Past the three rows of 20 dots the 138px column holds at the 5/2 step.
-  // At 360px the column is 178 and holds three rows of 25, so 80 is past it.
+  // Past the three rows of 16 dots the 110px column holds at the 5/2 step.
+  // At 360px the column is 150 and holds three rows of 21, so 80 is past it.
   const SEGMENTS = 80;
   test(`an O4 chapter row with ${SEGMENTS} segments keeps its title line and every dot inside the row at ${width}px (#1229)`, async ({
     page,
@@ -122,7 +125,8 @@ for (const width of [320, 360]) {
     expect(measured.dotsBelowTitle).toBe(true);
     // And the row grew to hold them at both widths: a floor, not a cap. The
     // play control took the chevron's 28px and widened the slot to 44
-    // (#1469), so even the 360px column no longer holds 80 dots in 68px.
+    // (#1469), and the row's ⋮ widened it to 72 (#1730), so even the 360px
+    // column no longer holds 80 dots in 68px.
     expect(measured.rowHeight).toBeGreaterThan(ROW_HEIGHT + 0.5);
   });
 
@@ -152,8 +156,8 @@ for (const width of [320, 360]) {
     expect(full.dotsInRow).toBe(THREE_ROWS);
 
     // One dot past the three rows: at 320px it wraps onto a fourth row and
-    // the row must grow. At 360px the column is wider and still holds it, so
-    // the row stays on the 68px floor.
+    // the row must grow. At 360px the column is wider (three rows of 21) and
+    // still holds it, so the row stays on the 68px floor.
     await reopenChapter(page);
     await addSegments(page, THREE_ROWS, THREE_ROWS + 1);
     await openShelfRow(page);

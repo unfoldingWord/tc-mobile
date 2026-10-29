@@ -12,10 +12,8 @@ import {
   subscribeToFailures,
   type FailureReport,
 } from "@/hooks/report-failure";
-import {
-  claimPhoneCheckRun,
-  initialPhoneCheckState,
-} from "@/hooks/use-phone-check";
+import { claimPhoneCheckRun } from "@/hooks/phone-check-run-slot";
+import { initialPhoneCheckState } from "@/hooks/use-phone-check";
 import {
   parseSavedChecks,
   serializeSavedChecks,

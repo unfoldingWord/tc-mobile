@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 /**
  * A lazy chunk that will not load reloads the page once, then fails (#1421

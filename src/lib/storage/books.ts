@@ -24,6 +24,7 @@ import { highestSlot, slotOf } from "@/lib/chapter-slot";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
+import { withClipBytes } from "./clip-bytes";
 import { deleteClipIfUnreferenced, type ClipUseTx } from "./clips";
 import { isFinished } from "./takes";
 import type {
@@ -458,17 +459,16 @@ export function isStaleBookFailure(
  * rows a clip's use is counted from, and the disposition records of the
  * segments it deletes.
  */
-const DELETE_BOOK_STORES = [
+const DELETE_BOOK_STORES = withClipBytes([
   "books",
   "chapters",
   "segments",
   "takes",
   "clipMeta",
-  "clipData",
   "tombstones",
   "pendingTakes",
   "takeDispositions",
-] as const;
+]);
 
 /**
  * Open the transaction a book delete needs. Strict durability: this removes the
@@ -1104,14 +1104,18 @@ export async function chapterPlacement(
 
 /**
  * The number a chapter's screens show (#1272 B): its slot in its book, over
- * the same list as {@link chapterPlacement}. A chapter its book no longer
- * lists has no slot, and the only number left to show is its stored one.
+ * the same list as {@link chapterPlacement}. `null` when its book no longer
+ * lists it: such a chapter has no slot, and this says so rather than handing
+ * back its stored number in a slot's place (#1747). The stored number is a
+ * template's number or an old max + 1, the same shape as a slot, so a fallback
+ * here would be invisible; a caller that must still show a number borrows the
+ * stored one itself, where the reader can see it.
  */
 export async function chapterSlot(
-  chapter: Pick<Chapter, "id" | "bookId" | "number">
-): Promise<number> {
+  chapter: Pick<Chapter, "id" | "bookId">
+): Promise<number | null> {
   const { chapters } = await resolveBookChapters(chapter.bookId);
-  return slotOf(chapters, chapter.id) ?? chapter.number;
+  return slotOf(chapters, chapter.id);
 }
 
 // ── Segments ─────────────────────────────────────────────────────────────
@@ -1291,17 +1295,16 @@ async function renumberSegments(
  * whose `updatedAt` it bumps (#590), and the tombstone it leaves (#1463).
  * v13 (#38): as {@link DELETE_BOOK_STORES}.
  */
-const DELETE_SEGMENT_STORES = [
+const DELETE_SEGMENT_STORES = withClipBytes([
   "books",
   "chapters",
   "segments",
   "takes",
   "clipMeta",
-  "clipData",
   "tombstones",
   "pendingTakes",
   "takeDispositions",
-] as const;
+]);
 
 /**
  * Delete one segment — the row itself, not only its audio (#590, reversing
@@ -1547,20 +1550,24 @@ export async function chapterPlayCandidates(
   const chapter = await db.get("chapters", chapterId);
   if (!chapter) return [];
 
-  const candidates: PlaylistCandidate[] = [];
-  for (const segmentId of chapter.segmentIds) {
-    const audio = await resolveSegmentAudio(segmentId);
-    candidates.push({
-      segmentId,
-      startChapterId:
-        audio.kind === "no-segment" ? chapterId : audio.segment.chapterId,
-      audio:
-        audio.kind === "resolved"
-          ? { kind: "playable", frames: audio.clip.frameCount }
-          : audio.kind === "no-active-take"
-            ? { kind: "unrecorded" }
-            : { kind: "broken" },
-    });
-  }
-  return candidates;
+  // Every probe is started at once (#1747). Chapter play holds the floor
+  // across this read, and a serial walk waited on each member's probe in
+  // turn. Each probe is its own readonly transaction; `Promise.all` keeps
+  // the membership order whatever order the answers arrive in.
+  return Promise.all(
+    chapter.segmentIds.map(async (segmentId): Promise<PlaylistCandidate> => {
+      const audio = await resolveSegmentAudio(segmentId);
+      return {
+        segmentId,
+        startChapterId:
+          audio.kind === "no-segment" ? chapterId : audio.segment.chapterId,
+        audio:
+          audio.kind === "resolved"
+            ? { kind: "playable", frames: audio.clip.frameCount }
+            : audio.kind === "no-active-take"
+              ? { kind: "unrecorded" }
+              : { kind: "broken" },
+      };
+    })
+  );
 }

@@ -115,6 +115,9 @@ export const stringsEn = {
   templatesOpen: "Templates",
   templatesTitle: "Templates",
   templateLicenceLabel: (licence: string): string => `Licence: ${licence}`,
+  // The Template Library's wait while its list is read (#1747). English is a
+  // proposal for the requirements owner; the other languages are AI drafts.
+  loadingTemplates: "Loading the templates.",
   // S12: the requirements owner's option. Off, a chapter shows its name when
   // it has one and its number when it does not. On, always the number.
   settingsChapterNumbers: "Always show chapter numbers",
@@ -709,6 +712,13 @@ export const stringsEn = {
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Reset and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
+  // The ⋮ on a chapter row on the Books screen (#1730, the DRI's "Books
+  // chapter row ⋮ menu" pick): its menu holds Move up / Move down. Said by the
+  // chapter's slot, the number its badge shows and its move line says
+  // (`chapterReorderMoved`), so after a move the ⋮ reads the new number. The
+  // other languages are AI drafts; English is a proposal for the requirements
+  // owner.
+  chapterRowMenu: (n: number): string => `More actions for chapter ${n}`,
   // Press-and-hold reorder on the Segments list (#953), spoken by
   // the list's live region: the row that was lifted, where it landed, or that
   // it went back. Segments renumber after a move (the DRI's "Renumber" pick),

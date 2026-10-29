@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { areaScope, areaSelector, fileRules } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -30,33 +31,23 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * could also satisfy.
  *
  * WHAT THIS DOES NOT COVER. #559's own four targets (`.recorder-sheet`,
- * `.menu-panel`, `.confirm-panel`, `.name-input`) have no dedicated pinning
- * test anywhere in this repo as of this PR — a pre-existing gap, not
- * introduced or widened here, and out of #563's scope to backfill. Nor does
+ * `.menu-panel`, `.confirm-panel`, `.name-input`) are not pinned here, and
+ * backfilling them was out of #563's scope. Nor does
  * this run a cascade: whether these rules win in the built bundle and
  * whether the platform actually suppresses selection are phone checks
- * (#564's shape), not a source read — no phone has run this PR (#245).
+ * (#564's shape), not a source read, and nothing here has run on a phone
+ * (#245).
  */
 const COMPONENTS_PATH = path.resolve(
   import.meta.dirname,
   "..",
   "src/app/styles/3-components.css"
 );
-const BOOKS_O4_PATH = path.resolve(
-  import.meta.dirname,
-  "..",
-  "src/app/styles/o4/books.css"
-);
-
-const MENUS_O4_PATH = path.resolve(
-  import.meta.dirname,
-  "..",
-  "src/app/styles/o4/menus.css"
-);
-
 const componentsCss = readFileSync(COMPONENTS_PATH, "utf8");
-const booksO4Css = readFileSync(BOOKS_O4_PATH, "utf8");
-const menusO4Css = readFileSync(MENUS_O4_PATH, "utf8");
+const booksO4Css = areaScope("books");
+const menusO4Css = areaScope("menus");
+const CRUMBS_BAR = areaSelector("menus", ".o4-crumbs-bar");
+const BOOKS_CARD = areaSelector("books", ".books-card");
 
 /**
  * `.row`'s own real ambiguity, worked around rather than hidden: the
@@ -111,7 +102,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
   });
 
   it("opts the Segments header's crumb row out (.o4-crumbs-bar, o4/menus.css)", () => {
-    expectOptOut(menusO4Css, ":root .o4-crumbs-bar");
+    expectOptOut(menusO4Css, CRUMBS_BAR);
   });
 
   it("opts the ShareProgress portal root out (.share-scrim, 3-components.css)", () => {
@@ -119,7 +110,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
   });
 
   it("opts the Books rows out (.books-card, o4/books.css — reaches .books-chapter by inheritance)", () => {
-    expectOptOut(booksO4Css, ":root .books-card");
+    expectOptOut(booksO4Css, BOOKS_CARD);
   });
 
   it("does not opt the rename field back in inside any of these roots", () => {
@@ -132,15 +123,32 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
     // moved somewhere this opt-out would now silently swallow.
     for (const [css, selector] of [
       [componentsCss, ".row"],
-      [menusO4Css, ":root .o4-crumbs-bar"],
       [componentsCss, ".share-scrim"],
-      [booksO4Css, ":root .books-card"],
     ] as const) {
       const body =
         selector === ".row" ? rowRuleBody(css) : cssRule(css, selector);
       expect(body, `${selector} unexpectedly declares .name-input`).not.toMatch(
         /name-input/
       );
+    }
+    // The two O4 roots: every rule for the selector in the whole area file,
+    // every nested block included, not only the layer's own.
+    for (const [area, selector] of [
+      ["menus", CRUMBS_BAR],
+      ["books", BOOKS_CARD],
+    ] as const) {
+      const bodies = fileRules(area)
+        .filter((r) => r.selectors.includes(selector))
+        .map((r) => r.body);
+      expect(
+        bodies.length,
+        `${selector}: no rule in ${area}.css`
+      ).toBeGreaterThanOrEqual(1);
+      for (const body of bodies)
+        expect(
+          body,
+          `${selector} unexpectedly declares .name-input`
+        ).not.toMatch(/name-input/);
     }
   });
 });

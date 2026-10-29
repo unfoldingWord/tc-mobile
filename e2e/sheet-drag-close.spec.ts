@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./support/test";
 
 /**
  * Drag down to close, and the one ✕, on a new-look (O4) half-screen sheet at

@@ -4,8 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { browserAllocationDeps, settleProbe } from "@/hooks/phone-check-probes";
+import { isPhoneCheckRunning } from "@/hooks/phone-check-run-slot";
 import {
-  isPhoneCheckRunning,
   runMemoryCheck,
   runPhoneChecks,
   untilDoneOrAborted,

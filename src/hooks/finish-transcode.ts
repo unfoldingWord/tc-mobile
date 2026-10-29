@@ -73,10 +73,13 @@ import type { SegmentId } from "@/types/domain";
 
 /**
  * The PCM to encode and the record to commit with it (#1433 step 3). The
- * chain runs in the worker when the preference is on (the default, U6b) and
- * the clip has no record yet. A PCM clip that already carries one was
- * decided before its encode: the v14 step gives a segment Finished before
- * v14 `stages: []` (U6c), and a record that names stages is not run twice. Off, the stored samples go to the encoder untouched, as before v14.
+ * chain runs in the worker when the preference is on and the clip has no
+ * record yet. The preference is off unless the person turned it on
+ * (`readStoredNormalizeOnFinished` in `lib/settings.ts`, #1748). A PCM clip
+ * that already carries a record was decided before its encode: the v14 step
+ * gives a segment Finished before v14 `stages: []` (U6c), and a record that
+ * names stages is not run twice. Off, the stored samples go to the encoder
+ * untouched, as before v14.
  * A codec with no chain (a test fake; the browser codec always has one)
  * encodes untouched too.
  */

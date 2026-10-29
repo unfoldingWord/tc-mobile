@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 /**
  * The phone check's DSP step, through the real MP3 worker (#1433, task T4),

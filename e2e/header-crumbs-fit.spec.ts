@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./support/test";
 
 import { clickEditRecording } from "./recorder-fixtures";
 
@@ -576,9 +576,9 @@ test.describe("the recorder's book crumb over a held cut (#1275)", () => {
 
 /**
  * #1275, George round 2 on #1300: a close that awaits a write (`saveEditedSegment`
- * in IndexedDB) resolves after that write, and in Chromium the consuming
- * landing was observed to run BEFORE React had committed the close — the
- * adapter's committed screen still read "recorder" there. The continuation
+ * in IndexedDB) resolves after that write, and the consuming landing can run
+ * BEFORE React has committed the close — the adapter's committed screen still
+ * reads "recorder" there. The continuation
  * now waits for that commit instead of being dropped, so the crumb still
  * reaches Books. The edit here is a whole-span cut pasted straight back, so
  * the close has an edit to save and the clipboard is empty: nothing holds

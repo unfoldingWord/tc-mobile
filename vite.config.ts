@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, normalizePath, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
 // Extension spelled out, unlike the `@/`-aliased imports inside `src/`. This
@@ -32,6 +32,11 @@ import {
   noticeNameForUrl,
   unversionedPackages,
 } from "./scripts/licence-versions.mjs";
+import {
+  type BakeResult,
+  bakeTemplatePackages,
+  describeBake,
+} from "./scripts/bake-template-packages.mjs";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
@@ -106,6 +111,70 @@ function versionJsonPlugin(): Plugin {
   };
 }
 
+// The template packages this build bakes in (#1450 plan task 6; a child of
+// #1451). `scripts/bake-template-packages.mjs` checks every entry in
+// `templates/manifest.json` (pinned bytes, release rule, title tables, and the
+// opt-in that keeps provisional packages off `main`) and throws a refusal that
+// fails the build. What passes replaces the committed empty
+// `src/data/baked-template-packages.json` in the bundle; `lib/templates/
+// baked.ts` imports it lazily, so it lands in its own `.js` chunk, which the
+// precache's `js` glob covers. `template-bake.json` (outside the precache,
+// like version.json) names that chunk and the package ids it holds, for
+// tests/precache-manifest.test.ts and for anyone asking what a deploy carries.
+const BAKED_MODULE = normalizePath(
+  path.join(import.meta.dirname, "src", "data", "baked-template-packages.json")
+);
+
+// Vite hands hooks module ids with forward slashes, on Windows too, while
+// `path.join` gives backslashes there (Frank round 2 P2 on #1798). The bench's
+// round-1 fix normalizes BAKED_MODULE above; both sides of every comparison
+// also go through `moduleId`. `toPosixPath` comes first
+// because Vite's `normalizePath` converts backslashes only when the HOST is
+// Windows, so on its own it could not be tested from a POSIX host.
+// Exported for tests/baked-template-plugin.test.ts, which hands it a
+// Windows-built module path and a bake result of its own.
+const moduleId = (p: string) => normalizePath(toPosixPath(p));
+
+export function bakedTemplatePackagesPlugin(
+  bakedModule: string = BAKED_MODULE,
+  bake: () => BakeResult = bakeTemplatePackages
+): Plugin {
+  const target = moduleId(bakedModule);
+  const isTarget = (id: string) => moduleId(id) === target;
+  let baked: { id: string; pkg: unknown; titles: unknown[] }[] = [];
+  return {
+    name: "baked-template-packages",
+    enforce: "pre",
+    buildStart() {
+      const result = bake();
+      describeBake(result).forEach((line) => this.info(line));
+      baked = result.baked;
+    },
+    load(id) {
+      if (!isTarget(id)) return null;
+      return JSON.stringify(baked.map(({ pkg, titles }) => ({ pkg, titles })));
+    },
+    generateBundle(_options, bundle) {
+      const chunk = Object.values(bundle).find(
+        (out) => out.type === "chunk" && out.moduleIds.some(isTarget)
+      );
+      this.emitFile({
+        type: "asset",
+        fileName: "template-bake.json",
+        source:
+          JSON.stringify(
+            {
+              chunk: chunk?.fileName ?? null,
+              packages: baked.map((b) => b.id),
+            },
+            null,
+            2
+          ) + "\n",
+      });
+    },
+  };
+}
+
 // `<html lang>`/`dir` from the one locale rather than from a literal in the
 // document (#169). `index.html` ships the same two values statically so the
 // file a human opens is not misleading, and `tests/locale.test.ts` pins the
@@ -147,7 +216,9 @@ if (unversioned.length > 0) {
 // runs before vite-plugin-pwa's `closeBundle` hashes the precache, so the
 // precached revision is the expanded file), and in the dev server. An unknown
 // package throws, so a notice for a package that left the tree fails loudly.
-function licenceNoticeVersionsPlugin(): Plugin {
+// Exported for tests/licence-notice-dev-server.test.ts, which starts a dev
+// server with only this plugin under a `base` other than `/` (#1415).
+export function licenceNoticeVersionsPlugin(): Plugin {
   const root = import.meta.dirname;
   const versionOf = (pkg: string) => installedVersion(root, pkg);
   const reasonOf = (pkg: string) => missingVersionReason(root, pkg);
@@ -475,6 +546,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       versionJsonPlugin(),
+      bakedTemplatePackagesPlugin(),
       localeHtmlPlugin(),
       licenceNoticeVersionsPlugin(),
       provenance.app,
@@ -540,9 +612,9 @@ export default defineConfig(({ mode }) => {
           // — small files (the largest is the ~42 KB LGPL text), unrelated to the
           // thumbnail exclusion above.
           globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2,txt}"],
-          // No single precached asset exceeds the 2 MiB default (the largest is
-          // the ~552 KB entry chunk); the former 4 MiB override existed only for
-          // the now-excluded thumbnails, which were individually tiny anyway.
+          // The 2 MiB default per-asset limit is kept; the former 4 MiB override
+          // existed only for the now-excluded thumbnails, which were
+          // individually tiny anyway.
           navigateFallback: "index.html",
           // `version.json` is deliberately outside globPatterns (comment above
           // `versionJsonPlugin`) so a `fetch()` always reaches the origin, never

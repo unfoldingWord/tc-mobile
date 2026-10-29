@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * #1387 item 1 — closing the book sheet over its delete ask moves focus ONCE.

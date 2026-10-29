@@ -164,7 +164,9 @@ export async function loadChapterView(
         )
       : null,
     bookLicence: book?.licence ?? null,
-    chapterNumber: await chapterSlot(chapter),
+    // A chapter its book no longer lists has no slot; its stored number is
+    // the only one left to show (#1747).
+    chapterNumber: (await chapterSlot(chapter)) ?? chapter.number,
     chapterTemplateNumber: templateChapterNumber(chapter),
     chapterName: chapter.name,
     rows,

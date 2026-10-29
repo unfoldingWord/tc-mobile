@@ -258,10 +258,9 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
  * Also #485 finding 2: the `finally`'s close was matched as any `.close()`,
  * so `tapRef.current?.close()` — a no-op after `stop()` stole the tap into
  * the local `tap` and nulled `tapRef` — passed the gate while the VU clone's
- * tracks stayed live (mutation run at origin/develop's test text: it passed
- * 6/6). And the already-`"inactive"` arm's own `tap?.close()` — the reason the
- * shared close was split in #474 — was not gated at all (deleting it also
- * passed 6/6). Both arms now pin the LOCAL `tap?.close()` literally. That is
+ * tracks stayed live. And the already-`"inactive"` arm's own `tap?.close()` —
+ * the reason the shared close was split in #474 — was not gated at all. Both
+ * arms now pin the LOCAL `tap?.close()` literally. That is
  * the one canonical spelling this gate chooses so the match can be literal
  * (`if (tap) tap.close();` would also typecheck against `LevelTap | null` and
  * also release the clone; it is simply not the spelling pinned here — panel
@@ -477,8 +476,8 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     // stayed". The catch above falls through to the tail precisely so the
     // tail's `setState("idle")` covers the throw path too — but until this
     // case nothing pinned that the tail HAS one: deleting the empty-capture
-    // exit's `if (current) setState("idle");` left all nine cases green
-    // (panel r2 P2 on #500). A throw-path seal reaches all three exits
+    // exit's `if (current) setState("idle");` went uncaught (panel r2 P2 on
+    // #500). A throw-path seal reaches all three exits
     // (empty → notice, decodable → take, undecodable → hold), so all three
     // are pinned, each as one contiguous shape: the exit's own condition or
     // verdict, then the `current`-gated idle write, then the `return {` —
@@ -561,11 +560,10 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
   });
 
   it("the already-inactive arm releases the stream and closes the LOCAL tap, after the blob is sealed (#485)", () => {
-    // The `if` arm is the device-verified #59 recovery path (an interruption
-    // ended the recorder on its own). Its `tap?.close()` was split out of the
-    // shared post-if/else close in #474 R6 and was not gated at all —
-    // deleting it left this file 6/6 green at origin/develop's text. The
-    // order matters too: the clone's tracks are stopped only once the flush
+    // The `if` arm is the #59 recovery path (an interruption ended the
+    // recorder on its own). Its `tap?.close()` was split out of the shared
+    // post-if/else close in #474 R6 and was not gated at all. The order
+    // matters too: the clone's tracks are stopped only once the flush
     // window is past and the blob is sealed, so moving the close above
     // `blob = new Blob(` must fail this.
     expect(ifBraceClose).toBe(elseIdx); // the slice ends where `} else {` begins

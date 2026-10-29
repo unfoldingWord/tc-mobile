@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 import { CoverTile, O4BookHead, O4CoverPick } from "@/components/o4-book-menu";
 import { COVER_COLOUR_KEYS } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
-import { areaRules } from "./o4-area-css";
+import { areaRule, areaScope, areaSelector } from "./o4-area-css";
 import { one, render } from "./render";
+import { declarationValue } from "./support";
 
 /**
  * The O4 book menu's own pieces (#949: 04 and #937 D7) as markup: props in,
@@ -16,8 +17,6 @@ import { one, render } from "./render";
  * The stylesheet half reads rules with comments stripped (`o4-area-css.ts`),
  * so a comment naming a selector cannot stand in for the rule.
  */
-
-const O4 = ":root ";
 
 describe("O4BookHead (04's sheet head)", () => {
   it("draws the book's small cover and name as decoration, then its children", () => {
@@ -113,51 +112,46 @@ describe("O4CoverPick (#957's picker, mounted in the book sheet)", () => {
 });
 
 describe("the book menu's rules", () => {
-  const books = areaRules("books");
-  const menus = areaRules("menus");
+  const books = areaScope("books");
+  const menus = areaScope("menus");
+  /** What `selector`'s one rule in `area` declares for `property`. */
+  const value = (area: "books" | "menus", selector: string, property: string) =>
+    declarationValue(
+      areaRule(area === "books" ? books : menus, areaSelector(area, selector)),
+      property
+    );
 
   it("fills the cover tile from the book's own colour (books.css, where the cover exception lives)", () => {
-    expect(books.length).toBeGreaterThanOrEqual(12);
-    const fill = books.filter((r) =>
-      r.selectors.includes(`${O4}.o4-tile--cover::before`)
+    expect(value("books", ".o4-tile--cover::before", "background")).toBe(
+      "var(--book-cover)"
     );
-    expect(fill).toHaveLength(1);
-    expect(fill[0]!.decls.get("background")).toBe("var(--book-cover)");
   });
 
   it("draws the picker's swatches as the workbench's: 12 apart, radius 9, the selected one ringed in ink", () => {
-    const get = (sel: string) => {
-      const hits = books.filter((r) => r.selectors.includes(`${O4}${sel}`));
-      expect(hits, sel).toHaveLength(1);
-      return hits[0]!.decls;
-    };
-    expect(get(".books-cover-pick .cover-swatch-row").get("gap")).toBe("12px");
-    expect(get(".books-cover-pick .cover-swatch").get("border-radius")).toBe(
-      "9px"
+    expect(value("books", ".books-cover-pick .cover-swatch-row", "gap")).toBe(
+      "12px"
     );
     expect(
-      get('.books-cover-pick .cover-swatch[aria-pressed="true"]').get(
+      value("books", ".books-cover-pick .cover-swatch", "border-radius")
+    ).toBe("9px");
+    expect(
+      value(
+        "books",
+        '.books-cover-pick .cover-swatch[aria-pressed="true"]',
         "box-shadow"
-      )
+      ).replace(/\s+/g, " ")
     ).toBe("0 0 0 3px var(--s-surface), 0 0 0 6px var(--s-ink)");
   });
 
   it("keeps the sheet shell while the book sheet asks before deleting (G6)", () => {
-    expect(menus.length).toBeGreaterThanOrEqual(8);
-    const panel = menus.filter((r) =>
-      r.selectors.includes(`${O4}.menu-panel:has(.books-delete-ask)`)
-    );
-    expect(panel).toHaveLength(1);
-    expect(panel[0]!.decls.get("border-radius")).toBe("26px");
-    const scrim = menus.filter((r) =>
-      r.selectors.includes(`${O4}.menu-scrim:has(.books-delete-ask)`)
-    );
-    expect(scrim).toHaveLength(1);
-    expect(scrim[0]!.decls.get("align-items")).toBe("flex-end");
-    const handle = menus.filter((r) =>
-      r.selectors.includes(`${O4}.menu-panel:has(.books-delete-ask) .menu-grip`)
-    );
-    expect(handle).toHaveLength(1);
-    expect(handle[0]!.decls.get("display")).toBe("flex");
+    expect(
+      value("menus", ".menu-panel:has(.books-delete-ask)", "border-radius")
+    ).toBe("26px");
+    expect(
+      value("menus", ".menu-scrim:has(.books-delete-ask)", "align-items")
+    ).toBe("flex-end");
+    expect(
+      value("menus", ".menu-panel:has(.books-delete-ask) .menu-grip", "display")
+    ).toBe("flex");
   });
 });

@@ -141,8 +141,7 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     // — is adapter DOM behaviour these Node rows cannot observe, and NO headless
     // spec reaches it either: the rapid-double-Back case in
     // e2e/back-navigation.spec.ts exercises the goBack refusal and the
-    // guard-CLEAR settle, not this else-branch (mutation: dropping the absorb
-    // else-branch leaves all four e2e cases green). It stays review-only and a
+    // guard-CLEAR settle, not this else-branch. It stays review-only and a
     // device item (spec header). An earlier implementation
     // DRAINED (re-issued the settle on the next landing), which reproduced
     // neither develop's end state nor an un-raced close and left the app one

@@ -183,6 +183,98 @@ describe("the plural check, in both states", () => {
       )
     ).toEqual([]);
   });
+
+  it("fails an entry that counts with no plural() where English uses one (#1747)", () => {
+    // George r1 #1531: with no `plural()` call, `recorded` stayed empty and
+    // the category check passed whatever the entry wrote.
+    const fixture = {
+      ...complete(),
+      shareMissing: (n: number): string => `${n} segments`,
+    } as Partial<Strings>;
+    expect(
+      pluralProblems(
+        "fr",
+        buildTable("fr", fixture),
+        ["shareMissing"],
+        recorded
+      )
+    ).toEqual(["fr: shareMissing counts with no plural()"]);
+  });
+
+  it("passes an entry that leaves its count to an entry it calls", () => {
+    // The callee's forms are checked on the callee's own row.
+    const fixture = {
+      ...complete(),
+      shareBookMissing(this: Strings, n: number): string {
+        return this.shareMissing(n);
+      },
+    } as Partial<Strings>;
+    expect(
+      pluralProblems(
+        "fr",
+        buildTable("fr", fixture),
+        ["shareBookMissing"],
+        recorded
+      )
+    ).toEqual([]);
+  });
+
+  it("fails an entry that calls a counting entry and drops what it returns", () => {
+    // George r1 #1756: a callee's forms only stand in for the caller's when
+    // the caller's sentence carries the callee's text.
+    const fixture = {
+      ...complete(),
+      shareBookMissing(this: Strings, n: number): string {
+        void this.shareMissing(n);
+        return `${n} chapitres`;
+      },
+    } as Partial<Strings>;
+    expect(
+      pluralProblems(
+        "fr",
+        buildTable("fr", fixture),
+        ["shareBookMissing"],
+        recorded
+      )
+    ).toEqual(["fr: shareBookMissing counts with no plural()"]);
+  });
+
+  it("passes a language with one category that counts with no plural()", () => {
+    // zh-Hans has only "other": there is nothing for plural() to choose.
+    const fixture = {
+      ...complete(),
+      shareMissing: (n: number): string => `${n} 个片段`,
+    } as Partial<Strings>;
+    expect(
+      pluralProblems(
+        "zh-Hans",
+        buildTable("zh-Hans", fixture),
+        ["shareMissing"],
+        recorded
+      )
+    ).toEqual([]);
+  });
+});
+
+describe("a function entry the signature reader missed (#1747)", () => {
+  // George r2 #1531: both checks skipped a name with no parsed signature.
+  const notInEnglish = { ...complete(), bogusCount: (n: number) => `${n}` };
+
+  it("fails the plural and argument checks instead of skipping it", () => {
+    const table = buildTable("fr", notInEnglish as Partial<Strings>);
+    expect(pluralProblems("fr", table, ["bogusCount"], recorded)).toEqual([
+      "fr: bogusCount is a function with no parsed signature",
+    ]);
+    expect(parityProblems("fr", table, ["bogusCount"])).toEqual([
+      "fr: bogusCount is a function with no parsed signature",
+    ]);
+  });
+
+  it("still skips a text entry, which has no signature to read", () => {
+    const table = buildTable("fr", complete());
+    expect(pluralProblems("fr", table, ["newBook"], recorded)).toEqual([]);
+    expect(parityProblems("fr", table, ["newBook"])).toEqual([]);
+  });
 });
 
 describe("the argument check, in both states", () => {

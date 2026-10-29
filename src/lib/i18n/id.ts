@@ -35,6 +35,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesOpen: "Templat",
   templatesTitle: "Templat",
   templateLicenceLabel: (licence: string): string => `Lisensi: ${licence}`,
+  loadingTemplates: "Memuat templat.",
   settingsChapterNumbers: "Selalu tampilkan nomor pasal",
   settingsNormalizeOnFinished: "Ratakan volume saat selesai",
   booksEmpty: "Mulai buku pertamamu",
@@ -214,6 +215,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "Setel ulang segmen dan mulai lagi",
   rerecord: "Setel ulang dan rekam lagi",
   segmentMenu: (n: number): string => `Tindakan lainnya untuk segmen ${n}`,
+  chapterRowMenu: (n: number): string => `Tindakan lainnya untuk pasal ${n}`,
   reorderLifted: (n: number): string => `Memindahkan segmen ${n}.`,
   reorderMoved: (from: number, to: number): string =>
     `Segmen ${from} sekarang menjadi segmen ${to}.`,

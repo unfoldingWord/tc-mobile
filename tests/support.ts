@@ -1,3 +1,4 @@
+import postcss, { type AtRule, type ChildNode } from "postcss";
 import { vi } from "vitest";
 
 import { createMp3StreamEncoder, encodeMp3 } from "@/lib/audio/mp3";
@@ -505,6 +506,391 @@ export function declarationValue(body: string, property: string): string {
     throw new Error(`declarationValue: no ${property} declaration`);
   }
   return value;
+}
+
+/**
+ * One spelling for an at-rule prelude, so a source `@media (a: b)` and the
+ * minified `@media (a:b)` compare equal: whitespace collapsed, and dropped
+ * around `:` and `,` and just inside parentheses. The space between the
+ * at-rule's name and its first `(` is kept.
+ */
+function normalizePrelude(prelude: string): string {
+  return prelude
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\s*([:,])\s*/g, "$1")
+    .replace(/\(\s+/g, "(")
+    .replace(/\s+\)/g, ")");
+}
+
+function atRulePrelude(node: AtRule): string {
+  return normalizePrelude(
+    node.params === "" ? `@${node.name}` : `@${node.name} ${node.params}`
+  );
+}
+
+/** An at-rule with a block (`@media … { }`), as opposed to `@import …;`. */
+function isBlockAtRule(node: ChildNode): node is AtRule {
+  return node.type === "atrule" && node.nodes !== undefined;
+}
+
+/**
+ * The text of ONE nested at-rule block, found by its path of preludes from
+ * the top of the stylesheet — `["@layer components", "@media
+ * (prefers-reduced-motion: reduce)"]` is the reduced-motion block directly
+ * inside the one components layer (#954). Read the result with `cssRule` and
+ * `declarationValue` as usual.
+ *
+ * `cssRule` alone matches a rule at any depth, so a selector restyled inside
+ * a reduced-motion block reads as ambiguous, and the only way to the rule
+ * inside the block was to slice the file at the block's first `@media` by
+ * hand — which silently reads the wrong block once a second one is added
+ * ahead of it. This throws instead:
+ *
+ *   - when a prelude has no block at its level ("missing block"),
+ *   - when it has more than one ("appears N times"), and
+ *   - when the block holds no style rule of its own ("empty block").
+ *
+ * Comments are stripped before the search, so a commented-out block never
+ * matches. Deeper at-rule blocks inside the one returned are left out, so a
+ * rule nested below the scope is not read as the scope's own. Preludes are
+ * matched exactly after whitespace is normalised; a prefix does not match.
+ */
+export function cssScope(css: string, preludes: readonly string[]): string {
+  if (preludes.length === 0) throw new Error("cssScope: no preludes given");
+  let scope: AtRule | undefined;
+  let level: ChildNode[] = postcss.parse(stripCssComments(css)).nodes;
+  for (const prelude of preludes) {
+    const want = normalizePrelude(prelude);
+    const hits = level.filter(
+      (node): node is AtRule =>
+        isBlockAtRule(node) && atRulePrelude(node) === want
+    );
+    if (hits.length === 0) throw new Error(`cssScope: missing block: ${want}`);
+    if (hits.length > 1) {
+      throw new Error(`cssScope: block appears ${hits.length} times: ${want}`);
+    }
+    scope = hits[0]!;
+    level = scope.nodes ?? [];
+  }
+  const own = level.filter((node) => !isBlockAtRule(node));
+  if (!own.some((node) => node.type === "rule")) {
+    throw new Error(`cssScope: empty block: ${atRulePrelude(scope!)}`);
+  }
+  return own.map((node) => node.toString()).join("\n");
+}
+
+/** `[ids, classes-attributes-pseudo-classes, types-pseudo-elements]`. */
+export type Specificity = readonly [number, number, number];
+
+const ZERO: Specificity = [0, 0, 0];
+
+/** The four pseudo-elements CSS 2 spelled with one colon. */
+const LEGACY_PSEUDO_ELEMENTS = new Set([
+  "before",
+  "after",
+  "first-line",
+  "first-letter",
+]);
+
+/** Pseudo-classes whose weight is that of their most specific argument. */
+const ARGUMENT_WEIGHTED = new Set(["is", "not", "has", "matches"]);
+
+/** The index just past an identifier starting at `at`, escapes included. */
+function identEnd(text: string, at: number): number {
+  let i = at;
+  while (i < text.length) {
+    const ch = text[i]!;
+    if (ch === "\\") {
+      const hex = /^[0-9a-fA-F]{1,6}\s?/.exec(text.slice(i + 1));
+      i += 1 + (hex ? hex[0].length : 1);
+    } else if (/[\w-]/.test(ch) || ch.charCodeAt(0) > 0x7f) {
+      i++;
+    } else {
+      break;
+    }
+  }
+  return i;
+}
+
+/** The index of the bracket that closes the one opened at `open`. */
+function closingIndex(text: string, open: number): number {
+  const pairs: Record<string, string> = { "(": ")", "[": "]" };
+  const stack: string[] = [];
+  let quote: string | null = null;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === "\\") {
+      i++;
+    } else if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (pairs[ch]) {
+      stack.push(pairs[ch]);
+    } else if (ch === stack.at(-1)) {
+      stack.pop();
+      if (stack.length === 0) return i;
+    }
+  }
+  throw new Error(`unbalanced selector: ${text}`);
+}
+
+/**
+ * Splits `text` at the characters `isCut` accepts, but only at the top level:
+ * never inside parentheses, brackets, a string or after a backslash.
+ */
+function topLevelCuts(text: string, isCut: (ch: string) => boolean): number[] {
+  const cuts: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === "\\") i++;
+    else if (ch === "(" || ch === "[") i = closingIndex(text, i);
+    else if (ch === '"' || ch === "'") {
+      const end = text.indexOf(ch, i + 1);
+      i = end === -1 ? text.length : end;
+    } else if (isCut(ch)) cuts.push(i);
+  }
+  return cuts;
+}
+
+function splitSelectorList(list: string): string[] {
+  const parts: string[] = [];
+  let from = 0;
+  for (const cut of [...topLevelCuts(list, (ch) => ch === ","), list.length]) {
+    parts.push(list.slice(from, cut).trim());
+    from = cut + 1;
+  }
+  return parts;
+}
+
+function addSpecificity(a: Specificity, b: Specificity): Specificity {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
+/** Positive when `a` outweighs `b`, negative when `b` does, 0 on a tie. */
+export function compareSpecificity(a: Specificity, b: Specificity): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+
+/** The weight of the most specific selector in an argument list. A
+ *  relative selector (`:has(> .a)`) is weighed without its combinator. */
+function maxSpecificity(list: string): Specificity {
+  return splitSelectorList(list)
+    .map((part) => complexSpecificity(part.replace(/^[>+~]\s*/, "")))
+    .reduce((max, s) => (compareSpecificity(s, max) > 0 ? s : max), ZERO);
+}
+
+function complexSpecificity(selector: string): Specificity {
+  let total: Specificity = ZERO;
+  let i = 0;
+  while (i < selector.length) {
+    const ch = selector[i]!;
+    if (ch === "#") {
+      total = addSpecificity(total, [1, 0, 0]);
+      i = identEnd(selector, i + 1);
+    } else if (ch === ".") {
+      total = addSpecificity(total, [0, 1, 0]);
+      i = identEnd(selector, i + 1);
+    } else if (ch === "[") {
+      total = addSpecificity(total, [0, 1, 0]);
+      i = closingIndex(selector, i) + 1;
+    } else if (ch === ":") {
+      const element = selector[i + 1] === ":";
+      const nameAt = i + (element ? 2 : 1);
+      const nameEnd = identEnd(selector, nameAt);
+      const name = selector.slice(nameAt, nameEnd).toLowerCase();
+      let argument: string | null = null;
+      i = nameEnd;
+      if (selector[nameEnd] === "(") {
+        const close = closingIndex(selector, nameEnd);
+        argument = selector.slice(nameEnd + 1, close);
+        i = close + 1;
+      }
+      if (element || LEGACY_PSEUDO_ELEMENTS.has(name)) {
+        total = addSpecificity(total, [0, 0, 1]);
+      } else if (name === "where") {
+        // `:where()` weighs nothing, whatever it holds.
+      } else if (ARGUMENT_WEIGHTED.has(name)) {
+        total = addSpecificity(total, maxSpecificity(argument ?? ""));
+      } else {
+        total = addSpecificity(total, [0, 1, 0]);
+        const of =
+          (name === "nth-child" || name === "nth-last-child") && argument
+            ? /\sof\s/.exec(argument)
+            : null;
+        if (of && argument) {
+          const list = argument.slice(of.index + of[0].length);
+          total = addSpecificity(total, maxSpecificity(list));
+        }
+      }
+    } else if (/[a-zA-Z_-]/.test(ch) || ch.charCodeAt(0) > 0x7f) {
+      // A type selector: letters reached here start a compound.
+      total = addSpecificity(total, [0, 0, 1]);
+      i = identEnd(selector, i);
+    } else {
+      // `*`, whitespace and combinators weigh nothing.
+      i++;
+    }
+  }
+  return total;
+}
+
+/**
+ * The specificity of ONE selector, per Selectors Level 4 (#954): `:is()`,
+ * `:not()` and `:has()` weigh as their most specific argument, `:where()`
+ * weighs nothing, `:nth-child(… of S)` adds S's weight to its own, attribute
+ * selectors weigh as a class, and pseudo-elements — the four legacy
+ * one-colon spellings included — weigh as a type. Throws on a selector list,
+ * which has no one specificity.
+ *
+ * Not handled, because nothing in this app's stylesheets uses them:
+ * namespaces (`svg|a`), and the arguments of `::slotted()` and `:host()`.
+ */
+export function specificity(selector: string): Specificity {
+  const parts = splitSelectorList(selector);
+  if (parts.length !== 1) {
+    throw new Error(
+      `specificity: a selector list, not one selector: ${selector}`
+    );
+  }
+  return complexSpecificity(parts[0]!);
+}
+
+function unescapeIdent(ident: string): string {
+  return ident.replace(/\\([0-9a-fA-F]{1,6}\s?|[\s\S])/g, (_, esc: string) =>
+    /^[0-9a-fA-F]/.test(esc) ? String.fromCodePoint(parseInt(esc, 16)) : esc
+  );
+}
+
+/**
+ * The subject of one selector — its right-most compound — reduced to what the
+ * cascade gate compares (#954): the compound's own classes (unescaped; a class
+ * inside `:has()` or `:not()` is not the subject's) and its pseudo-element,
+ * if any (`"before"` for both `::before` and `:before`).
+ */
+export function subjectCompound(selector: string): {
+  classes: string[];
+  pseudoElement: string | null;
+} {
+  const text = selector.trim();
+  const cuts = topLevelCuts(text, (ch) => /[\s>+~]/.test(ch));
+  const compound = text.slice((cuts.at(-1) ?? -1) + 1);
+  const classes: string[] = [];
+  let pseudoElement: string | null = null;
+  let i = 0;
+  while (i < compound.length) {
+    const ch = compound[i]!;
+    if (ch === "\\") {
+      i += 2;
+    } else if (ch === "(" || ch === "[") {
+      i = closingIndex(compound, i) + 1;
+    } else if (ch === ".") {
+      const end = identEnd(compound, i + 1);
+      classes.push(unescapeIdent(compound.slice(i + 1, end)));
+      i = end;
+    } else if (ch === ":") {
+      const element = compound[i + 1] === ":";
+      const nameAt = i + (element ? 2 : 1);
+      const end = identEnd(compound, nameAt);
+      const name = compound.slice(nameAt, end).toLowerCase();
+      if (element || LEGACY_PSEUDO_ELEMENTS.has(name)) pseudoElement = name;
+      i = end;
+    } else {
+      i++;
+    }
+  }
+  return { classes, pseudoElement };
+}
+
+/**
+ * One spelling for a selector, so a source selector and the minifier's form
+ * of it compare equal (#954): whitespace collapsed, dropped around `>`, `+`,
+ * `~` and `,` and just inside parentheses; the legacy pseudo-elements spelled
+ * with one colon; and an attribute value quoted only when it is not an
+ * identifier. Strings are left as they are otherwise. A comparison key, not a
+ * selector to hand back to CSS.
+ */
+export function normalizeSelector(selector: string): string {
+  const strings: string[] = [];
+  const masked = selector.replace(
+    /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g,
+    (_, dq?: string, sq?: string) => {
+      strings.push(dq ?? sq ?? "");
+      return `\u0000${strings.length - 1}\u0000`;
+    }
+  );
+  return masked
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s*([>+~,])\s*/g, "$1")
+    .replace(/\(\s+/g, "(")
+    .replace(/\s+\)/g, ")")
+    .replace(/::(before|after|first-line|first-letter)\b/gi, ":$1")
+    .replace(/\u0000(\d+)\u0000/g, (_, n: string) => {
+      const value = strings[Number(n)]!;
+      return /^-?[_a-zA-Z][\w-]*$/.test(value) ? value : `"${value}"`;
+    });
+}
+
+/** One declaration of a `BuiltCssRule`. */
+interface CssDeclaration {
+  property: string;
+  value: string;
+  important: boolean;
+}
+
+/** One selector of one style rule, as `builtCssRules` lists it. */
+export interface BuiltCssRule {
+  /** The rule's position among the stylesheet's style rules; the selectors
+   *  of one rule share it. */
+  order: number;
+  selector: string;
+  /** The at-rule preludes around the rule, outermost first, spelled as
+   *  `cssScope` matches them. */
+  context: string[];
+  declarations: CssDeclaration[];
+}
+
+/**
+ * Every style rule in a stylesheet — the built `dist/assets/*.css` is the one
+ * it is for, but any CSS parses — one entry per selector, in source order,
+ * with the at-rule context it sits in (#954). Keyframe selectors (`0%`, `to`)
+ * are not style rules and are left out. Parsed with PostCSS, so strings,
+ * `url()` and nested at-rules cannot break it the way a brace count would.
+ * Throws when the stylesheet has no style rules, and on a nested style rule
+ * (CSS nesting), which the minifier this app uses never emits and the cascade
+ * gate cannot weigh.
+ */
+export function builtCssRules(css: string): BuiltCssRule[] {
+  const out: BuiltCssRule[] = [];
+  let order = 0;
+  postcss.parse(css).walkRules((rule) => {
+    const context: string[] = [];
+    let inKeyframes = false;
+    for (let up = rule.parent; up && up.type !== "root"; up = up.parent) {
+      if (up.type === "rule") {
+        throw new Error(`builtCssRules: nested style rule: ${rule.selector}`);
+      }
+      const at = up as AtRule;
+      if (/keyframes$/i.test(at.name)) inKeyframes = true;
+      context.unshift(atRulePrelude(at));
+    }
+    if (inKeyframes) return;
+    const declarations = rule.nodes
+      .filter((node) => node.type === "decl")
+      .map((decl) => ({
+        property: decl.prop,
+        value: decl.value,
+        important: Boolean(decl.important),
+      }));
+    for (const selector of rule.selectors) {
+      out.push({ order, selector, context: [...context], declarations });
+    }
+    order++;
+  });
+  if (out.length === 0) throw new Error("builtCssRules: no style rules");
+  return out;
 }
 
 /**

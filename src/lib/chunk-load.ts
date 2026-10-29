@@ -15,20 +15,28 @@
 
 /**
  * The messages each engine gives a dynamic `import()` whose module could not
- * be fetched, lower-cased. Matched as substrings, because Chromium and Firefox
- * append the URL.
+ * be fetched, lower-cased. Matched as substrings, because every engine but
+ * WebKit's fetch failure names the URL.
+ *
+ * WebKit words two cases differently: a chunk whose request failed, and a
+ * chunk whose URL answered with something that is not JavaScript. The second
+ * is the stale-chunk case on this host, which answers a missing file with the
+ * app's HTML (`not_found_handling: "single-page-application"` in
+ * `wrangler.jsonc`). Chromium and Gecko use one wording for both.
  *
  * Only the Chromium message is observed by a test that runs a real engine
- * (`e2e/stale-chunk-reload.spec.ts`). The WebKit and Gecko strings are the
- * engines' own wording as published, not seen here; a WebKit or Gecko build
- * that words it differently falls through to an ordinary failure, which is
- * what happened before this file existed.
+ * (`e2e/stale-chunk-reload.spec.ts`). No committed test runs WebKit or Gecko,
+ * and no iOS device has been checked; a build that words it differently falls
+ * through to an ordinary failure, which is what happened before this file
+ * existed.
  */
 const CHUNK_LOAD_MESSAGES: readonly string[] = [
   // Chromium (Chrome, Android WebView, Edge)
   "failed to fetch dynamically imported module",
-  // WebKit (Safari, every iOS browser, the iOS shell)
+  // WebKit (Safari, every iOS browser, the iOS shell): a failed request, then
+  // an answer that is not JavaScript (the host's HTML for a missing file)
   "importing a module script failed",
+  "is not a valid javascript mime type for module script",
   // Gecko (Firefox)
   "error loading dynamically imported module",
   // Vite's own preload helper, when a chunk's stylesheet is the missing file

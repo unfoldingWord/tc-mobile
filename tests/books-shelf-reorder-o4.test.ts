@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +9,8 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
-import { cssRule, declarationValue, stripCssComments } from "./support";
+import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { cssRule, declarationValue } from "./support";
 
 /**
  * Press-and-hold reorder of BOOKS on the Books screen (#338), wired: the real
@@ -463,25 +461,22 @@ describe("an open book is a tall card, and still moves by its row (#338)", () =>
 });
 
 describe("o4/books.css: the book lift (#338)", () => {
-  const books = stripCssComments(
-    readFileSync(
-      path.resolve(import.meta.dirname, "../src/app/styles/o4/books.css"),
-      "utf8"
-    )
-  );
-  const reduced = books.indexOf("@media (prefers-reduced-motion: reduce)");
-  const main = books.slice(0, reduced);
-  const motion = books.slice(reduced);
+  // The layer's own rules and its ONE reduced-motion block (`areaScope`
+  // throws on a second), read by selector rather than split at the first
+  // `@media`.
+  const main = areaScope("books");
+  const motion = areaScope("books", "@media (prefers-reduced-motion: reduce)");
+  const sel = (selector: string) => areaSelector("books", selector);
 
   it("slides the other cards over 160 ms and lifts the held one at scale 1.03 on z 8", () => {
-    const slide = cssRule(main, ":root .books-list[data-reordering] > li");
+    const slide = cssRule(main, sel(".books-list[data-reordering] > li"));
     expect(declarationValue(slide, "transform")).toBe(
       "translateY(var(--reorder-y, 0px))"
     );
     expect(declarationValue(slide, "transition")).toBe("transform 160ms ease");
     const lift = cssRule(
       main,
-      ":root .books-list[data-reordering] > .books-card-lifted"
+      sel(".books-list[data-reordering] > .books-card-lifted")
     );
     expect(declarationValue(lift, "z-index")).toBe("8");
     expect(declarationValue(lift, "transform")).toBe(
@@ -491,25 +486,22 @@ describe("o4/books.css: the book lift (#338)", () => {
   });
 
   it("drops the slide under reduced motion", () => {
-    expect(reduced).toBeGreaterThan(0);
     expect(
       declarationValue(
-        cssRule(motion, ":root .books-list[data-reordering] > li"),
+        cssRule(motion, sel(".books-list[data-reordering] > li")),
         "transition"
       )
     ).toBe("none");
   });
 
   it("casts the lift shadow from o4/segments.css's one rule", () => {
-    const segments = stripCssComments(
-      readFileSync(
-        path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
-        "utf8"
-      )
-    );
+    // One member of the segments file's three-selector lift rule.
     expect(
       declarationValue(
-        cssRule(segments, ":root .books-card-lifted"),
+        areaRule(
+          areaScope("segments"),
+          areaSelector("segments", ".books-card-lifted")
+        ),
         "box-shadow"
       )
     ).toBe("0 14px 30px rgba(0, 0, 0, 0.38)");

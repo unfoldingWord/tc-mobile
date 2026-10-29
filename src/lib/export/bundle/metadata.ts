@@ -91,7 +91,7 @@ function nfc(text: string): string {
 /**
  * A span is a reference only when it is complete: both verses set, or both
  * null (whole chapters). Exactly one null is not a state the template
- * validator lets in (`lib/templates/validate.ts:127`) though the type allows
+ * validator lets in (`lib/templates/validate.ts:180`) though the type allows
  * it; here it counts as no reference, so it cannot widen to a whole chapter.
  */
 function completeSpan(span: SegmentRef | null): SegmentRef | null {

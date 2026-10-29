@@ -11,7 +11,7 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
-import { areaRules, declsFor } from "./o4-area-css";
+import { areaScope, areaSelector, declsFor } from "./o4-area-css";
 import { render } from "./render";
 import { restingErase } from "./support";
 
@@ -632,75 +632,73 @@ describe("marking-done copy (D17)", () => {
 });
 
 describe("o4/menus.css, #949's chapter and segment menu section", () => {
-  const rules = areaRules("menus");
-  const O4 = ":root";
+  const menus = areaScope("menus");
+  const sel = (selector: string) => areaSelector("menus", selector);
 
   it("pins the erase tile's live ink (#973's deferral)", () => {
-    expect(declsFor(rules, `${O4} .o4-tile--erase`).get("color")).toBe(
+    expect(declsFor(menus, sel(".o4-tile--erase")).get("color")).toBe(
       "var(--s-live)"
     );
   });
 
   it("paints done green with its own ink, and not-yet-done on the well in faint ink (G8)", () => {
     expect(
-      declsFor(rules, `${O4} .o4-tile--done::before`).get("background")
+      declsFor(menus, sel(".o4-tile--done::before")).get("background")
     ).toBe("var(--s-done)");
-    expect(declsFor(rules, `${O4} .o4-tile--done`).get("color")).toBe(
+    expect(declsFor(menus, sel(".o4-tile--done")).get("color")).toBe(
       "var(--s-done-ink)"
     );
     expect(
-      declsFor(rules, `${O4} .o4-tile--doneoff::before`).get("background")
+      declsFor(menus, sel(".o4-tile--doneoff::before")).get("background")
     ).toBe("var(--s-well)");
-    expect(declsFor(rules, `${O4} .o4-tile--doneoff`).get("color")).toBe(
+    expect(declsFor(menus, sel(".o4-tile--doneoff")).get("color")).toBe(
       "var(--s-ink-faint)"
     );
   });
 
   it("draws the crumbs 40 tall on the well, chevron-clipped, a finished segment on the done wash (D19)", () => {
-    const crumb = declsFor(rules, `${O4} .o4-crumb`);
+    const crumb = declsFor(menus, sel(".o4-crumb"));
     expect(crumb.get("height")).toBe("40px");
     expect(crumb.get("background")).toBe("var(--s-well)");
     // The chevron is one property (#1269), so a linked crumb's
     // pseudo-element draws the same shape; the clip reads it.
     expect(crumb.get("--o4-crumb-shape")).toMatch(/13px/);
     expect(crumb.get("clip-path")).toBe("var(--o4-crumb-shape)");
-    const finished = declsFor(rules, `${O4} .o4-crumb[data-state="finished"]`);
+    const finished = declsFor(menus, sel('.o4-crumb[data-state="finished"]'));
     expect(finished.get("background")).toBe("var(--s-done-quiet)");
     expect(finished.get("color")).toBe("var(--s-done-text)");
     expect(
-      declsFor(rules, `${O4} .o4-crumb[data-state="recorded"]`).get(
-        "background"
-      )
+      declsFor(menus, sel('.o4-crumb[data-state="recorded"]')).get("background")
     ).toBe("var(--s-voice-quiet)");
   });
 
   it("draws the head's Rename pencil as a 52 circle on the name role, and greys a refused tile (D20)", () => {
-    const pen = declsFor(rules, `${O4} .o4-head-pen`);
+    const pen = declsFor(menus, sel(".o4-head-pen"));
     expect(pen.get("width")).toBe("52px");
     expect(pen.get("height")).toBe("52px");
     expect(pen.get("background")).toBe("var(--s-name)");
     expect(pen.get("color")).toBe("var(--s-tile-ink)");
     expect(
-      declsFor(rules, `${O4} .o4-tile[aria-disabled="true"]`).get("opacity")
+      declsFor(menus, sel('.o4-tile[aria-disabled="true"]')).get("opacity")
     ).toBe("0.35");
     expect(
       declsFor(
-        rules,
-        `${O4} .o4-menu-preview[data-state="finished"] .o4-menu-play`
+        menus,
+        sel('.o4-menu-preview[data-state="finished"] .o4-menu-play')
       ).get("background")
     ).toBe("var(--s-done)");
   });
 
   it("draws the preview row 78 tall on the floor, its badge a 44 circle, a finished badge on the done wash (D19)", () => {
-    const preview = declsFor(rules, `${O4} .o4-menu-preview`);
+    const preview = declsFor(menus, sel(".o4-menu-preview"));
     expect(preview.get("min-height")).toBe("78px");
     expect(preview.get("background")).toBe("var(--s-floor)");
-    const badge = declsFor(rules, `${O4} .o4-menu-badge`);
+    const badge = declsFor(menus, sel(".o4-menu-badge"));
     expect(badge.get("width")).toBe("44px");
     expect(badge.get("height")).toBe("44px");
     const finished = declsFor(
-      rules,
-      `${O4} .o4-menu-badge[data-state="finished"]`
+      menus,
+      sel('.o4-menu-badge[data-state="finished"]')
     );
     expect(finished.get("background")).toBe("var(--s-done-quiet)");
     expect(finished.get("color")).toBe("var(--s-done-text)");

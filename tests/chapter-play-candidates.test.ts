@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildChapterPlaylist } from "@/lib/audio/chapter-queue";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
+import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { saveTake } from "@/lib/storage/takes";
 import type { ClipId, SegmentId } from "@/types/domain";
 import { clearAllStores, ramp } from "./support";
@@ -26,7 +27,17 @@ import { clearAllStores, ramp } from "./support";
  * and the export walk already give.
  */
 
+// The real probe, wrapped so one test can hold every probe open at once.
+vi.mock("@/lib/storage/segment-audio", async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import("@/lib/storage/segment-audio")>();
+  return { ...real, resolveSegmentAudio: vi.fn(real.resolveSegmentAudio) };
+});
+
 beforeEach(clearAllStores);
+afterEach(() => {
+  vi.mocked(resolveSegmentAudio).mockRestore();
+});
 
 async function chapterWith(lengths: (number | null)[]) {
   const book = await createBook("b");
@@ -126,5 +137,36 @@ describe("chapterPlayCandidates", () => {
 
   it("is empty for a chapter that does not exist", async () => {
     expect(await chapterPlayCandidates("nope" as never)).toEqual([]);
+  });
+
+  it("probes every member at once, and keeps the chapter's order (#1747)", async () => {
+    const { chapterId, ids } = await chapterWith([3000, null, 5000]);
+    const real = await vi.importActual<
+      typeof import("@/lib/storage/segment-audio")
+    >("@/lib/storage/segment-audio");
+    const started: SegmentId[] = [];
+    const gates: (() => void)[] = [];
+    vi.mocked(resolveSegmentAudio).mockImplementation(async (segmentId) => {
+      started.push(segmentId);
+      await new Promise<void>((open) => gates.push(open));
+      return real.resolveSegmentAudio(segmentId);
+    });
+
+    const pending = chapterPlayCandidates(chapterId);
+    for (let i = 0; i < 50 && started.length < ids.length; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    // A serial walk would have started one probe and be waiting on it.
+    expect(started).toEqual(ids);
+    // Answers that arrive last-first still come back in membership order.
+    for (const open of [...gates].reverse()) open();
+    const candidates = await pending;
+    expect(candidates.map((c) => c.segmentId)).toEqual(ids);
+    expect(candidates.map((c) => c.audio.kind)).toEqual([
+      "playable",
+      "unrecorded",
+      "playable",
+    ]);
   });
 });

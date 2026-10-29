@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
@@ -8,7 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EraseConfirm } from "@/components/erase-confirm";
 
-import { stripCssComments } from "./support";
+import {
+  areaRule,
+  areaScope,
+  areaSelector,
+  fileRules,
+  readAreaCss,
+  scopeDeclarations,
+  scopeRules,
+} from "./o4-area-css";
+import { declarationValue } from "./support";
 
 /**
  * The O4 confirm dialog (#946: states 13 Erase confirm, G5 Record again asks
@@ -23,54 +29,24 @@ import { stripCssComments } from "./support";
  * component, and is not exercised here.
  *
  * Two halves, because each alone can pass vacuously:
- *   1. the stylesheet's declarations carry the design values, every rule
- *      carries the `:root` prefix (`o4/index.css`), and no colour primitive
- *      leaks past layer 2
- *      (the `share-progress.test.ts` shape: rule blocks are sliced and their
- *      declaration VALUES matched, with comments stripped first, so a comment
- *      that names a selector cannot capture the test — AGENTS.md);
+ *   1. the stylesheet's declarations carry the design values, and no
+ *      colour primitive leaks past layer 2
+ *      (each rule read by its selector and each value by its property,
+ *      comments stripped first, so a comment that names a selector cannot
+ *      capture the test — AGENTS.md);
  *   2. every selector in that stylesheet matches real EraseConfirm markup —
  *      a renamed class in the component would otherwise leave the O4 rules
  *      matching nothing while half 1 stayed green.
  */
 
-const ROOT = path.resolve(import.meta.dirname, "..");
-const CSS = stripCssComments(
-  readFileSync(
-    path.join(ROOT, "src", "app", "styles", "o4", "dialogs.css"),
-    "utf8"
-  )
-);
+const CSS = areaScope("dialogs");
+const RULES = scopeRules(CSS);
 
-const SCOPE = ":root";
-
-interface Rule {
-  readonly selectors: readonly string[];
-  readonly body: string;
-}
-
-/** Innermost `selector { body }` blocks — the file has no nested at-rules
- *  below its one `@layer components`, which this regex steps over. */
-const RULES: readonly Rule[] = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-  .map(([, sel = "", body = ""]) => ({
-    selectors: sel
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-    body,
-  }))
-  .filter((r) => !r.selectors.some((s) => s.startsWith("@")));
-
-/** The declarations of the rule whose selector list contains `selector`. */
-function decl(selector: string): Record<string, string> {
-  const rule = RULES.find((r) => r.selectors.includes(selector));
-  expect(rule, `no rule for ${selector}`).toBeDefined();
-  const out: Record<string, string> = {};
-  for (const [, prop = "", value = ""] of rule!.body.matchAll(
-    /([a-z-]+)\s*:\s*([^;]+);/g
-  ))
-    out[prop] = value.trim();
-  return out;
+/** The rule whose selector list holds `selector`, read a property at a time
+ *  (`declarationValue` throws on a missing or doubled one). */
+function decl(selector: string): (property: string) => string {
+  const body = areaRule(CSS, areaSelector("dialogs", selector));
+  return (property) => declarationValue(body, property).replace(/\s+/g, " ");
 }
 
 describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
@@ -78,69 +54,62 @@ describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
     expect(RULES.length).toBeGreaterThanOrEqual(8);
   });
 
-  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
-    for (const { selectors } of RULES)
-      for (const s of selectors)
-        expect(s.startsWith(`${SCOPE} `), s).toBe(true);
-  });
-
   it("dims behind the dialog and insets it 18px", () => {
-    const scrim = decl(`${SCOPE} .confirm-scrim`);
-    expect(scrim.background).toBe("var(--s-dim)");
-    expect(scrim.padding).toBe("18px");
-    const panel = decl(`${SCOPE} .confirm-panel`);
-    expect(panel.width).toBe("100%");
-    expect(panel["border-radius"]).toBe("22px");
-    expect(panel["box-shadow"]).toBe("0 24px 48px rgba(0, 0, 0, 0.35)");
-    expect(panel.background).toBe("var(--s-surface)");
+    const scrim = decl(".confirm-scrim");
+    expect(scrim("background")).toBe("var(--s-dim)");
+    expect(scrim("padding")).toBe("18px");
+    const panel = decl(".confirm-panel");
+    expect(panel("width")).toBe("100%");
+    expect(panel("border-radius")).toBe("22px");
+    expect(panel("box-shadow")).toBe("0 24px 48px rgba(0, 0, 0, 0.35)");
+    expect(panel("background")).toBe("var(--s-surface)");
   });
 
   it("sets the title at 22/800", () => {
-    const title = decl(`${SCOPE} .confirm-panel .t-title`);
-    expect(title["font-size"]).toBe("22px");
-    expect(title["font-weight"]).toBe("800");
+    const title = decl(".confirm-panel .t-title");
+    expect(title("font-size")).toBe("22px");
+    expect(title("font-weight")).toBe("800");
   });
 
   it("puts the erase badge on --s-live-quiet", () => {
-    const glyph = decl(`${SCOPE} .confirm-glyph`);
-    expect(glyph.background).toBe("var(--s-live-quiet)");
-    expect(glyph.color).toBe("var(--s-live)");
-    expect(glyph.width).toBe("76px");
-    expect(glyph.height).toBe("76px");
-    expect(glyph["border-radius"]).toBe("50%");
+    const glyph = decl(".confirm-glyph");
+    expect(glyph("background")).toBe("var(--s-live-quiet)");
+    expect(glyph("color")).toBe("var(--s-live)");
+    expect(glyph("width")).toBe("76px");
+    expect(glyph("height")).toBe("76px");
+    expect(glyph("border-radius")).toBe("50%");
   });
 
   it("floats the preview row on --s-floor, with a 60px round Play/Pause transport (#979)", () => {
-    const preview = decl(`${SCOPE} .confirm-preview`);
-    expect(preview.background).toBe("var(--s-floor)");
-    expect(preview.height).toBe("78px");
-    expect(preview["border-radius"]).toBe("14px");
-    expect(preview["align-self"]).toBe("stretch");
-    const play = decl(`${SCOPE} .confirm-preview-play`);
-    expect(play.width).toBe("60px");
-    expect(play.height).toBe("60px");
+    const preview = decl(".confirm-preview");
+    expect(preview("background")).toBe("var(--s-floor)");
+    expect(preview("height")).toBe("78px");
+    expect(preview("border-radius")).toBe("14px");
+    expect(preview("align-self")).toBe("stretch");
+    const play = decl(".confirm-preview-play");
+    expect(play("width")).toBe("60px");
+    expect(play("height")).toBe("60px");
   });
 
   it("lays the two buttons out in two columns, 76 tall, radius 14", () => {
-    const actions = decl(`${SCOPE} .confirm-actions`);
-    expect(actions.display).toBe("grid");
-    expect(actions["grid-template-columns"]).toBe("1fr 1fr");
-    expect(actions["align-self"]).toBe("stretch");
-    const button = decl(`${SCOPE} .confirm-actions > .control`);
-    expect(button.height).toBe("76px");
-    expect(button.width).toBe("auto");
-    expect(button["border-radius"]).toBe("14px");
-    const keep = decl(`${SCOPE} .confirm-actions > .confirm-cancel`);
-    expect(keep.background).toBe("var(--s-well)");
-    expect(keep.color).toBe("var(--s-ink)");
+    const actions = decl(".confirm-actions");
+    expect(actions("display")).toBe("grid");
+    expect(actions("grid-template-columns")).toBe("1fr 1fr");
+    expect(actions("align-self")).toBe("stretch");
+    const button = decl(".confirm-actions > .control");
+    expect(button("height")).toBe("76px");
+    expect(button("width")).toBe("auto");
+    expect(button("border-radius")).toBe("14px");
+    const keep = decl(".confirm-actions > .confirm-cancel");
+    expect(keep("background")).toBe("var(--s-well)");
+    expect(keep("color")).toBe("var(--s-ink)");
   });
 
   it("reaches colour only through layer-2 roles", () => {
-    const values = RULES.flatMap(({ body }) => [
-      ...body.matchAll(/([a-z-]+)\s*:\s*([^;]+);/g),
-    ]);
+    // The whole file, nested blocks included, not only the layer's rules.
+    const values = scopeDeclarations(readAreaCss("dialogs"));
     expect(values.length).toBeGreaterThanOrEqual(15);
-    for (const [, prop, value] of values)
+    for (const [prop, value] of values)
       expect(value, `${prop} reaches past layer 2`).not.toMatch(/--p-/);
   });
 });
@@ -217,7 +186,9 @@ async function mountConfirmWithPreview() {
 }
 
 describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946, #979)", () => {
-  const selectors = RULES.flatMap((r) => r.selectors);
+  // Every selector in the whole file, every nested block included: "no
+  // selector matches nothing" is a ban, so it cannot stop at the layer.
+  const selectors = fileRules("dialogs").flatMap((r) => r.selectors);
   const isPreview = (s: string) => s.includes(".confirm-preview");
   const isRecord = (s: string) => s.includes(".confirm-panel-record");
 

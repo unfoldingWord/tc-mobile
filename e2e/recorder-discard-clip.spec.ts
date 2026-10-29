@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 import { clickEditRecording } from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";

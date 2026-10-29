@@ -856,8 +856,8 @@ export function useAudioSession(): UseAudioSession {
     // idempotent, so a `pagehide` after the hidden change finds the take
     // already sealed and returns `true` without cancelling it.
     //
-    // #1251: the DRI reproduced a shared audio context stuck on "running"
-    // with its clock stopped by locking and unlocking the phone. So hiding
+    // #1251: locking and unlocking the phone can leave a shared audio context
+    // stuck on "running" with its clock stopped. So hiding
     // also asks `dropSharedContextWhenIdle` to drop that context, AFTER the
     // seal: it drops at once when nothing uses it, and otherwise waits for
     // the sealed take's level tap, a decode or a sounding Play to let go. It

@@ -1076,8 +1076,8 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             // already finished, which happens two ways. (1) A failed request
             // (a constraint or quota refusal) aborted it itself before this
             // ran: the open still REJECTS, and `upgradeFault` is what it
-            // rejects with. Observed on fake-indexeddb with `idb` 8, not on a
-            // real engine. (2) It committed before the error surfaced: the
+            // rejects with. Whether a real engine aborts it this way is not
+            // established here. (2) It committed before the error surfaced: the
             // upgrade cannot be rolled back then, and the open would SUCCEED
             // on a half-migrated database, so the open's fulfilment below
             // closes the connection and rejects with `upgradeFault` instead.

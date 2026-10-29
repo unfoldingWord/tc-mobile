@@ -30,6 +30,7 @@
 
 import type { IDBPDatabase } from "idb";
 
+import { clipBytes, ownedClipBytes, withClipBytes } from "./clip-bytes";
 import { buildClipMeta, deleteClipIfUnreferenced } from "./clips";
 import { getDb, type TcMobileDb } from "./db";
 import { baseClipIntact, encodePendingBase } from "./pending-takes";
@@ -63,16 +64,15 @@ const uuid = (): string => crypto.randomUUID();
  */
 function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
-    [
+    withClipBytes([
       "segments",
       "takes",
       "clipMeta",
-      "clipData",
       "chapters",
       "books",
       "pendingTakes",
       "takeDispositions",
-    ],
+    ]),
     "readwrite",
     // Strict durability: this transaction creates the ONLY copy of a recording,
     // and under the browser default (relaxed on Chromium) it can report success
@@ -240,7 +240,7 @@ async function recipeWhole(
   if (row.base.kind === "inline") return true;
   return baseClipIntact(
     await tx.objectStore("clipMeta").get(row.base.sourceClipId),
-    await tx.objectStore("clipData").get(row.base.sourceClipId),
+    await clipBytes.read(tx, row.base.sourceClipId),
     row.base
   );
 }
@@ -325,7 +325,7 @@ export async function saveTake(
   // ever starting a write. The generation is stamped below, inside the
   // transaction, once the prior clip has been read.
   const base = buildClipMeta(clipId, samples, sampleRate, now);
-  const bytes = new Int16Array(samples);
+  const bytes = ownedClipBytes(samples);
 
   const db = await getDb();
   const tx = openTakeTx(db);
@@ -361,7 +361,7 @@ export async function saveTake(
       opts.baseGeneration ?? (await priorClipGeneration(tx, segmentId));
     const meta = { ...base, generation };
     await tx.objectStore("clipMeta").put(meta);
-    await tx.objectStore("clipData").put(bytes.buffer, clipId);
+    await clipBytes.write(tx, clipId, bytes);
     // The row goes before the take write, so a prior clip only its base named
     // is released by the take write's own clean-up.
     await endOwnRow(tx, segmentId, clipId);
@@ -441,7 +441,7 @@ export async function saveReplayedTake(
 ): Promise<ReplayResult> {
   const now = opts.now ?? Date.now();
   const base = buildClipMeta(take.clipId, merged, sampleRate, now);
-  const bytes = new Int16Array(merged);
+  const bytes = ownedClipBytes(merged);
 
   const db = await getDb();
   const tx = openTakeTx(db);
@@ -487,7 +487,7 @@ export async function saveReplayedTake(
         const generation =
           take.baseGeneration ?? (await priorClipGeneration(tx, segmentId));
         await tx.objectStore("clipMeta").put({ ...base, generation });
-        await tx.objectStore("clipData").put(bytes.buffer, clipId);
+        await clipBytes.write(tx, clipId, bytes);
         await endOwnRow(tx, segmentId, clipId);
         const saved = await writeTakeInTx(
           tx,

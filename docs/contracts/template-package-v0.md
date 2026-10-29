@@ -45,43 +45,47 @@ app's business, not the package's.
 Every key is required. A key that is absent is refused, because the validator
 reads each key and refuses a value of the wrong type. Unknown extra keys are
 ignored: the validator copies out only the keys named here
-(`validate.ts:286-300`), so do not rely on them.
+(`validate.ts:342-356`), so do not rely on them. Every text value must be
+non-empty and must not start or end with whitespace; padding is refused, not
+trimmed, so the string the app stores is the string that was checked
+(`validate.ts:97-110`).
 
-| Field              | Meaning and rule                                                                                                                                                                                                                                       | Cite                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| `format`           | The literal `"tc-mobile-template"`. Anything else is refused.                                                                                                                                                                                          | `types/template.ts:85`, `validate.ts:226-228`            |
-| `formatVersion`    | The contract's own version. Exactly `0` today. A reader refuses a version it does not know, and the message names the version it was given.                                                                                                            | `types/template.ts:86-87`, `validate.ts:229-234`         |
-| `id`               | The package's identity, for ever. Stable and never reused. Starts with a letter or digit, then letters, digits and `: . _ -`, at most 64 characters. Examples in the fixtures: `bible:MRK`, `collection:psalm-songs`.                                  | `types/template.ts:88`, `validate.ts:27,235`             |
-| `version`          | The package's content version, as semver 2.0.0 (no leading zeros; pre-release and build metadata allowed). See "Versions".                                                                                                                             | `types/template.ts:89-90`, `validate.ts:31-38,236`       |
-| `kind`             | What the package is, as a lowercase slug the source picks: `bible-book`, `collection`, `hymnal`. Starts with a letter, then lowercase letters, digits and `-`, at most 32 characters. Open vocabulary: a new slug needs no edit to types or validator. | `types/template.ts:22-29,91`, `validate.ts:28,237`       |
-| `bookCode`         | The source's own short code for the whole package, or `null` if it has none. Capitals, digits, `_` and `-`, 1 to 16 characters (`MRK`).                                                                                                                | `types/template.ts:92-93`, `validate.ts:30,238-241`      |
-| `title`            | The package's own name, as an object from language tag to text. At least one entry, each non-empty, and each language must be listed in `titleLanguages`.                                                                                              | `types/template.ts:94-95`, `validate.ts:244-255`         |
-| `titleLanguages`   | Every language a title table may cover, as BCP-47 tags. At least one, no duplicates (tags compare without regard to case). The check is the tag's form only; it does not look subtags up in the registry.                                              | `types/template.ts:96-97`, `validate.ts:39-54,202-221`   |
-| `dataLicence`      | The licence of the package data itself, as non-empty text. `LicenceId` below names the ids the app's types know, but the validator accepts any non-empty string here.                                                                                  | `types/template.ts:98-99`, `validate.ts:257`             |
-| `recordingLicence` | The licence of recordings made from this template. Exactly `"CC-BY-SA-4.0"`; v0 admits no other value (decision D5).                                                                                                                                   | `types/template.ts:100-101`, `validate.ts:22-23,258-260` |
-| `attribution`      | The credit line that must travel with any display or export of the package. Non-empty text.                                                                                                                                                            | `types/template.ts:102-103`, `validate.ts:261`           |
-| `source`           | Where the content came from: an object with `url` and `revision`, both required (below).                                                                                                                                                               | `types/template.ts:104`, `validate.ts:263-275`           |
-| `chapters`         | The ordered list of chapters. At least one. Order is the order the app shows.                                                                                                                                                                          | `types/template.ts:105`, `validate.ts:276-284`           |
+| Field              | Meaning and rule                                                                                                                                                                                                                                       | Cite                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `format`           | The literal `"tc-mobile-template"`. Anything else is refused.                                                                                                                                                                                          | `types/template.ts:89`, `validate.ts:279-281`                |
+| `formatVersion`    | The contract's own version. Exactly `0` today. A reader refuses a version it does not know, and the message names the version it was given.                                                                                                            | `types/template.ts:90-91`, `validate.ts:282-287`             |
+| `id`               | The package's identity, for ever. Stable and never reused. Starts with a letter or digit, then letters, digits and `: . _ -`, at most 64 characters. Examples in the fixtures: `bible:MRK`, `collection:psalm-songs`.                                  | `types/template.ts:92`, `validate.ts:38,288`                 |
+| `version`          | The package's content version, as semver 2.0.0 (no leading zeros; pre-release and build metadata allowed). See "Versions".                                                                                                                             | `types/template.ts:93-94`, `validate.ts:42-49,289`           |
+| `kind`             | What the package is, as a lowercase slug the source picks: `bible-book`, `collection`, `hymnal`. Starts with a letter, then lowercase letters, digits and `-`, at most 32 characters. Open vocabulary: a new slug needs no edit to types or validator. | `types/template.ts:22-29,95`, `validate.ts:39,290`           |
+| `bookCode`         | The source's own short code for the whole package, or `null` if it has none. Capitals, digits, `_` and `-`, 1 to 16 characters (`MRK`).                                                                                                                | `types/template.ts:96-97`, `validate.ts:41,291-294`          |
+| `title`            | The package's own name, as an object from language tag to text. At least one entry, each non-empty, and each language must be listed in `titleLanguages`.                                                                                              | `types/template.ts:98-99`, `validate.ts:297-308`             |
+| `titleLanguages`   | Every language a title table may cover, as BCP-47 tags. At least one, no duplicates (tags compare without regard to case). The check is the tag's form only; it does not look subtags up in the registry.                                              | `types/template.ts:100-101`, `validate.ts:50-65,255-274`     |
+| `dataLicence`      | The licence of the package data itself: one of the `LicenceId` ids below, exactly as written there. Any other value is refused.                                                                                                                        | `types/template.ts:102-103`, `validate.ts:24-34,136-150,310` |
+| `recordingLicence` | The licence of recordings made from this template. Exactly `"CC-BY-SA-4.0"`; v0 admits no other value (decision D5).                                                                                                                                   | `types/template.ts:104-105`, `validate.ts:22-23,311-313`     |
+| `attribution`      | The credit line that must travel with any display or export of the package. Non-empty text.                                                                                                                                                            | `types/template.ts:106-107`, `validate.ts:314`               |
+| `source`           | Where the content came from: an object with `url` and `revision`, both required (below).                                                                                                                                                               | `types/template.ts:108`, `validate.ts:316-328`               |
+| `chapters`         | The ordered list of chapters. At least one. Order is the order the app shows.                                                                                                                                                                          | `types/template.ts:109`, `validate.ts:329-340`               |
 
 ### `source`
 
 | Field      | Meaning and rule                                                                               | Cite                  |
 | ---------- | ---------------------------------------------------------------------------------------------- | --------------------- |
-| `url`      | Where the content lives. Must parse as an `http` or `https` URL.                               | `validate.ts:264-273` |
-| `revision` | The exact revision the package was built from (a commit, a tag, a release id). Non-empty text. | `validate.ts:274`     |
+| `url`      | Where the content lives. Must parse as an `http` or `https` URL.                               | `validate.ts:317-326` |
+| `revision` | The exact revision the package was built from (a commit, a tag, a release id). Non-empty text. | `validate.ts:327`     |
 
 ### `LicenceId`
 
 The ids the app's types name for a data licence: `CC-BY-SA-4.0`, `CC-BY-4.0`,
 `CC0-1.0`, `all-rights-reserved` (`types/template.ts:41-42`). An SPDX id where
-one exists; all-rights-reserved has none. This is a type, not a check: the
-validator does not compare `dataLicence` to this list (`validate.ts:257`).
+one exists; all-rights-reserved has none. These are the only values
+`dataLicence` may take: the validator refuses anything else
+(`validate.ts:24-34,136-150,310`).
 
 ### `TemplateRef`
 
 Not a file field. It is what a book keeps to say which package, at which
 version, it was made from: the package's `id`, `version` and `kind`
-(`types/template.ts:32-38`, `validate.ts:304-306`).
+(`types/template.ts:32-38`, `validate.ts:360-362`).
 
 | Field     | Meaning and rule                                 | Cite                   |
 | --------- | ------------------------------------------------ | ---------------------- |
@@ -91,24 +95,24 @@ version, it was made from: the package's `id`, `version` and `kind`
 
 ## Fields: `TemplateChapter`
 
-| Field      | Meaning and rule                                                                                                                                                  | Cite                                                |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `key`      | The chapter's stable key. Unique within the package. Same character rules as a segment key. Stable across versions of one package id (a convention, see "Keys").  | `types/template.ts:74-75`, `validate.ts:29,183-186` |
-| `number`   | The real chapter number: an integer of at least 1, always present, unique within the package. A template gives the number; order alone is not the authority (R7). | `types/template.ts:76-80`, `validate.ts:187-191`    |
-| `segments` | The ordered list of segments. At least one: a chapter with none is refused.                                                                                       | `types/template.ts:81`, `validate.ts:192-198`       |
+| Field      | Meaning and rule                                                                                                                                                                                                                                                | Cite                                                |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `key`      | The chapter's stable key. Unique among the package's chapter keys; segment keys are a separate namespace, so a chapter key may equal a segment key. Same character rules as a segment key. Stable across versions of one package id (a convention, see "Keys"). | `types/template.ts:74-79`, `validate.ts:40,236-239` |
+| `number`   | The real chapter number: an integer of at least 1, always present, unique within the package. A template gives the number; order alone is not the authority (R7).                                                                                               | `types/template.ts:80-84`, `validate.ts:240-244`    |
+| `segments` | The ordered list of segments. At least one: a chapter with none is refused.                                                                                                                                                                                     | `types/template.ts:85`, `validate.ts:245-251`       |
 
 ## Fields: `TemplateSegment`
 
 | Field       | Meaning and rule                                                                                                                                                                                                                           | Cite                                                |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| `key`       | The segment's stable key. Starts with a letter or digit, then letters, digits and `. : _ -`, at most 64 characters. Unique across the whole package, not just within its chapter. Stable across versions of one package id (a convention). | `types/template.ts:65-66`, `validate.ts:29,156-158` |
-| `reference` | Where the segment sits in its source, as a span (below), or `null` for a segment with no passage, such as an introduction.                                                                                                                 | `types/template.ts:67-68`, `validate.ts:159-162`    |
-| `thumbnail` | A path to a bundled image, or `null`. Relative: letters, digits and `. _ / -`, at most 128 characters, no scheme, no leading slash, no `..` segment.                                                                                       | `types/template.ts:69-70`, `validate.ts:56,163-171` |
+| `key`       | The segment's stable key. Starts with a letter or digit, then letters, digits and `. : _ -`, at most 64 characters. Unique across the whole package, not just within its chapter. Stable across versions of one package id (a convention). | `types/template.ts:65-66`, `validate.ts:40,209-211` |
+| `reference` | Where the segment sits in its source, as a span (below), or `null` for a segment with no passage, such as an introduction.                                                                                                                 | `types/template.ts:67-68`, `validate.ts:212-215`    |
+| `thumbnail` | A path to a bundled image, or `null`. Relative: letters, digits and `. _ / -`, at most 128 characters, no scheme, no leading slash, no `..` segment.                                                                                       | `types/template.ts:69-70`, `validate.ts:67,216-224` |
 
 ## Fields: `SegmentSpan`
 
 A span is numbers, never a scope string such as `"MRK 1:1-8"`. Every number is
-an integer of at least 1 (`validate.ts:99-104`). Three states are allowed
+an integer of at least 1 (`validate.ts:152-157`). Three states are allowed
 (`types/template.ts:44-52`):
 
 - Whole chapters: both verses `null`, `startChapter <= endChapter`.
@@ -119,43 +123,43 @@ an integer of at least 1 (`validate.ts:99-104`). Three states are allowed
   one, `PSA` 17:50 to 18:1.
 
 One verse `null` and the other a number is refused, and so is a span that ends
-before it starts (`validate.ts:127-146`).
+before it starts (`validate.ts:180-199`).
 
 | Field          | Meaning and rule                                                                                                        | Cite                                          |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `book`         | An opaque short code the source uses: capitals, digits, `_` and `-`, 1 to 16 characters. The app does not interpret it. | `types/template.ts:54`, `validate.ts:30,116`  |
-| `startChapter` | The chapter the span starts in. Integer, at least 1.                                                                    | `types/template.ts:55`, `validate.ts:117-120` |
-| `startVerse`   | The verse the span starts at, or `null` for whole chapters.                                                             | `types/template.ts:56`, `validate.ts:121`     |
-| `endChapter`   | The chapter the span ends in. Integer, at least 1, not before `startChapter`.                                           | `types/template.ts:57`, `validate.ts:122`     |
-| `endVerse`     | The verse the span ends at, or `null` for whole chapters.                                                               | `types/template.ts:58`, `validate.ts:123`     |
+| `book`         | An opaque short code the source uses: capitals, digits, `_` and `-`, 1 to 16 characters. The app does not interpret it. | `types/template.ts:54`, `validate.ts:41,169`  |
+| `startChapter` | The chapter the span starts in. Integer, at least 1.                                                                    | `types/template.ts:55`, `validate.ts:170-173` |
+| `startVerse`   | The verse the span starts at, or `null` for whole chapters.                                                             | `types/template.ts:56`, `validate.ts:174`     |
+| `endChapter`   | The chapter the span ends in. Integer, at least 1, not before `startChapter`.                                           | `types/template.ts:57`, `validate.ts:175`     |
+| `endVerse`     | The verse the span ends at, or `null` for whole chapters.                                                               | `types/template.ts:58`, `validate.ts:176`     |
 
 ## Title tables
 
 Titles ship as one table per language, so a phone loads only the one it shows
-(`types/template.ts:108-111`). A package with titles in three languages is one
+(`types/template.ts:112-115`). A package with titles in three languages is one
 package file and three table files.
 
 ### `TemplateTitleTable`
 
 | Field       | Meaning and rule                                                                                                                            | Cite                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `packageId` | The `id` of the package this table belongs to. Must equal it.                                                                               | `types/template.ts:113`, `validate.ts:333-336`         |
-| `version`   | The `version` of the package this table belongs to. Must equal it exactly: a table for 0.1.0 is refused against 0.2.0, never applied to it. | `types/template.ts:114`, `validate.ts:337-343`         |
-| `language`  | The one language this table covers. Must be in the package's `titleLanguages`.                                                              | `types/template.ts:115`, `validate.ts:344-347`         |
-| `chapters`  | An object from chapter `key` to title. Each key must be a chapter key the package has, each title non-empty. May be empty.                  | `types/template.ts:116-117`, `validate.ts:348,356`     |
-| `segments`  | An object from segment `key` to title. Each key must be a segment key the package has, each title non-empty. May be empty.                  | `types/template.ts:118-119`, `validate.ts:349-351,357` |
+| `packageId` | The `id` of the package this table belongs to. Must equal it.                                                                               | `types/template.ts:117`, `validate.ts:389-392`         |
+| `version`   | The `version` of the package this table belongs to. Must equal it exactly: a table for 0.1.0 is refused against 0.2.0, never applied to it. | `types/template.ts:118`, `validate.ts:393-399`         |
+| `language`  | The one language this table covers. Must be in the package's `titleLanguages`.                                                              | `types/template.ts:119`, `validate.ts:400-403`         |
+| `chapters`  | An object from chapter `key` to title. Each key must be a chapter key the package has, each title non-empty. May be empty.                  | `types/template.ts:120-121`, `validate.ts:404,412`     |
+| `segments`  | An object from segment `key` to title. Each key must be a segment key the package has, each title non-empty. May be empty.                  | `types/template.ts:122-123`, `validate.ts:405-407,413` |
 
 ### What a missing key does on the phone
 
 A key the table lacks has no title, and that is never an error
-(`types/template.ts:110-111`). In plain words: the lookup gives no title for
+(`types/template.ts:114-115`). In plain words: the lookup gives no title for
 that chapter or segment, and it does not fail. That the book then still opens,
 records, edits and shares as it did is the intended behaviour once a screen
 reads titles; nothing in `src/` calls `titleFor` yet, so no test or device run
 backs it.
 
 `titleFor` returns no title, and never throws, in each of these cases
-(`validate.ts:361-375`):
+(`validate.ts:417-431`):
 
 - no title table for the phone's language is loaded;
 - the book was made without a template, so it has no key;
@@ -163,7 +167,7 @@ backs it.
   version dropped that key.
 
 The opposite case is an error at the source: a key the table has but the
-package lacks fails validation (`validate.ts:317`). Leaving a title out is
+package lacks fails validation (`validate.ts:373`). Leaving a title out is
 allowed. Naming a key that does not exist is not.
 
 `tests/template-validate.test.ts` ("a key that goes missing between versions")
@@ -193,12 +197,12 @@ app can repair.
 Two numbers move independently.
 
 **`formatVersion`** is this contract's version. Today only `0` exists, and a
-reader refuses any other value (`validate.ts:229-234`). A change to the
+reader refuses any other value (`validate.ts:282-287`). A change to the
 contract that an older reader could not handle is a new `formatVersion`,
 written into this page before any source uses it.
 
 **`version`** is the package's content version, semver 2.0.0. The validator
-checks only that the string is well-formed semver (`validate.ts:31-38,236`); it
+checks only that the string is well-formed semver (`validate.ts:42-49,289`); it
 never compares versions. The rules below are an assumption: they are the
 reading of #1467, not a decision the requirements owner has recorded, so
 confirm them before the first source relies on them.
@@ -215,7 +219,7 @@ confirm them before the first source relies on them.
 - A published version is never edited. A change is a new version.
 
 Title tables carry the package `version` and must match it exactly
-(`validate.ts:337-343`), so every package release ships its own tables, even
+(`validate.ts:393-399`), so every package release ships its own tables, even
 when the titles did not change.
 
 ## What "published" means
@@ -249,16 +253,14 @@ says so instead of describing it as done.
    key out on purpose.
 4. **Run the validator on it.** `parseTemplatePackage` and
    `parseTemplateTitleTable` throw `TemplateValidationError` on the first
-   violation and name the field (`validate.ts:59-66`). A package that passes is
+   violation and name the field (`validate.ts:70-77`). A package that passes is
    a package the app accepts.
 5. **Publish it** as described above.
-6. **Add it to the build's package list.** This step has no code on `develop`
-   today. Nothing in `src/` imports the validator yet; only
-   `tests/template-validate.test.ts` does, and the first adapter is in review
-   on #1533 (below). The decision above says the content is pulled in at build
-   time and that app code stays source-agnostic. The mechanism that lists and
-   bundles packages is the seam of #1451 and has not been built. When it is,
-   adding a source is a line in that list and nothing else.
+6. **Add it to the build's package list**: its loader goes in `PACKAGES` in
+   `src/lib/templates/packages.ts` (#1451), which runs every package through
+   the validator. The decision above says the content is pulled in at build
+   time and that app code stays source-agnostic, so adding a source is a line
+   in that list and nothing else.
 
 What step 6 must not need is the point of the design: no edit to
 `src/types/template.ts`, `src/lib/templates/validate.ts`, or any screen. If a

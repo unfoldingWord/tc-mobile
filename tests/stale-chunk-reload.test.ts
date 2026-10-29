@@ -8,6 +8,7 @@ import {
 } from "@/hooks/stale-chunk-reload";
 import { chooseChunkRecovery, isChunkLoadError } from "@/lib/chunk-load";
 import { lightsFailureMarker } from "@/lib/failure-marker";
+import { describeCause } from "@/lib/failure-text";
 
 /**
  * A lazy chunk that will not load after an update reloads the page once, then
@@ -25,6 +26,10 @@ const ENGINE_MESSAGES = {
   chromium:
     "Failed to fetch dynamically imported module: https://example.test/assets/browser-D4EssyxD.js",
   webkit: "Importing a module script failed.",
+  // WebKit's wording when the chunk's URL answers 200 with the app's HTML,
+  // which is how the host answers a file that no longer exists.
+  "webkit (HTML answer)":
+    "'text/html' is not a valid JavaScript MIME type for module script 'https://example.test/assets/browser-D4EssyxD.js'.",
   gecko:
     "error loading dynamically imported module: https://example.test/assets/browser-D4EssyxD.js",
 } as const;
@@ -268,6 +273,102 @@ describe("setUnsavedAudioCheck", () => {
     expect(holdsUnsavedAudioNow()).toBe(true);
     removeNew();
     expect(holdsUnsavedAudioNow()).toBe(false);
+  });
+});
+
+/**
+ * What the durable log stores for the one `"stale-chunk"` row on a page: the
+ * reported cause rendered the way `installFailureLog` renders it.
+ */
+function storedRow(page: Page): { message: string; stack?: string } {
+  const refused = page.reports.filter((r) => r.context === "stale-chunk");
+  expect(refused).toHaveLength(1);
+  return describeCause(refused[0]?.cause);
+}
+
+describe("a refused reload says why in its row", () => {
+  const message = ENGINE_MESSAGES.chromium;
+  const failing = () => {
+    const cause = new TypeError(message);
+    return { cause, importer: () => Promise.reject(cause) };
+  };
+
+  const expectRow = (page: Page, reason: string, cause: TypeError) => {
+    const row = storedRow(page);
+    expect(row.message).toBe(
+      `Error: Stale chunk not reloaded: ${reason}\nCaused by: TypeError: ${message}`
+    );
+    expect(row.stack).toBe(cause.stack);
+  };
+
+  it("already-reloaded", async () => {
+    const storage = new MemoryStorage();
+    const first = openPage(storage);
+    await expect(first.load(failing().importer)).rejects.toThrow();
+    await first.settle();
+    const second = openPage(storage);
+    const { cause, importer } = failing();
+    await expect(second.load(importer)).rejects.toThrow();
+    await second.settle();
+    expectRow(second, "already-reloaded", cause);
+  });
+
+  it("unsaved-audio", async () => {
+    const page = openPage(new MemoryStorage(), { unsaved: () => true });
+    const { cause, importer } = failing();
+    await expect(page.load(importer)).rejects.toThrow();
+    await page.settle();
+    expectRow(page, "unsaved-audio", cause);
+  });
+
+  it("no-guard, when sessionStorage cannot be reached", async () => {
+    const page = openPage(null);
+    const { cause, importer } = failing();
+    await expect(page.load(importer)).rejects.toThrow();
+    await page.settle();
+    expectRow(page, "no-guard", cause);
+  });
+
+  it("no-guard, when the mark cannot be read", async () => {
+    const storage = new MemoryStorage();
+    storage.getItem = () => {
+      throw new DOMException("blocked", "SecurityError");
+    };
+    const page = openPage(storage);
+    const { cause, importer } = failing();
+    await expect(page.load(importer)).rejects.toThrow();
+    await page.settle();
+    expectRow(page, "no-guard", cause);
+  });
+
+  it("mark-unwritable, when the mark cannot be written", async () => {
+    const storage = new MemoryStorage();
+    storage.setItem = () => {
+      throw new DOMException("quota", "QuotaExceededError");
+    };
+    const page = openPage(storage);
+    const { cause, importer } = failing();
+    await expect(page.load(importer)).rejects.toThrow();
+    await page.settle();
+    expectRow(page, "mark-unwritable", cause);
+  });
+
+  it("unsaved-audio, when audio became unsaved while the reload waited", async () => {
+    let unsaved = false;
+    const page = openPage(new MemoryStorage(), { unsaved: () => unsaved });
+    const { cause, importer } = failing();
+    await expect(page.load(importer)).rejects.toThrow();
+    unsaved = true;
+    await page.settle();
+    expectRow(page, "unsaved-audio", cause);
+  });
+
+  it("the reload's own row carries the failure itself", async () => {
+    const page = openPage(new MemoryStorage());
+    const { cause, importer } = failing();
+    await expect(page.load(importer)).rejects.toThrow();
+    await page.settle();
+    expect(page.reports).toEqual([{ cause, context: "stale-chunk-reload" }]);
   });
 });
 

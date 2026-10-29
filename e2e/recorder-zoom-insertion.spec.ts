@@ -1,8 +1,13 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./support/test";
 
-import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+import {
+  clickEditRecording,
+  editRecordingButton,
+  expectTakeCut,
+  fixDecodedLength,
+} from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";
 
 /**
@@ -46,6 +51,12 @@ test.use({
   },
 });
 
+/**
+ * The take's decoded length, in seconds (`fixDecodedLength`). Recording runs
+ * past it, so the take is the same length in every run.
+ */
+const TAKE_SECONDS = 1;
+
 async function recordShortTake(page: Page) {
   await page.getByRole("button", { name: "Record", exact: true }).click();
   const stop = page.getByRole("button", {
@@ -53,8 +64,10 @@ async function recordShortTake(page: Page) {
     exact: true,
   });
   await expect(stop).toBeVisible();
-  await page.waitForTimeout(1200);
+  // Well past TAKE_SECONDS, so the cut, not the wall clock, sets the length.
+  await page.waitForTimeout(TAKE_SECONDS * 1000 + 500);
   await stop.click();
+  await expectTakeCut(page);
 }
 
 const valueOf = async (handle: Locator) =>
@@ -85,6 +98,7 @@ for (const width of [320, 390]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 740 });
+    await fixDecodedLength(page, TAKE_SECONDS);
     await seedToRecorder(page);
     await recordShortTake(page);
     await clickEditRecording(page);

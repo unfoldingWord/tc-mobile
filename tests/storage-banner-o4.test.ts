@@ -15,7 +15,14 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
-import { areaRules } from "./o4-area-css";
+import {
+  areaScope,
+  areaSelector,
+  declsFor,
+  fileRules,
+  scopeDeclarations,
+  scopeRules,
+} from "./o4-area-css";
 import { one, render } from "./render";
 
 /**
@@ -426,29 +433,22 @@ describe("Books shows the banner where the #247 line was", () => {
 });
 
 describe("o4/books.css, the banner rules", () => {
-  const rules = areaRules("books").filter((r) =>
+  const books = areaScope("books");
+  const rules = scopeRules(books).filter((r) =>
     r.selectors.some((s) => s.includes(".o4-storage"))
   );
+  /** The one rule for `.o4-storage…` `sel`, read a property at a time. */
+  const decls = (sel: string) => declsFor(books, areaSelector("books", sel));
 
   it("exist (a floor, so the checks below cannot loop over nothing)", () => {
     expect(rules.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("all carry the :root prefix that holds their specificity (o4/index.css)", () => {
-    for (const rule of rules)
-      for (const selector of rule.selectors)
-        expect(selector.startsWith(":root ")).toBe(true);
-  });
-
   it("paint the warn wash and warn ink, per state 17", () => {
-    const decls = (sel: string) =>
-      rules.find((r) => r.selectors.includes(`:root ${sel}`))?.decls;
-    expect(decls(".o4-storage")?.get("background")).toBe("var(--s-warn-quiet)");
-    expect(decls(".o4-storage-title")?.get("color")).toBe("var(--s-warn-text)");
-    expect(decls(".o4-storage-icon")?.get("color")).toBe("var(--s-warn-text)");
-    expect(decls(".o4-storage-share")?.get("background")).toBe(
-      "var(--s-voice)"
-    );
+    expect(decls(".o4-storage").get("background")).toBe("var(--s-warn-quiet)");
+    expect(decls(".o4-storage-title").get("color")).toBe("var(--s-warn-text)");
+    expect(decls(".o4-storage-icon").get("color")).toBe("var(--s-warn-text)");
+    expect(decls(".o4-storage-share").get("background")).toBe("var(--s-voice)");
   });
 
   // #1046 item 1: George on #1037 found this describe block checked a rule
@@ -464,33 +464,37 @@ describe("o4/books.css, the banner rules", () => {
       ".o4-storage-why",
       ".o4-storage-words",
     ])
-      expect(selectors).toContain(`:root ${cls}`);
+      expect(selectors).toContain(areaSelector("books", cls));
   });
 
   it("pins the workbench's 72/84/19/15 px sizes (state 17)", () => {
-    const decls = (sel: string) =>
-      rules.find((r) => r.selectors.includes(`:root ${sel}`))?.decls;
-    expect(decls(".o4-storage-icon")?.get("width")).toBe("72px");
-    expect(decls(".o4-storage-icon")?.get("height")).toBe("72px");
-    expect(decls(".o4-storage-share")?.get("width")).toBe("84px");
-    expect(decls(".o4-storage-share")?.get("height")).toBe("84px");
+    expect(decls(".o4-storage-icon").get("width")).toBe("72px");
+    expect(decls(".o4-storage-icon").get("height")).toBe("72px");
+    expect(decls(".o4-storage-share").get("width")).toBe("84px");
+    expect(decls(".o4-storage-share").get("height")).toBe("84px");
     // The title and why-line sizes are structural primitives, not literal
     // px (AGENTS.md: "component and app-level rules read [structural
     // primitives] directly"), so the rule cited here is the token name; a
     // sibling suite, `tests/o4-primitives.test.ts`, pins `--p-text-19` and
     // `--p-text-15` themselves to 19px/15px.
-    expect(decls(".o4-storage-title")?.get("font-size")).toBe(
+    expect(decls(".o4-storage-title").get("font-size")).toBe(
       "var(--p-text-19)"
     );
-    expect(decls(".o4-storage-why")?.get("font-size")).toBe("var(--p-text-15)");
+    expect(decls(".o4-storage-why").get("font-size")).toBe("var(--p-text-15)");
   });
 
   it("take colour only from layer-2 roles", () => {
     const colourProps =
       /^(color|background|background-color|border|border-color)$/;
     let seen = 0;
-    for (const rule of rules)
-      for (const [prop, value] of rule.decls) {
+    // Every banner rule in the whole file, nested blocks included, not only
+    // the layer's own rules.
+    const everywhere = fileRules("books").filter((r) =>
+      r.selectors.some((s) => s.includes(".o4-storage"))
+    );
+    expect(everywhere.length).toBeGreaterThanOrEqual(rules.length);
+    for (const rule of everywhere)
+      for (const [prop, value] of scopeDeclarations(rule.body)) {
         if (!colourProps.test(prop)) continue;
         seen += 1;
         expect(value).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|--p-/i);

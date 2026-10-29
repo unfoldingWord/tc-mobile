@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 /**
  * Headless-Chromium smoke for the browser-only paths (#251), assertions 2-4.
@@ -425,7 +425,7 @@ test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => 
     //
     // The `message` is not decoration. `captureWorkerSnapshot` is gated on
     // `import.meta.env.PROD`, which Vite derives from NODE_ENV — so a shell that
-    // exports `NODE_ENV=development` (this dev container does) compiles the whole
+    // exports `NODE_ENV=development` compiles the whole
     // snapshot path out of the build and this poll times out on a bare "expected
     // true, received false" that says nothing about why. CI sets no NODE_ENV, so
     // it does not hit this; a laptop can.

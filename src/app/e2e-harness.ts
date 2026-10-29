@@ -373,7 +373,7 @@ async function encodeWithHeartbeat(
  * for the wrong reason.
  *
  * A `setTimeout(0)` was not enough to guarantee that (George R1 P3-6). One
- * second of PCM encodes in a few milliseconds on this container — the heartbeat
+ * second of PCM encodes in a few milliseconds — the heartbeat
  * spec needs ten MINUTES of audio to get a measurable encode — so `done` could
  * beat the abort and the spec would flake on `aborted`. The wait is now the
  * event itself rather than a guess at how long it takes: `encodeMp3` TRANSFERS

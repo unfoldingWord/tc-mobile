@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/app/App";
-import { claimPhoneCheckRun } from "@/hooks/use-phone-check";
+import { claimPhoneCheckRun } from "@/hooks/phone-check-run-slot";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, SegmentId } from "@/types/domain";
 

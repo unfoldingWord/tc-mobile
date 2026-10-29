@@ -10,11 +10,14 @@ import {
   templateRef,
   titleFor,
 } from "@/lib/templates/validate";
+import type { TemplatePackage } from "@/types/template";
 import { stripComments } from "./support";
 
 /**
  * Template package v0 (#1465): one source-agnostic shape and its validator.
- * The fixtures are small and invented; none of them is a real dataset. The
+ * The fixtures are small and invented, except `bible-passages-TIT.json`, a
+ * pinned copy of a real dataset package that
+ * `tests/template-bible-passages-fixture.test.ts` covers. The
  * fourth source (`hymnal-min.json`) exists to show that a source nobody wrote
  * code for goes through the same validator unchanged.
  */
@@ -50,6 +53,20 @@ function refusal(input: unknown): TemplateValidationError {
     return cause as TemplateValidationError;
   }
   throw new Error("expected the package to be refused");
+}
+
+/** The title-table reader's refusal, which must be a `TemplateValidationError`. */
+function tableRefusal(
+  input: unknown,
+  pkg: TemplatePackage
+): TemplateValidationError {
+  try {
+    parseTemplateTitleTable(input, pkg);
+  } catch (cause) {
+    expect(cause).toBeInstanceOf(TemplateValidationError);
+    return cause as TemplateValidationError;
+  }
+  throw new Error("expected the title table to be refused");
 }
 
 const SOURCES = [
@@ -101,6 +118,8 @@ describe("parseTemplatePackage: fixtures", () => {
       ...SOURCES,
       "pair-v0.1.0.json",
       "pair-v0.2.0.json",
+      // Covered in tests/template-bible-passages-fixture.test.ts (#1450).
+      "bible-passages-TIT.json",
     ]);
     expect(packages.filter((f) => !covered.has(f))).toEqual([]);
   });
@@ -332,19 +351,27 @@ describe("title tables", () => {
     expect(titleFor(table, "chapters", "songs")).toBe("Cantos");
   });
 
+  // Each refusal is a TemplateValidationError whose `field` is asserted, as
+  // the package refusals are, not a message matched by a regex (#1747).
+  it("refuses something that is not an object", () => {
+    for (const input of [null, 3, "x", [], undefined]) {
+      expect(tableRefusal(input, pkg).field).toBe("titleTable");
+    }
+  });
+
   it("refuses a table whose language is not in titleLanguages", () => {
     const input = { ...load("titles-collection-min.es.json"), language: "de" };
-    expect(() => parseTemplateTitleTable(input, pkg)).toThrow(/language/);
+    expect(tableRefusal(input, pkg).field).toBe("language");
   });
 
   it("refuses a table for another package or version", () => {
     const base = load("titles-collection-min.es.json");
-    expect(() =>
-      parseTemplateTitleTable({ ...base, packageId: "other" }, pkg)
-    ).toThrow(/packageId/);
-    expect(() =>
-      parseTemplateTitleTable({ ...base, version: "9.9.9" }, pkg)
-    ).toThrow(/version/);
+    expect(tableRefusal({ ...base, packageId: "other" }, pkg).field).toBe(
+      "packageId"
+    );
+    expect(tableRefusal({ ...base, version: "9.9.9" }, pkg).field).toBe(
+      "version"
+    );
   });
 
   it("refuses a title for a key the package does not have", () => {
@@ -352,9 +379,7 @@ describe("title tables", () => {
       ...load("titles-collection-min.es.json"),
       segments: { intro: "Introducción", ghost: "Boo" },
     };
-    expect(() => parseTemplateTitleTable(input, pkg)).toThrow(
-      /segments\.ghost/
-    );
+    expect(tableRefusal(input, pkg).field).toBe("segments.ghost");
   });
 
   it("refuses an empty title", () => {
@@ -362,9 +387,7 @@ describe("title tables", () => {
       ...load("titles-collection-min.es.json"),
       chapters: { songs: "" },
     };
-    expect(() => parseTemplateTitleTable(input, pkg)).toThrow(
-      /chapters\.songs/
-    );
+    expect(tableRefusal(input, pkg).field).toBe("chapters.songs");
   });
 
   it("answers null for a missing key, a null key and an inherited name", () => {
@@ -434,4 +457,126 @@ describe("source-agnostic by construction", () => {
       expect(raw).not.toMatch(/["'`][^"'`\n]*(\/\/|\/\*)[^"'`\n]*["'`]/);
     }
   });
+});
+
+describe("hardening from the #1507 review (#1747)", () => {
+  // Item 1: a string is stored exactly as it was checked, so a padded one is
+  // refused rather than checked trimmed and stored padded.
+  it.each([
+    [["source", "url"], " https://example.org/obs", "source.url"],
+    [["source", "url"], "https://example.org/obs\n", "source.url"],
+    [["attribution"], "Fixture credit ", "attribution"],
+    [["title", "en"], "\tStories", "title.en"],
+    [["source", "revision"], " r1", "source.revision"],
+  ] as const)("refuses a padded string at %j", (steps, value, field) => {
+    const err = refusal(broken("obs-min.json", [steps, value]));
+    expect(err.field).toBe(field);
+  });
+
+  it("refuses a padded title in a title table", () => {
+    const pkg = parseTemplatePackage(load("collection-min.json"));
+    const input = {
+      ...load("titles-collection-min.es.json"),
+      chapters: { songs: "Cantos " },
+    };
+    expect(tableRefusal(input, pkg).field).toBe("chapters.songs");
+  });
+
+  // Item 2: every refusal is a TemplateValidationError, even for a value
+  // JSON.stringify cannot print.
+  it("refuses a bigint or cyclic formatVersion with a TemplateValidationError", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    for (const value of [1n, cyclic]) {
+      const err = refusal(broken("obs-min.json", [["formatVersion"], value]));
+      expect(err.field).toBe("formatVersion");
+    }
+  });
+
+  // Item 3: a fixture comes back whole, not just with the right tag and a
+  // chapter count.
+  it.each(SOURCES)("%s comes back deep-equal to the file", (name) => {
+    expect(parseTemplatePackage(load(name))).toStrictEqual(load(name));
+  });
+
+  it("the code compares no kind or code with a source's own value", () => {
+    // The denylist above names sources in words; this reads the fixtures'
+    // own ids, kinds and codes, so `kind === "hymnal"` is caught too.
+    const ROOT = path.join(__dirname, "..");
+    const values = new Set<string>();
+    const packages = readdirSync(FIXTURES).filter(
+      (n) => n.endsWith(".json") && !n.startsWith("titles-")
+    );
+    for (const f of packages) {
+      const p = parseTemplatePackage(load(f));
+      values.add(p.id).add(p.kind);
+      if (p.bookCode !== null) values.add(p.bookCode);
+      for (const s of p.chapters.flatMap((c) => c.segments)) {
+        if (s.reference !== null) values.add(s.reference.book);
+      }
+    }
+    expect(values.size).toBeGreaterThan(5);
+    // A comparison with a string literal, either way round, or a switch. A
+    // null check (`r["bookCode"] === null`) is a shape check, not a branch.
+    const branch =
+      /\b(?:kind|bookCode|book)\b["'\]]*\s*[!=]==?\s*["'`]|["'`]\s*[!=]==?\s*[\w.[\]"']*\b(?:kind|bookCode|book)\b|switch\s*\(\s*[\w.[\]"']*\b(?:kind|bookCode|book)\b/;
+    for (const f of [
+      "src/types/template.ts",
+      "src/lib/templates/validate.ts",
+    ]) {
+      const code = stripComments(readFileSync(path.join(ROOT, f), "utf8"));
+      const literals = [...code.matchAll(/"([^"\n]*)"|'([^'\n]*)'/g)].map(
+        (m) => m[1] ?? m[2] ?? ""
+      );
+      expect({ f, hits: literals.filter((l) => values.has(l)) }).toEqual({
+        f,
+        hits: [],
+      });
+      expect({ f, hit: branch.exec(code)?.[0] ?? null }).toEqual({
+        f,
+        hit: null,
+      });
+    }
+  });
+
+  // Item 4: chapter keys and segment keys are separate namespaces. Both stay
+  // unique within their own set; one may equal the other.
+  it("a chapter key may equal a segment key, and each title scope reads its own", () => {
+    const pkg = parseTemplatePackage(
+      broken("pair-v0.1.0.json", [["chapters", 0, "key"], "s1"])
+    );
+    expect(pkg.chapters[0]?.key).toBe("s1");
+    expect(pkg.chapters[0]?.segments[0]?.key).toBe("s1");
+    const table = parseTemplateTitleTable(
+      {
+        packageId: pkg.id,
+        version: pkg.version,
+        language: "en",
+        chapters: { s1: "Chapter" },
+        segments: { s1: "Segment" },
+      },
+      pkg
+    );
+    expect(titleFor(table, "chapters", "s1")).toBe("Chapter");
+    expect(titleFor(table, "segments", "s1")).toBe("Segment");
+  });
+
+  // Item 5: the data licence is one of the ids the app knows (`LicenceId`).
+  it.each(["CC-BY-SA-4.0", "CC-BY-4.0", "CC0-1.0", "all-rights-reserved"])(
+    "accepts dataLicence %s",
+    (id) => {
+      const pkg = parseTemplatePackage(
+        broken("obs-min.json", [["dataLicence"], id])
+      );
+      expect(pkg.dataLicence).toBe(id);
+    }
+  );
+
+  it.each(["CC BY-SA 4.0", "MIT", "cc-by-sa-4.0", "toString", "constructor"])(
+    "refuses dataLicence %s",
+    (value) => {
+      const err = refusal(broken("obs-min.json", [["dataLicence"], value]));
+      expect(err.field).toBe("dataLicence");
+    }
+  );
 });

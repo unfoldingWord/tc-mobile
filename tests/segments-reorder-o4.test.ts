@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,8 +10,9 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
+import { areaScope, areaSelector, declsFor } from "./o4-area-css";
 import { render } from "./render";
-import { restingErase, stripCssComments } from "./support";
+import { restingErase } from "./support";
 
 /**
  * Press-and-hold reorder on the Segments list (#953 PR2a), wired: the real
@@ -515,55 +513,36 @@ describe("the row's hold area", () => {
 });
 
 describe("o4/segments.css: the lift (§3, §4)", () => {
-  const code = stripCssComments(
-    readFileSync(
-      path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
-      "utf8"
-    )
+  // Read by block (`areaScope`): the layer's own rules, and the ONE
+  // reduced-motion block inside it, which throws if a second appears rather
+  // than reading whichever comes first.
+  const main = areaScope("segments");
+  const motion = areaScope(
+    "segments",
+    "@media (prefers-reduced-motion: reduce)"
   );
-  const reduced = code.indexOf("@media (prefers-reduced-motion: reduce)");
-  const main = code.slice(0, reduced === -1 ? code.length : reduced);
-  const motion = reduced === -1 ? "" : code.slice(reduced);
-  function decls(source: string, selector: string): string[] {
-    const hits = [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) =>
-      m[1]!
-        .split(",")
-        .map((s) => s.trim().replace(/\s+/g, " "))
-        .includes(selector)
-    );
-    expect(hits, selector).toHaveLength(1);
-    return hits[0]![2]!
-      .split(";")
-      .map((d) => d.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-  }
-  const O4 = ":root";
+  const sel = (selector: string) => areaSelector("segments", selector);
 
   it("lifts the row at scale 1.03 on z 8 and slides the neighbours over 160 ms", () => {
-    expect(
-      decls(
-        main,
-        `${O4} .segments-list[data-reordering] > .segments-item--lifted`
-      )
-    ).toEqual(
-      expect.arrayContaining([
-        "z-index: 8",
-        "transform: translateY(var(--reorder-y, 0px)) scale(1.03)",
-        "transition: none",
-      ])
+    const lifted = declsFor(
+      main,
+      sel(".segments-list[data-reordering] > .segments-item--lifted")
     );
-    expect(decls(main, `${O4} .segments-list[data-reordering] > li`)).toEqual(
-      expect.arrayContaining([
-        "transform: translateY(var(--reorder-y, 0px))",
-        "transition: transform 160ms ease",
-      ])
+    expect(lifted.get("z-index")).toBe("8");
+    expect(lifted.get("transform")).toBe(
+      "translateY(var(--reorder-y, 0px)) scale(1.03)"
     );
+    expect(lifted.get("transition")).toBe("none");
+    const item = declsFor(main, sel(".segments-list[data-reordering] > li"));
+    expect(item.get("transform")).toBe("translateY(var(--reorder-y, 0px))");
+    expect(item.get("transition")).toBe("transform 160ms ease");
   });
 
   it("drops the slide under reduced motion", () => {
-    expect(reduced).toBeGreaterThan(0);
     expect(
-      decls(motion, `${O4} .segments-list[data-reordering] > li`)
-    ).toContain("transition: none");
+      declsFor(motion, sel(".segments-list[data-reordering] > li")).get(
+        "transition"
+      )
+    ).toBe("none");
   });
 });

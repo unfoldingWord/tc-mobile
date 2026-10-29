@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 /**
  * The O4 name sheet's Confirm commits under Apple WebKit's focus rule (#1099).

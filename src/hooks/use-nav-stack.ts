@@ -994,9 +994,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           // Issued only against the COMMITTED close. `requestClose` resolved
           // true after `onRecorderClosed` ran, but React's commit for that
           // update is a scheduler task of its own, and this landing can run
-          // ahead of it — observed in Chromium when the close awaited an
-          // IndexedDB write (George round 2 on #1300; the e2e "held cut"
-          // case logged exactly that). A Back issued then would land on a
+          // ahead of it — when the close awaits an IndexedDB write, for one
+          // (George round 2 on #1300). A Back issued then would land on a
           // `screenRef` still reading "recorder", route as a second
           // commit-close and strand a re-arm entry (invariant 2). So when
           // the recorder is still the committed screen, the second level is

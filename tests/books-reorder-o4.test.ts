@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +9,8 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
-import { stripCssComments } from "./support";
+import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { declarationValue } from "./support";
 
 /**
  * Press-and-hold reorder of CHAPTERS on the Books screen (#953 PR2b), wired:
@@ -477,70 +475,49 @@ describe("the hold area's markers", () => {
 });
 
 describe("o4/books.css: the lift (§3, §4)", () => {
-  const code = stripCssComments(
-    readFileSync(
-      path.resolve(import.meta.dirname, "../src/app/styles/o4/books.css"),
-      "utf8"
-    )
-  );
-  const reduced = code.indexOf("@media (prefers-reduced-motion: reduce)");
-  const main = code.slice(0, reduced === -1 ? code.length : reduced);
-  const motion = reduced === -1 ? "" : code.slice(reduced);
-  function decls(source: string, selector: string): string[] {
-    const hits = [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) =>
-      m[1]!
-        .split(",")
-        .map((s) => s.trim().replace(/\s+/g, " "))
-        .includes(selector)
-    );
-    expect(hits, selector).toHaveLength(1);
-    return hits[0]![2]!
-      .split(";")
-      .map((d) => d.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-  }
-  const O4 = ":root";
+  // Read by block (`areaScope`): the layer's own rules, and the ONE
+  // reduced-motion block inside it, which throws if a second appears rather
+  // than reading whichever comes first.
+  const main = areaScope("books");
+  const motion = areaScope("books", "@media (prefers-reduced-motion: reduce)");
+  const sel = (selector: string) => areaSelector("books", selector);
+  /** What `selector`'s rule in `scope` declares for `property`. */
+  const value = (scope: string, selector: string, property: string) =>
+    declarationValue(areaRule(scope, selector), property).replace(/\s+/g, " ");
 
   it("lifts the row at scale 1.03 on z 8 and slides the neighbours over 160 ms", () => {
-    expect(
-      decls(main, `${O4} .books-chapters[data-reordering] > .books-lifted`)
-    ).toEqual(
-      expect.arrayContaining([
-        "z-index: 8",
-        "transform: translateY(var(--reorder-y, 0px)) scale(1.03)",
-        "transition: none",
-      ])
+    const lifted = sel(".books-chapters[data-reordering] > .books-lifted");
+    expect(value(main, lifted, "z-index")).toBe("8");
+    expect(value(main, lifted, "transform")).toBe(
+      "translateY(var(--reorder-y, 0px)) scale(1.03)"
     );
-    expect(decls(main, `${O4} .books-chapters[data-reordering] > li`)).toEqual(
-      expect.arrayContaining([
-        "transform: translateY(var(--reorder-y, 0px))",
-        "transition: transform 160ms ease",
-      ])
+    expect(value(main, lifted, "transition")).toBe("none");
+    const item = sel(".books-chapters[data-reordering] > li");
+    expect(value(main, item, "transform")).toBe(
+      "translateY(var(--reorder-y, 0px))"
     );
+    expect(value(main, item, "transition")).toBe("transform 160ms ease");
   });
 
   it("gives a lifted chapter row the raised ground (§3)", () => {
-    expect(decls(main, `${O4} .books-lifted > .books-chapter`)).toContain(
-      "background: var(--s-raised)"
-    );
+    expect(
+      value(main, sel(".books-lifted > .books-chapter"), "background")
+    ).toBe("var(--s-raised)");
   });
 
   it("casts the lift shadow from o4/segments.css's one rule, on the item rather than the guided button", () => {
-    const segments = stripCssComments(
-      readFileSync(
-        path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
-        "utf8"
+    expect(
+      value(
+        areaScope("segments"),
+        areaSelector("segments", ".books-lifted"),
+        "box-shadow"
       )
-    );
-    expect(decls(segments, `${O4} .books-lifted`)).toContain(
-      "box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38)"
-    );
+    ).toBe("0 14px 30px rgba(0, 0, 0, 0.38)");
   });
 
   it("drops the slide under reduced motion", () => {
-    expect(reduced).toBeGreaterThan(0);
     expect(
-      decls(motion, `${O4} .books-chapters[data-reordering] > li`)
-    ).toContain("transition: none");
+      value(motion, sel(".books-chapters[data-reordering] > li"), "transition")
+    ).toBe("none");
   });
 });

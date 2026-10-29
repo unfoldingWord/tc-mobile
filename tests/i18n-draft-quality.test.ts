@@ -369,7 +369,9 @@ describe("i18n draft quality gates (#1485)", () => {
   it("(c) holds the calibrated ratio exactly: 2.7 times English passes, a character more fails", () => {
     const en = "a".repeat(20);
     expect(lengthProblems("k", en, "a".repeat(54))).toEqual([]);
-    expect(lengthProblems("k", en, "a".repeat(55))).toHaveLength(1);
+    expect(lengthProblems("k", en, "a".repeat(55))).toEqual([
+      "k: 55 characters over a budget of 54",
+    ]);
   });
 
   it("(d) fails an invented placeholder and null-ish text", () => {

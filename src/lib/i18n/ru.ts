@@ -48,6 +48,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   templatesOpen: "Шаблоны",
   templatesTitle: "Шаблоны",
   templateLicenceLabel: (licence: string): string => `Лицензия: ${licence}`,
+  loadingTemplates: "Загружаются шаблоны.",
   settingsChapterNumbers: "Всегда показывать номера глав",
   settingsNormalizeOnFinished: "Выравнивать громкость при отметке «Готово»",
   booksEmpty: "Начните свою первую книгу",
@@ -251,6 +252,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   eraseSegment: "Сбросить фрагмент и начать заново",
   rerecord: "Сбросить и записать снова",
   segmentMenu: (n: number): string => `Другие действия для фрагмента ${n}`,
+  chapterRowMenu: (n: number): string => `Другие действия для главы ${n}`,
   reorderLifted: (n: number): string => `Перемещение фрагмента ${n}.`,
   reorderMoved: (from: number, to: number): string =>
     `Фрагмент ${from} теперь фрагмент ${to}.`,

@@ -437,13 +437,13 @@ export function useFailureLogShare(): UseFailureLogShare {
     }
     // ── The drop, checked again HERE, synchronously, before anything leaves ──
     //
-    // Frank R8 P2, and it was reproduced rather than reasoned about: the passive
-    // effect below is the only thing that dropped a stale payload, and a tap in
-    // the window between React committing the write's render and that effect
-    // running beat it. In headless Chromium, with the failure and the tap in one
-    // task, the armed one-entry File went to `navigator.share` and the drop ran
-    // afterwards — the report left the phone missing the very failure it was
-    // sent about, which is exactly the mismatch the generation exists to catch.
+    // Frank R8 P2: the passive effect below is the only thing that dropped a
+    // stale payload, and a tap in the window between React committing the
+    // write's render and that effect running can beat it. With the failure and
+    // the tap in one task, the armed one-entry File goes to `navigator.share`
+    // and the drop runs afterwards — the report leaves the phone missing the
+    // very failure it was sent about, which is exactly the mismatch the
+    // generation exists to catch.
     //
     // `getLogGeneration()` and not the `generation` this render captured: the
     // captured value is the one that is provably a version behind in that window.

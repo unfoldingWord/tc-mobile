@@ -300,8 +300,7 @@ describe("#159 L-6 — dynamic import and new URL(..., import.meta.url)", () => 
   });
 
   it("leaves lib/obs/catalog.ts's own dynamic import() of data/ legal", () => {
-    // The one dynamic import src/lib makes today (grep -rn "import(" src/lib
-    // confirms it). This is the case the selectors above must NOT catch.
+    // The one dynamic import src/lib makes today. This is the case the selectors above must NOT catch.
     const messages = lintStdin(
       'export async function f() { return (await import("@/data/obs-catalog.json")).default; }\n',
       "src/lib/audio/probe.ts"

@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
@@ -12,16 +9,23 @@ import { strings } from "@/lib/strings";
 import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
+import {
+  areaScope,
+  areaSelector,
+  declsFor,
+  fileRules,
+  readAreaCss,
+  scopeDeclarations,
+  scopeRules,
+} from "./o4-area-css";
 import { one, render } from "./render";
-import { stripCssComments } from "./support";
 
 /**
  * The O4 Segments screen (#944, epic #936): states 05 (empty chapter), 06
  * (chapter with segments) and G10 (adding a segment).
  *
  * What this file does NOT cover: the cascade. It proves the markup the row
- * emits and that `o4/segments.css` holds `:root`-prefixed rules with the
- * issue's values;
+ * emits and that `o4/segments.css` holds rules with the issue's values;
  * whether those rules win on a real page is a browser question, and nothing
  * here has been run on a phone.
  */
@@ -233,48 +237,24 @@ describe("O4 chapter head (#944)", () => {
 });
 
 describe("o4/segments.css (#944)", () => {
-  const source = readFileSync(
-    path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
-    "utf8"
-  );
-  // Comments stripped first: a header that names a selector or a primitive
-  // must not satisfy, or trip, a check below (AGENTS.md, the share-scrim trap).
-  const code = stripCssComments(source);
-  const layerOpen = code.indexOf("@layer components {");
-  const body = code.slice(layerOpen + "@layer components {".length);
-  const rules = [...body.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
-    selectors: m[1]!
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-    declarations: m[2]!
-      .split(";")
-      .map((d) => d.replace(/\s+/g, " ").trim())
-      .filter(Boolean),
-  }));
-
-  /** The declarations of the one rule whose selector list includes `sel`. */
-  function block(sel: string): string[] {
-    const hits = rules.filter((r) => r.selectors.includes(sel));
-    expect(hits, sel).toHaveLength(1);
-    return hits[0]!.declarations;
-  }
+  // Read by selector, comments stripped first: a header that names a
+  // selector or a primitive must not satisfy, or trip, a check below
+  // (AGENTS.md, the share-scrim trap).
+  const layer = areaScope("segments");
+  const sel = (selector: string) => areaSelector("segments", selector);
+  /** What `selector`'s one rule in the layer declares for `property`. */
+  const value = (selector: string, property: string) =>
+    declsFor(layer, sel(selector)).get(property);
 
   it("holds its rules inside the components layer", () => {
-    expect(layerOpen).toBeGreaterThanOrEqual(0);
-    expect(rules.length).toBeGreaterThanOrEqual(10);
-  });
-
-  it("prefixes every selector with :root (o4/index.css's specificity hold)", () => {
-    for (const rule of rules) {
-      for (const sel of rule.selectors) {
-        expect(sel.startsWith(":root "), sel).toBe(true);
-      }
-    }
+    expect(scopeRules(layer).length).toBeGreaterThanOrEqual(10);
   });
 
   it("reads colour only through layer-2 roles", () => {
-    const values = rules.flatMap((r) => r.declarations);
+    // Every declaration in the file, every block included.
+    const values = scopeDeclarations(readAreaCss("segments")).map(
+      ([property, v]) => `${property}: ${v}`
+    );
     expect(values.length).toBeGreaterThanOrEqual(30);
     for (const decl of values) {
       expect(decl, decl).not.toMatch(/var\(--p-/);
@@ -283,52 +263,43 @@ describe("o4/segments.css (#944)", () => {
   });
 
   it("carries the issue's geometry and roles", () => {
-    const O4 = ":root";
-    const row = block(`${O4} .row`);
-    expect(row).toEqual(
-      expect.arrayContaining(["min-height: 90px", "border-radius: 16px"])
-    );
+    const geometry: [string, Record<string, string>][] = [
+      [".row", { "min-height": "90px", "border-radius": "16px" }],
+      [".row:not(.row--finished)", { "border-color": "var(--s-card-edge)" }],
+      [".row--selected", { outline: "2px solid var(--s-guide)" }],
+      [
+        ".row-badge",
+        { width: "44px", height: "44px", background: "var(--s-well)" },
+      ],
+      [
+        ".row--finished .row-badge",
+        { background: "var(--s-done-quiet)", color: "var(--s-done-text)" },
+      ],
+      [".row .control--play", { width: "72px", height: "72px" }],
+      [".row .control--record", { width: "72px", height: "72px" }],
+      // An unrecorded row's mic (#1217) takes the same 72px circle as Play
+      // (#1233 item 19).
+      [".row .control--mic", { width: "72px", height: "72px" }],
+      [".row-title", { height: "22px" }],
+      [".segments-title", { "font-size": "22px", "font-weight": "800" }],
+    ];
+    for (const [selector, declared] of geometry)
+      for (const [property, v] of Object.entries(declared))
+        expect(value(selector, property), `${selector} ${property}`).toBe(v);
     // The `--s-surface` ground stays layer 3's: an O4 background on `.row`
-    // would out-specify the finished row's wash (#81).
-    expect(row.some((d) => d.startsWith("background"))).toBe(false);
-    expect(block(`${O4} .row:not(.row--finished)`)).toContain(
-      "border-color: var(--s-card-edge)"
+    // would out-specify the finished row's wash (#81) — in the layer or in any
+    // block nested in the file, so every `.row` rule is read, not only the
+    // layer's own.
+    const rowRules = fileRules("segments").filter((r) =>
+      r.selectors.includes(sel(".row"))
     );
-    expect(block(`${O4} .row--selected`)).toContain(
-      "outline: 2px solid var(--s-guide)"
-    );
-    expect(block(`${O4} .row-badge`)).toEqual(
-      expect.arrayContaining([
-        "width: 44px",
-        "height: 44px",
-        "background: var(--s-well)",
-      ])
-    );
-    expect(block(`${O4} .row--finished .row-badge`)).toEqual(
-      expect.arrayContaining([
-        "background: var(--s-done-quiet)",
-        "color: var(--s-done-text)",
-      ])
-    );
-    expect(block(`${O4} .row .control--play`)).toEqual(
-      expect.arrayContaining(["width: 72px", "height: 72px"])
-    );
-    expect(block(`${O4} .row .control--record`)).toEqual(
-      expect.arrayContaining(["width: 72px", "height: 72px"])
-    );
-    // An unrecorded row's mic (#1217) takes the same 72px circle as Play
-    // (#1233 item 19).
-    expect(block(`${O4} .row .control--mic`)).toEqual(
-      expect.arrayContaining(["width: 72px", "height: 72px"])
-    );
-    expect(block(`${O4} .row-title`)).toEqual(
-      expect.arrayContaining(["height: 22px"])
-    );
-    expect(block(`${O4} .segments-title`)).toEqual(
-      expect.arrayContaining(["font-size: 22px", "font-weight: 800"])
-    );
-    expect(block(`${O4} .scrub--playing canvas`).join(";")).toMatch(
-      /(^|;)mask-image: linear-gradient\( ?to right, black var\(--row-played\), var\(--s-voice-dim\) var\(--row-played\) ?\)/
+    expect(rowRules.length).toBeGreaterThanOrEqual(1);
+    for (const { body } of rowRules) {
+      const props = scopeDeclarations(body).map(([property]) => property);
+      expect(props.some((p) => p.startsWith("background"))).toBe(false);
+    }
+    expect(value(".scrub--playing canvas", "mask-image")).toMatch(
+      /^linear-gradient\( ?to right, black var\(--row-played\), var\(--s-voice-dim\) var\(--row-played\) ?\)/
     );
   });
 });

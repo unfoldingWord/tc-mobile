@@ -18,6 +18,7 @@
  */
 
 import { clipFromRecord } from "./clips";
+import { clipBytes, withClipBytes } from "./clip-bytes";
 import { getDb } from "./db";
 import type { Clip, ClipMeta } from "@/types/audio";
 import type { Segment, SegmentId, Take, TakeId } from "@/types/domain";
@@ -31,7 +32,7 @@ import type { Segment, SegmentId, Take, TakeId } from "@/types/domain";
  * existed. A function whose whole purpose is to give one authoritative answer
  * cannot be assembled from four unsynchronised reads.
  */
-const WALK_STORES = ["segments", "takes", "clipMeta", "clipData"] as const;
+const WALK_STORES = withClipBytes(["segments", "takes", "clipMeta"]);
 
 /**
  * What the walk found.
@@ -105,9 +106,14 @@ async function walk<C>(
   }
 
   const meta = await tx.objectStore("clipMeta").get(take.clipId);
-  const data = withSamples
-    ? await tx.objectStore("clipData").get(take.clipId)
-    : await tx.objectStore("clipData").getKey(take.clipId);
+  let data: ArrayBuffer | undefined;
+  let present: boolean;
+  if (withSamples) {
+    data = await clipBytes.read(tx, take.clipId);
+    present = data !== undefined;
+  } else {
+    present = await clipBytes.has(tx, take.clipId);
+  }
   await tx.done;
 
   // Both halves, always. Every clip write (`saveTake`, `commitTranscode`) and
@@ -115,12 +121,10 @@ async function walk<C>(
   // without samples is not reachable through this repository — but `resolved`
   // is the word the export path trusts, and a guarantee resting on an argument
   // rather than a check is the kind this module exists to stop.
-  if (!meta || data === undefined) {
+  if (!meta || !present) {
     return { kind: "clip-missing", segment, take };
   }
-  const clip = (
-    withSamples ? clipFromRecord(meta, data as ArrayBuffer) : meta
-  ) as C;
+  const clip = (data ? clipFromRecord(meta, data) : meta) as C;
   return { kind: "resolved", segment, take, clip };
 }
 

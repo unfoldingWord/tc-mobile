@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -9,7 +11,6 @@ import {
 import { BooksScreen } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
 import { DatabasePanel } from "@/components/database-panel";
-import { PhoneCheckScreen } from "@/components/phone-check-screen";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SaveFailed } from "@/components/save-failed";
 import {
@@ -22,7 +23,7 @@ import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
-import { isPhoneCheckRunning } from "@/hooks/use-phone-check";
+import { isPhoneCheckRunning } from "@/hooks/phone-check-run-slot";
 import { usePhoneLocale } from "@/hooks/phone-locale";
 import { useSaveTake } from "@/hooks/use-save-take";
 import { setUnsavedAudioCheck } from "@/hooks/stale-chunk-reload";
@@ -36,6 +37,20 @@ import type { RecorderEntry } from "@/types/view";
 
 /** The phone check's system-Back layer (#1014 item 5). */
 const PHONE_CHECK_LAYER_ID = "phone-check";
+
+// The tester-only phone check loads on demand (#1747), so the screen, its
+// probes and its report stay out of the chunk every launch parses
+// (`tests/dist-phone-check-chunk.test.ts`). The `import()` goes through Vite's
+// preload helper like every other lazy chunk, so a chunk missing after an
+// update reaches `hooks/stale-chunk-reload.ts` (`tests/dist-stale-chunk.test.ts`);
+// the rejection itself is a render throw for the `ErrorBoundary` above `App`.
+// Nothing about the check is read at launch except the run slot, which is in
+// `hooks/phone-check-run-slot.ts` for that reason.
+const PhoneCheckScreen = lazy(() =>
+  import("@/components/phone-check-screen").then((m) => ({
+    default: m.PhoneCheckScreen,
+  }))
+);
 
 /**
  * The pivot app: Books → Segments → Recorder (a sheet over Segments).
@@ -494,7 +509,9 @@ export function App() {
   if (phoneCheckOpen) {
     return (
       <main className="app-shell mx-auto h-full max-w-md">
-        <PhoneCheckScreen onClose={closePhoneCheck} />
+        <Suspense fallback={null}>
+          <PhoneCheckScreen onClose={closePhoneCheck} />
+        </Suspense>
       </main>
     );
   }
