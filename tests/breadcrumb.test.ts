@@ -221,7 +221,7 @@ describe("the trail and the heading are read from the table", () => {
     //
     //     strings.chapterHeading(null, view.chapterNumber)
     //
-    // typechecks, passes all 21 cases, and puts the default name back on the
+    // typechecks, is caught by no other case, and puts the default name back on the
     // sheet — a renamed chapter reads correctly on Segments and wrongly one tap
     // deeper, which is the original bug verbatim. The storage test proves the
     // VIEW carries the name; only this proves the HEADER reads it.

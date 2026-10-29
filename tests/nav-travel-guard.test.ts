@@ -214,8 +214,7 @@ describe("settleOutstanding — the any-issuer landing settle (#494 item 2)", ()
    * adapter absorbs rather than re-issues. The suppress/absorb decision is
    * adapter DOM code that NO headless spec reaches: the double-Back case in
    * e2e/back-navigation.spec.ts exercises the goBack refusal and the
-   * guard-CLEAR settle, not this else-branch (mutation: dropping the absorb
-   * else-branch leaves all four e2e cases green). The absorb stays review-only
+   * guard-CLEAR settle, not this else-branch. The absorb stays review-only
    * and a device item, not covered by this Node row. This
    * REPLACES an earlier "drain"
    * row that asserted a settle-then-re-issue sequence the adapter no longer

@@ -98,10 +98,7 @@ describe("RecorderMenu", () => {
     // #590/#1080 first shipped Delete segment as a row/tile in THIS menu; the
     // requirements owner's 2026-09-26 decision on #1104 pulled it back out:
     // "the menu inside the segment editor (recorder) shows Erase only.
-    // Delete (removing the whole segment) belongs to the chapter view." A red
-    // run of this exact case (against the pre-#1104 tree) failed on both
-    // modes, which is what proves this file is asserting the removal rather
-    // than an accident of never having built it.
+    // Delete (removing the whole segment) belongs to the chapter view."
     show();
     expect(named(strings.deleteSegment)).toBeUndefined();
     show({ mode: "edit" });

@@ -17,8 +17,8 @@ import { bodyAfter, matchingBraceClose, stripComments } from "./support";
  *      the recorder or `ended` from a track), and carries the `error`
  *      feed's native `DOMException` as its `cause` (George R1 P3). Whether
  *      the mic is actually still hot on that arm is NOT observable there
- *      and the row does not claim it. The `"inactive"` arm — the
- *      device-verified #59 path — gets no row.
+ *      and the row does not claim it. The `"inactive"` arm — the #59
+ *      recovery path — gets no row.
  *   2. `start()` itself (use-recorder.ts) reports ONE row under
  *      `"recorder-start-resume-timeout"` when `raceAudioResume()` resolved
  *      `true` (its 1000 ms timer won) AND the start is still the current
@@ -121,7 +121,7 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
     const inactiveClose = matchingBraceClose(handlerBody, inactiveOpen);
     expect(inactiveClose).toBeGreaterThan(inactiveOpen);
 
-    // The inactive block — the device-verified #59 path — carries no report
+    // The inactive block — the #59 recovery path — carries no report
     // at all. Moving the call inside it fails here directly.
     expect(handlerBody.slice(inactiveOpen, inactiveClose + 1)).not.toMatch(
       /reportFailure\s*\(/

@@ -102,8 +102,7 @@ function lintProbe(name: string, source: string): string[] {
     };
     // execFileSync's OWN timeout kill does NOT set `.killed` on the thrown
     // error (that flag belongs to the async ChildProcess API) — it sets
-    // `.code === "ETIMEDOUT"` and `.signal`, confirmed against Node's actual
-    // behaviour, not assumed from the async API's shape.
+    // `.code === "ETIMEDOUT"` and `.signal`.
     if (failure.code === "ETIMEDOUT") {
       throw new Error(
         `ESLint did not finish linting probe "${name}" within ` +

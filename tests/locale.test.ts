@@ -20,9 +20,9 @@ import { bodyAfter, stripComments, stripHtmlComments } from "./support";
  * what it rewrites, what it leaves alone, and the two states it refuses. The
  * WIRING block covers the part a table cannot see: that the document and the
  * manifest actually read the module, rather than carrying their own copy of
- * `en` that happens to agree with it today. The wiring half is the one that
- * was red before this change: `index.html` carried no `dir` at all and
- * `vite.config.ts`'s manifest had a literal `lang: "en"`.
+ * `en` that happens to agree with it today. The wiring half exists because
+ * `index.html` once carried no `dir` at all and `vite.config.ts`'s manifest
+ * had a literal `lang: "en"`.
  *
  * The build config is read with its comments stripped (#822): the manifest
  * block carries a comment right above `lang`, and a pin over raw text would

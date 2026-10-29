@@ -16,20 +16,15 @@ import { resolveDistGate } from "./dist-gate";
  * (2026-09-26, "Raise floor to 15.4 (Recommended)"), because the O4 CSS
  * (`src/app/styles/o4/{menus,sheets,motion}.css`) uses the `:has()` selector,
  * which needs Safari/iOS 15.4 (caniuse-lite's `data/features/css-has.js`) and
- * has no fallback `build.target`/`build.cssTarget` can provide (verified
- * directly: LightningCSS passes `:has()` through unchanged and warning-free
- * at any target — there is no downlevel transform for a CSS selector the way
- * there is for JS syntax). See `docs/native/system-requirements.md` for the
+ * has no fallback `build.target`/`build.cssTarget` can provide (there is no
+ * downlevel transform for a CSS selector the way there is for JS syntax). See `docs/native/system-requirements.md` for the
  * full resolution; this file only pins the resulting `build.target` value.
  *
  * Vite 8's own default, when `build.target` is unset, is the string
  * `"baseline-widely-available"` — a rolling snapshot bumped on every Vite
  * major release (`ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET` in
- * `node_modules/vite/dist/node/chunks/node.js`) that, at the vite@8.3.1
- * measured for #1017 (a dated observation; the installed version moves with
- * every patch bump and nothing here follows it), resolved to `["chrome111","edge111","firefox114","safari16.4",
- * "ios16.4"]` — still above 15.4. Nothing in `vite.config.ts` overrode it
- * before PR #1051.
+ * `node_modules/vite/dist/node/chunks/node.js`), so the floor cannot rest on
+ * it. Nothing in `vite.config.ts` overrode it before PR #1051.
  *
  * This file has two independent halves:
  *
@@ -44,9 +39,8 @@ import { resolveDistGate } from "./dist-gate";
  *      research (see the #1017 comment and `docs/native/system-requirements.md`)
  *      found needs newer than 15.4: `@babel/compat-data`'s
  *      `data/plugins.json` (`transform-class-static-block`) puts it at
- *      `ios: "16.4"`. It is not used anywhere in `src/` today (checked by
- *      grep), so this is a regression guard against a future dependency or
- *      change introducing one silently, not a fix for something broken now.
+ *      `ios: "16.4"`. This is a regression guard against a future
+ *      dependency or change introducing one silently.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
