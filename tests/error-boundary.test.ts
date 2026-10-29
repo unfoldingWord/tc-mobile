@@ -18,8 +18,7 @@ import { strings } from "@/lib/strings";
  * is the same static render, so it does not close that gap: catching a render
  * throw takes a client mount (`tests/interactive-mount.ts`), and this suite
  * does not do one. **That a render throw reaches this
- * boundary at all is verified in a browser, by hand, and is recorded on the
- * PR — not here.** The same goes for the focus move: `renderToStaticMarkup`
+ * boundary at all is not asserted here.** The same goes for the focus move: `renderToStaticMarkup`
  * never attaches a ref, so `focusOnMount` is markup here and behaviour only in
  * a browser.
  *
@@ -124,8 +123,7 @@ describe("ErrorBoundary", () => {
     // And it is quiet in this state, so it cannot be mistaken for the action to
     // take first. (Its ARMED paint — `default`, after tap 1 — needs a renderer
     // this suite does not have: `renderToStaticMarkup` runs the hook once, in
-    // `idle`, and never runs the effect. That half is verified by reading, and
-    // said so rather than implied.)
+    // `idle`, and never runs the effect. That half is not asserted here.)
     expect(html).toContain("control--quiet");
     // Focus goes to the labelled heading, so the icon-only button carries no
     // autofocus of its own.
@@ -137,7 +135,7 @@ describe("ErrorBoundary", () => {
     // the busy Notice under it (George R4 P2-3) — needs a click and a pending
     // flush, which needs a renderer this suite does not have AND a render throw
     // the e2e harness cannot produce without adding product surface to force
-    // one. Verified by reading, and said so rather than implied.
+    // one. That half is not asserted here.
     expect(html).not.toContain("aria-busy");
     expect(html).not.toContain(strings.appReloading);
 

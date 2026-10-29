@@ -31,12 +31,12 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * could also satisfy.
  *
  * WHAT THIS DOES NOT COVER. #559's own four targets (`.recorder-sheet`,
- * `.menu-panel`, `.confirm-panel`, `.name-input`) have no dedicated pinning
- * test anywhere in this repo as of this PR — a pre-existing gap, not
- * introduced or widened here, and out of #563's scope to backfill. Nor does
+ * `.menu-panel`, `.confirm-panel`, `.name-input`) are not pinned here, and
+ * backfilling them was out of #563's scope. Nor does
  * this run a cascade: whether these rules win in the built bundle and
  * whether the platform actually suppresses selection are phone checks
- * (#564's shape), not a source read — no phone has run this PR (#245).
+ * (#564's shape), not a source read, and nothing here has run on a phone
+ * (#245).
  */
 const COMPONENTS_PATH = path.resolve(
   import.meta.dirname,

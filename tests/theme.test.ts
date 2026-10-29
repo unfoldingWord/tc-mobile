@@ -301,8 +301,7 @@ describe("the light theme is reachable (#171)", () => {
     //          comment. Were the sweep raw-only, commenting out the only
     //          `useLiveTheme()` in `live-scope.tsx` would leave it on the list
     //          and the gate would stay green while the canvas silently stopped
-    //          repainting on a token change. Observed, not reasoned: that exact
-    //          mutation passed 21/21 before this second assertion existed.
+    //          repainting on a token change.
     //
     // Both directions are a false GREEN, which is why neither reading is
     // enough on its own and why this is two assertions rather than a choice.

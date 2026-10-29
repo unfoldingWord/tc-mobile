@@ -437,9 +437,8 @@ describe("formatFailureLog", () => {
  * justification — the trap AGENTS.md records, where the natural repair is to
  * weaken the pattern until it can no longer catch a real leak.
  *
- * Stated precisely, because a mutation contradicted the easy version: deleting
- * the strip does NOT turn this suite red today. That docblock quote happens to
- * wrap across two lines, so the ` * ` between `.message :` and `String(` keeps
+ * Stated precisely, because the easy version is wrong: that docblock quote
+ * happens to wrap across two lines, so the ` * ` between `.message :` and `String(` keeps
  * the pattern from spanning it. The protection is real but currently
  * accidental in that one file, which is not something to rely on — a reflowed
  * comment or a one-line one would restore the false hit. So the stripper is
@@ -488,9 +487,8 @@ describe("errorMessage — the copies, counted by assertion", () => {
   });
 
   it("finds the expression in exactly one file — the one that exports it", () => {
-    // Deliberately NOT "nowhere but an exempted path". The first run of this
-    // gate failed on `failure-text.ts` itself, which is correct: the
-    // expression still exists once, as this module's implementation. Naming
+    // Deliberately NOT "nowhere but an exempted path": the expression
+    // still exists once, as this module's implementation. Naming
     // that file as an exception would have left the gate unable to notice if
     // the implementation were deleted. Pinning the SET says both halves at
     // once — the canonical one is present, and it is the only one.

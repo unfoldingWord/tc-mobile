@@ -583,11 +583,10 @@ describe("playSamples — resume bound (#469)", () => {
  * when one is written, that it carries the REAL captured cause rather than a
  * synthetic stand-in whenever a real cause exists.
  *
- * Rows 3 and 5 are Frank round-3's two open P2s, reproduced as regression
- * rows: both were RED against `8488de3` (the head Frank reviewed) before
- * this round's `finally`-based single exit — row 3 with zero `reportFailure`
- * calls where one was expected, row 5 with a `reportFailure` call whose
- * reported cause did not match the real captured rejection.
+ * Rows 3 and 5 are Frank round-3's two open P2s, as regression rows: row 3
+ * catches zero `reportFailure` calls where one is expected, row 5 a
+ * `reportFailure` call whose reported cause does not match the real
+ * captured rejection.
  */
 describe("playSamples — single-exit row accounting (dev lead pick, option A, 2026-09-19)", () => {
   const samples = new Int16Array([1, 2, 3, 4]);

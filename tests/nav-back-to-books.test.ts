@@ -330,10 +330,10 @@ describe("goBackToBooks from the recorder (#1275)", () => {
   });
 
   describe("a consuming landing that runs before React has committed the close (George round 2 on #1300)", () => {
-    // Observed in Chromium (the e2e "held cut" case): the consuming back()'s
-    // popstate ran ahead of the scheduler task that commits
+    // The e2e "held cut" case is the shape: the consuming back()'s popstate
+    // can run ahead of the scheduler task that commits
     // `onRecorderClosed`'s state, so at that landing the committed screen
-    // still read "recorder". The harness manufactures that state directly:
+    // still reads "recorder". The harness manufactures that state directly:
     // the sheet resolves true without the screen changing, and the commit
     // that closes it comes later.
     it("waits for that commit, then issues the second level from it", async () => {

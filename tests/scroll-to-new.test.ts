@@ -35,8 +35,8 @@ let seen: ScrollToNew<string>[] = [];
  * The mock below sits on `HTMLElement.prototype`, so every row shares it. A
  * call count and an options argument therefore cannot tell "scrolled row b"
  * from "scrolled row a": a hook that ignored the armed id and scrolled some
- * other row that happens to exist passed all thirteen cases here (George
- * round 1, finding 1 — observed, not reasoned). Capturing `this.id` is what
+ * other row that happens to exist could not be told apart (George round 1,
+ * finding 1). Capturing `this.id` is what
  * makes the which-row mutation die, and that mutation is the one this file
  * exists to kill.
  */
@@ -55,7 +55,7 @@ function Harness({
    * Books' `"button"` and Segments' `".row-open"` — and the fixture below
    * resolves them to DIFFERENT nodes on purpose. Without that, a `controlIn`
    * that ignored its argument and hardcoded `"button"` would answer correctly
-   * for every case in this file (George round 3, finding 1 — observed).
+   * for every case in this file (George round 3, finding 1).
    */
   selector?: string;
 }) {
@@ -233,7 +233,7 @@ describe("arm, then reveal", () => {
     //
     // The sibling case below covers the scroll half. This is the focus half,
     // and it was the one nothing pinned (George round 3, finding 1, second
-    // gap — a re-arm-on-null mutation passed all thirteen cases).
+    // gap: nothing caught a re-arm-on-null mutation).
     const bare = document.createElement("li");
     bare.id = "bare";
     host.appendChild(bare);
