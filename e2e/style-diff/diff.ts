@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { TOLERATED, type ToleratedState } from "./tolerated.ts";
+
 /**
  * The comparator half of the computed-style diff tool (#954).
  *
@@ -9,7 +11,9 @@ import { pathToFileURL } from "node:url";
  * differs, state by state, element by element and property by property.
  * `loadRun` reads a capture directory written by `e2e/style-diff/capture.ts`,
  * `formatReport` renders a report as the Markdown a PR comment carries, and
- * the CLI at the foot ties the three together (`npm run style:diff`).
+ * the CLI at the foot ties the three together (`npm run style:diff`). The
+ * CLI always applies `TOLERATED` from `./tolerated.ts`, the named states that
+ * may stay unsettled; `diffRuns` applies none unless it is given a list.
  *
  * The unit tests are `tests/style-diff.test.ts`. How a lane runs the whole
  * tool is in `playwright.style-diff.config.ts`.
@@ -70,6 +74,8 @@ export interface DiffOptions {
   renameProps?: Record<string, string>;
   /** Properties left out of the comparison by name. The report prints them. */
   ignoreProps?: string[];
+  /** States allowed to stay unsettled (`./tolerated.ts`). Default: none. */
+  tolerated?: readonly ToleratedState[];
 }
 
 export interface Difference {
@@ -95,6 +101,20 @@ export interface DiffReport {
    * reported here, as its own kind, and not as differences.
    */
   unsettled: { run: "A" | "B"; state: string; animations: string[] }[];
+  /** Unsettled states the tolerated list names: reported, not failed. */
+  tolerated: { run: "A" | "B"; state: string; reason: string }[];
+  /**
+   * Listed states a run captured settled. One listed as `settles: "never"`
+   * fails the verdict; one listed as "sometimes" is only printed.
+   */
+  staleTolerances: {
+    run: "A" | "B";
+    state: string;
+    reason: string;
+    settles: ToleratedState["settles"];
+  }[];
+  /** Listed states a run did not capture at all: a dead entry. Fails. */
+  toleratedNotCaptured: { run: "A" | "B"; state: string }[];
   captureErrors: { A: number; B: number };
   elementsCompared: number;
   valuesCompared: number;
@@ -175,16 +195,49 @@ function statesOf(test: CaptureTest): [string, CaptureState][] {
 
 const isFailed = (test: CaptureTest) => test.status !== test.expectedStatus;
 
-const unsettledIn = (run: "A" | "B", r: CaptureRun) =>
-  r.tests.flatMap((t) =>
-    statesOf(t)
-      .filter(([, s]) => (s.unsettled ?? []).length > 0)
-      .map(([key, s]) => ({
+const isUnsettled = (s: CaptureState) => (s.unsettled ?? []).length > 0;
+
+type SettleReport = Pick<
+  DiffReport,
+  "unsettled" | "tolerated" | "staleTolerances" | "toleratedNotCaptured"
+>;
+
+/**
+ * One run's unsettled states, split by the tolerated list, and what the list
+ * says about that run: the listed states it captured settled, and the listed
+ * states it did not capture at all.
+ */
+function settleOf(
+  run: "A" | "B",
+  states: ReadonlyMap<string, CaptureState>,
+  list: readonly ToleratedState[]
+): SettleReport {
+  const listed = new Map(list.map((t) => [`${t.test} | ${t.state}`, t]));
+  const out: SettleReport = {
+    unsettled: [],
+    tolerated: [],
+    staleTolerances: [],
+    toleratedNotCaptured: [],
+  };
+  for (const [state, s] of states) {
+    if (!isUnsettled(s)) continue;
+    const entry = listed.get(state);
+    if (entry) out.tolerated.push({ run, state, reason: entry.reason });
+    else out.unsettled.push({ run, state, animations: s.unsettled ?? [] });
+  }
+  for (const [state, entry] of listed) {
+    const s = states.get(state);
+    if (s === undefined) out.toleratedNotCaptured.push({ run, state });
+    else if (!isUnsettled(s))
+      out.staleTolerances.push({
         run,
-        state: stateId(t, key),
-        animations: s.unsettled ?? [],
-      }))
-  );
+        state,
+        reason: entry.reason,
+        settles: entry.settles,
+      });
+  }
+  return out;
+}
 
 const sides = ["top", "right", "bottom", "left"] as const;
 const corners = [
@@ -259,12 +312,15 @@ export function diffRuns(
 ): DiffReport {
   const renamed = options.renameProps ?? {};
   const ignored = new Set(options.ignoreProps ?? []);
+  const list = options.tolerated ?? [];
   const statesA = new Map<string, CaptureState>();
   const statesB = new Map<string, CaptureState>();
   for (const t of a.tests)
     for (const [key, s] of statesOf(t)) statesA.set(stateId(t, key), s);
   for (const t of b.tests)
     for (const [key, s] of statesOf(t)) statesB.set(stateId(t, key), s);
+  const settleA = settleOf("A", statesA, list);
+  const settleB = settleOf("B", statesB, list);
 
   const report: DiffReport = {
     statesInA: statesA.size,
@@ -272,7 +328,13 @@ export function diffRuns(
     statesCompared: 0,
     statesOnlyInA: [...statesA.keys()].filter((k) => !statesB.has(k)).sort(),
     statesOnlyInB: [...statesB.keys()].filter((k) => !statesA.has(k)).sort(),
-    unsettled: [...unsettledIn("A", a), ...unsettledIn("B", b)],
+    unsettled: [...settleA.unsettled, ...settleB.unsettled],
+    tolerated: [...settleA.tolerated, ...settleB.tolerated],
+    staleTolerances: [...settleA.staleTolerances, ...settleB.staleTolerances],
+    toleratedNotCaptured: [
+      ...settleA.toleratedNotCaptured,
+      ...settleB.toleratedNotCaptured,
+    ],
     failedTests: [
       ...a.tests
         .filter(isFailed)
@@ -352,8 +414,7 @@ export function diffRuns(
     if (!sb) continue;
     // Reported in `unsettled` instead: a mid-transition read is not evidence
     // of a style either way.
-    if ((sa.unsettled ?? []).length > 0 || (sb.unsettled ?? []).length > 0)
-      continue;
+    if (isUnsettled(sa) || isUnsettled(sb)) continue;
     report.statesCompared += 1;
     const paths = new Set([
       ...Object.keys(sa.elements),
@@ -461,6 +522,13 @@ export function verdict(report: DiffReport): string[] {
       `states that did not settle (A ${unsettledCount(report, "A")} / B ${unsettledCount(report, "B")})`
     );
   }
+  const stale = report.staleTolerances.filter((s) => s.settles === "never");
+  if (stale.length > 0) reasons.push(`stale tolerances: ${stale.length}`);
+  if (report.toleratedNotCaptured.length > 0) {
+    reasons.push(
+      `tolerated states not captured: ${report.toleratedNotCaptured.length}`
+    );
+  }
   if (report.captureErrors.A > 0 || report.captureErrors.B > 0) {
     reasons.push(
       `capture errors (A ${report.captureErrors.A} / B ${report.captureErrors.B})`
@@ -476,6 +544,23 @@ export function verdict(report: DiffReport): string[] {
 
 const unsettledCount = (report: DiffReport, run: "A" | "B") =>
   report.unsettled.filter((u) => u.run === run).length;
+
+const toleratedCount = (report: DiffReport, run: "A" | "B") =>
+  report.tolerated.filter((t) => t.run === run).length;
+
+/**
+ * One line per listed state a run captured settled, printed under the verdict
+ * whether or not it fails, so the list cannot go stale unseen.
+ */
+export function staleLines(report: DiffReport): string[] {
+  return report.staleTolerances.map(
+    (s) =>
+      `Stale tolerance in ${s.run}: \`${s.state}\` settled — ` +
+      (s.settles === "never"
+        ? `fails: listed as never settling (${s.reason})`
+        : `warning: listed as settling in some runs (${s.reason})`)
+  );
+}
 
 /** The verdict as one line, the first the CLI prints. */
 export function verdictLine(reasons: readonly string[]): string {
@@ -503,6 +588,7 @@ export function formatReport(
     "",
     verdictLine(verdict(report)),
     "",
+    ...staleLines(report).flatMap((l) => [l, ""]),
     "| Figure | Value |",
     "| --- | --- |",
     `| States recorded (A / B) | ${report.statesInA} / ${report.statesInB} |`,
@@ -512,6 +598,9 @@ export function formatReport(
     `| Tests failed (A / B) | ${report.failedTests.filter((f) => f.run === "A").length} / ${report.failedTests.filter((f) => f.run === "B").length} |`,
     `| Capture errors (A / B) | ${report.captureErrors.A} / ${report.captureErrors.B} |`,
     `| States that did not settle (A / B) | ${unsettledCount(report, "A")} / ${unsettledCount(report, "B")} |`,
+    `| Tolerated unsettled states (A / B) | ${toleratedCount(report, "A")} / ${toleratedCount(report, "B")} |`,
+    `| Stale tolerances (failing / warning) | ${report.staleTolerances.filter((s) => s.settles === "never").length} / ${report.staleTolerances.filter((s) => s.settles !== "never").length} |`,
+    `| Tolerated states not captured | ${report.toleratedNotCaptured.length} |`,
     `| Elements compared | ${report.elementsCompared} |`,
     `| Values compared | ${report.valuesCompared} |`,
     `| Values left out as animated | ${report.animatedExcluded} |`,
@@ -545,10 +634,14 @@ export function formatReport(
     detail.push(
       `- state did not settle in ${u.run}: \`${u.state}\` — still running: ${u.animations.map((x) => `\`${x}\``).join(", ")}`
     );
+  for (const s of report.toleratedNotCaptured)
+    detail.push(`- tolerated state not captured in ${s.run}: \`${s.state}\``);
+  for (const t of report.tolerated)
+    detail.push(`- tolerated in ${t.run}: \`${t.state}\` — ${t.reason}`);
   if (detail.length > 0) {
     const shown = detail.slice(0, cap);
     lines.push(
-      "<details><summary>Differences, unmatched states, failed tests and unsettled states" +
+      "<details><summary>Differences, unmatched states, failed tests, unsettled and tolerated states" +
         (detail.length > cap
           ? ` (first ${cap} of ${detail.length} lines)`
           : ` (${detail.length} lines)`) +
@@ -639,7 +732,10 @@ const isMain =
   import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const args = parseArgs(process.argv.slice(2));
-  const report = diffRuns(loadRun(args.a), loadRun(args.b), args.options);
+  const report = diffRuns(loadRun(args.a), loadRun(args.b), {
+    ...args.options,
+    tolerated: TOLERATED,
+  });
   const reasons = verdict(report);
   process.stdout.write(
     args.json

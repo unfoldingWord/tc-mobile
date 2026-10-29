@@ -23,6 +23,7 @@ import {
   type CaptureTest,
   type StyleMap,
 } from "../e2e/style-diff/diff";
+import { TOLERATED, type ToleratedState } from "../e2e/style-diff/tolerated";
 
 /**
  * The comparator of the computed-style diff tool (#954), in plain Node.
@@ -595,6 +596,127 @@ describe("an unsettled state", () => {
     expect(report.unsettled).toEqual([]);
     expect(report.statesCompared).toBe(1);
     expect(verdict(report)).toEqual([]);
+  });
+});
+
+describe("the tolerated list", () => {
+  const ID = "shipped | books › a card";
+  const PLAY = "012 p0 locator.click";
+  const SPRING = "006 p0 mouse.up";
+  const list: ToleratedState[] = [
+    { test: ID, state: PLAY, reason: "audio plays", settles: "never" },
+    {
+      test: ID,
+      state: SPRING,
+      reason: "springs back at the bound",
+      settles: "sometimes",
+    },
+  ];
+  const still = { unsettled: ["DOM still changing"] };
+  /** One test holding `keys`, each unsettled when it is in `moving`. */
+  const capture = (keys: string[], moving: string[]) =>
+    run({ h: card }, [
+      test(
+        keys.map((k) =>
+          state(k, { [BOOKS_CARD]: "h" }, moving.includes(k) ? still : {})
+        )
+      ),
+    ]);
+  const all = [PLAY, SPRING, "020 p0 end"];
+
+  it("tolerates a listed state that did not settle, and keeps the verdict clean", () => {
+    const a = capture(all, [PLAY, SPRING]);
+    const report = diffRuns(a, a, { tolerated: list });
+    expect(report.unsettled).toEqual([]);
+    expect(report.tolerated.map((t) => [t.run, t.state])).toEqual([
+      ["A", `${ID} | ${PLAY}`],
+      ["A", `${ID} | ${SPRING}`],
+      ["B", `${ID} | ${PLAY}`],
+      ["B", `${ID} | ${SPRING}`],
+    ]);
+    expect(report.statesCompared).toBe(1);
+    expect(verdict(report)).toEqual([]);
+    const text = formatReport(report, { baseLabel: "a", headLabel: "b" });
+    expect(text).toContain("| Tolerated unsettled states (A / B) | 2 / 2 |");
+    expect(text).toContain(
+      `- tolerated in A: \`${ID} | ${PLAY}\` — audio plays`
+    );
+  });
+
+  it("still fails on an unsettled state the list does not name", () => {
+    const a = capture(all, [PLAY, "020 p0 end"]);
+    const report = diffRuns(a, capture(all, [PLAY]), { tolerated: list });
+    expect(report.unsettled.map((u) => [u.run, u.state])).toEqual([
+      ["A", `${ID} | 020 p0 end`],
+    ]);
+    expect(verdict(report)).toEqual(["states that did not settle (A 1 / B 0)"]);
+  });
+
+  it("fails on a listed never-settling state that settled, and prints a stale tolerance line", () => {
+    const report = diffRuns(capture(all, [PLAY]), capture(all, []), {
+      tolerated: list,
+    });
+    expect(
+      report.staleTolerances.map((s) => [s.run, s.state, s.settles])
+    ).toEqual([
+      ["A", `${ID} | ${SPRING}`, "sometimes"],
+      ["B", `${ID} | ${PLAY}`, "never"],
+      ["B", `${ID} | ${SPRING}`, "sometimes"],
+    ]);
+    expect(verdict(report)).toEqual(["stale tolerances: 1"]);
+    const text = formatReport(report, { baseLabel: "a", headLabel: "b" });
+    expect(text).toContain(
+      `Stale tolerance in B: \`${ID} | ${PLAY}\` settled — fails: listed as never settling (audio plays)`
+    );
+  });
+
+  it("only warns when a listed sometimes-settling state settled", () => {
+    const a = capture(all, [PLAY]);
+    const report = diffRuns(a, a, { tolerated: list });
+    expect(verdict(report)).toEqual([]);
+    const text = formatReport(report, { baseLabel: "a", headLabel: "b" });
+    expect(text).toContain(
+      `Stale tolerance in A: \`${ID} | ${SPRING}\` settled — warning: listed as settling in some runs (springs back at the bound)`
+    );
+    expect(text.split("\n")[2]).toBe("Verdict: clean");
+  });
+
+  it("fails on a listed state a run did not capture", () => {
+    const report = diffRuns(
+      capture(all, [PLAY, SPRING]),
+      capture([PLAY, "020 p0 end"], [PLAY]),
+      { tolerated: list }
+    );
+    expect(report.toleratedNotCaptured).toEqual([
+      { run: "B", state: `${ID} | ${SPRING}` },
+    ]);
+    expect(verdict(report)).toContain("tolerated states not captured: 1");
+    expect(formatReport(report, { baseLabel: "a", headLabel: "b" })).toContain(
+      `- tolerated state not captured in B: \`${ID} | ${SPRING}\``
+    );
+  });
+
+  it("matches a listed state a run collapsed into the one before it", () => {
+    const b = run({ h: card }, [
+      test([state("005 p0 mouse.move", { [BOOKS_CARD]: "h" })], {
+        sameAs: { [SPRING]: "005 p0 mouse.move" },
+      }),
+    ]);
+    const report = diffRuns(b, b, {
+      tolerated: [list[1] as ToleratedState],
+    });
+    expect(report.toleratedNotCaptured).toEqual([]);
+    expect(verdict(report)).toEqual([]);
+  });
+
+  it("holds unique, well-formed entries, each with a reason", () => {
+    const ids = TOLERATED.map((t) => `${t.test} | ${t.state}`);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const t of TOLERATED) {
+      expect(t.state).toMatch(/^\d{3} p\d+ \S+$/);
+      expect(t.test).toMatch(/^[\w-]+ \| \S/);
+      expect(t.reason.trim()).not.toBe("");
+    }
   });
 });
 
