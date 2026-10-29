@@ -189,8 +189,8 @@ test("(d) a rapid double Back from the recorder issues exactly one history.back(
   // is 2, on EVERY run, independent of whether Chromium coalesces the two
   // traversals. (The end-index assertion further down is a landing check, not
   // the mutation kill: its red state depends on the browser coalescing the two
-  // same-task traversals into one 2→0 jump, which reproduces on repeated runs
-  // rather than on every single one — George R1 P2-1. The count assertion
+  // same-task traversals into one 2→0 jump, which is not guaranteed on every
+  // run — George R1 P2-1. The count assertion
   // removes that dependence.)
   const backCalls = await page.evaluate(() => {
     const original = window.history.back.bind(window.history);

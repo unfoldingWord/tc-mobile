@@ -304,9 +304,9 @@ export function overlayDismissal(
  * "forward" against the freshly-reset baseline, `popAction` returns
  * `trap-forward`, and the resulting cancelling `history.back()` burns a
  * SECOND physical level the user never asked to skip. This was a pre-existing
- * hazard on `develop` (confirmed against its `App.tsx` mount and popstate
- * effects), not something #452's redesign introduces; PR2's adapter mount
- * effect (`hooks/use-nav-stack.ts`) is where the fix below is wired.
+ * hazard on `develop`, not something #452's redesign introduces; PR2's
+ * adapter mount effect (`hooks/use-nav-stack.ts`) is where the fix below is
+ * wired.
  *
  * `resumeNavIndex` is the fix's pure half: given whatever `window.history.state`
  * already holds on mount, decide what `navIndex`/`nextIndex` should ADOPT

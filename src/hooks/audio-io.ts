@@ -104,8 +104,8 @@ export function hasAudioSessionApi(): boolean {
  *
  * History, so the next reader knows which half is which. #1251's pick
  * stopped both writes inside the shell, leaving the launch category as the
- * only protection against the ring/silent switch. #1518 is a field report
- * from the 1.1 TestFlight build: recording works, Play is silent. The likely
+ * only protection against the ring/silent switch. #1518 reports recording
+ * working and Play silent in the shell. The likely
  * cause, inferred from the code and from #1100 (the same symptom before
  * #1116 added the `"playback"` declaration) and not run on a device, is that
  * WebKit puts a Web-Audio-only page with no declared type on a category that
@@ -458,16 +458,15 @@ function applyPendingIdleDrop(): void {
  * a fresh one inside its own gesture (#1251). Two callers:
  *
  *   - **The page becoming hidden** (`use-audio-session.ts`, on
- *     `visibilitychange` to hidden and on `pagehide`). The DRI reproduced
- *     #1251 twice in the TestFlight app by locking the phone and unlocking
- *     it: afterwards the context reported `"running"` while Play and the
- *     meter were dead. Dropping the context on the way out means the page
- *     comes back with no context at all, and the first tap after the return
- *     builds one. That this avoids the stuck state is an inference; it has
+ *     `visibilitychange` to hidden and on `pagehide`). In #1251, locking the
+ *     phone and unlocking it leaves the context reporting `"running"` while
+ *     Play and the meter are dead. Dropping the context on the way out means
+ *     the page comes back with no context at all, and the first tap after the
+ *     return builds one. That this avoids the stuck state is an inference; it has
  *     not been run on a device.
  *   - **An audio device coming or going** (`devicechange`, see
- *     `ensureRouteWatch`). The reporting tester saw it happen when headphones
- *     connected; the DRI could not trigger it that way. Secondary.
+ *     `ensureRouteWatch`). #1251 names headphones connecting as a second
+ *     trigger. Secondary.
  *
  * When nothing uses the context it is dropped at once. During a take (the
  * level tap's hold), a decode, or a sounding Play it is only marked, and
@@ -609,9 +608,9 @@ export const RESUME_TIMEOUT_MS = 1_000;
  * How long a context that reports `"running"` may go without its
  * `currentTime` moving before this module calls its clock stopped (#1251).
  *
- * On the DRI's iPhone at rc.2, inside the TestFlight app, a Play turned the
- * button to Pause with a frozen playhead and no sound, and the live meter
- * then drew nothing, with no failure row. The playhead is
+ * In #1251, a Play turns the button to Pause with a frozen playhead and no
+ * sound, and the live meter then draws nothing, with no failure row. The
+ * playhead is
  * `offset + (ctx.currentTime - startedAt)`, so the inference is a context
  * that reads `"running"` while its clock does not advance. No gate before
  * this one looked at the clock.
@@ -691,10 +690,9 @@ function watchClock(
  * (#1251), and drop the context if it is stopped, so the first Play after
  * the return builds a fresh one inside its tap instead of failing.
  *
- * The DRI reproduced #1251 by resuming the TestFlight app from the lock
- * screen: afterwards the context reported `"running"` and Play and the meter
- * were dead. The drop on hide (`dropSharedContextWhenIdle`) normally leaves
- * no context to check here; this covers a return where that drop had to
+ * In #1251, a return from the lock screen leaves the context reporting
+ * `"running"` while Play and the meter are dead. The drop on hide
+ * (`dropSharedContextWhenIdle`) normally leaves no context to check here; this covers a return where that drop had to
  * wait, or was never asked for. Without it, the first Play after such a
  * return is the one that finds out, waits out `CLOCK_STALL_TIMEOUT_MS` and
  * fails; only the second press works. With it, a return that leaves the
