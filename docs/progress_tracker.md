@@ -11,6 +11,61 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-29 — Sprint 5 day 11: v1.2.2 promoted to staging, a provisional Titus template on web staging, a clean #954 self-compare, ADR 0013 proposed, 26 PRs merged
+
+One coordinator session in orchestrator mode, resumed from the 10-28 usage-limit stop. Every merge to develop met the standing rule: both bench lenses clean at the exact head and every check green, or a DRI pick at the cap. The merged list below uses the window from #1777's merge (2026-10-28T23:11Z) to 2026-10-29T20:06Z. Several of this session's notes and issue comments stamp its DRI picks "2026-10-30"; every pick below was made on 2026-10-29.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **#954, the states that can never settle:** "Named tolerated list (Recommended)" (https://github.com/unfoldingWord/tc-mobile/issues/954#issuecomment-6495213341).
+- **#1450 (Bible-book templates):** "Scope now, build later (Recommended)", then on the scope's questions: gate "Start test-only tasks now", O1 "Write once, never refresh (Recommended)", O10 "Wire it in with #1450 (Recommended)" (https://github.com/unfoldingWord/tc-mobile/issues/1450#issuecomment-6495872995).
+- **Titus timeline:** "Test build now, titles later (Recommended)" (https://github.com/unfoldingWord/tc-mobile/issues/1450#issuecomment-6499164094; the comment's own stamp says 10-30). Later, on showing a segment's verse range: "Wait for headings" (https://github.com/unfoldingWord/tc-mobile/issues/1450#issuecomment-6507329485).
+- **#1798 at the cap:** "Merge now; fix the guard before the variable (Recommended)".
+- **#1785 at the cap:** "One more round, with a stop rule (Recommended)". The stop rule fired in round 5 and it merged.
+- **#575:** "Leave round citations (Recommended)".
+- **Release:** "Prepare v1.2.2 now (Recommended)", the red team's F1 "Web staging only (Recommended)" and F2 "4th residual on #1473 (Recommended)", then the go/no-go "Go (Recommended)" (https://github.com/unfoldingWord/tc-mobile/pull/1803#issuecomment-6507023658).
+- **The dataset repo:** "Other session keeps BP" and "No, I merge BP". This session runs no lanes there.
+
+### Completed
+
+- **v1.2.2 release:**
+  - Cut at `CUT_SHA` `d54012e103fadb17f40dd720c8b492bb7c91ddf7` (#1802, v1.2.2). Develop merges were held from the cut until the promotion merged.
+  - Release red team on `f761cd59..d54012e1`: risk register 0 BLOCK, 2 FIX-BEFORE-PUBLISH (both picked, above), 19 NOTE. The claim check of #1802's body found 1 FALSE (the PR count: 48, not 47), corrected in #1803's body with the other findings (https://github.com/unfoldingWord/tc-mobile/pull/1803#issuecomment-6506453636).
+  - Promoted to staging by #1803, merged with a merge commit, `PROMO_SHA` `24b144d7c66e1af6bb24da4ac65a5239c7377440` (parents `f761cd59`, `d54012e1`).
+  - `npm run check:deploy`: `Deployed: version=1.2.2 sha=24b144d builtAt=2026-10-29T20:06:13.420Z` / `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.`
+  - Native lanes on `PROMO_SHA`: Play 40945854656 succeeded. TestFlight 40945854707 and APK 40945854843 are waiting on the DRI's signing approval.
+- **Provisional Titus template, web staging only:**
+  - The bake step (#1798, #1450 tasks 5–6), the guard that bakes a provisional package only on a named non-`main` branch (#1799, from #1797), and the picker's Bible-book row with its e2e test (#1800, task 7). #1791 (tasks 1–2) pinned the real Titus package in tests first.
+  - The DRI set `TC_BAKE_PROVISIONAL_TEMPLATES=1` on tc-mobile-staging as a build variable. That Worker serves static assets only and refuses runtime variables.
+  - Titus observed in the served staging chunk `assets/baked-template-packages-BGu52XHt.js` (`id:"bible-passages:TIT"`, `version:"0.0.0"`), read from the live origin (https://github.com/unfoldingWord/tc-mobile/issues/1797#issuecomment-6507130472). The variable has not been seen in a build log.
+  - The coordinator reports a fresh headless Chromium run with Playwright against staging listing the Templates rows `["Open Bible Stories","Titus"]`, and the DRI reports seeing Titus on their own device after the update from 1.2.1. Neither run's output is posted on an issue.
+  - Not in the native builds: no native lane sets the variable (F1).
+- **#954 (O4 fold):** the style-diff self-compare reads **clean**: R1 vs R2 and R1 vs R3 each 0 distinct differences, 0 unmatched states, 0 capture errors, only tolerated states unsettled (https://github.com/unfoldingWord/tc-mobile/pull/1805#issuecomment-6506524829). That came through PR 1 (#1778), PR 3 (#1776), 1b (#1779), 1c (#1781), the playhead fix (#1782), 1d (#1783), 1e's tolerated list (#1795), 1f (#1796), #1801 (#1780's settle decision) and #1805.
+- **ADR 0013** (how recordings live on the card) merged as Proposed (#1785). Its residuals are on #1473, the 4th added from the red team's F2 (https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6506384641).
+- **Merged to develop besides the release PRs (24):** #1776, #1778, #1779, #1781, #1782, #1783, #1784, #1785, #1786, #1787, #1788, #1789, #1790, #1791, #1792, #1793, #1794, #1795, #1796, #1798, #1799, #1800, #1801 and #1805.
+- **Issue close-out pass:** #91, #1674 and #169 closed. #1747 has a per-item status (https://github.com/unfoldingWord/tc-mobile/issues/1747#issuecomment-6495625519).
+
+### Not run
+
+- **Nothing merged this session was run on a phone by this session.** The DRI's Titus sighting above is the only device report, and it fills no device-pass row.
+- **v1.2.2 on the native lanes:** only Play has run.
+
+### Blockers (DRI only)
+
+- **Signing runs:** approve TestFlight 40945854707 and APK 40945854843.
+- Then the coordinator checks the APK's signer certificate and `version.json`, hands over the `tester-build-v1.2.2` pre-release command, and the DRI assigns the TestFlight tester group and posts the announcement (the draft is in #1803's body).
+
+### Next steps
+
+- **Titus headings** wait on the dataset's English title table (#1450 tasks 3–4).
+- **#954 PRs 4–10**, one at a time.
+- **#1804:** the v1.2.2 red-team follow-ups, including the sweep of this session's "2026-10-30" stamps.
+- **Sprint 5 ends 2026-11-01**, with housekeeping: every item still open in it moves explicitly to Sprint 6 or Backlog.
+
+---
+
 ## 2026-10-27 → 2026-10-28 — Sprint 5 days 9–10: v1.2.0 cut and promoted to staging, the v1.2.1 Play-lane hotfix, production moved to Sprint 6 end, 29 PRs merged
 
 One coordinator session in orchestrator mode. Every merge to develop met the standing rule: both bench lenses clean at the exact head and every check green. No device results reached this session.
