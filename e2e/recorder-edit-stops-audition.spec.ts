@@ -2,7 +2,11 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator, type Page } from "./support/test";
 
-import { clickEditRecording } from "./recorder-fixtures";
+import {
+  clickEditRecording,
+  expectTakeCut,
+  fixDecodedLength,
+} from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";
 
 /**
@@ -50,6 +54,13 @@ test.use({
 /** `CANONICAL_SAMPLE_RATE` in `src/lib/audio/format.ts`: the handles' unit. */
 const SAMPLES_PER_SECOND = 44_100;
 
+/**
+ * The take's decoded length, in seconds (`fixDecodedLength`). Recording runs
+ * past it, so the take is the same length in every run, and so is the number
+ * of presses `nudgeTo` makes.
+ */
+const TAKE_SECONDS = 5;
+
 /** How long the stop may take once the edit lands. */
 const STOP_WITHIN_MS = 1000;
 
@@ -82,6 +93,7 @@ async function nudgeTo(
  */
 async function auditionALongSpan(page: Page) {
   await page.setViewportSize({ width: 390, height: 740 });
+  await fixDecodedLength(page, TAKE_SECONDS);
   await seedToRecorder(page);
   await page.getByRole("button", { name: "Record", exact: true }).click();
   const stopRecording = page.getByRole("button", {
@@ -89,8 +101,10 @@ async function auditionALongSpan(page: Page) {
     exact: true,
   });
   await expect(stopRecording).toBeVisible();
-  await page.waitForTimeout(5000);
+  // Well past TAKE_SECONDS, so the cut, not the wall clock, sets the length.
+  await page.waitForTimeout(TAKE_SECONDS * 1000 + 500);
   await stopRecording.click();
+  await expectTakeCut(page);
   await clickEditRecording(page);
 
   const startHandle = page.getByLabel("Selection start", { exact: true });
