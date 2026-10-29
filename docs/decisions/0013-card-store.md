@@ -195,11 +195,21 @@ renumbered because v13 and v14 have shipped.
 ### 3. The commit protocol
 
 **Every write attempt owns its file.** An attempt writes
-`<clipId>.<n>.<pcm|mp3>`, with `<n>` fresh for that attempt, and the `clipMeta`
-location names that exact file. A save may be retried under the same `clipId`
-(`takes.ts:307-308`), so a shared name would let a failed retry overwrite or
-delete the bytes an earlier attempt committed; per-attempt names rule that out.
-A `clipId` is a `crypto.randomUUID()` (`clips.ts:14`), one safe path segment.
+`<clipId>.<n>.<pcm|mp3>`, and the `clipMeta` location names that exact file. A
+save may be retried under the same `clipId` (`takes.ts:307-308`), so a shared
+name would let a failed retry overwrite or delete the bytes an earlier attempt
+committed. So the name is exclusive:
+
+- `<n>` is one safe path segment, chosen so that `<name>` matches no file in
+  the card folder (`.part` or final) and no `clipMeta` location, in this launch
+  or any earlier one. A counter that restarts each launch does not meet this.
+- The `.part` is created exclusively (it fails if the name exists), and the
+  rename to `<name>` never replaces an existing file; if `<name>` exists, the
+  attempt fails as in row S1.
+- A `clipId` is a `crypto.randomUUID()` (`clips.ts:14`), one safe path segment.
+
+Test (commit-protocol child): "a retry in a later launch does not reuse a name
+a row already names".
 
 A save to the card, in order:
 
@@ -207,21 +217,28 @@ A save to the card, in order:
    it back, checks the length and CRC32 of what it read against the bytes it
    was given, and renames it to `<name>`. A final-named file is therefore never
    partial. That the sync and the read-back reach the card rather than a cache,
-   and that the rename holds after a kill or a power-off, is owed to P4.
+   and that the rename holds after a kill or a power-off, is owed to P4. If
+   any part of step 1 fails, the attempt deletes its own `.part` before it
+   returns, so a session's failed writes do not fill the card.
 2. **One strict IndexedDB transaction** writes the take row, the `clipMeta`
    row with its card location and CRC32, and the pending-row change, the scope
    today's `saveTake` opens (`openTakeTx`, `takes.ts:65-76`). If it replaces a
    `clipMeta` row that named another file, it reads that file's name in the
    same transaction, so step 4 knows exactly which file it superseded.
 3. **If that transaction ends without naming `<name>`** (it failed, or found
-   the take already saved or discarded), the attempt deletes `<name>` and
-   nothing else; no committed row names it. The take stays held in its
+   the take already saved or discarded), the attempt reads `clipMeta` again,
+   confirms that no row names `<name>`, and only then deletes `<name>`, and
+   nothing else. The take stays held in its
    `pendingTakes` row if it has one, as a failed save is today (`"save-take"`,
    #456).
-4. **After it commits**, the attempt deletes the exact file step 2 read as
-   superseded, and a superseded clip goes through the same reference check
-   `deleteClipIfUnreferenced` makes (`clips.ts:149`). A delete that fails
-   leaves an orphan for the sweep, never a dangling row.
+4. **After it commits**, in the same session, the attempt deletes the exact
+   file step 2 read as superseded, by that file's location. This is not routed
+   through `deleteClipIfUnreferenced` (`clips.ts:149`): after a transcode or a
+   retry the `clipId` is still referenced, so a reference check would keep the
+   file. `deleteClipIfUnreferenced` stays the path for a whole clip that nothing
+   references any more (a take replaced by another clip, an erase, a delete),
+   and it too deletes by the location its row names. A delete that fails
+   leaves an orphan for the sweep (the crash path), never a dangling row.
 
 Steps 3 and 4 delete only a file the attempt itself named or read. No attempt
 deletes by `clipId`, so a failed attempt cannot remove the bytes another
@@ -236,8 +253,9 @@ replaces the PCM under the same key in one transaction (`transcode.ts:202`); on
 the card the PCM and the MP3 briefly coexist, so the card needs room for both.
 This path has no `pendingTakes` row and does not consult one: if its
 transaction fails, step 3 deletes the new MP3 only, and `clipMeta` still names
-the PCM file. Once it commits, no row names the PCM file, so step 4 or the
-sweep deletes it (rows T1 to T3).
+the PCM file. Once it commits, step 4 deletes the PCM file by its exact
+location in the same session; the sweep deletes it only if a kill came first
+(rows T1 to T4).
 
 **Where the durable copy is before step 1.** Each writer has a different one,
 read from the code:
@@ -268,18 +286,19 @@ names that exact file. "Killed" covers a force-stop and a power-off; what the
 card holds after each is owed to P4. All tests belong to the commit-protocol
 child.
 
-| Row | Path      | When                                                  | Card file                                  | `clipMeta` for the `clipId` | Other durable copy                    | Outcome                                                                                                                     | Test                                                                           |
-| --- | --------- | ----------------------------------------------------- | ------------------------------------------ | --------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| S1  | save      | Step 1 fails, alive (missing, full, read-only)        | `.part` or none; the attempt deletes it    | Unchanged                   | `pendingTakes` row, if any            | Take held; §4's card rows apply                                                                                             | "a save with no card keeps the take held and writes no row"                    |
-| S2  | save      | Killed during step 1                                  | `.part`, from a previous launch at restart | Unchanged                   | `pendingTakes` row, if any            | The next sweep deletes the `.part`. Without a row the take is lost, as it is today                                          | "a .part from a previous launch is deleted at the next launch"                 |
-| S3  | save      | Killed after the rename, before step 2 commits        | Final, not named                           | Absent                      | `pendingTakes` row with this `clipId` | The sweep deletes the file; the replay saves the take from its row                                                          | "a kill after the rename leaves the take held, and the sweep removes the file" |
-| S4  | save      | Killed after the rename, before step 2 commits        | Final, not named                           | Absent                      | None                                  | The file is the only copy. The sweep **keeps** it and reports it; it is never deleted automatically. Recovery is open (DRI) | "an unnamed final file with no row and no meta is kept and reported"           |
-| S5  | save      | Step 2 fails or finds the take already settled, alive | Final, not named                           | Unchanged                   | `pendingTakes` row, if any            | Step 3 deletes this attempt's file only                                                                                     | "a failed save deletes only its own file"                                      |
-| S6  | save      | Two attempts under one `clipId`; one commits          | Two finals; one named                      | Names the winner's file     | The winner's file                     | The loser deletes only its own file (step 3); the winner's file is untouched                                                | "two attempts under one clipId: the losing one deletes only its own file"      |
-| S7  | save      | Killed after step 2 commits, before step 4            | New final named; superseded file not named | Names the new file          | The new file                          | The sweep deletes the superseded file                                                                                       | "a kill before the superseded delete leaves it for the next sweep"             |
-| T1  | transcode | Transaction fails, alive                              | New MP3 final, not named                   | Names the PCM file          | The PCM file                          | Step 3 deletes the new MP3 only; no `pendingTakes` read; a later sweep turn retries (ADR 0009)                              | "a failed transcode deletes only the new MP3 and keeps the PCM named"          |
-| T2  | transcode | Killed after the MP3 rename, before commit            | New MP3 final, not named                   | Names the PCM file          | The PCM file                          | The sweep deletes the MP3; the transcode runs again                                                                         | "a kill before the transcode commit leaves the PCM and removes the MP3"        |
-| T3  | transcode | Killed after commit, before the PCM delete            | PCM final, not named; MP3 named            | Names the MP3 file          | The MP3 file                          | The sweep deletes the PCM and keeps the MP3                                                                                 | "after a restart, a superseded PCM is removed and the committed MP3 kept"      |
+| Row | Path      | When                                                  | Card file                                  | `clipMeta` for the `clipId` | Other durable copy                    | Outcome                                                                                                        | Test                                                                           |
+| --- | --------- | ----------------------------------------------------- | ------------------------------------------ | --------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| S1  | save      | Step 1 fails, alive (missing, full, read-only)        | `.part` or none; the attempt deletes it    | Unchanged                   | `pendingTakes` row, if any            | Take held; §4's card rows apply                                                                                | "a save with no card keeps the take held and writes no row"                    |
+| S2  | save      | Killed during step 1                                  | `.part`, from a previous launch at restart | Unchanged                   | `pendingTakes` row, if any            | The next sweep deletes the `.part`. Without a row the take is lost, as it is today                             | "a .part from a previous launch is deleted at the next launch"                 |
+| S3  | save      | Killed after the rename, before step 2 commits        | Final, not named                           | Absent                      | `pendingTakes` row with this `clipId` | The sweep may delete the file; the take's PCM stays in its IndexedDB row and the replay saves it               | "a kill after the rename leaves the take held, and the sweep removes the file" |
+| S4  | save      | Killed after the rename, before step 2 commits        | Final, not named                           | Absent                      | None                                  | The file is the only copy and passed its read-back. The sweep **keeps** it and reports it; it never deletes it | "an unnamed final file with no row and no meta is kept and reported"           |
+| S5  | save      | Step 2 fails or finds the take already settled, alive | Final, not named                           | Unchanged                   | `pendingTakes` row, if any            | Step 3 deletes this attempt's file only                                                                        | "a failed save deletes only its own file"                                      |
+| S6  | save      | Two attempts under one `clipId`; one commits          | Two finals; one named                      | Names the winner's file     | The winner's file                     | The loser deletes only its own file (step 3); the winner's file is untouched                                   | "two attempts under one clipId: the losing one deletes only its own file"      |
+| S7  | save      | Killed after step 2 commits, before step 4            | New final named; superseded file not named | Names the new file          | The new file                          | The sweep deletes the superseded file                                                                          | "a kill before the superseded delete leaves it for the next sweep"             |
+| T1  | transcode | Transaction fails, alive                              | New MP3 final, not named                   | Names the PCM file          | The PCM file                          | Step 3 deletes the new MP3 only; no `pendingTakes` read; a later sweep turn retries (ADR 0009)                 | "a failed transcode deletes only the new MP3 and keeps the PCM named"          |
+| T2  | transcode | Killed after the MP3 rename, before commit            | New MP3 final, not named                   | Names the PCM file          | The PCM file                          | The sweep deletes the MP3; the transcode runs again                                                            | "a kill before the transcode commit leaves the PCM and removes the MP3"        |
+| T3  | transcode | Killed after commit, before the PCM delete            | PCM final, not named; MP3 named            | Names the MP3 file          | The MP3 file                          | The sweep deletes the PCM and keeps the MP3                                                                    | "after a restart, the PCM is gone and the MP3 is still named and plays"        |
+| T4  | transcode | Commits, alive                                        | PCM final, not named; MP3 named            | Names the MP3 file          | The MP3 file                          | Step 4 deletes the PCM by its exact location in this session; no reference check                               | "a committed transcode deletes the PCM in the same session"                    |
 
 **The orphan sweep**, as the table needs it. It runs once per launch, before
 that launch's first card write, or not at all, so no `.part` or final file of
@@ -289,11 +308,13 @@ this launch exists when it runs. For each file in the card folder:
    read-back, so it is never kept as audio.
 2. A final file a `clipMeta` location names exactly is kept.
 3. A final file not named, whose `clipId` has a `clipMeta` row, was superseded
-   by a committed file. Delete it (S7, T2, T3).
+   by a committed file. Delete it (S7, T2, T3). In a live session step 4 has
+   already done this (T4); the sweep is the crash path.
 4. A final file not named, whose `clipId` a `pendingTakes` row carries, has a
    durable copy in that row. Delete it (S3).
 5. Any other final file is the only copy of something. Keep it and report it
-   to the failure log; never delete it (S4).
+   to the failure log; never delete it (S4). How such a file is offered back to
+   the user is not decided (open, below).
 
 That one page at a time writes the card folder is an assumption (the Android
 app has one WebView), for the commit-protocol child to check.
@@ -334,7 +355,7 @@ filed yet (#1456's child list).
 | **Card read-only**                                           | The same path, with its own code if the plugin can tell it apart. The spike's codes (`FULL`, `UNMOUNTED`, `IO`, `NO_SESSION`, `NOT_FOUND`, `GRANT`) name none for it.                                                                         | "a read-only card keeps the take held" — same child                                           | Not probed by #1472; needs a row added |
 | **Card swapped** between sessions                            | A row whose location names another volume reads as "card not present", never as lost. No row is deleted and no file is written to the other card's folder for that clip.                                                                      | "a clip on another card reads as not present and its row survives" — same child               | P1, P9                                 |
 | **Row pointing at a missing file** (card present, file gone) | The segment shows its audio as missing, the read reports to the failure log (as `"playback-dangling"` does today, `src/hooks/use-audio-session.ts:550`), and the row is never deleted automatically.                                          | "a missing or CRC-mismatched card file leaves the row and reports it" — commit protocol child | P1                                     |
-| **Partial file after a kill** while it was the only copy     | Read off §3's state table: a `.part` is deleted at the next launch (S2); an unnamed final file is deleted when a committed file or a `pendingTakes` row holds the take (S3, S7, T2, T3), and kept and reported when it is the only copy (S4). | The tests of rows S2, S3, S4, S7, T2 and T3 — commit protocol child                           | P4                                     |
+| **Partial file after a kill** while it was the only copy     | Read off §3's state table: a `.part` is deleted at the next launch (S2); an unnamed final file is deleted when a committed file or a `pendingTakes` row holds the take (S3, S7, T2, T3), and kept and reported when it is the only copy (S4). | The tests of rows S2, S3, S4, S7, T2, T3 and T4 — commit protocol child                       | P4                                     |
 | **Card pulled mid-recording**                                | Nothing is written while recording, so storage is untouched. The facilitator is warned against it when the card store is switched on, per D2-microsd's note.                                                                                  | None beyond the missing-card test; the warning is copy                                        | P5                                     |
 
 Where the card's state changes while the app runs, which events reach the
@@ -431,13 +452,18 @@ T1 to T3; picks are not answers.
 - **Where a held take's bytes live** when the card store is on: IndexedDB as
   today, or the card. #1751 left pending-take bytes out of scope for the
   commit-protocol child to decide.
-- **A take with no `pendingTakes` row, killed after its file was renamed and
-  before its save committed** (row S4): the sweep keeps the file and reports
-  it. How, or whether, the app offers it back is not decided.
+- **The recovery path for row S4.** The sweep keeps a card file that
+  passed its read-back and is the only copy of a take and reports it. How the app offers it back
+  to the user is open, for a later child.
 - **`hasFragileUserData`**, once P7 reports.
 - **What the backup's `confidential` flag says about card copies**:
   [#1580](https://github.com/unfoldingWord/tc-mobile/issues/1580), open in ADR 0011.
 - **The plugin hold** on #1520 (ADR 0016).
+- **How the plugin child reads a card file back.** Keep the read-back, and P3's
+  measurement, on a plugin read into the app process, not a
+  `fetch(Capacitor.convertFileSrc(path))` through the WebView's local server,
+  unless P3 shows that server answers only this app and the path cannot be
+  guessed.
 
 ### Owed to #1472's run sheet
 
