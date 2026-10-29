@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   blocksSettle,
@@ -894,5 +894,63 @@ describe("loadRun", () => {
       styles: { h1: card },
       selectors: [".a"],
     });
+  });
+});
+
+/**
+ * The capture config's projects (#954): every project `playwright.config.ts`
+ * lists, moved to the capture ports, except the ones named as not captured.
+ * The provisional-template build (#1450) is one of those: the capture is of
+ * the shipped app, and that build is not something it compares.
+ */
+describe("the capture config's projects", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function captureConfig() {
+    vi.stubEnv("STYLE_CAPTURE_DIR", tmpdir());
+    vi.stubEnv("STYLE_DIFF_DIST", "dist");
+    vi.stubEnv("STYLE_DIFF_DIST_E2E", "dist-e2e");
+    vi.resetModules();
+    return (await import("../playwright.style-diff.config")).default;
+  }
+
+  it("loads with its environment, leaves the template-packages project out, and moves every other project to 4340 or 4341", async () => {
+    const config = await captureConfig();
+    const base = (await import("../playwright.config")).default;
+    const names = (config.projects ?? []).map((p) => p.name);
+    expect(names).not.toContain("chromium-template-packages");
+    expect(names).toEqual(
+      (base.projects ?? [])
+        .map((p) => p.name)
+        .filter((n) => n !== "chromium-template-packages")
+    );
+    expect(names.length).toBeGreaterThan(0);
+    for (const project of config.projects ?? []) {
+      expect(["4340", "4341"]).toContain(
+        new URL(String(project.use?.baseURL)).port
+      );
+    }
+  });
+
+  it("still throws for a project on a port it has no entry for, unless that project is named as not captured", async () => {
+    const { captureProjects, NOT_CAPTURED } =
+      await import("../playwright.style-diff.config");
+    const at = (name: string, port: number) => ({
+      name,
+      use: { baseURL: `http://127.0.0.1:${port}` },
+    });
+    expect(() => captureProjects([at("chromium-new-build", 4399)])).toThrow(
+      "no style-diff port for http://127.0.0.1:4399"
+    );
+    expect(NOT_CAPTURED).toEqual(["chromium-template-packages"]);
+    expect(
+      captureProjects([
+        at("chromium-template-packages", 4302),
+        at("chromium-shipped-build", 4301),
+      ])
+    ).toEqual([at("chromium-shipped-build", 4341)]);
   });
 });

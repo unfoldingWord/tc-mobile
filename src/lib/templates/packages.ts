@@ -1,4 +1,5 @@
 import type { TemplatePackage, TemplateTitleTable } from "@/types/template";
+import { loadBakedTemplates } from "./baked";
 import { loadObsTemplate } from "./obs";
 import { parseTemplatePackage, parseTemplateTitleTable } from "./validate";
 
@@ -10,7 +11,9 @@ import { parseTemplatePackage, parseTemplateTitleTable } from "./validate";
  * follows is the DRI's, recorded on #1451 on 2026-10-19: code that is
  * "modular and capable of adapting to other sources that might be included".
  *
- * Open Bible Stories is the only package shipped today.
+ * Open Bible Stories ships in every build. The baked packages follow it, in
+ * the order `templates/manifest.json` lists them; a production build bakes
+ * none today (`scripts/bake-template-packages.mjs` says which a build takes).
  */
 
 /** A validated package and its title tables, one row of the library. */
@@ -19,19 +22,25 @@ export interface TemplateEntry {
   readonly titles: readonly TemplateTitleTable[];
 }
 
-/**
- * One source's loader. It hands back its package and title tables in the
- * contract's shape; the list validates both, so a source cannot put a shape
- * the contract refuses in front of the picker.
- */
-type TemplateSource = () => Promise<{
+/** A package and its title tables as a source hands them over, unchecked. */
+interface RawTemplate {
   readonly pkg: unknown;
   readonly titles: readonly unknown[];
-}>;
+}
 
-const PACKAGES: readonly TemplateSource[] = [loadObsTemplate];
+/**
+ * One source's loader. It hands back one package, or several, with their
+ * title tables in the contract's shape; the list validates each, so a source
+ * cannot put a shape the contract refuses in front of the picker.
+ */
+type TemplateSource = () => Promise<RawTemplate | readonly RawTemplate[]>;
 
-function toEntry(raw: Awaited<ReturnType<TemplateSource>>): TemplateEntry {
+const PACKAGES: readonly TemplateSource[] = [
+  loadObsTemplate,
+  loadBakedTemplates,
+];
+
+function toEntry(raw: RawTemplate): TemplateEntry {
   const pkg = parseTemplatePackage(raw.pkg);
   return {
     pkg,
@@ -40,10 +49,11 @@ function toEntry(raw: Awaited<ReturnType<TemplateSource>>): TemplateEntry {
 }
 
 /**
- * Load every package on the list, in list order. A package that fails to
- * load, breaks the contract, or repeats an id already listed is left out and
- * its cause handed back in `failures`; it never hides the others. The caller
- * routes each failure to the problem report (`lib/` has no reporter).
+ * Load every package on the list, in list order. A source that fails to load
+ * is left out; so is a package that breaks the contract or repeats an id
+ * already listed, without its siblings from the same source. Each cause is
+ * handed back in `failures`; it never hides the others. The caller routes
+ * each failure to the problem report (`lib/` has no reporter).
  */
 export async function loadTemplateEntries(
   list: readonly TemplateSource[] = PACKAGES
@@ -53,22 +63,34 @@ export async function loadTemplateEntries(
 }> {
   // An async wrapper, so a loader that throws before returning a promise is
   // one rejected package rather than a throw out of this call.
-  const settled = await Promise.allSettled(
-    list.map(async (load) => toEntry(await load()))
-  );
+  const settled = await Promise.allSettled(list.map(async (load) => load()));
   const entries: TemplateEntry[] = [];
   const failures: unknown[] = [];
   const ids = new Set<string>();
   for (const result of settled) {
     if (result.status === "rejected") {
       failures.push(result.reason);
-    } else if (ids.has(result.value.pkg.id)) {
-      failures.push(
-        new Error(`template package "${result.value.pkg.id}" is listed twice`)
-      );
-    } else {
-      ids.add(result.value.pkg.id);
-      entries.push(result.value);
+      continue;
+    }
+    const raws: readonly RawTemplate[] = Array.isArray(result.value)
+      ? result.value
+      : [result.value];
+    for (const raw of raws) {
+      let entry: TemplateEntry;
+      try {
+        entry = toEntry(raw);
+      } catch (cause) {
+        failures.push(cause);
+        continue;
+      }
+      if (ids.has(entry.pkg.id)) {
+        failures.push(
+          new Error(`template package "${entry.pkg.id}" is listed twice`)
+        );
+      } else {
+        ids.add(entry.pkg.id);
+        entries.push(entry);
+      }
     }
   }
   return { entries, failures };

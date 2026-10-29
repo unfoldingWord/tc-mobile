@@ -57,6 +57,27 @@ const moved = (baseURL: string | undefined): string => {
 };
 
 /**
+ * Projects the capture leaves out, by name. `chromium-template-packages`
+ * drives the build opted in to provisional template packages (#1450), which
+ * the capture of the shipped app does not compare. Any other project whose
+ * port has no entry in PORTS still throws: that loud failure is what keeps a
+ * new build from being captured against the wrong server.
+ */
+export const NOT_CAPTURED: readonly string[] = ["chromium-template-packages"];
+
+/** The base projects, less NOT_CAPTURED, each moved to its capture port. */
+export function captureProjects<
+  P extends { name?: string; use?: { baseURL?: string } },
+>(projects: readonly P[]): P[] {
+  return projects
+    .filter((project) => !NOT_CAPTURED.includes(project.name ?? ""))
+    .map((project) => ({
+      ...project,
+      use: { ...project.use, baseURL: moved(project.use?.baseURL) },
+    }));
+}
+
+/**
  * Loaded without its environment (a bare `playwright test -c`, or a tool that
  * reads every Playwright config, as knip does): it matches no test, so it
  * serves and captures nothing, and it says why instead of throwing.
@@ -90,8 +111,5 @@ export default missing.length > 0
           timeout: 30_000,
         },
       ],
-      projects: (base.projects ?? []).map((project) => ({
-        ...project,
-        use: { ...project.use, baseURL: moved(project.use?.baseURL) },
-      })),
+      projects: captureProjects(base.projects ?? []),
     });

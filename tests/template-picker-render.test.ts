@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +10,7 @@ import {
 } from "@/components/template-picker";
 import type { TemplateLibraryStatus } from "@/hooks/use-template-library";
 import { loadObsTemplate } from "@/lib/templates/obs";
+import { loadTemplateEntries } from "@/lib/templates/packages";
 import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
@@ -31,6 +35,71 @@ async function list(base: string, busy = false): Promise<Element> {
     })
   );
 }
+
+/**
+ * OBS beside a Bible book (#1450 R7). The entries come through the real
+ * package list (`loadTemplateEntries`) from OBS and the vendored Titus
+ * package the bake step pins, in the order the list names them, so a row
+ * order that differs from the list order is a picker defect. Both orders are
+ * drawn: sorting the rows by title or by id each breaks one of them.
+ */
+const TITUS = path.resolve(
+  import.meta.dirname,
+  "..",
+  "templates",
+  "bible-passages",
+  "TIT.json"
+);
+
+async function loadTitus() {
+  return {
+    pkg: JSON.parse(await readFile(TITUS, "utf8")) as unknown,
+    titles: [],
+  };
+}
+
+async function rowsFor(
+  sources: Parameters<typeof loadTemplateEntries>[0]
+): Promise<Element[]> {
+  const { entries, failures } = await loadTemplateEntries(sources);
+  expect(failures).toEqual([]);
+  const root = render(
+    createElement(TemplateList, {
+      entries,
+      base: "/",
+      language: "en",
+      busy: false,
+      onPick: () => {},
+    })
+  );
+  return Array.from(root.querySelectorAll("button.template-row"));
+}
+
+const rowTitles = (rows: Element[]) =>
+  rows.map((r) => one(r, ".template-row-title").textContent);
+
+describe("TemplateList with a Bible book (#1450 R7)", () => {
+  it("draws OBS then Titus in package-list order, each with its title and CC BY-SA 4.0", async () => {
+    const rows = await rowsFor([loadObsTemplate, loadTitus]);
+    expect(rowTitles(rows)).toEqual(["Open Bible Stories", "Titus"]);
+    for (const row of rows) {
+      expect(one(row, ".template-row-licence").textContent).toBe(
+        "CC BY-SA 4.0"
+      );
+    }
+    const titus = rows[1] as Element;
+    expect(titus.getAttribute("aria-label")).toBe(
+      strings.sentences("Titus", strings.templateLicenceLabel("CC BY-SA 4.0"))
+    );
+    // The package has no thumbnail, so the row draws none.
+    expect(titus.querySelector("img")).toBeNull();
+  });
+
+  it("keeps the list's order when the list names Titus first", async () => {
+    const rows = await rowsFor([loadTitus, loadObsTemplate]);
+    expect(rowTitles(rows)).toEqual(["Titus", "Open Bible Stories"]);
+  });
+});
 
 describe("TemplateList", () => {
   it("draws the OBS row: thumbnail at the app-base path, title, icon-first licence line", async () => {

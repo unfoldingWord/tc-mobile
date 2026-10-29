@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-e2e
+dist-templates
 dev-dist
 package-lock.json
 *.min.js
@@ -41,3 +42,8 @@ src/data/language-list.json
 # byte for byte at a pinned commit and checked by SHA-256; see
 # tests/fixtures/templates/README.md. Formatting it would modify it.
 tests/fixtures/templates/bible-passages-TIT.json
+
+# The vendored template packages the build bakes in (#1450), copied byte for
+# byte at the commit or tag templates/manifest.json pins and checked by
+# SHA-256 at every build. Formatting one would change its bytes and fail it.
+templates/bible-passages
