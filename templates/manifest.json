@@ -1,0 +1,14 @@
+{
+  "packages": [
+    {
+      "id": "bible-passages:TIT",
+      "source": "https://github.com/unfoldingWord/bible-passages",
+      "revision": "ce92d4a1ffd6377cb5636c28c6b92328da5ed2b4",
+      "path": "dist/tc-mobile/TIT.json",
+      "file": "bible-passages/TIT.json",
+      "sha256": "4509c28951531b41e16b7c9ae08e523b050ab26e2570cc0e952eabc3d78feeb6",
+      "provisional": true,
+      "titles": []
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, normalizePath, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
 // Extension spelled out, unlike the `@/`-aliased imports inside `src/`. This
@@ -32,6 +32,11 @@ import {
   noticeNameForUrl,
   unversionedPackages,
 } from "./scripts/licence-versions.mjs";
+import {
+  type BakeResult,
+  bakeTemplatePackages,
+  describeBake,
+} from "./scripts/bake-template-packages.mjs";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
@@ -97,6 +102,70 @@ function versionJsonPlugin(): Plugin {
               sha: buildSha,
               shaFull: buildShaFull,
               builtAt: new Date().toISOString(),
+            },
+            null,
+            2
+          ) + "\n",
+      });
+    },
+  };
+}
+
+// The template packages this build bakes in (#1450 plan task 6; a child of
+// #1451). `scripts/bake-template-packages.mjs` checks every entry in
+// `templates/manifest.json` (pinned bytes, release rule, title tables, and the
+// opt-in that keeps provisional packages off `main`) and throws a refusal that
+// fails the build. What passes replaces the committed empty
+// `src/data/baked-template-packages.json` in the bundle; `lib/templates/
+// baked.ts` imports it lazily, so it lands in its own `.js` chunk, which the
+// precache's `js` glob covers. `template-bake.json` (outside the precache,
+// like version.json) names that chunk and the package ids it holds, for
+// tests/precache-manifest.test.ts and for anyone asking what a deploy carries.
+const BAKED_MODULE = normalizePath(
+  path.join(import.meta.dirname, "src", "data", "baked-template-packages.json")
+);
+
+// Vite hands hooks module ids with forward slashes, on Windows too, while
+// `path.join` gives backslashes there (Frank round 2 P2 on #1798). The bench's
+// round-1 fix normalizes BAKED_MODULE above; both sides of every comparison
+// also go through `moduleId`. `toPosixPath` comes first
+// because Vite's `normalizePath` converts backslashes only when the HOST is
+// Windows, so on its own it could not be tested from a POSIX host.
+// Exported for tests/baked-template-plugin.test.ts, which hands it a
+// Windows-built module path and a bake result of its own.
+const moduleId = (p: string) => normalizePath(toPosixPath(p));
+
+export function bakedTemplatePackagesPlugin(
+  bakedModule: string = BAKED_MODULE,
+  bake: () => BakeResult = bakeTemplatePackages
+): Plugin {
+  const target = moduleId(bakedModule);
+  const isTarget = (id: string) => moduleId(id) === target;
+  let baked: { id: string; pkg: unknown; titles: unknown[] }[] = [];
+  return {
+    name: "baked-template-packages",
+    enforce: "pre",
+    buildStart() {
+      const result = bake();
+      describeBake(result).forEach((line) => this.info(line));
+      baked = result.baked;
+    },
+    load(id) {
+      if (!isTarget(id)) return null;
+      return JSON.stringify(baked.map(({ pkg, titles }) => ({ pkg, titles })));
+    },
+    generateBundle(_options, bundle) {
+      const chunk = Object.values(bundle).find(
+        (out) => out.type === "chunk" && out.moduleIds.some(isTarget)
+      );
+      this.emitFile({
+        type: "asset",
+        fileName: "template-bake.json",
+        source:
+          JSON.stringify(
+            {
+              chunk: chunk?.fileName ?? null,
+              packages: baked.map((b) => b.id),
             },
             null,
             2
@@ -477,6 +546,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       versionJsonPlugin(),
+      bakedTemplatePackagesPlugin(),
       localeHtmlPlugin(),
       licenceNoticeVersionsPlugin(),
       provenance.app,

@@ -477,6 +477,23 @@ describe.skipIf(GATE === "skip")(
         expect(urls.filter((url) => url === icon)).toEqual([icon]);
       }
     });
+
+    // The baked template packages (#1450 plan task 6) are a lazy `.js`
+    // chunk, so a baked package lists offline. `template-bake.json` is the
+    // build's own record of that chunk and the ids it baked; the chunk's text
+    // is checked against it, so a record that drifted from the bundle fails.
+    it("precaches the chunk holding the baked template packages (#1450)", () => {
+      const bake = JSON.parse(
+        readFileSync(path.join(ROOT, "dist", "template-bake.json"), "utf8")
+      ) as { chunk: string | null; packages: string[] };
+      expect(bake.chunk).toMatch(/^assets\/[^/]+\.js$/);
+      expect(precachedUrls()).toContain(bake.chunk);
+      const text = readFileSync(path.join(ROOT, "dist", bake.chunk!), "utf8");
+      for (const id of bake.packages) expect(text).toContain(id);
+      expect(text.includes("tc-mobile-template")).toBe(
+        bake.packages.length > 0
+      );
+    });
   }
 );
 
