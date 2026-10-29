@@ -32,6 +32,10 @@ import {
   noticeNameForUrl,
   unversionedPackages,
 } from "./scripts/licence-versions.mjs";
+import {
+  bakeTemplatePackages,
+  describeBake,
+} from "./scripts/bake-template-packages.mjs";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
@@ -97,6 +101,58 @@ function versionJsonPlugin(): Plugin {
               sha: buildSha,
               shaFull: buildShaFull,
               builtAt: new Date().toISOString(),
+            },
+            null,
+            2
+          ) + "\n",
+      });
+    },
+  };
+}
+
+// The template packages this build bakes in (#1450 plan task 6; a child of
+// #1451). `scripts/bake-template-packages.mjs` checks every entry in
+// `templates/manifest.json` (pinned bytes, release rule, title tables, and the
+// opt-in that keeps provisional packages off `main`) and throws a refusal that
+// fails the build. What passes replaces the committed empty
+// `src/data/baked-template-packages.json` in the bundle; `lib/templates/
+// baked.ts` imports it lazily, so it lands in its own `.js` chunk, which the
+// precache's `js` glob covers. `template-bake.json` (outside the precache,
+// like version.json) names that chunk and the package ids it holds, for
+// tests/precache-manifest.test.ts and for anyone asking what a deploy carries.
+const BAKED_MODULE = path.join(
+  import.meta.dirname,
+  "src",
+  "data",
+  "baked-template-packages.json"
+);
+
+function bakedTemplatePackagesPlugin(): Plugin {
+  let baked: { id: string; pkg: unknown; titles: unknown[] }[] = [];
+  return {
+    name: "baked-template-packages",
+    enforce: "pre",
+    buildStart() {
+      const result = bakeTemplatePackages();
+      describeBake(result).forEach((line) => this.info(line));
+      baked = result.baked;
+    },
+    load(id) {
+      if (id !== BAKED_MODULE) return null;
+      return JSON.stringify(baked.map(({ pkg, titles }) => ({ pkg, titles })));
+    },
+    generateBundle(_options, bundle) {
+      const chunk = Object.values(bundle).find(
+        (out) => out.type === "chunk" && out.moduleIds.includes(BAKED_MODULE)
+      );
+      this.emitFile({
+        type: "asset",
+        fileName: "template-bake.json",
+        source:
+          JSON.stringify(
+            {
+              chunk: chunk?.fileName ?? null,
+              packages: baked.map((b) => b.id),
             },
             null,
             2
@@ -477,6 +533,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       versionJsonPlugin(),
+      bakedTemplatePackagesPlugin(),
       localeHtmlPlugin(),
       licenceNoticeVersionsPlugin(),
       provenance.app,

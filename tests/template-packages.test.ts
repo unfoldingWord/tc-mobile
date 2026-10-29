@@ -124,6 +124,22 @@ describe("loadTemplateEntries: the package list", () => {
     expect(String(failures[0])).toContain("hymnal:fixture");
   });
 
+  it("lists every package a source hands back, and skips only the bad one", async () => {
+    const { entries, failures } = await loadTemplateEntries([
+      () =>
+        Promise.resolve([
+          { pkg: { ...hymnal, formatVersion: 9 }, titles: [] },
+          { pkg: hymnal, titles: [] },
+          { pkg: hymnal, titles: [] },
+        ]),
+      loadObsTemplate,
+    ]);
+    expect(entries.map((e) => e.pkg.id)).toEqual(["hymnal:fixture", "obs"]);
+    expect(failures).toHaveLength(2);
+    expect(failures[0]).toBeInstanceOf(TemplateValidationError);
+    expect(String(failures[1])).toContain("listed twice");
+  });
+
   it("answers an empty list with no entries and no failures", async () => {
     expect(await loadTemplateEntries([])).toEqual({
       entries: [],
@@ -150,6 +166,41 @@ describe("the create path writes a book from the second source unchanged", () =>
     expect(books).toHaveLength(1);
     expect(books[0]?.name).toBe("Cantiques");
     expect(books[0]?.chapterIds).toHaveLength(1);
+  });
+});
+
+describe("no app module names a dataset source (#1450 R9)", () => {
+  // What a source-specific branch would have to spell: the dataset repo and
+  // the Bible-book kind (the scope's own words), plus every id and source
+  // repo the bake manifest pins, so a package added there is covered too.
+  // `bible-books` (#1606's chapter-count table) is not a dataset name.
+  const manifest = JSON.parse(
+    readFileSync(path.join(ROOT, "templates", "manifest.json"), "utf8")
+  ) as { packages: { id: string; source: string }[] };
+  const names = [
+    "bible-passages",
+    ...manifest.packages.flatMap((p) => [p.id, p.source.split("/").pop()!]),
+  ];
+  const named = (text: string) =>
+    names.some((n) => text.includes(n)) || /bible-book(?!s)/.test(text);
+
+  it("holds for every module under src/, comments aside", () => {
+    const files = readdirSync(path.join(ROOT, "src"), {
+      recursive: true,
+      encoding: "utf8",
+    }).filter((f) => /\.tsx?$/.test(f));
+    expect(files.length).toBeGreaterThan(20);
+    expect(manifest.packages.length).toBeGreaterThan(0);
+    expect(files.filter((f) => named(source(path.join("src", f))))).toEqual([]);
+  });
+
+  it("reads a name in code and ignores one in a comment", () => {
+    expect(named(stripCodeComments('const k = "bible-book";', "x.ts"))).toBe(
+      true
+    );
+    expect(
+      named(stripCodeComments("// bible-passages\nconst a = 1;", "x.ts"))
+    ).toBe(false);
   });
 });
 
