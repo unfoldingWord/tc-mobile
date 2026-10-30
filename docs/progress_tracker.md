@@ -48,7 +48,7 @@ The last four picks before the merge rule are encoded in AGENTS.md "Versions and
 - **Milestones:** Sprints 1–9 retitled with full dates and staging-cut versions (`Sprint 5 (2026-10-19 → 2026-11-01) — v1.2.0` … `Sprint 9 (2026-12-14 → 2026-12-27) — v1.6.0`). Each description states the rule.
 - **Sprint 5 close-out:** 11 issues and the spike PRs #1612 and #1532 moved to Sprint 6. #1433, #1233, #1201, #1028 and #249 moved to Backlog. Each issue has a reason comment.
 - **Merged to develop (7):** #1807, #1808, #1810, #1811, #1812, #1813 (closes #1421), #1814 (#954 PR 4).
-- **#954 PR 4 is #1814** (`src/app/styles/o4/` → `src/app/styles/3-components/`, sentinel `--o4-scope` → `--c-components-last`). The lane reports the built CSS byte-identical to develop once the sentinel is renamed back, and a style diff of base vs head with 0 differences over 4,852 states. The verdict prints "not clean" only for `browser-boundary-smoke`, which fails on base too (recorded on #954). Run record: https://github.com/unfoldingWord/tc-mobile/pull/1814#issuecomment-6531697122. Merged on clean and green.
+- **#954 PR 4 is #1814** (`src/app/styles/o4/` → `src/app/styles/3-components/`, sentinel `--o4-scope` → `--c-components-last`). The lane reports the built CSS byte-identical to develop once the sentinel is renamed back, and a style diff of base vs head with 0 differences over 4,852 states. That style-diff run's own verdict prints "not clean" only for `browser-boundary-smoke`, which fails on base too (recorded on #954); the style diff is a lane run, not one of the PR's CI checks. Run record: https://github.com/unfoldingWord/tc-mobile/pull/1814#issuecomment-6531697122. Merged on clean and green.
 - **Project site:** every tab refreshed to 30 Oct and republished (version 24), with a snapshot regenerated at 19:11Z.
 - **Issue hygiene:**
   - The pick dates stamped "2026-10-30" were corrected to 2026-10-29 in `scripts/bake-template-packages.mjs` (#1808), #1797's body and the #1450 pick comment.
@@ -57,9 +57,9 @@ The last four picks before the merge rule are encoded in AGENTS.md "Versions and
 
 ### Not run
 
-- **Nothing in 1.2.2 has been run on a phone by this session.** The QR code was decoded, not scanned with a phone.
+- **Nothing in 1.2.2 has been run on a phone by this session.** The QR code was decoded, not scanned with a phone, and the one-way `DB_VERSION` 11 → 14 migration has not been exercised on a device holding a v11 database.
 - The Play internal draft has not been rolled out, and the TestFlight build has not been assigned to the testers' group.
-- **Not observed on a device:** that a sideloaded APK can update from Play without an uninstall. `fastlane/Fastfile:168-175` says Play re-signs with the same key.
+- **Not observed on a device:** that a sideloaded APK can update from Play without an uninstall. The Play lane in `fastlane/Fastfile` says Play re-signs with the same key; that is the lane's claim, and no signer from a Play-delivered APK is recorded here.
 
 ### Blockers (DRI only)
 
