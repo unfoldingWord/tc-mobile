@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdtempSync,
   mkdirSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -19,7 +20,9 @@ import {
   SETTLE_QUIET_MS,
   settleVerdict,
   SKIP,
+  trackNesting,
   unsettledReasons,
+  writeCaptureTest,
 } from "../e2e/style-diff/capture";
 import {
   ABSENT,
@@ -1049,5 +1052,43 @@ describe("the tolerated list's entries", () => {
       ["chromium-back-navigation", "011 p0 page.goForward", "sometimes"],
       ["chromium-shipped-build", "006 p0 mouse.up", "sometimes"],
     ]);
+  });
+});
+
+/**
+ * The capture's nesting tracker and test-file writer (#1804, from #1778's
+ * review).
+ */
+describe("trackNesting", () => {
+  it("takes a nested action as its caller's and two concurrent top-level actions as two", async () => {
+    const run = trackNesting();
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const outer = await run(async () => {
+      const inner = await run(async () => "inner");
+      await wait(5);
+      return inner;
+    });
+    expect(outer.topLevel).toBe(true);
+    expect(outer.value.topLevel).toBe(false);
+    const both = await Promise.all([run(() => wait(20)), run(() => wait(5))]);
+    expect(both.map((r) => r.topLevel)).toEqual([true, true]);
+  });
+});
+
+describe("writeCaptureTest", () => {
+  let dir = "";
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = "";
+  });
+
+  it("refuses a second test with the same id instead of overwriting the first", () => {
+    dir = mkdtempSync(join(tmpdir(), "style-diff-"));
+    const testsDir = join(dir, "tests");
+    writeCaptureTest(testsDir, test([]));
+    expect(() =>
+      writeCaptureTest(testsDir, test([], { spec: "other.spec.ts" }))
+    ).toThrow(/capture id collision: shipped \| books › a card/);
+    expect(readdirSync(testsDir)).toHaveLength(1);
   });
 });

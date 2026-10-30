@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -592,6 +593,39 @@ const digest = (text: string) =>
   createHash("sha1").update(text).digest("hex").slice(0, 10);
 
 /**
+ * Tells a nested action from a second top-level one. A wrapped action that
+ * another wrapped action calls (`locator.click` calling `mouse.click`) is
+ * nested and takes no capture of its own.
+ */
+export function trackNesting() {
+  const inside = new AsyncLocalStorage<true>();
+  return async <T>(
+    action: () => Promise<T>
+  ): Promise<{ value: T; topLevel: boolean }> => {
+    // The store follows the async chain, so a call made inside `action` sees
+    // it and a second action started beside this one does not.
+    const topLevel = inside.getStore() === undefined;
+    const value = await (topLevel ? inside.run(true, action) : action());
+    return { value, topLevel };
+  };
+}
+
+/**
+ * Writes one test's capture file. The file name is a digest of the id, so a
+ * second test with the same id would overwrite the first and the run would
+ * read as complete.
+ */
+export function writeCaptureTest(testsDir: string, record: CaptureTest): void {
+  if (!existsSync(testsDir)) mkdirSync(testsDir, { recursive: true });
+  const file = join(
+    testsDir,
+    `${safe(record.project)}__${safe(record.title)}__${digest(record.id)}.json`
+  );
+  if (existsSync(file)) throw new Error(`capture id collision: ${record.id}`);
+  writeFileSync(file, JSON.stringify(record));
+}
+
+/**
  * Wraps the action prototypes for one test and returns its teardown, which
  * captures every open page once more ("end"), restores the prototypes and
  * writes the test's file.
@@ -642,7 +676,7 @@ export async function startCapture(
   const states: CaptureState[] = [];
   let ordinal = 0;
   let pageCount = 0;
-  let depth = 0;
+  const nesting = trackNesting();
   let captureErrors = 0;
   let collapsed = 0;
   const sameAs: Record<string, string> = {};
@@ -733,16 +767,12 @@ export async function startCapture(
       const original = target[name];
       if (typeof original !== "function") continue;
       target[name] = async function wrapped(this: unknown, ...args: unknown[]) {
-        depth += 1;
-        let result: unknown;
-        try {
-          result = await original.apply(this, args);
-        } finally {
-          depth -= 1;
-        }
-        const page = depth === 0 ? pageOf(kind, this) : undefined;
+        const { value, topLevel } = await nesting(() =>
+          original.apply(this, args)
+        );
+        const page = topLevel ? pageOf(kind, this) : undefined;
         if (page && !page.isClosed()) await capture(page, `${kind}.${name}`);
-        return result;
+        return value;
       };
       restore.push(() => {
         target[name] = original;
@@ -774,15 +804,7 @@ export async function startCapture(
       states,
       sameAs,
     };
-    const testsDir = join(dir, "tests");
-    if (!existsSync(testsDir)) mkdirSync(testsDir, { recursive: true });
-    writeFileSync(
-      join(
-        testsDir,
-        `${safe(project)}__${safe(title)}__${digest(record.id)}.json`
-      ),
-      JSON.stringify(record)
-    );
+    writeCaptureTest(join(dir, "tests"), record);
     writeFileSync(
       join(dir, "selectors.json"),
       JSON.stringify([...runSelectors].sort())
