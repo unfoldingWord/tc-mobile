@@ -704,21 +704,34 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   09-06 (16 days, the only odd one); Sprint 2 = 09-07 → 09-20, Sprint 3 =
   09-21 → 10-04, Sprint 4 = 10-05 → 10-18, Sprint 5 = 10-19 → 11-01. Decided
   2026-10-05 by the DRI (`docs/progress_tracker.md`, that day's "Sprints").
-- **The sprint-end `staging -> main` promotion ships the minor.** That PR
-  bumps the minor and tags `main` (`git tag vX.Y.0`), and it goes to the DRI
-  as a go/no-go. A production hotfix between sprint
-  ends is a patch on the shipped minor.
+- **A minor is cut for testers at one sprint's end and goes to production at
+  the next sprint's end.** 1.2 is the worked example: cut from `develop` at
+  Sprint 5's end (DRI, 2026-10-28: "Cut 1.2 from develop"), promoted
+  `staging -> main` at Sprint 6's end (DRI, 2026-10-28: "11-15, Sprint 6 end
+  (Recommended)"). The `staging -> main` promotion goes to the DRI as a
+  go/no-go and tags `main` with the version it ships. A production hotfix
+  between sprint ends is a patch on the shipped minor.
+- **A no-go carries the minor forward** (DRI, 2026-10-30: "Carry it forward
+  (Recommended)"). Production stays on its current version. The held minor is
+  promoted at the next go, with a patch bump if fixes land, and no extra minor
+  is cut for it. The sprint milestone closes as normal, and its description
+  records the no-go.
 - **One GitHub milestone per sprint, due on its last day; sprint milestones
-  replace version milestones.** Live titles read `Sprint N (MM-DD → MM-DD)`,
-  with the planned release appended (`Sprint 4 (10-05 → 10-18) — v1.1.0`);
-  that shape is current practice, not a separate decision. **Every closed
-  issue and merged PR goes in the milestone of the sprint it closed or merged
-  in.** Each sprint milestone's description records what shipped in it. Tags
-  and GitHub Releases are the version record.
+  replace version milestones.** Titles read
+  `Sprint N (YYYY-MM-DD → YYYY-MM-DD) — vX.Y.0`, for example
+  `Sprint 6 (2026-11-02 → 2026-11-15) — v1.3.0` (DRI, 2026-10-30: "Always
+  YYYY-MM-DD"). The version is the minor cut for testers at that sprint's end
+  (DRI, 2026-10-30: "Staging-cut rule, shift all"); a closed sprint that cut
+  nothing carries no version. **Every closed issue and merged PR goes in the
+  milestone of the sprint it closed or merged in.** Each sprint milestone's
+  description records what shipped in it. Tags and GitHub Releases are the
+  version record.
 - **Every open issue carries a milestone:** the current sprint if it was
-  pulled in, **Backlog** otherwise. File new issues into one. At sprint end,
-  anything still open in the sprint moves to the next sprint or Backlog
-  explicitly, never silently.
+  pulled in, **Backlog** otherwise. File new issues into one. An issue is
+  pulled in when it was planned into that sprint or work on it has started:
+  a scope comment, a branch or a PR (DRI, 2026-10-30: "Planned or started
+  (Recommended)"). At sprint end, anything still open in the sprint moves to
+  the next sprint or Backlog explicitly, never silently.
 - **A tester build is a GitHub pre-release tagged `tester-build-vX.Y.Z`**
   (the 1.0.0 release candidates were `tester-build-v1.0.0-rc.N`), with the
   APK and its QR code (`docs/native/README.md`, #629). The older
