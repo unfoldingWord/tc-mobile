@@ -11,7 +11,7 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
-## 2026-10-30 — Sprint 5 day 12: tester-build-v1.2.2 published (Play draft and TestFlight group still the DRI's), the milestones retitled and Sprint 5 closed out, 6 PRs merged
+## 2026-10-30 — Sprint 5 day 12: tester-build-v1.2.2 published (Play draft and TestFlight group still the DRI's), the milestones retitled and Sprint 5 closed out, 7 PRs merged
 
 One coordinator session. It started with the v1.2.2 native lanes stuck, published the tester build, and then ran one wave of five lanes. Every merge to develop met the DRI's rule for this session, verbatim: "you're permitted to merge on clean and green". So both bench lenses were clean at the exact head and every check was green (`merge_gate.py`).
 
@@ -47,7 +47,8 @@ The last four picks before the merge rule are encoded in AGENTS.md "Versions and
 - **Store blurbs:** a Play "What's new" (446 of 500 characters) and a TestFlight "What to Test" were drafted, and the `tc-release` skill gained §7a "Store blurbs" (#1807).
 - **Milestones:** Sprints 1–9 retitled with full dates and staging-cut versions (`Sprint 5 (2026-10-19 → 2026-11-01) — v1.2.0` … `Sprint 9 (2026-12-14 → 2026-12-27) — v1.6.0`). Each description states the rule.
 - **Sprint 5 close-out:** 11 issues and the spike PRs #1612 and #1532 moved to Sprint 6. #1433, #1233, #1201, #1028 and #249 moved to Backlog. Each issue has a reason comment.
-- **Merged to develop (6):** #1807, #1808, #1810, #1811, #1812, #1813 (closes #1421).
+- **Merged to develop (7):** #1807, #1808, #1810, #1811, #1812, #1813 (closes #1421), #1814 (#954 PR 4).
+- **#954 PR 4 is #1814** (`src/app/styles/o4/` → `src/app/styles/3-components/`, sentinel `--o4-scope` → `--c-components-last`). The lane reports the built CSS byte-identical to develop once the sentinel is renamed back, and a style diff of base vs head with 0 differences over 4,852 states. The verdict prints "not clean" only for `browser-boundary-smoke`, which fails on base too (recorded on #954). Run record: https://github.com/unfoldingWord/tc-mobile/pull/1814#issuecomment-6531697122. Merged on clean and green.
 - **Project site:** every tab refreshed to 30 Oct and republished (version 24), with a snapshot regenerated at 19:11Z.
 - **Issue hygiene:**
   - The pick dates stamped "2026-10-30" were corrected to 2026-10-29 in `scripts/bake-template-packages.mjs` (#1808), #1797's body and the #1450 pick comment.
@@ -60,10 +61,6 @@ The last four picks before the merge rule are encoded in AGENTS.md "Versions and
 - The Play internal draft has not been rolled out, and the TestFlight build has not been assigned to the testers' group.
 - **Not observed on a device:** that a sideloaded APK can update from Play without an uninstall. `fastlane/Fastfile:168-175` says Play re-signs with the same key.
 
-### In progress
-
-- **#954 PR 4 is #1814** (`src/app/styles/o4/` → `src/app/styles/3-components/`, sentinel `--o4-scope` → `--c-components-last`). The lane reports the built CSS byte-identical to develop once the sentinel is renamed back, and a style diff of base vs head with 0 differences over 4,852 states. The verdict prints "not clean" only for `browser-boundary-smoke`, which fails on base too (recorded on #954). Run record: https://github.com/unfoldingWord/tc-mobile/pull/1814#issuecomment-6531697122. Waiting for the bench at the time of writing.
-
 ### Blockers (DRI only)
 
 - **Play:** paste the Play blurb into the 1.2.2 internal draft and roll it out.
@@ -73,7 +70,7 @@ The last four picks before the merge rule are encoded in AGENTS.md "Versions and
 ### Next steps
 
 - **Sprint 5 ends 2026-11-01. Sprint 6 starts 2026-11-02** with 23 open items, most of them device runs or DRI steps (#974, #1251, #1486, #1281, #1295, #1324).
-- **#954:** merge #1814 on clean and green, then PR 5 (`:root` flatten), then #1747's CSS items and #1804's mic-shake pin and `:is()` gate item.
+- **#954:** PR 5 (`:root` flatten), then #1747's CSS items and #1804's mic-shake pin and `:is()` gate item.
 - **#1804:** the remaining deferred bench items.
 
 ---
