@@ -430,9 +430,10 @@ recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
 never reaches the backstop below — and a track `stop()` that throws while the
-mic stream is released `"recorder-release-track"` #479, and a take sealed and
-saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
-the one durable record that a take was cut, so it goes out with the report
+mic stream is released `"recorder-release-track"` #479, and a take sealed at
+the 20-minute cap `"recorder-take-cap"` #1005 — written at the seal, before
+the recorder sheet's commit saves the take, like the capture-stalled row
+below; not a failure, but the one durable record that a take was cut, so it goes out with the report
 and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
 #1076: "Log it, don't light ≡ (Recommended)"), and a take sealed because
 the level tap read exact silence on a moving clock with no track or recorder
@@ -452,8 +453,10 @@ discarded (same file, `"pending-take-refused"`, #38), a waiting take the
 launch replay saved (same file, `"pending-take-replayed"`, #38) — not a
 failure, but the one durable record that a waiting take existed and was
 saved, written only when the replay's commit saved its audio, so like the
-take-cap row it goes out with the report and does not light `≡` (DRI on PR
-#1706: "A: one text round + log row (Recommended)"), a failed book delete
+take-cap row it goes out with the report and does not light `≡` (the DRI's
+pick on PR #1706,
+<https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6425490363>:
+"A: one text round + log row (Recommended)"), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a

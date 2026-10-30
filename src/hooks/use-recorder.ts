@@ -545,7 +545,7 @@ export function useRecorder(): UseRecorder {
       seal();
       reportFailure(
         new Error(
-          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed and saved (#1005)`
+          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed; saving it comes after this row (#1005)`
         ),
         "recorder-take-cap"
       );
@@ -838,7 +838,7 @@ export function useRecorder(): UseRecorder {
           if (!recordingRef.current || !seal()) return;
           reportFailure(
             new Error(
-              `The level tap read exact silence for ${CAPTURE_SILENCE_MS} ms on a running clock with no track or recorder event; the take was sealed and saved (#1294)`
+              `The level tap read exact silence for ${CAPTURE_SILENCE_MS} ms on a running clock with no track or recorder event; the take was sealed, and saving it comes after this row (#1294)`
             ),
             "recorder-capture-stalled"
           );
