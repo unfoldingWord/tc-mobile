@@ -11,6 +11,73 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-30 — Sprint 5 day 12: tester-build-v1.2.2 published (Play draft and TestFlight group still the DRI's), the milestones retitled and Sprint 5 closed out, 6 PRs merged
+
+One coordinator session. It started with the v1.2.2 native lanes stuck, published the tester build, and then ran one wave of five lanes. Every merge to develop met the DRI's rule for this session, verbatim: "you're permitted to merge on clean and green". So both bench lenses were clean at the exact head and every check was green (`merge_gate.py`).
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Tester builds:** "Only v1.2.2 (Recommended)". No tester pre-release for 1.2.0 or 1.2.1.
+- **Spike PRs #1612 and #1532:** "Keep both open".
+- **Milestone titles:** "Staging-cut rule, shift all", then "Always YYYY-MM-DD". The title's version is the minor cut for testers at that sprint's end.
+- **Sprint 5 close-out:** "Apply as proposed (Recommended)".
+- **"Pulled in":** "Planned or started (Recommended)".
+- **A `staging -> main` no-go:** "Carry it forward (Recommended)".
+- **Merging:** "you're permitted to merge on clean and green".
+- **Publish:** "yes lets publish."
+
+The last four picks before the merge rule are encoded in AGENTS.md "Versions and milestones" by #1813.
+
+### Completed
+
+- **v1.2.2 native lanes unstuck:**
+  - The 1.2.0 APK and TestFlight runs (40754572234, 40754572181) were still waiting for signing approval. They held each lane's concurrency group (`cancel-in-progress: false`), so the 1.2.2 runs sat pending behind them. The 1.2.1 runs had been cancelled when 1.2.2's arrived.
+  - The DRI cancelled the 1.2.0 runs and approved the 1.2.2 runs. APK 40945854843 and TestFlight 40945854707 both succeeded at `PROMO_SHA` `24b144d7c66e1af6bb24da4ac65a5239c7377440`.
+- **APK checks (`tc-release` §6):**
+  - Signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, equal to `tester-build-v1.1.0`'s. It was read from the v2 signing block with a stdlib reader that first reproduced v1.1.0's recorded certificate and hash.
+  - Embedded `version.json` reads `1.2.2` and `shaFull` `24b144d7…`.
+  - APK SHA-256 `5092fcfea1163eb80853f95d671dfc38a654876c0ccf9f78d7ec1889a0955744`.
+  - TestFlight build `1793374291` (`MARKETING_VERSION` 1.2.2).
+- **Published `tester-build-v1.2.2`** at `PROMO_SHA` (https://github.com/unfoldingWord/tc-mobile/releases/tag/tester-build-v1.2.2), with the APK and a QR code decoded back to the download URL before publishing. The download-back hash equals the recorded hash, and the tag reads back at `PROMO_SHA`.
+  - The notes add a summary of 1.2.0's tester-facing changes and the one-way `DB_VERSION` 11 → 14 warning, because testers last had 1.1.0.
+  - Publish record, with both store blurbs: https://github.com/unfoldingWord/tc-mobile/pull/1803#issuecomment-6529559432
+- **Play:** run 40945854656 uploaded 1.2.2 to the internal track as a draft (`release_status` draft, from the run log).
+- **Store blurbs:** a Play "What's new" (446 of 500 characters) and a TestFlight "What to Test" were drafted, and the `tc-release` skill gained §7a "Store blurbs" (#1807).
+- **Milestones:** Sprints 1–9 retitled with full dates and staging-cut versions (`Sprint 5 (2026-10-19 → 2026-11-01) — v1.2.0` … `Sprint 9 (2026-12-14 → 2026-12-27) — v1.6.0`). Each description states the rule.
+- **Sprint 5 close-out:** 11 issues and the spike PRs #1612 and #1532 moved to Sprint 6. #1433, #1233, #1201, #1028 and #249 moved to Backlog. Each issue has a reason comment.
+- **Merged to develop (6):** #1807, #1808, #1810, #1811, #1812, #1813 (closes #1421).
+- **Project site:** every tab refreshed to 30 Oct and republished (version 24), with a snapshot regenerated at 19:11Z.
+- **Issue hygiene:**
+  - The pick dates stamped "2026-10-30" were corrected to 2026-10-29 in `scripts/bake-template-packages.mjs` (#1808), #1797's body and the #1450 pick comment.
+  - #1809 was filed to re-version the `tc-release` skill.
+  - Per-item audits were posted on #1747 (30 of 42 shipped) and #1421 (27 of 36 shipped). #1421's last four rows were disposed: C8 is pinned by `tests/ios-deployment-target.test.ts:77`, C9 is #1281, O4 needs no action, and O5 was decided above.
+
+### Not run
+
+- **Nothing in 1.2.2 has been run on a phone by this session.** The QR code was decoded, not scanned with a phone.
+- The Play internal draft has not been rolled out, and the TestFlight build has not been assigned to the testers' group.
+- **Not observed on a device:** that a sideloaded APK can update from Play without an uninstall. `fastlane/Fastfile:168-175` says Play re-signs with the same key.
+
+### In progress
+
+- **#954 PR 4 is #1814** (`src/app/styles/o4/` → `src/app/styles/3-components/`, sentinel `--o4-scope` → `--c-components-last`). The lane reports the built CSS byte-identical to develop once the sentinel is renamed back, and a style diff of base vs head with 0 differences over 4,852 states. The verdict prints "not clean" only for `browser-boundary-smoke`, which fails on base too (recorded on #954). Run record: https://github.com/unfoldingWord/tc-mobile/pull/1814#issuecomment-6531697122. Waiting for the bench at the time of writing.
+
+### Blockers (DRI only)
+
+- **Play:** paste the Play blurb into the 1.2.2 internal draft and roll it out.
+- **TestFlight:** paste the "What to Test" text into build `1793374291` and assign the testers' group.
+- **Release page:** scan the QR code on the release page with a phone, and post the announcement.
+
+### Next steps
+
+- **Sprint 5 ends 2026-11-01. Sprint 6 starts 2026-11-02** with 23 open items, most of them device runs or DRI steps (#974, #1251, #1486, #1281, #1295, #1324).
+- **#954:** merge #1814 on clean and green, then PR 5 (`:root` flatten), then #1747's CSS items and #1804's mic-shake pin and `:is()` gate item.
+- **#1804:** the remaining deferred bench items.
+
+---
+
 ## 2026-10-29 — Sprint 5 day 11: v1.2.2 promoted to staging, a provisional Titus template on web staging, a clean #954 self-compare, ADR 0013 proposed, 26 PRs merged
 
 One coordinator session in orchestrator mode, resumed from the 10-28 usage-limit stop. Every merge to develop met the standing rule: both bench lenses clean at the exact head and every check green, or a DRI pick at the cap. The merged list below uses the window from #1777's merge (2026-10-28T23:11Z) to 2026-10-29T20:06Z. Several of this session's notes and issue comments stamp its DRI picks "2026-10-30"; every pick below was made on 2026-10-29.
