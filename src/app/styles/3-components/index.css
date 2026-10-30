@@ -1,0 +1,71 @@
+/**
+ * src/app/styles/3-components/ — the component layer's area files, one per
+ * area of the app. `3-components.css` beside this folder holds the base
+ * component rules; the files here restyle them, area by area.
+ *
+ * WHY EVERY SELECTOR STARTS WITH `:root`. The prefix is not a scope —
+ * `:root` is `<html>`, so it matches on every page — it holds each rule one
+ * pseudo-class (0,1,0) above a `3-components.css` rule of the same selector,
+ * which these rules override. Without it, a rule here would drop one class
+ * below a base rule it beats today. Static analysis cannot tell which of
+ * those pairs ever meet on one element, so the prefix stays until a
+ * computed-style comparison of the built app shows a flattened rule paints
+ * the same (#954). A new rule here takes the prefix too.
+ *
+ * ONE FILE PER AREA:
+ *
+ *   books.css     — Books (01, 03), covers and progress dots        #942
+ *   sheets.css    — bottom sheets and the name sheet (02, G4)       #943
+ *   segments.css  — Segments (05, 06, G10)                          #944
+ *   recorder.css  — Recorder (08-12)                                #945
+ *   menus.css     — tile menu primitive, screen menus on the grid   #941, #949
+ *   controls.css  — shared controls                                 #941
+ *   dialogs.css   — confirm dialogs (13, G5, G6)                    #946
+ *   share.css     — Share (14, 15, G7)                              #947
+ *   errors.css    — mic denied, storage warning, crash (16-18)      #948
+ *   motion.css    — ambient motion, reduced-motion guard             #950
+ *
+ * A CHANGE TO ONE AREA EDITS ONLY ITS OWN FILE, NOT THIS INDEX, so two
+ * changes to different areas never collide here. `tests/o4-cascade.test.ts`
+ * asserts all ten files exist and are imported from here.
+ *
+ * Every file here shares `3-components.css`'s own `@layer components`
+ * rather than opening a new, later-declared layer — a later-declared layer
+ * would outrank `components` entirely regardless of specificity, which is a
+ * stronger and different guarantee than the one these rules rely on.
+ * Sharing the layer means an area rule and a `3-components.css` rule of
+ * EQUAL specificity are decided by source order within that one shared layer
+ * (CSS Cascade Layers, §6: cascade layers are compared first, and rules with
+ * no layer difference fall through to the ordinary cascade, where later wins
+ * ties) — so an area rule need not be MORE specific than the rule it
+ * overrides, only not LESS; the shared layer and this folder's later
+ * position already win any tie. This index is imported LAST in
+ * `styles/index.css`, after `3-components.css`, and each area file below
+ * inherits that position by being imported from here, in turn — so a change
+ * to one area file never has to reason about import order itself.
+ *
+ * `tests/component-cascade.test.ts` checks the position in the production
+ * build. It cannot check that with a comment alone: this project's build
+ * strips CSS comments, including one prefixed `/*!` — the marker some
+ * minifiers preserve for license banners, and which Tailwind's own is — so an
+ * empty `@layer components {}` compiles away to zero bytes, indistinguishable
+ * from the file not existing. Only a real declaration survives, which is why
+ * the one below exists. It is inert: nothing reads `--c-components-last`,
+ * and it paints nothing.
+ */
+@import "./books.css";
+@import "./sheets.css";
+@import "./segments.css";
+@import "./recorder.css";
+@import "./menus.css";
+@import "./controls.css";
+@import "./dialogs.css";
+@import "./share.css";
+@import "./errors.css";
+@import "./motion.css";
+
+@layer components {
+  :root {
+    --c-components-last: 1;
+  }
+}

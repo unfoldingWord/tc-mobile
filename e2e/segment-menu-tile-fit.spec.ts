@@ -9,7 +9,7 @@ import { expect, test, type Page } from "./support/test";
  *
  * #1119 round 5 (George Medium 1): the row's last tile was clipped past the
  * panel edge at 320px. This spec asserts that every tile's centre lands
- * inside the viewport. `o4-tiles--compact` (`src/app/styles/o4/menus.css`)
+ * inside the viewport. `o4-tiles--compact` (`src/app/styles/3-components/menus.css`)
  * is the fix: it applies only to this four-tile row (`segment-row.tsx`'s
  * `hasClip` branch), not to every `TileGrid` — the three-tile row (no stored
  * clip, Clear absent) keeps the pinned size.

@@ -31,7 +31,7 @@ import { areaScope, areaSelector, declsFor, fileRules } from "./o4-area-css";
  * Marking done (G8) is #995's shared `done` / `doneoff` tile tone, the same
  * mechanism the segment menu uses, not a recorder copy of it.
  *
- * What this file does NOT cover: the cascade (whether `o4/menus.css` wins on
+ * What this file does NOT cover: the cascade (whether `3-components/menus.css` wins on
  * a real page, and whether the sheet really stays under half a phone's
  * screen), and focus RETURN to the opener, which `recorder.tsx` owns and this
  * change does not touch. Nothing here has run on a phone.
@@ -133,7 +133,7 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
   });
 
   it("keys the #927 half-screen cap's selector to this menu's rendered sheet, in both modes", () => {
-    // The cap in o4/menus.css matches `.menu-panel:has(.recorder-menu-tile)`;
+    // The cap in 3-components/menus.css matches `.menu-panel:has(.recorder-menu-tile)`;
     // the stylesheet cases below read only the CSS, so this is the link from
     // that selector to what the component renders.
     for (const mode of ["record", "edit"] as const) {
@@ -318,7 +318,7 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
   });
 });
 
-describe("o4/menus.css, recorder-menu section (#949 G3)", () => {
+describe("3-components/menus.css, recorder-menu section (#949 G3)", () => {
   const menus = areaScope("menus");
   // Every rule in the whole file, every nested block included: "the cap is
   // its only rule" is a ban on any other, so it cannot stop at the layer.

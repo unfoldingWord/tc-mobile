@@ -168,7 +168,7 @@ test.describe("on a shorter screen", () => {
 });
 
 /**
- * Waits out the refusal shake (o4/motion.css), which moves the body sideways
+ * Waits out the refusal shake (3-components/motion.css), which moves the body sideways
  * by a few pixels, so a horizontal box is read at rest.
  */
 async function shakeSettled(page: Page) {

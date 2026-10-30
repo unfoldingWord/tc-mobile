@@ -159,7 +159,7 @@ describe("O4SheetHead stays decoration (#1269)", () => {
   });
 });
 
-describe("o4/menus.css, a linked crumb's hit area (#1269)", () => {
+describe("3-components/menus.css, a linked crumb's hit area (#1269)", () => {
   const css = areaScope("menus");
 
   it("is a control-sized 44px target while the chip is still drawn 40px tall", () => {

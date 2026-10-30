@@ -91,7 +91,7 @@ describe("O4BookDeleteAsk markup (#980)", () => {
   });
 });
 
-describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
+describe("3-components/books.css: the delete ask's rules match its markup (#980)", () => {
   const books = areaScope("books");
   const sel = (selector: string) => areaSelector("books", selector);
   const value = (scope: string, selector: string, property: string) =>
@@ -121,7 +121,7 @@ describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
   });
 
   it("adds no second copy of the menu sheets' head rules (#980)", () => {
-    // The head is o4/menus.css's `o4-sheet-head`, which also hides the
+    // The head is 3-components/menus.css's `o4-sheet-head`, which also hides the
     // sheet's own title while it is in the panel. books.css must not restate
     // either rule under a Books-only name, in any block of the file.
     const rules = fileRules("books");
@@ -135,7 +135,7 @@ describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
     }
   });
 
-  it("uses o4/menus.css's sheet head, which hides the title and lays out the row", () => {
+  it("uses 3-components/menus.css's sheet head, which hides the title and lays out the row", () => {
     const menus = areaScope("menus");
     expect(
       value(menus, areaSelector("menus", ".o4-sheet-head"), "display")

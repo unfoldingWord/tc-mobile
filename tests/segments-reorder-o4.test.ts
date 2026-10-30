@@ -25,7 +25,7 @@ import { restingErase } from "./support";
  * Layout is faked: jsdom has none, so each `<li>` reports a 90px row at a
  * 100px pitch and the list reports a 700px viewport. What this cannot see:
  * real touch panning (whether `preventDefault` on `touchmove` holds a lifted
- * row on a phone), the cascade (whether `o4/segments.css` paints the lift),
+ * row on a phone), the cascade (whether `3-components/segments.css` paints the lift),
  * and anything on a device.
  */
 
@@ -512,7 +512,7 @@ describe("the row's hold area", () => {
   });
 });
 
-describe("o4/segments.css: the lift (§3, §4)", () => {
+describe("3-components/segments.css: the lift (§3, §4)", () => {
   // Read by block (`areaScope`): the layer's own rules, and the ONE
   // reduced-motion block inside it, which throws if a second appears rather
   // than reading whichever comes first.

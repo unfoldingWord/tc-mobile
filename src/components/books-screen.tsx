@@ -3100,7 +3100,7 @@ function BookItem({
           onPointerDown={onHoldStart}
           // The book's hold area (#338). The card already keeps a long press
           // from selecting text or raising the phone's callout
-          // (`o4/books.css`, `.books-card`).
+          // (`3-components/books.css`, `.books-card`).
           data-reorder-handle={onHoldStart ? "" : undefined}
           aria-expanded={expanded}
           aria-controls={listId}
@@ -3118,7 +3118,7 @@ function BookItem({
                   draws for its swatches: a cover colour is the book's
                   identity, not a themed role (`lib/cover-colour.ts`'s
                   docblock argues it). Every other colour on the card is a
-                  layer-2 role in `o4/books.css`. */}
+                  layer-2 role in `3-components/books.css`. */}
             <span
               className="books-cover"
               aria-hidden="true"
@@ -3260,7 +3260,7 @@ function ChapterItem({
         type="button"
         onClick={onOpen}
         onPointerDown={onHoldStart}
-        // `o4/books.css` reads it to keep a long press from selecting text
+        // `3-components/books.css` reads it to keep a long press from selecting text
         // or raising the phone's callout.
         data-reorder-handle={onHoldStart ? "" : undefined}
         aria-label={strings.openChapter(heading)}
@@ -3499,7 +3499,7 @@ const TITLED_DOT_ROOM = 19;
  * wrapped rows fit in `height` ({@link TITLED_DOT_ROOM}). Past what the
  * smallest step can hold, the smallest step is returned anyway and the dots
  * wrap onto more rows: the row's height is a floor, not a cap
- * (`o4/books.css`, #1229), so it grows rather than clipping a dot. The
+ * (`3-components/books.css`, #1229), so it grows rather than clipping a dot. The
  * workbench's steps, fitted against {@link DOT_COLUMN} rather than the
  * workbench's 206.
  */

@@ -90,7 +90,7 @@ describe("O4SheetHead's spoken place (#1230, the DRI's 'Names in menus too')", (
   });
 });
 
-describe("o4/menus.css, how the crumbs elide and share the row (#1230)", () => {
+describe("3-components/menus.css, how the crumbs elide and share the row (#1230)", () => {
   const css = areaScope("menus");
 
   it("elides each crumb's own text with an ellipsis, on one line", () => {

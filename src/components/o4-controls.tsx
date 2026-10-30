@@ -14,7 +14,7 @@ import { Control } from "./control";
  * guide ring (#604) — so one of these keeps a `Control`'s name and inert
  * behaviour.
  *
- * The shapes live in `app/styles/o4/controls.css`.
+ * The shapes live in `app/styles/3-components/controls.css`.
  */
 type ControlProps = ComponentProps<typeof Control>;
 

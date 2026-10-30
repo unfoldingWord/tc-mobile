@@ -1,4 +1,4 @@
-/* O4 — Shared controls. Owner: #941. Every selector is prefixed with :root; see o4/index.css's header before editing this file.
+/* O4 — Shared controls. Owner: #941. Every selector is prefixed with :root; see 3-components/index.css's header before editing this file.
 
    The three shapes `components/o4-controls.tsx` puts on a `Control`
    (docs/design/o4-design-system.md §3). Each is layered onto the base

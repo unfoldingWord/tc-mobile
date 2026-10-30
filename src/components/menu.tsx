@@ -15,7 +15,7 @@ import { strings } from "@/lib/strings";
 
 /**
  * How long a released sheet takes to spring back, a little past the 160ms
- * transition in `o4/sheets.css`, after which the drag's inline offset and
+ * transition in `3-components/sheets.css`, after which the drag's inline offset and
  * state are removed. Under reduced motion there is no transition and the
  * sheet is already home; the cleanup is the same.
  */
@@ -284,7 +284,7 @@ export function Menu({
 
   // DRAG DOWN TO CLOSE (#1268, the requirements owner: "it should work as
   // drag down to close"). Only where the grip is drawn: a
-  // bottom sheet, which `o4/sheets.css` keys on what the panel holds. The
+  // bottom sheet, which `3-components/sheets.css` keys on what the panel holds. The
   // side drawer (About) draws none, so a press there never starts a drag.
   //
   // WHERE A DRAG STARTS: the grip and the header row, never the body. The
@@ -292,7 +292,7 @@ export function Menu({
   // screen and scrolls past that) and where its tiles are, so a drag there
   // would fight both. The header holds no scrolling content, and a press on
   // a button in it (the ✕) stays a tap. Both carry `touch-action: none` in
-  // `o4/sheets.css`, so the browser does not claim the finger for a pan and
+  // `3-components/sheets.css`, so the browser does not claim the finger for a pan and
   // cancel the drag.
   //
   // The sheet follows the finger through `--sheet-drag-y` on the panel, set

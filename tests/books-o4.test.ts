@@ -628,7 +628,7 @@ describe("the guided ring lands on the intended control (#604, #834)", () => {
   }
 });
 
-describe("o4/books.css (#942)", () => {
+describe("3-components/books.css (#942)", () => {
   // Read by selector, comments stripped (`areaScope`), so a header naming a
   // selector or a primitive can neither satisfy nor trip a check below
   // (AGENTS.md, the share-scrim trap).

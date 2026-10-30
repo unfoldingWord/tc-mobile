@@ -18,7 +18,7 @@ import { one, render } from "./render";
  * caption below, and the bottom-sheet shell a `<Menu>` takes on while it
  * holds that grid.
  *
- * Markup half through `tests/render.ts`; rule half from `o4/menus.css` read
+ * Markup half through `tests/render.ts`; rule half from `3-components/menus.css` read
  * as rules. No cascade here: whether the sheet shell actually wins over
  * `.menu-panel` in a browser is not answered by this file.
  */
@@ -122,7 +122,7 @@ describe("TileGrid and TileSpacer (#941)", () => {
   });
 });
 
-describe("o4/menus.css (#941)", () => {
+describe("3-components/menus.css (#941)", () => {
   const menus = areaScope("menus");
   const sel = (selector: string) => areaSelector("menus", selector);
 
@@ -198,7 +198,7 @@ describe("o4/menus.css (#941)", () => {
   it("gives a menu holding the grid the bottom-sheet shell: radius 26 and a 56 × 5 handle", () => {
     const panel = declsFor(menus, sel(".menu-panel:has(.o4-tiles)"));
     expect(panel.get("border-radius")).toBe("26px");
-    // The handle is `menu.tsx`'s grip (#1268): drawn in o4/sheets.css,
+    // The handle is `menu.tsx`'s grip (#1268): drawn in 3-components/sheets.css,
     // shown on a tile sheet here.
     const handle = declsFor(
       menus,

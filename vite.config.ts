@@ -495,7 +495,7 @@ export default defineConfig(({ mode }) => {
       //
       // The Safari/iOS entries are **15.4, not the app's original 15.0**
       // floor. #1051 found that the
-      // O4 CSS (`src/app/styles/o4/menus.css`, `sheets.css`, `motion.css`)
+      // O4 CSS (`src/app/styles/3-components/menus.css`, `sheets.css`, `motion.css`)
       // ships a `:has()` selector that needs Safari/iOS 15.4 (caniuse-lite's
       // `data/features/css-has.js`) — a real gap against 15.0 that no
       // `build.target`/`cssTarget` setting can close (verified: LightningCSS

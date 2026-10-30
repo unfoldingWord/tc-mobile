@@ -86,7 +86,7 @@ describe("the O4 crumbs (#1267)", () => {
 
   it("puts the direction on the text span the ellipsis is drawn on, not on the clipped chip", () => {
     const root = render(createElement(O4Crumbs, { book: HEBREW }));
-    // `o4/menus.css` sets text-overflow on `.o4-crumb > span`; that element's
+    // `3-components/menus.css` sets text-overflow on `.o4-crumb > span`; that element's
     // own direction is what picks the end the "…" lands on.
     const chip = one(root, ".o4-crumb");
     expect(chip.hasAttribute("dir")).toBe(false);

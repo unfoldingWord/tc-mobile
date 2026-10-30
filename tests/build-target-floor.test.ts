@@ -14,7 +14,7 @@ import { resolveDistGate } from "./dist-gate";
  *
  * **The floor is 15.4, not 15.0** — raised there by the #1052 DRI decision
  * (2026-09-26, "Raise floor to 15.4 (Recommended)"), because the O4 CSS
- * (`src/app/styles/o4/{menus,sheets,motion}.css`) uses the `:has()` selector,
+ * (`src/app/styles/3-components/{menus,sheets,motion}.css`) uses the `:has()` selector,
  * which needs Safari/iOS 15.4 (caniuse-lite's `data/features/css-has.js`) and
  * has no fallback `build.target`/`build.cssTarget` can provide (there is no
  * downlevel transform for a CSS selector the way there is for JS syntax). See `docs/native/system-requirements.md` for the

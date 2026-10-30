@@ -24,8 +24,8 @@ import { stripComments } from "./support";
  * form of X)?"
  *
  * Every sheet is one `<Menu>` (`components/menu.tsx`): the half-screen
- * shape is CSS keyed on what the panel holds (`o4/menus.css`,
- * `o4/sheets.css`), and the closer is the Menu header's one `Control`. So
+ * shape is CSS keyed on what the panel holds (`3-components/menus.css`,
+ * `3-components/sheets.css`), and the closer is the Menu header's one `Control`. So
  * the glyph is asserted where it is decided — `Menu`, under each of the
  * three header modes its callers use — and then through two real callers
  * (the recorder's ⋮ menu and About), with a source sweep that every

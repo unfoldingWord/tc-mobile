@@ -460,7 +460,7 @@ describe("an open book is a tall card, and still moves by its row (#338)", () =>
   });
 });
 
-describe("o4/books.css: the book lift (#338)", () => {
+describe("3-components/books.css: the book lift (#338)", () => {
   // The layer's own rules and its ONE reduced-motion block (`areaScope`
   // throws on a second), read by selector rather than split at the first
   // `@media`.
@@ -494,7 +494,7 @@ describe("o4/books.css: the book lift (#338)", () => {
     ).toBe("none");
   });
 
-  it("casts the lift shadow from o4/segments.css's one rule", () => {
+  it("casts the lift shadow from 3-components/segments.css's one rule", () => {
     // One member of the segments file's three-selector lift rule.
     expect(
       declarationValue(

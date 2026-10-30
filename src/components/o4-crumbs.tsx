@@ -54,7 +54,7 @@ export interface O4CrumbsProps {
  * (the DRI's pick on #1263, "Names in menus too") the sheet heads of the
  * chapter, segment and recorder menus, so a header and its menu always
  * match. A crumb too long for its share of the row is elided with "…" by
- * `o4/menus.css`, which also sets how the crumbs share that row.
+ * `3-components/menus.css`, which also sets how the crumbs share that row.
  *
  * The book and chapter chips' text carries `dir="auto"` (#1267): both are
  * names the facilitator typed, so each takes its direction from its own
@@ -75,7 +75,7 @@ export interface O4CrumbsProps {
  * a plain span unless a caller also links it; then its button carries the
  * marker (#1278). The header hands each link its own Back handler, so a
  * crumb never leaves by a path Back does not take. A linked crumb is a 44px
- * target drawn as the same 40px chip (`o4/menus.css`, `button.o4-crumb`).
+ * target drawn as the same 40px chip (`3-components/menus.css`, `button.o4-crumb`).
  *
  * In a screen header (the same `links` signal) a cut-off book or chapter
  * crumb can be held to read it whole (S14, #1284): the same

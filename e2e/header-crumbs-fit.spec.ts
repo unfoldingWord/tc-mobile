@@ -37,7 +37,7 @@ test.use({
  * `tests/o4-crumbs-chapter-name.test.ts` (the declarations). At each phone
  * width it checks that the crumbs stay inside the header and push no control
  * off the screen, that a long name elides instead of wrapping or overflowing,
- * and the sharing rule `o4/menus.css` states: the book and chapter crumbs get
+ * and the sharing rule `3-components/menus.css` states: the book and chapter crumbs get
  * equal text room, and a name that fits in less than its share keeps its
  * whole width and hands the rest to the other.
  */

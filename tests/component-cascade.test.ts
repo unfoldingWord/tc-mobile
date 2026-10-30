@@ -23,7 +23,7 @@ import {
  *
  * Two stylesheets write into the one `@layer components`: the base,
  * `src/app/styles/3-components.css`, and the area files under
- * `src/app/styles/o4/`, imported after it. Sharing one layer means a tie in
+ * `src/app/styles/3-components/`, imported after it. Sharing one layer means a tie in
  * specificity goes to whichever rule comes later, and the area files rely on
  * that. A `:root ` prefix on every area selector used to hold each area rule
  * one step above the base rule it restyles; #954 takes that prefix off, and
@@ -37,7 +37,7 @@ import {
  *      rule. Every built rule maps back to a source rule in one of the two
  *      sets, and every source rule with a declaration is found in the build,
  *      which is the non-empty floor for everything below.
- *   2. THE SENTINEL. `o4/index.css`'s one declaration is the last thing in
+ *   2. THE SENTINEL. `3-components/index.css`'s one declaration is the last thing in
  *      the components block, right before the utilities layer opens. A
  *      comment-only marker would not survive: the build strips comments, so
  *      an empty `@layer components {}` compiles to nothing.
@@ -77,8 +77,8 @@ const GATE = resolveDistGate(CSS_FILES.length > 0, "dist/assets/*.css");
 
 const LAYER = "@layer components";
 
-/** The minified sentinel rule `o4/index.css` declares. */
-const SENTINEL = ":root{--o4-scope:1}";
+/** The minified sentinel rule `3-components/index.css` declares. */
+const SENTINEL = ":root{--c-components-last:1}";
 
 /** A source rule, in the one spelling the build is compared in. */
 interface SourceRule {
@@ -157,7 +157,7 @@ function ruleKey(selector: string, context: readonly string[]): string {
   return [...inner, normalizeSelector(selector)].join(" » ");
 }
 
-/** The area files, in `o4/index.css`'s import order. */
+/** The area files, in `3-components/index.css`'s import order. */
 function areaFiles(): string[] {
   const index = postcss.parse(readAreaCss("index"));
   const files = index.nodes
@@ -165,7 +165,8 @@ function areaFiles(): string[] {
       (n): n is postcss.AtRule => n.type === "atrule" && n.name === "import"
     )
     .map((n) => n.params.replace(/^["']\.\/|["']$/g, ""));
-  if (files.length === 0) throw new Error("o4/index.css imports no files");
+  if (files.length === 0)
+    throw new Error("3-components/index.css imports no files");
   return files;
 }
 

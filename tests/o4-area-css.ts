@@ -20,7 +20,7 @@ export const AREA_DIR = path.resolve(
   "src",
   "app",
   "styles",
-  "o4"
+  "3-components"
 );
 
 /** The ten area files, by the name their file carries. */

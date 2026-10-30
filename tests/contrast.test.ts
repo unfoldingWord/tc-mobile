@@ -262,7 +262,7 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
     });
 
     it(`${theme}: the ring cannot live INSIDE O4's green Confirm — the reason it is outset (#943)`, () => {
-      // o4/sheets.css paints the name sheet's commit control on --s-done and
+      // 3-components/sheets.css paints the name sheet's commit control on --s-done and
       // outsets its guide ring onto the sheet's --s-surface, for the same
       // reason the record button's is outset. If a future accent clears the
       // floor on --s-done, that exception can go.
@@ -477,7 +477,7 @@ describe("a Finished segment's green reads on the recorder stage (#926)", () => 
 
 describe("the SaveFailed armed Restart glyph reads on its own fill (#1088 S9)", () => {
   // The fix for S9 ("reads red on blue"): `.o4-err-wide--armed`
-  // (o4/errors.css) swaps the wide guide button's fill from `--s-guide` to
+  // (3-components/errors.css) swaps the wide guide button's fill from `--s-guide` to
   // `--s-live`/`--s-live-ink` while armed, instead of layering red TEXT on
   // top of the still-blue fill. The glyph is a non-text mark (an icon, no
   // label), so it takes the same floor `--s-done-ink` on `--s-done` does

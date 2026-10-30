@@ -13,7 +13,7 @@
  * is owned by a different lane this batch.
  *
  * The fix swaps the WHOLE fill to `--s-live`/`--s-live-ink` instead
- * (`.o4-err-wide--armed`, `src/app/styles/o4/errors.css`) rather than
+ * (`.o4-err-wide--armed`, `src/app/styles/3-components/errors.css`) rather than
  * choosing a different text colour on the still-blue fill: `--s-live` +
  * `--s-live-ink` is the same solid-red-circle pairing `.control--record`
  * already uses for "this is live" (`3-components.css`), so the glyph stays

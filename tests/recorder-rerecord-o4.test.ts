@@ -32,7 +32,7 @@ import { render } from "./render";
  * or held open. The real start, over a faked `getUserMedia`, is
  * `tests/recorder-record-again-mic-order.test.ts`.
  *
- * What this cannot see: the cascade (whether `o4/dialogs.css` wins on a real
+ * What this cannot see: the cascade (whether `3-components/dialogs.css` wins on a real
  * page), layout, and anything on a phone.
  */
 

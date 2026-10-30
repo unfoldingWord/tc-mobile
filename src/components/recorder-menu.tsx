@@ -203,7 +203,7 @@ export function RecorderMenu({
 
 /**
  * This menu's action tiles (#949, workbench G3 and G8), on the tile grid,
- * which `o4/menus.css` turns into a bottom sheet capped at half the screen,
+ * which `3-components/menus.css` turns into a bottom sheet capped at half the screen,
  * so the waveform above is meant to stay in view (#927).
  *
  *   - Record mode has no Edit tile. G3 (workbench round 4) took it out
@@ -214,7 +214,7 @@ export function RecorderMenu({
  *     the shared "Done" (D17).
  *
  * Every tile draws at the shared tile glyph size; `recorder-menu-tile` is
- * only the hook for this sheet's half-screen cap in `o4/menus.css`.
+ * only the hook for this sheet's half-screen cap in `3-components/menus.css`.
  */
 function RecorderMenuTiles({
   mode,

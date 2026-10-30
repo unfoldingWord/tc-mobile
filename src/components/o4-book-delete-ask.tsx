@@ -28,10 +28,10 @@ interface O4BookDeleteAskProps {
  * Escape, the scrim and Back mean while this is up (`books-screen.tsx`).
  *
  * The two buttons reuse `EraseConfirm`'s `confirm-actions` / `confirm-cancel`
- * markup on purpose, so `o4/dialogs.css` gives them 13's shape rather than a
+ * markup on purpose, so `3-components/dialogs.css` gives them 13's shape rather than a
  * second copy of it here. The header reuses the menu sheets' `o4-sheet-head`
- * row (`o4/menus.css`); the cover and name rules are the Books area's
- * (`o4/books.css`).
+ * row (`3-components/menus.css`); the cover and name rules are the Books area's
+ * (`3-components/books.css`).
  *
  * Presentational: every outcome arrives by prop.
  */

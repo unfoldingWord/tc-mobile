@@ -63,7 +63,7 @@ export const ShareProgressPanel = forwardRef<
 function O4Chips({ chips }: { chips: ShareO4View["chips"] }) {
   const out = chips.filter((c) => c.state !== "stays").length;
   // A long book's row is capped at about three rows and scrolls inside
-  // (`o4/share.css`, DRI pick (a) on #1023); this keeps the current chip in
+  // (`3-components/share.css`, DRI pick (a) on #1023); this keeps the current chip in
   // view as the count moves.
   const rowRef = useKeepInView<HTMLSpanElement>(
     chips.findIndex((c) => c.state === "current")
@@ -99,7 +99,7 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 /**
  * The O4 140-in-176 circle (#947): the filling ring, when there is a count
  * to fill it by, around the core that holds the glyph. Its colours, and the
- * outcome rings D14 and D16 draw, are `o4/share.css`'s, keyed on the scrim's
+ * outcome rings D14 and D16 draw, are `3-components/share.css`'s, keyed on the scrim's
  * `data-outcome`. The ring is `aria-hidden`. The core is a progress bar
  * while the view gives it a meter (D22), labelled from `strings.ts` and
  * valued 0 to 100, with no value before the first count and 100 once

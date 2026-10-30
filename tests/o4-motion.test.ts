@@ -5,7 +5,7 @@ import { areaSelector, readAreaCss } from "./o4-area-css";
 import { stripCssComments } from "./support";
 
 /**
- * O4 ambient motion (#950, epic #936): `src/app/styles/o4/motion.css`.
+ * O4 ambient motion (#950, epic #936): `src/app/styles/3-components/motion.css`.
  *
  * Read as a tree of blocks (PostCSS) rather than as a raw string, with block
  * comments stripped first, so prose that names a selector or a keyframe cannot
@@ -95,7 +95,7 @@ function animationName(value: string): string {
   return value.split(" ")[0] ?? "";
 }
 
-describe("o4/motion.css is read as a tree, not as a string (#950)", () => {
+describe("3-components/motion.css is read as a tree, not as a string (#950)", () => {
   it("parses one @layer components block with the loops and a guard inside", () => {
     expect(LAYER).toBeDefined();
     // Floors: a parse that finds nothing must fail here, not pass the loops

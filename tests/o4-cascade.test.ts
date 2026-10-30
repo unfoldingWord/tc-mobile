@@ -9,7 +9,7 @@ import { stripCssComments } from "./support";
 /**
  * The ten per-area O4 stylesheets, pre-created ahead of batch 1 so its five
  * parallel lanes (#941-#945, #946-#950) never collide on this one index —
- * two lanes editing `o4/index.css` in the same batch is the exact defect
+ * two lanes editing `3-components/index.css` in the same batch is the exact defect
  * this pre-creation exists to avoid.
  *
  * A SOURCE-text check, deliberately not gated behind `REQUIRE_DIST_BUILD`:
@@ -41,7 +41,7 @@ describe("the ten pre-created O4 area stylesheets exist and are wired in", () =>
     expect(existsSync(path.join(AREA_DIR, name)), name).toBe(true);
   });
 
-  it.each(AREA_FILES)("%s is imported from o4/index.css", (name) => {
+  it.each(AREA_FILES)("%s is imported from 3-components/index.css", (name) => {
     expect(INDEX_SOURCE, name).toContain(`@import "./${name}";`);
   });
 });

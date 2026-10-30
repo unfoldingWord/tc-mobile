@@ -8,7 +8,7 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * (O4), and the circles keep their size. `Icon` writes width/height as
  * SVG attributes (22 by default, 24 for the edit bar's quiet controls); a CSS
  * declaration beats an attribute, so the size is a rule in
- * `o4/recorder.css` and a declared-value read is what can pin it here
+ * `3-components/recorder.css` and a declared-value read is what can pin it here
  * (`tests/render.ts` resolves no cascade, #197). This proves the declared
  * values only, not a computed style in a browser and not a phone.
  */

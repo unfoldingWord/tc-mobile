@@ -24,7 +24,7 @@ import { declarationValue } from "./support";
  * Erase-and-record-again path each render it with their own copy. G6 asks
  * inside the book sheet instead (`o4-book-delete-ask.tsx`, #980), reusing
  * this file's button rules. The look is CSS, in
- * `src/app/styles/o4/dialogs.css`. The last describe below pins focus landing
+ * `src/app/styles/3-components/dialogs.css`. The last describe below pins focus landing
  * and the Tab trap; focus return belongs to each caller, not to this
  * component, and is not exercised here.
  *
@@ -49,7 +49,7 @@ function decl(selector: string): (property: string) => string {
   return (property) => declarationValue(body, property).replace(/\s+/g, " ");
 }
 
-describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
+describe("3-components/dialogs.css — the confirm dialog's O4 values (#946)", () => {
   it("has rules at all (non-emptiness floor)", () => {
     expect(RULES.length).toBeGreaterThanOrEqual(8);
   });
@@ -185,7 +185,7 @@ async function mountConfirmWithPreview() {
   });
 }
 
-describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946, #979)", () => {
+describe("3-components/dialogs.css's selectors against EraseConfirm's real markup (#946, #979)", () => {
   // Every selector in the whole file, every nested block included: "no
   // selector matches nothing" is a ban, so it cannot stop at the layer.
   const selectors = fileRules("dialogs").flatMap((r) => r.selectors);

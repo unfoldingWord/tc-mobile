@@ -1,4 +1,4 @@
-/* O4 — Bottom sheets and the name sheet (02, G4). Owner: #943. Every selector is prefixed with :root; see o4/index.css's header before editing this file. */
+/* O4 — Bottom sheets and the name sheet (02, G4). Owner: #943. Every selector is prefixed with :root; see 3-components/index.css's header before editing this file. */
 
 /* WHAT A "NAME SHEET" IS HERE. Every naming surface in the app (New book, Add
    chapter, and the book, chapter and segment renames, #264/#314/#609) is the
@@ -58,7 +58,7 @@
      `menu.tsx`'s `.menu-grip`, a real element so a finger can start a drag
      on it. It is hidden by default and drawn on every bottom sheet: the name
      sheets here, and the tile sheets and the book delete ask in
-     o4/menus.css. Anywhere else (the side drawer About uses) it stays
+     3-components/menus.css. Anywhere else (the side drawer About uses) it stays
      hidden, and `menu.tsx` starts no drag while it is. Not a control: it is
      aria-hidden, and the ✕ in the header is the accessible close.
 
