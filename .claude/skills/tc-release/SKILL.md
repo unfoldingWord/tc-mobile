@@ -173,8 +173,8 @@ from.
       line for the tracker.
 - [ ] Agent-allowed: Play lane (`android-play.yml`) runs on the staging push.
       Note its release name (`<version> (<code>) staging@<PROMO_SHA short>`) and
-      status (a draft on internal). Human-only: the DRI releases the draft in
-      the Play Console if wanted.
+      status (a draft on internal). The draft stays unreleased until step
+      7a's Play text is pasted into it; the release is step 7a's last item.
 
 ## 5. Native builds, one commit
 
@@ -230,7 +230,8 @@ All agent-allowed and read-only.
       `gh release delete tester-build-v1.0.0-rc.N --repo unfoldingWord/tc-mobile --cleanup-tag`,
       so the tag cannot outlive the Release. Ask the DRI to scan the QR and to drag the image
       into the notes if it doesn't display.
-- [ ] Agent-allowed: post a publish record on the promotion PR.
+- [ ] Agent-allowed: post a publish record on the promotion PR. It is not
+      complete until step 7a edits the store blurbs into it.
 
 ## 7a. Store blurbs
 
@@ -241,7 +242,10 @@ passes no changelog. So the Play "What's new" and the TestFlight "What to Test"
 are written by hand for every release, from the published announcement.
 
 - [ ] Agent-allowed: draft the Play "What's new". Play caps it at 500
-      characters per language; count it with a script, not by eye. Write
+      characters per language
+      ([Play Console Help](https://support.google.com/googleplay/android-developer/answer/9859348));
+      count it with a script in characters (Unicode code points), not by
+      eye and not in bytes. Write
       en-US only unless the DRI asks for more languages. Lead with what a
       tester will see. If testers on the track may be coming from an earlier
       version than the last one, add one line naming what the versions
@@ -251,13 +255,17 @@ are written by hand for every release, from the published announcement.
       rose since the last tester build; what is new; numbered things to try,
       each with what to look for; what has not been run on a phone; the `≡`
       report path; the release link. Keep it to about one screen.
-- [ ] Agent-allowed: both blurbs make no claim the announcement does not
-      make, and carry its red-team corrections.
-- [ ] Agent-allowed: put both blurbs in the publish record on the promotion
-      PR, so the next cut can find them.
+- [ ] Agent-allowed: both blurbs make no claim that neither the
+      announcement nor the bump body makes (step 1 records `DB_VERSION` and
+      what was not run, which is where the upgrade warning and the not-run
+      list come from), and they carry the red-team corrections.
+- [ ] Agent-allowed: edit both blurbs into step 7's publish record on the
+      promotion PR, so the next cut can find them. The record is complete
+      only once they are in it.
 - [ ] Human-only: the DRI pastes the Play text into the internal-testing
-      draft before releasing it (step 4), and the TestFlight text into App
-      Store Connect → TestFlight → the build → Test Details (step 8).
+      draft, which step 4 left unreleased, and only then releases it if
+      wanted. Then the TestFlight text goes into App Store Connect →
+      TestFlight → the build → Test Details, before step 8.
 
 ## 8. TestFlight group
 
