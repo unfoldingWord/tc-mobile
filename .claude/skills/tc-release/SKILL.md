@@ -1,6 +1,6 @@
 ---
 name: tc-release
-description: Step-by-step checklist for cutting a tC Mobile tester release (a 1.0.0-rc.N candidate) or the final v1.0.0 promotion. It covers scope picks, the version bump, the release red team, the pinned release branch, the promotion PR, the DRI go/no-go, check:deploy, all channels from one commit, APK checks, the tester-build pre-release with QR, TestFlight group assignment and records. It marks each step human-only (the DRI) or agent-allowed. Use whenever cutting, promoting or publishing a tc-mobile release.
+description: Step-by-step checklist for cutting a tC Mobile tester release (a 1.0.0-rc.N candidate) or the final v1.0.0 promotion. It covers scope picks, the version bump, the release red team, the pinned release branch, the promotion PR, the DRI go/no-go, check:deploy, all channels from one commit, APK checks, the tester-build pre-release with QR, the Play and TestFlight store blurbs, TestFlight group assignment and records. It marks each step human-only (the DRI) or agent-allowed. Use whenever cutting, promoting or publishing a tc-mobile release.
 ---
 
 # tc-release
@@ -173,8 +173,8 @@ from.
       line for the tracker.
 - [ ] Agent-allowed: Play lane (`android-play.yml`) runs on the staging push.
       Note its release name (`<version> (<code>) staging@<PROMO_SHA short>`) and
-      status (a draft on internal). Human-only: the DRI releases the draft in
-      the Play Console if wanted.
+      status (a draft on internal). The draft stays unreleased until step
+      7a's Play text is pasted into it; the release is step 7a's last item.
 
 ## 5. Native builds, one commit
 
@@ -230,7 +230,42 @@ All agent-allowed and read-only.
       `gh release delete tester-build-v1.0.0-rc.N --repo unfoldingWord/tc-mobile --cleanup-tag`,
       so the tag cannot outlive the Release. Ask the DRI to scan the QR and to drag the image
       into the notes if it doesn't display.
-- [ ] Agent-allowed: post a publish record on the promotion PR.
+- [ ] Agent-allowed: post a publish record on the promotion PR. It is not
+      complete until step 7a edits the store blurbs into it.
+
+## 7a. Store blurbs
+
+Neither store lane sends release text. The Play lane uploads with
+`skip_upload_changelogs: true` (`fastlane/Fastfile`, the `play` lane: "changelogs
+are maintained in Play Console"), and `upload_to_testflight` in the same file
+passes no changelog. So the Play "What's new" and the TestFlight "What to Test"
+are written by hand for every release, from the published announcement.
+
+- [ ] Agent-allowed: draft the Play "What's new". Play caps it at 500
+      characters per language
+      ([Play Console Help](https://support.google.com/googleplay/android-developer/answer/9859348));
+      count it with a script in characters (Unicode code points), not by
+      eye and not in bytes. Write
+      en-US only unless the DRI asks for more languages. Lead with what a
+      tester will see. If testers on the track may be coming from an earlier
+      version than the last one, add one line naming what the versions
+      in between bring.
+- [ ] Agent-allowed: draft the TestFlight "What to Test". In order: the build
+      stamp to check; a one-way data-upgrade warning whenever `DB_VERSION`
+      rose since the last tester build; what is new; numbered things to try,
+      each with what to look for; what has not been run on a phone; the `≡`
+      report path; the release link. Keep it to about one screen.
+- [ ] Agent-allowed: both blurbs make no claim that neither the
+      announcement nor the bump body makes (step 1 records `DB_VERSION` and
+      what was not run, which is where the upgrade warning and the not-run
+      list come from), and they carry the red-team corrections.
+- [ ] Agent-allowed: edit both blurbs into step 7's publish record on the
+      promotion PR, so the next cut can find them. The record is complete
+      only once they are in it.
+- [ ] Human-only: the DRI pastes the Play text into the internal-testing
+      draft, which step 4 left unreleased, and only then releases it if
+      wanted. Then the TestFlight text goes into App Store Connect →
+      TestFlight → the build → Test Details, before step 8.
 
 ## 8. TestFlight group
 
