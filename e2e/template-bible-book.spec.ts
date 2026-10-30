@@ -37,10 +37,19 @@ test("create Titus from the Template Library: 3 chapters of 9, 7 and 9 segments 
   await expect(panel(page)).toBeVisible();
 
   // OBS first, then Titus: the package list's order.
+  // The list is read again on every open and is busy while it loads; a row
+  // clicked before it settles is inert (#1747), so wait for it (#1804).
+  await expect(panel(page).locator(".settings-list")).toHaveAttribute(
+    "aria-busy",
+    "false"
+  );
   const rows = panel(page).locator("button.template-row .template-row-title");
   await expect(rows).toHaveText(["Open Bible Stories", "Titus"]);
 
-  await page.getByRole("button", { name: /^Titus\b/ }).click();
+  // Scoped to the panel: a bare role query would also match a shelf row.
+  await panel(page)
+    .getByRole("button", { name: /^Titus\b/ })
+    .click();
   const name = page.getByRole("textbox", { name: "Book name" });
   await expect(name).toHaveValue("Titus");
   await page.getByRole("button", { name: "Create book", exact: true }).click();
@@ -64,7 +73,19 @@ test("create Titus from the Template Library: 3 chapters of 9, 7 and 9 segments 
     await page
       .getByRole("button", { name: `Open Chapter ${chapter}`, exact: true })
       .click();
+    // A count alone passes for any chapter of that size. The heading names
+    // this chapter, and the rows are exactly 1..count, so the last label
+    // (`Open segment ${count}`) is unique to the chapter (#1804).
+    await expect(
+      page.locator("main").getByText(`Chapter ${chapter}`, { exact: true })
+    ).toBeVisible();
     await expect(segmentRows(page)).toHaveCount(count);
+    await expect(segmentRows(page)).toHaveText(
+      Array.from({ length: count }, (_, i) => String(i + 1))
+    );
+    await expect(
+      page.getByRole("button", { name: `Open segment ${count}`, exact: true })
+    ).toBeVisible();
     await page.getByRole("button", { name: "Back to books" }).click();
   }
 });
