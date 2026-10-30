@@ -32,7 +32,7 @@
  * build, or `main` in any branch variable leaves the package out with a log
  * line saying why, and the build goes on, so a preview build of `main` on the
  * staging Worker (which sets the flag) does not fail. The DRI's pick on #1450
- * (2026-10-30), verbatim: "Test build now, titles later (Recommended)"; the
+ * (2026-10-29), verbatim: "Test build now, titles later (Recommended)"; the
  * fail-closed rule is #1797's first follow-up from #1798's review.
  */
 import { createHash } from "node:crypto";
