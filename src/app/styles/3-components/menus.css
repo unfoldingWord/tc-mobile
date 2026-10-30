@@ -1,4 +1,4 @@
-/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Every selector is prefixed with :root; see o4/index.css's header before editing this file.
+/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Every selector is prefixed with :root; see 3-components/index.css's header before editing this file.
 
    #941's half: the tile primitive (`components/o4-tile-menu.tsx`) and the
    bottom-sheet shell a menu takes on while it holds a tile grid. #949
@@ -137,7 +137,7 @@
     border: 1px solid var(--s-card-edge);
     border-radius: 26px; /* #939 token */
   }
-  /* The grip (#1268): `menu.tsx`'s `.menu-grip`, drawn in o4/sheets.css and
+  /* The grip (#1268): `menu.tsx`'s `.menu-grip`, drawn in 3-components/sheets.css and
      shown here on a tile sheet and on the book delete ask below. These
      sheets have an 18px gap where the name sheets have 16, so the grip gives
      back 2px more below, as the handle they drew before did. The header row

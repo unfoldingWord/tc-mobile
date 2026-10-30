@@ -4,7 +4,7 @@ import { expect, test, type Page } from "./support/test";
  * A SHORT book name on the new-look (O4) Books shelf sits at the edge its own
  * direction starts from, against the shipped `dist/` build (#1267, #1278 from
  * PR #1270's review). The fix is two rules that only the cascade and layout
- * can show together: `.books-name` grows to fill the row (`o4/books.css`),
+ * can show together: `.books-name` grows to fill the row (`3-components/books.css`),
  * and `[dir="auto"] { text-align: start }` (`3-components.css`) puts the text
  * at the row's end when the name is right-to-left. A long name overflows and
  * hides both, so these names are short enough to leave the row mostly empty.

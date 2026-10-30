@@ -33,7 +33,7 @@ import { one, render } from "./render";
  * Props-to-markup through `tests/render.ts` for the banner itself, and a real
  * jsdom mount (the `tests/books-o4.test.ts` pattern) where a CLICK or the
  * screen's own wiring is what is under test. No cascade and no layout: that
- * the rules in `o4/books.css` paint what the workbench shows is not something
+ * the rules in `3-components/books.css` paint what the workbench shows is not something
  * this file can answer — the CSS cases below only read which roles the rules
  * name.
  *
@@ -432,7 +432,7 @@ describe("Books shows the banner where the #247 line was", () => {
   });
 });
 
-describe("o4/books.css, the banner rules", () => {
+describe("3-components/books.css, the banner rules", () => {
   const books = areaScope("books");
   const rules = scopeRules(books).filter((r) =>
     r.selectors.some((s) => s.includes(".o4-storage"))

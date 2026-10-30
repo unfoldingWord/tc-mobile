@@ -7,7 +7,7 @@ import { seedToRecorder } from "./support/seed";
 /**
  * The O4 recorder menu stays under half the screen, so the waveform above it
  * stays in view (#927, the requirements owner's ask; the cap is
- * `o4/menus.css`'s `.menu-panel:has(.recorder-menu-tile)` rule from #994).
+ * `3-components/menus.css`'s `.menu-panel:has(.recorder-menu-tile)` rule from #994).
  *
  * #994 put the cap in CSS but nothing measured it on a rendered page. This
  * spec opens the real menu over a recorded take in the shipped `dist/` build,

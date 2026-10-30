@@ -25,7 +25,7 @@ import { declarationValue } from "./support";
  *
  * Two halves, the split `tests/render.ts` documents: the markup each wrapper
  * emits (the accessible name and the `Control` semantics it must keep), and
- * the rules `o4/controls.css` carries for it. The harness has no cascade, so
+ * the rules `3-components/controls.css` carries for it. The harness has no cascade, so
  * whether the rules WIN in a browser is not a question this file can answer.
  */
 const button = (el: Parameters<typeof render>[0]) => one(render(el), "button");
@@ -108,7 +108,7 @@ describe("the O4 control wrappers (#941)", () => {
   });
 });
 
-describe("o4/controls.css (#941)", () => {
+describe("3-components/controls.css (#941)", () => {
   const layer = areaScope("controls");
   /** The one rule for `selector`, read a property at a time. */
   const rule = (selector: string) => {

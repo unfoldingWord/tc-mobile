@@ -270,7 +270,7 @@ describe("the segment menu (07) on the tile grid", () => {
     // tiles (this `recorded` fixture's hasClip case) do not fit the pinned
     // 76 x 76 token at 320-360px (#1119 round 5, George Medium 1), so this
     // grid drops the spacer entirely and goes `o4-tiles--compact`
-    // (`o4/menus.css`) instead of pushing Reset/Delete to the far end —
+    // (`3-components/menus.css`) instead of pushing Reset/Delete to the far end —
     // there is no room left to push into. The three-tile, no-clip case below (`never-recorded segment`)
     // still fits at full size and keeps its spacer.
     const grid = dialog().querySelector(".o4-tiles")!;
@@ -631,7 +631,7 @@ describe("marking-done copy (D17)", () => {
   });
 });
 
-describe("o4/menus.css, #949's chapter and segment menu section", () => {
+describe("3-components/menus.css, #949's chapter and segment menu section", () => {
   const menus = areaScope("menus");
   const sel = (selector: string) => areaSelector("menus", selector);
 

@@ -6,7 +6,7 @@ import type { RecorderLook } from "./recorder-look";
 /**
  * The one piece of new markup the O4 Recorder needs (#945, epic #936): the
  * mono timestamp states 10 and 11 show. Everything else O4 changes on this
- * screen is CSS, in `app/styles/o4/recorder.css`, keyed off the stage's
+ * screen is CSS, in `app/styles/3-components/recorder.css`, keyed off the stage's
  * `data-o4-look` attribute (`recorder-look.ts`).
  */
 

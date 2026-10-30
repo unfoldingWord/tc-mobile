@@ -493,7 +493,7 @@ export function SegmentRow({
   // when there is no title.
   const titled = row.label != null && row.label !== "";
   const waveHeight = titled ? 36 : 56;
-  // The hold area's handler and marker (#953 PR2a). `o4/segments.css` reads
+  // The hold area's handler and marker (#953 PR2a). `3-components/segments.css` reads
   // `data-reorder-handle` to keep a long press from selecting text or
   // raising a callout.
   const holdArea = onHoldStart
@@ -521,7 +521,7 @@ export function SegmentRow({
       onKeyDown={onKeyDown}
       className={cn("scrub min-w-0", playing && "scrub--playing")}
       // The part past the playhead paints in `--s-voice-dim` while playing:
-      // `o4/segments.css` masks the canvas from this fraction on.
+      // `3-components/segments.css` masks the canvas from this fraction on.
       style={
         playing
           ? ({ "--row-played": `${fraction * 100}%` } as React.CSSProperties)
@@ -745,7 +745,7 @@ export function SegmentRow({
             {/* `hasClip` puts FOUR real tiles in this row (Done, Edit,
                 Clear, Delete) — the case that does not fit the pinned 76 ×
                 76 token at 320-360px (#1119 round 5, George Medium 1;
-                `o4-tiles--compact` in `o4/menus.css` has the arithmetic).
+                `o4-tiles--compact` in `3-components/menus.css` has the arithmetic).
                 Compact there, and drop the spacer: with no room to push
                 Clear/Delete to the far end, the four tiles simply run
                 left-to-right in order. The three-tile case (no stored clip:

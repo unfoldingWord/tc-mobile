@@ -1,4 +1,4 @@
-/* O4 — Segments (05, 06, G10). Owner: #944. Every selector is prefixed with :root; see o4/index.css's header before editing this file.
+/* O4 — Segments (05, 06, G10). Owner: #944. Every selector is prefixed with :root; see 3-components/index.css's header before editing this file.
 
    Values are the design reference's (docs/design/o4-design-system.md, §2 and
    §3). Type sizes and radii are literal px until #939 lands its primitives;
@@ -184,7 +184,7 @@
      segment row keeps its --s-surface ground (§3 gives --s-raised to a
      lifted chapter row only). The Books screen's lifted chapter item shares
      this one rule (#953 PR2b), and so does a lifted book card (#338):
-     o4/books.css keeps colour literals out. */
+     3-components/books.css keeps colour literals out. */
   :root .segments-item--lifted > .row,
   :root .books-lifted,
   :root .books-card-lifted {

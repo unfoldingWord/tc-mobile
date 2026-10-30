@@ -24,7 +24,7 @@ import { declarationValue } from "./support";
  *
  * Layout is faked: jsdom has none, so each chapter `<li>` reports a 68px row
  * at a 100px pitch and everything else a 700px box. What this cannot see:
- * real touch panning, the cascade (whether `o4/books.css` paints the lift),
+ * real touch panning, the cascade (whether `3-components/books.css` paints the lift),
  * and anything on a device.
  */
 
@@ -474,7 +474,7 @@ describe("the hold area's markers", () => {
   });
 });
 
-describe("o4/books.css: the lift (§3, §4)", () => {
+describe("3-components/books.css: the lift (§3, §4)", () => {
   // Read by block (`areaScope`): the layer's own rules, and the ONE
   // reduced-motion block inside it, which throws if a second appears rather
   // than reading whichever comes first.
@@ -505,7 +505,7 @@ describe("o4/books.css: the lift (§3, §4)", () => {
     ).toBe("var(--s-raised)");
   });
 
-  it("casts the lift shadow from o4/segments.css's one rule, on the item rather than the guided button", () => {
+  it("casts the lift shadow from 3-components/segments.css's one rule, on the item rather than the guided button", () => {
     expect(
       value(
         areaScope("segments"),

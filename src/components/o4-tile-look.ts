@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
  * workbench's `del` tile), and the plain well the theme and export tiles use.
  * `done` and `doneoff` are marking done (G8): grey until the segment is done,
  * then the whole tile green. `cover` is the book menu's Cover colour tile
- * (#937 D7), filled with the book's own colour; its fill is in `o4/books.css`,
+ * (#937 D7), filled with the book's own colour; its fill is in `3-components/books.css`,
  * beside the covers, because it is not a layer-2 role.
  */
 export type TileTone =

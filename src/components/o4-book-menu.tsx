@@ -114,7 +114,7 @@ export const LicenceTile = forwardRef<
 
 /**
  * #957's picker, in the book sheet where the tiles were. It sits inside the
- * tile grid so the sheet keeps its bottom-sheet shell (`o4/menus.css` keys
+ * tile grid so the sheet keeps its bottom-sheet shell (`3-components/menus.css` keys
  * the shell on the grid). Focus lands on the book's own colour when it
  * appears: the sheet's `<Menu>` only focuses on its open edge, and it did not
  * close.

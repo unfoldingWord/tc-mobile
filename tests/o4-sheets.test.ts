@@ -14,7 +14,7 @@ import {
 
 /**
  * The O4 name sheet (#943, states 02 and G4 of `docs/design/o4-design-system.md`
- * §9) — the source half of `src/app/styles/o4/sheets.css`.
+ * §9) — the source half of `src/app/styles/3-components/sheets.css`.
  *
  * WHAT THE FILE DOES. Every naming surface in the app — New book, Add chapter,
  * and the book, chapter and segment renames — is the shared `<Menu>` drawer
@@ -55,7 +55,7 @@ const sel = (selector: string) => areaSelector("sheets", selector);
 const SCRIM = sel(".menu-scrim:has(.name-edit)");
 const SHEET = sel(".menu-panel:has(.name-edit)");
 
-describe("o4/sheets.css — the name sheet (02, G4)", () => {
+describe("3-components/sheets.css — the name sheet (02, G4)", () => {
   it("has rules to check (a floor, so an emptied file cannot pass vacuously)", () => {
     const count = RULES.reduce((n, r) => n + r.declarations.size, 0);
     expect(count).toBeGreaterThanOrEqual(20);

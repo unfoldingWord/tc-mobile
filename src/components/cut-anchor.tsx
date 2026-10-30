@@ -29,7 +29,7 @@ interface CutAnchorProps {
  * `.recorder-cut`'s own `justify-content: center` (3-components.css) still
  * centers it at the stage — unchanged from before #1102.
  *
- * The actual positioning is CSS (`o4/recorder.css`): this component sets
+ * The actual positioning is CSS (`3-components/recorder.css`): this component sets
  * `--o4-cut-left` whenever there is a selection.
  */
 export function CutAnchor({ selection, win, children }: CutAnchorProps) {

@@ -113,8 +113,8 @@ guard.
 
 ### CSS: `:has()` needs 15.4 — resolved by raising the floor to match (#1052)
 
-`src/app/styles/o4/menus.css` and `src/app/styles/o4/sheets.css` (and
-`src/app/styles/o4/motion.css`) use the `:has()` selector, which reaches
+`src/app/styles/3-components/menus.css` and `src/app/styles/3-components/sheets.css` (and
+`src/app/styles/3-components/motion.css`) use the `:has()` selector, which reaches
 `dist/assets/*.css` today (verified directly: `grep -c ":has(" dist/assets/*.css`
 found one occurrence, expanding to twelve rules across the menu/sheet
 component — #1052 counts 13 across all three source files). Per caniuse-lite's

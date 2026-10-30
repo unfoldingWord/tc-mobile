@@ -85,7 +85,7 @@ type Screen = (typeof SCREENS)[number];
 /**
  * The nodes that show a name the translator typed. The design cuts these with
  * an ellipsis on purpose; they are data, not translated labels. Every selector
- * here sets `text-overflow: ellipsis` in `src/app/styles/o4/`.
+ * here sets `text-overflow: ellipsis` in `src/app/styles/3-components/`.
  */
 const NAME_NODES = [
   ".segments-title",

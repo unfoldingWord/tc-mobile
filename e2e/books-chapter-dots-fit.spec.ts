@@ -35,7 +35,7 @@ test.use({
   },
 });
 
-/** The design's row height, 12 + 44 + 12 (`o4/books.css`). */
+/** The design's row height, 12 + 44 + 12 (`3-components/books.css`). */
 const ROW_HEIGHT = 68;
 /**
  * Three rows of 16 dots, what the 320px phone's 110px column holds at the 5/2
@@ -114,7 +114,7 @@ for (const width of [320, 360]) {
 
     const measured = await measureRow(page);
     expect(measured.titleText).toBe("Chapter 1");
-    // The title line's own 20px (`o4/books.css`), not a squashed share of it.
+    // The title line's own 20px (`3-components/books.css`), not a squashed share of it.
     // Sub-pixel layout can land a hair off, so the bound is half a pixel.
     expect(Math.abs(measured.titleHeight - 20)).toBeLessThan(0.5);
     expect(measured.titleInRow).toBe(true);

@@ -27,7 +27,7 @@ import type { SegmentRow } from "@/types/view";
  * seam segments-screen.tsx already had — not a re-statement of the component
  * test.
  *
- * What this cannot see: the cascade (whether `o4/dialogs.css` wins on a real
+ * What this cannot see: the cascade (whether `3-components/dialogs.css` wins on a real
  * page), the drawn waveform bars (`Waveform`'s own canvas draw, mocked out
  * below the same way `recorder-rerecord-o4.test.ts` mocks it — jsdom has no
  * canvas 2D context), or anything on a phone.

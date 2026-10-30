@@ -13,7 +13,7 @@ import { strings } from "@/lib/strings";
  *
  * A `Menu`, like About & licenses beside it, so the focus trap, Escape, the
  * `inert` shelf and the Back layer are the reviewed ones; a `.settings-list`
- * inside it is what `o4/menus.css` keys the full-width panel on. Its header
+ * inside it is what `3-components/menus.css` keys the full-width panel on. Its header
  * control is the back chevron, named "Back to books".
  *
  * Rows, in order: the theme (moved here from the ≡ menu, `ThemeControl`'s row

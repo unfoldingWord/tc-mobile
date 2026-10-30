@@ -17,7 +17,7 @@ import { one, render } from "./render";
  * misspelled, the wrapper only rendered some of the time) fails here even
  * though the pure percentage is still right.
  *
- * `o4/recorder.css`'s `clamp()` — the button's own half-width kept on screen
+ * `3-components/recorder.css`'s `clamp()` — the button's own half-width kept on screen
  * at either edge — is a stylesheet rule this harness has no layout engine to
  * resolve; `tests/o4-recorder-css.test.ts` pins that expression by text, and
  * `e2e/recorder-selection.spec.ts` is the resolved-pixel check.

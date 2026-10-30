@@ -25,7 +25,7 @@ import { one, render } from "./render";
  * (chapter with segments) and G10 (adding a segment).
  *
  * What this file does NOT cover: the cascade. It proves the markup the row
- * emits and that `o4/segments.css` holds rules with the issue's values;
+ * emits and that `3-components/segments.css` holds rules with the issue's values;
  * whether those rules win on a real page is a browser question, and nothing
  * here has been run on a phone.
  */
@@ -236,7 +236,7 @@ describe("O4 chapter head (#944)", () => {
   });
 });
 
-describe("o4/segments.css (#944)", () => {
+describe("3-components/segments.css (#944)", () => {
   // Read by selector, comments stripped first: a header that names a
   // selector or a primitive must not satisfy, or trip, a check below
   // (AGENTS.md, the share-scrim trap).

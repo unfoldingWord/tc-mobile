@@ -14,7 +14,7 @@ import { useEffect, useRef, type RefObject } from "react";
  * every render.
  *
  * Motion is the stylesheet's, not this hook's: assigning `scrollTop` follows
- * the box's computed `scroll-behavior`, which `o4/share.css` sets to `smooth`
+ * the box's computed `scroll-behavior`, which `3-components/share.css` sets to `smooth`
  * only under `prefers-reduced-motion: no-preference`. Under reduced motion
  * the jump is instant.
  *

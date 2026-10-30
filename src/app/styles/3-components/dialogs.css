@@ -1,4 +1,4 @@
-/* O4 — Confirm dialogs (13, G5, G6). Owner: #946, #979 (the preview row). Every selector is prefixed with :root; see o4/index.css's header before editing this file. */
+/* O4 — Confirm dialogs (13, G5, G6). Owner: #946, #979 (the preview row). Every selector is prefixed with :root; see 3-components/index.css's header before editing this file. */
 
 /* The one confirm dialog, EraseConfirm (components/erase-confirm.tsx), serves
    the segment Erase (13) and the recorder's Erase-and-record-again path (G5).

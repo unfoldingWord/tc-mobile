@@ -19,7 +19,7 @@ import { cssRule, declarationValue } from "./support";
  * The O4 look of the three recovery surfaces (#948, epic #936): mic denied
  * (state 16), crash (18) and `SaveFailed`, which shares the crash screen's
  * shape. Props-to-markup only, through `tests/render.ts` — no effects, no
- * cascade, no browser. Whether the rules in `o4/errors.css` paint what the
+ * cascade, no browser. Whether the rules in `3-components/errors.css` paint what the
  * workbench shows is not something this file can answer.
  */
 afterEach(() => {
@@ -156,7 +156,7 @@ describe("SaveFailed, O4", () => {
   });
 });
 
-describe("o4/errors.css", () => {
+describe("3-components/errors.css", () => {
   // The layer's rules, comments stripped so prose cannot match, for the
   // per-selector reads; and every declaration in the WHOLE file, nested
   // blocks included, as `[property, value]`, for the file-wide bans.

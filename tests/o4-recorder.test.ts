@@ -33,7 +33,7 @@ import {
  *
  * Three halves, each read the way this repo already reads its kind:
  *
- * - the stylesheet, `src/app/styles/o4/recorder.css`, by `cssRule` (block
+ * - the stylesheet, `src/app/styles/3-components/recorder.css`, by `cssRule` (block
  *   comments stripped first, so prose naming a selector cannot be the match —
  *   AGENTS.md's #529 trap) plus a whole-file scope and colour-boundary sweep
  *   that matches declarations, not bare identifiers;
@@ -65,7 +65,7 @@ const sel = (selector: string) => areaSelector("recorder", selector);
 /** Every declaration in the file, every block included, comments stripped. */
 const DECLARED = scopeDeclarations(readAreaCss("recorder"));
 
-describe("o4/recorder.css stays on the colour roles (#945)", () => {
+describe("3-components/recorder.css stays on the colour roles (#945)", () => {
   const selectors = scopeRules(CSS).map((r) => r.selectors.join(", "));
 
   it("has the rules this lane adds (non-emptiness floor)", () => {

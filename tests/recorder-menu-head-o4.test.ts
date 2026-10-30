@@ -21,7 +21,7 @@ import { render } from "./render";
  * reads. Nothing else about `Menu` changes, and no assertion below is about
  * where the panel mounts.
  *
- * What this file does NOT cover: the cascade (the crumbs' paint is `o4/menus.css`'s, asserted as
+ * What this file does NOT cover: the cascade (the crumbs' paint is `3-components/menus.css`'s, asserted as
  * declarations in `tests/o4-menus-chapter-segment.test.ts`), and the
  * recorder screen passing its view's book and chapter in, which
  * `tests/recorder-menu-head-wiring.test.ts` renders through the real sheet.

@@ -101,7 +101,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
     expectOptOut(componentsCss, ".row");
   });
 
-  it("opts the Segments header's crumb row out (.o4-crumbs-bar, o4/menus.css)", () => {
+  it("opts the Segments header's crumb row out (.o4-crumbs-bar, 3-components/menus.css)", () => {
     expectOptOut(menusO4Css, CRUMBS_BAR);
   });
 
@@ -109,7 +109,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
     expectOptOut(componentsCss, ".share-scrim");
   });
 
-  it("opts the Books rows out (.books-card, o4/books.css — reaches .books-chapter by inheritance)", () => {
+  it("opts the Books rows out (.books-card, 3-components/books.css — reaches .books-chapter by inheritance)", () => {
     expectOptOut(booksO4Css, BOOKS_CARD);
   });
 

@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
  *
  * THE SHEET IS NOT A SECOND SURFACE. A tile menu is still a `<Menu>`
  * (`menu.tsx`): its focus trap, Escape, scrim tap, `inert` and heading are
- * the reviewed ones. `o4/menus.css` gives any `.menu-panel` that holds a
+ * the reviewed ones. `3-components/menus.css` gives any `.menu-panel` that holds a
  * `TileGrid` the O4 bottom-sheet shell (inset 8, radius 26, a 56 × 5
  * handle) — keyed on the grid's presence, so the name sheets that share
  * `<Menu>` (#943's) are untouched by it.
@@ -59,7 +59,7 @@ export const Tile = forwardRef<
  * 76 × 76 token (`docs/design/o4-design-system.md`'s "Menu tile" row) — today
  * that is only the segment menu's four-real-tile case (Done, Edit, Delete,
  * Erase, #1119 round 5, George Medium 1): `o4-tiles--compact` in
- * `o4/menus.css` shrinks the tile box and the row gap for that one grid,
+ * `3-components/menus.css` shrinks the tile box and the row gap for that one grid,
  * scoped by class rather than by tile COUNT, so a three-tile row (this same
  * menu with no stored clip) is untouched and stays at the documented size.
  */

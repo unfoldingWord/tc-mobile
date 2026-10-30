@@ -596,7 +596,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // G5 (#979): the erase confirm, raised from the bar's bin.
     const g5 = confirmFrom === "rerecord";
     // Which workbench state the stage is in (#945). Read by
-    // `o4/recorder.css` through `data-o4-look`.
+    // `3-components/recorder.css` through `data-o4-look`.
     const look = recorderLook({
       recording,
       playing: audio.playingBuffer,
@@ -4125,7 +4125,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // #1005 ("Warn at 15, seal at 20"): the readout itself is
                     // the state-in-place marker — CSS tints the whole cluster
                     // to the warn role off this attribute (3-components.css,
-                    // o4/recorder.css). `TakeCapMarker` below only supplies
+                    // 3-components/recorder.css). `TakeCapMarker` below only supplies
                     // the remaining-minutes word that rides inside it.
                     data-near-limit={audio.takeCap.nearLimit || undefined}
                   >
