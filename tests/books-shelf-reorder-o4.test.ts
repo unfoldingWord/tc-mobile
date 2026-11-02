@@ -9,7 +9,7 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
-import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { areaRule, areaScope } from "./o4-area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
@@ -466,17 +466,16 @@ describe("3-components/books.css: the book lift (#338)", () => {
   // `@media`.
   const main = areaScope("books");
   const motion = areaScope("books", "@media (prefers-reduced-motion: reduce)");
-  const sel = (selector: string) => areaSelector("books", selector);
 
   it("slides the other cards over 160 ms and lifts the held one at scale 1.03 on z 8", () => {
-    const slide = cssRule(main, sel(".books-list[data-reordering] > li"));
+    const slide = cssRule(main, ".books-list[data-reordering] > li");
     expect(declarationValue(slide, "transform")).toBe(
       "translateY(var(--reorder-y, 0px))"
     );
     expect(declarationValue(slide, "transition")).toBe("transform 160ms ease");
     const lift = cssRule(
       main,
-      sel(".books-list[data-reordering] > .books-card-lifted")
+      ".books-list[data-reordering] > .books-card-lifted"
     );
     expect(declarationValue(lift, "z-index")).toBe("8");
     expect(declarationValue(lift, "transform")).toBe(
@@ -488,7 +487,7 @@ describe("3-components/books.css: the book lift (#338)", () => {
   it("drops the slide under reduced motion", () => {
     expect(
       declarationValue(
-        cssRule(motion, sel(".books-list[data-reordering] > li")),
+        cssRule(motion, ".books-list[data-reordering] > li"),
         "transition"
       )
     ).toBe("none");
@@ -498,10 +497,7 @@ describe("3-components/books.css: the book lift (#338)", () => {
     // One member of the segments file's three-selector lift rule.
     expect(
       declarationValue(
-        areaRule(
-          areaScope("segments"),
-          areaSelector("segments", ".books-card-lifted")
-        ),
+        areaRule(areaScope("segments"), ".books-card-lifted"),
         "box-shadow"
       )
     ).toBe("0 14px 30px rgba(0, 0, 0, 0.38)");

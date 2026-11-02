@@ -8,7 +8,6 @@ import { EraseConfirm } from "@/components/erase-confirm";
 import {
   areaRule,
   areaScope,
-  areaSelector,
   fileRules,
   readAreaCss,
   scopeDeclarations,
@@ -45,7 +44,7 @@ const RULES = scopeRules(CSS);
 /** The rule whose selector list holds `selector`, read a property at a time
  *  (`declarationValue` throws on a missing or doubled one). */
 function decl(selector: string): (property: string) => string {
-  const body = areaRule(CSS, areaSelector("dialogs", selector));
+  const body = areaRule(CSS, selector);
   return (property) => declarationValue(body, property).replace(/\s+/g, " ");
 }
 

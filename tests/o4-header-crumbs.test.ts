@@ -14,7 +14,7 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope } from "./o4-area-css";
 import { cssRule, declarationValue, restingErase } from "./support";
 
 /**
@@ -662,10 +662,7 @@ describe("a linked crumb, the #1274 Lows (#1278)", () => {
   // the transparent background and no border do not reset `appearance`.
   // This reads the rule; a WKWebView on a phone is what would show it.
   it("drops the native button look on a linked crumb, WebKit prefix included", () => {
-    const rule = cssRule(
-      areaScope("menus"),
-      areaSelector("menus", "button.o4-crumb")
-    );
+    const rule = cssRule(areaScope("menus"), "button.o4-crumb");
     expect(declarationValue(rule, "appearance")).toBe("none");
     expect(declarationValue(rule, "-webkit-appearance")).toBe("none");
   });

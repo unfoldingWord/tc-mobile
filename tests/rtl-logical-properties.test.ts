@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { Icon } from "../src/components/icon";
 
-import { AREA_DIR, areaSelector, type Area } from "./o4-area-css";
+import { AREA_DIR, type Area } from "./o4-area-css";
 import { one, render } from "./render";
 import {
   cssRule,
@@ -50,7 +50,7 @@ describe("converted rules read logically", () => {
   }> = [
     {
       file: MENUS,
-      selector: areaSelector("menus", ".o4-crumb"),
+      selector: ".o4-crumb",
       logical: {
         "margin-inline-start": "-6px",
         "padding-inline": "24px 20px",
@@ -59,7 +59,7 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: areaSelector("menus", ".o4-crumb:first-child"),
+      selector: ".o4-crumb:first-child",
       logical: {
         "margin-inline-start": "0",
         "padding-inline-start": "12px",
@@ -70,25 +70,25 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: areaSelector("menus", ".o4-menu-preview"),
+      selector: ".o4-menu-preview",
       logical: { "padding-inline": "10px 8px" },
       gone: ["padding"],
     },
     {
       file: RECORDER,
-      selector: areaSelector("recorder", ".recorder-status"),
+      selector: ".recorder-status",
       logical: { "inset-inline-start": "18px" },
       gone: ["left"],
     },
     {
       file: RECORDER,
-      selector: areaSelector("recorder", ".recorder-stamp"),
+      selector: ".recorder-stamp",
       logical: { "inset-inline-end": "18px" },
       gone: ["right"],
     },
     {
       file: RECORDER,
-      selector: areaSelector("recorder", ".recorder-editing"),
+      selector: ".recorder-editing",
       logical: { "inset-inline-end": "18px" },
       gone: ["right"],
     },
@@ -118,37 +118,37 @@ describe("converted rules read logically", () => {
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-header"),
+      selector: ".books-header",
       logical: { "padding-inline": "10px 12px" },
       gone: ["padding"],
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-card-hit"),
+      selector: ".books-card-hit",
       logical: { "text-align": "start" },
       gone: [],
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-chapter"),
+      selector: ".books-chapter",
       logical: { "text-align": "start", "padding-inline": "12px 16px" },
       gone: ["padding"],
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-cover::before"),
+      selector: ".books-cover::before",
       logical: { "inset-inline-start": "0" },
       gone: ["inset"],
     },
     {
       file: area("dialogs"),
-      selector: areaSelector("dialogs", ".confirm-preview"),
+      selector: ".confirm-preview",
       logical: { "padding-inline": "14px 10px" },
       gone: ["padding"],
     },
     {
       file: area("segments"),
-      selector: areaSelector("segments", ".row"),
+      selector: ".row",
       logical: { "padding-inline": "10px 6px" },
       gone: ["padding"],
     },

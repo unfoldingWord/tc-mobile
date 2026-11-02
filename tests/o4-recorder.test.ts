@@ -11,7 +11,6 @@ import { RecorderStamp } from "@/components/recorder-o4";
 import { PlayheadOverlay } from "@/components/playhead-overlay";
 import {
   areaScope,
-  areaSelector,
   readAreaCss,
   scopeDeclarations,
   scopeRules,
@@ -61,7 +60,6 @@ function flatten(css: string): string {
   );
 }
 const CSS = flatten(areaScope("recorder"));
-const sel = (selector: string) => areaSelector("recorder", selector);
 /** Every declaration in the file, every block included, comments stripped. */
 const DECLARED = scopeDeclarations(readAreaCss("recorder"));
 
@@ -88,7 +86,7 @@ describe("3-components/recorder.css stays on the colour roles (#945)", () => {
 
 describe("the O4 recorder values (#945, design reference §2–§3)", () => {
   it("08–12 stage: radius 20 on the surface role", () => {
-    const stage = cssRule(CSS, sel(".recorder-stage"));
+    const stage = cssRule(CSS, ".recorder-stage");
     expect(stage).toMatch(/border-radius:\s*20px/);
     expect(stage).toMatch(/background:\s*var\(--s-surface\)/);
   });
@@ -96,27 +94,27 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
   it("09 recording: the stage wears a live edge — static; the loop is #950's", () => {
     const edge = cssRule(
       CSS,
-      sel('.recorder-stage[data-o4-look="recording"]::after')
+      '.recorder-stage[data-o4-look="recording"]::after'
     );
     expect(edge).toMatch(/box-shadow:\s*inset 0 0 0 2px var\(--s-live\)/);
     // No loop on the edge in any block of this file.
     const properties = selectorDeclarations(
       "recorder",
-      sel('.recorder-stage[data-o4-look="recording"]::after')
+      '.recorder-stage[data-o4-look="recording"]::after'
     ).map(([property]) => property);
     for (const property of properties)
       expect(property).not.toMatch(/animation/);
   });
 
   it("09 recording: timer at 32/800 with tabular numerals", () => {
-    const timer = cssRule(CSS, sel(".recorder-status .t-timer"));
+    const timer = cssRule(CSS, ".recorder-status .t-timer");
     expect(timer).toMatch(/font-size:\s*32px/);
     expect(timer).toMatch(/font-weight:\s*800/);
     expect(timer).toMatch(/font-variant-numeric:\s*tabular-nums/);
   });
 
   it("10/11: the timestamp is mono at 15/500 with tabular numerals", () => {
-    const stamp = cssRule(CSS, sel(".recorder-stamp"));
+    const stamp = cssRule(CSS, ".recorder-stamp");
     expect(stamp).toMatch(/font-size:\s*15px/);
     expect(stamp).toMatch(/font-weight:\s*500/);
     expect(stamp).toMatch(/font-family:\s*ui-monospace/);
@@ -130,18 +128,16 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     // components-layer rule cannot beat it.
     const line = cssRule(
       CSS,
-      sel(
-        '.recorder-stage[data-o4-look="playing"] [data-testid="centerline-overlay"]::after'
-      )
+      '.recorder-stage[data-o4-look="playing"] [data-testid="centerline-overlay"]::after'
     );
     expect(line).toMatch(/background:\s*var\(--s-playhead\)/);
   });
 
   it("12 editing: trim handles are 30 × 56, radius 15, on --s-select (#1471)", () => {
-    expect(cssRule(CSS, sel(".selection-handle"))).toMatch(
+    expect(cssRule(CSS, ".selection-handle")).toMatch(
       /--c-selection-hit:\s*30px/
     );
-    const knob = cssRule(CSS, sel(".selection-handle::after"));
+    const knob = cssRule(CSS, ".selection-handle::after");
     expect(knob).toMatch(/width:\s*30px/);
     expect(knob).toMatch(/height:\s*56px/);
     expect(knob).toMatch(/border-radius:\s*15px/);
@@ -153,14 +149,14 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     // the waveform. Anchored to `bottom: 0` instead — the bar itself still
     // spans the handle's full `top: 0; bottom: 0` (3-components.css), so this
     // sits at the canvas's own bottom edge.
-    const knob = cssRule(CSS, sel(".selection-handle::after"));
+    const knob = cssRule(CSS, ".selection-handle::after");
     expect(knob).toMatch(/(?:^|;)\s*bottom:\s*0(?:px)?\s*;/);
     // The vertical-middle rule this replaces, named so a partial revert (only
     // one of the two declarations restored) still fails, in any block of the
     // file.
     for (const [property, value] of selectorDeclarations(
       "recorder",
-      sel(".selection-handle::after")
+      ".selection-handle::after"
     )) {
       expect(`${property}: ${value}`).not.toMatch(/^top:\s*50%/);
       expect(`${property}: ${value}`).not.toMatch(/^margin-top:\s*-28px/);
@@ -168,13 +164,13 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
   });
 
   it("12 editing: the Cut row spans the canvas width, so its percentage lines up with the waveform (#1102)", () => {
-    const row = cssRule(CSS, sel(".recorder-cut"));
+    const row = cssRule(CSS, ".recorder-cut");
     expect(row).toMatch(/(?:^|;)\s*width:\s*100%\s*;/);
     expect(row).toMatch(/(?:^|;)\s*position:\s*relative\s*;/);
   });
 
   it("12 editing: the Cut wrapper centers on the selection's midpoint, clamped to stay on screen (#1102)", () => {
-    const anchor = cssRule(CSS, sel(".recorder-cut .cut-anchor"));
+    const anchor = cssRule(CSS, ".recorder-cut .cut-anchor");
     expect(anchor).toMatch(/(?:^|;)\s*position:\s*absolute\s*;/);
     // The clamp mirrors `.selection-handle`'s own edge clamp: half the
     // button's own box (`--c-control-sm`, what `.control--quiet` — the
@@ -190,11 +186,11 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
   });
 
   it("the big transport buttons are 80 × 80, shrinking no lower than the 44 floor", () => {
-    const pair = cssRule(CSS, sel(".recorder-toolbar.pair"));
+    const pair = cssRule(CSS, ".recorder-toolbar.pair");
     expect(pair).toMatch(/container-type:\s*inline-size/);
     expect(pair).toMatch(/--o4-big:\s*max\(\s*44px,\s*min\(80px,/);
     for (const variant of ["control--record", "control--play"]) {
-      const big = cssRule(CSS, sel(`.recorder-toolbar.pair .${variant}`));
+      const big = cssRule(CSS, `.recorder-toolbar.pair .${variant}`);
       expect(big, variant).toMatch(/width:\s*var\(--o4-big\)/);
       expect(big, variant).toMatch(/height:\s*var\(--o4-big\)/);
     }
@@ -203,16 +199,14 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
   it("the secondary transport is 64, on the well", () => {
     const pair = cssRule(
       CSS,
-      sel(
-        ".recorder-toolbar.pair .control:not(.control--record):not(.control--play)"
-      )
+      ".recorder-toolbar.pair .control:not(.control--record):not(.control--play)"
     );
     expect(pair).toMatch(/width:\s*64px/);
     expect(pair).toMatch(/height:\s*64px/);
     expect(pair).toMatch(/background:\s*var\(--s-well\)/);
-    const bar = cssRule(CSS, sel(".recorder-toolbar.edit"));
+    const bar = cssRule(CSS, ".recorder-toolbar.edit");
     expect(bar).toMatch(/--o4-secondary:\s*max\(\s*44px,\s*min\(64px,/);
-    const edit = cssRule(CSS, sel(".recorder-toolbar.edit .control"));
+    const edit = cssRule(CSS, ".recorder-toolbar.edit .control");
     expect(edit).toMatch(/width:\s*var\(--o4-secondary\)/);
     expect(edit).toMatch(/height:\s*var\(--o4-secondary\)/);
     expect(edit).toMatch(/background:\s*var\(--s-well\)/);
@@ -224,11 +218,11 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     // O4 keeps that, and keeps the toggle at the pair's 64 in the edit bar.
     const height = (selector: string) =>
       declarationValue(cssRule(CSS, selector), "height");
-    const pair = height(sel(".recorder-toolbar.pair"));
-    expect(height(sel(".recorder-toolbar.edit"))).toBe(pair);
+    const pair = height(".recorder-toolbar.pair");
+    expect(height(".recorder-toolbar.edit")).toBe(pair);
     const toggle = cssRule(
       CSS,
-      sel(".recorder-toolbar.edit > .control-hinted:last-child .control")
+      ".recorder-toolbar.edit > .control-hinted:last-child .control"
     );
     expect(declarationValue(toggle, "width")).toBe("64px");
     expect(declarationValue(toggle, "height")).toBe("64px");
@@ -236,10 +230,8 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
 
   it("sets no ink on the transport, so the zoom toggle's is-on ink still wins", () => {
     for (const selector of [
-      sel(
-        ".recorder-toolbar.pair .control:not(.control--record):not(.control--play)"
-      ),
-      sel(".recorder-toolbar.edit .control"),
+      ".recorder-toolbar.pair .control:not(.control--record):not(.control--play)",
+      ".recorder-toolbar.edit .control",
     ]) {
       // Every rule for the selector in the whole file, every nested block
       // included, not only the layer's own.

@@ -1,4 +1,4 @@
-/* O4 — Share (14, 15, G7). Owner: #947. Every selector is prefixed with :root; see 3-components/index.css's header before editing this file.
+/* O4 — Share (14, 15, G7). Owner: #947. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
  *
  * THE SHARE CIRCLE, ITS FILLING RING AND ITS CHIPS (#947, D13 to D16, D21).
  * The share overlay's panel (share-progress-panel.tsx) draws the
@@ -19,7 +19,7 @@
  */
 @layer components {
   /* --- the circle (D12 geometry, D14, D15) ------------------------------ */
-  :root .share-o4-frame {
+  .share-o4-frame {
     position: relative;
     width: 176px;
     height: 176px;
@@ -29,7 +29,7 @@
     justify-content: center;
     border-radius: 50%;
   }
-  :root .share-o4-core {
+  .share-o4-core {
     width: 140px;
     height: 140px;
     border-radius: 50%;
@@ -38,12 +38,12 @@
     justify-content: center;
     background: var(--s-send);
   }
-  :root .share-o4-glyph {
+  .share-o4-glyph {
     color: var(--s-tile-ink);
   }
 
   /* --- the filling ring (D13, D15) ------------------------------------- */
-  :root .share-o4-ring {
+  .share-o4-ring {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -51,12 +51,12 @@
     transform: rotate(-90deg);
     pointer-events: none;
   }
-  :root .share-o4-track {
+  .share-o4-track {
     fill: none;
     stroke: var(--s-well);
     stroke-width: 7;
   }
-  :root .share-o4-fill {
+  .share-o4-fill {
     fill: none;
     stroke: var(--s-send-ring);
     stroke-width: 7;
@@ -64,7 +64,7 @@
   }
   /* The joined-chapter read (#1078): a thin arc on the track, so it never
      reads as the count's own fill. */
-  :root .share-o4-read {
+  .share-o4-read {
     fill: none;
     stroke: var(--s-send-ring);
     stroke-width: 3;
@@ -72,28 +72,28 @@
   }
 
   /* --- outcomes (D14, D16) --------------------------------------------- */
-  :root .share-scrim[data-outcome="sent"] .share-o4-frame {
+  .share-scrim[data-outcome="sent"] .share-o4-frame {
     box-shadow: inset 0 0 0 7px var(--s-send-ring);
   }
-  :root .share-scrim[data-outcome="partial"] .share-o4-frame {
+  .share-scrim[data-outcome="partial"] .share-o4-frame {
     box-shadow: inset 0 0 0 3px var(--s-warn);
   }
-  :root .share-scrim[data-outcome="nothing"] .share-o4-core,
-  :root .share-scrim[data-outcome="failed"] .share-o4-core,
-  :root .share-scrim[data-outcome="encoder"] .share-o4-core {
+  .share-scrim[data-outcome="nothing"] .share-o4-core,
+  .share-scrim[data-outcome="failed"] .share-o4-core,
+  .share-scrim[data-outcome="encoder"] .share-o4-core {
     background: var(--s-live);
   }
-  :root .share-scrim[data-outcome="nothing"] .share-o4-glyph,
-  :root .share-scrim[data-outcome="failed"] .share-o4-glyph,
-  :root .share-scrim[data-outcome="encoder"] .share-o4-glyph {
+  .share-scrim[data-outcome="nothing"] .share-o4-glyph,
+  .share-scrim[data-outcome="failed"] .share-o4-glyph,
+  .share-scrim[data-outcome="encoder"] .share-o4-glyph {
     color: var(--s-live-ink);
   }
-  :root .share-scrim[data-outcome="dismissed"] .share-o4-core,
-  :root .share-scrim[data-outcome="unproven"] .share-o4-core {
+  .share-scrim[data-outcome="dismissed"] .share-o4-core,
+  .share-scrim[data-outcome="unproven"] .share-o4-core {
     background: var(--s-well);
   }
-  :root .share-scrim[data-outcome="dismissed"] .share-o4-glyph,
-  :root .share-scrim[data-outcome="unproven"] .share-o4-glyph {
+  .share-scrim[data-outcome="dismissed"] .share-o4-glyph,
+  .share-scrim[data-outcome="unproven"] .share-o4-glyph {
     color: var(--s-ink-muted);
   }
 
@@ -107,13 +107,13 @@
      never grows past the scrim, so on a short screen the row gives up height
      before the circle or the text does. position: relative makes the row the
      chips' offset parent, which the hook measures from. */
-  :root .share-progress {
+  .share-progress {
     max-height: 100%;
   }
-  :root .share-progress-text {
+  .share-progress-text {
     flex: none;
   }
-  :root .share-o4-chips {
+  .share-o4-chips {
     position: relative;
     display: flex;
     flex-wrap: wrap;
@@ -128,13 +128,13 @@
   /* Keeping the current chip in view glides only when motion is welcome;
      under reduced motion the row jumps. */
   @media (prefers-reduced-motion: no-preference) {
-    :root .share-o4-chips {
+    .share-o4-chips {
       scroll-behavior: smooth;
     }
   }
   /* The resting chip: an item that does not go out, or, while packing, one
      that goes out and is still waiting. Grey, its number (vShare). */
-  :root .share-o4-chip {
+  .share-o4-chip {
     width: 38px;
     height: 38px;
     border-radius: 50%;
@@ -146,11 +146,11 @@
     background: var(--s-well);
     color: var(--s-ink-faint);
   }
-  :root .share-o4-chip[data-chip="finished"] {
+  .share-o4-chip[data-chip="finished"] {
     background: var(--s-send);
     color: var(--s-tile-ink);
   }
-  :root .share-o4-chip[data-chip="current"] {
+  .share-o4-chip[data-chip="current"] {
     background: var(--s-voice);
     color: var(--s-voice-ink);
   }

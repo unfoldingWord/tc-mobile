@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
 import { strings } from "@/lib/strings";
-import { areaRule, areaScope, areaSelector, fileRules } from "./o4-area-css";
+import { areaRule, areaScope, fileRules } from "./o4-area-css";
 import { declarationValue } from "./support";
 import { one, render } from "./render";
 
@@ -93,7 +93,6 @@ describe("O4BookDeleteAsk markup (#980)", () => {
 
 describe("3-components/books.css: the delete ask's rules match its markup (#980)", () => {
   const books = areaScope("books");
-  const sel = (selector: string) => areaSelector("books", selector);
   const value = (scope: string, selector: string, property: string) =>
     declarationValue(areaRule(scope, selector), property);
   const added = [
@@ -107,17 +106,15 @@ describe("3-components/books.css: the delete ask's rules match its markup (#980)
     for (const selector of added) {
       // `areaRule` throws on a missing, doubled or empty rule, so reading it
       // is the check.
-      areaRule(books, sel(selector));
+      areaRule(books, selector);
       expect(root.querySelector(selector), selector).not.toBeNull();
     }
   });
 
   it("draws the workbench's small cover: 52 x 64 with a 5px spine", () => {
-    expect(value(books, sel(".books-cover.is-sm"), "width")).toBe("52px");
-    expect(value(books, sel(".books-cover.is-sm"), "height")).toBe("64px");
-    expect(value(books, sel(".books-cover.is-sm::before"), "width")).toBe(
-      "5px"
-    );
+    expect(value(books, ".books-cover.is-sm", "width")).toBe("52px");
+    expect(value(books, ".books-cover.is-sm", "height")).toBe("64px");
+    expect(value(books, ".books-cover.is-sm::before", "width")).toBe("5px");
   });
 
   it("adds no second copy of the menu sheets' head rules (#980)", () => {
@@ -137,15 +134,9 @@ describe("3-components/books.css: the delete ask's rules match its markup (#980)
 
   it("uses 3-components/menus.css's sheet head, which hides the title and lays out the row", () => {
     const menus = areaScope("menus");
+    expect(value(menus, ".o4-sheet-head", "display")).toBe("flex");
     expect(
-      value(menus, areaSelector("menus", ".o4-sheet-head"), "display")
-    ).toBe("flex");
-    expect(
-      value(
-        menus,
-        areaSelector("menus", ".menu-panel:has(.o4-sheet-head) .t-title"),
-        "visibility"
-      )
+      value(menus, ".menu-panel:has(.o4-sheet-head) .t-title", "visibility")
     ).toBe("hidden");
     expect(
       ask().querySelector(".books-delete-ask > .o4-sheet-head")

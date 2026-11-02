@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
 import { strings } from "@/lib/strings";
-import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./o4-area-css";
 import { render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -21,7 +21,6 @@ import { cssRule, declarationValue } from "./support";
  */
 
 const noop = () => {};
-const sel = (selector: string) => areaSelector("menus", selector);
 
 describe("O4Crumbs with links (#1269)", () => {
   it("renders a linked book crumb as a button named for its destination", () => {
@@ -165,11 +164,11 @@ describe("3-components/menus.css, a linked crumb's hit area (#1269)", () => {
   it("is a control-sized 44px target while the chip is still drawn 40px tall", () => {
     // The chip shape moves to a pseudo-element inset by 2px top and bottom,
     // because a clip-path on the button itself would clip its hit area too.
-    const button = cssRule(css, sel("button.o4-crumb"));
+    const button = cssRule(css, "button.o4-crumb");
     expect(declarationValue(button, "height")).toBe("var(--c-control-md)");
     expect(declarationValue(button, "clip-path")).toBe("none");
     expect(declarationValue(button, "background")).toBe("transparent");
-    const chip = cssRule(css, sel("button.o4-crumb::before"));
+    const chip = cssRule(css, "button.o4-crumb::before");
     expect(declarationValue(chip, "inset")).toBe("2px 0");
     expect(declarationValue(chip, "background")).toBe("var(--s-well)");
     // The same chevron the plain chip draws: both read one shape property,
@@ -177,16 +176,16 @@ describe("3-components/menus.css, a linked crumb's hit area (#1269)", () => {
     // pseudo-element inherits whichever shape its button has.
     const shape = "var(--o4-crumb-shape)";
     expect(declarationValue(chip, "clip-path")).toBe(shape);
-    expect(declarationValue(cssRule(css, sel(".o4-crumb")), "clip-path")).toBe(
+    expect(declarationValue(cssRule(css, ".o4-crumb"), "clip-path")).toBe(
       shape
     );
-    const first = cssRule(css, sel(".o4-crumb:first-child"));
+    const first = cssRule(css, ".o4-crumb:first-child");
     expect(declarationValue(first, "--o4-crumb-shape")).toMatch(/^polygon\(/);
     // The first chip takes its shape only through the property, in any block
     // of the file.
     const firstProperties = selectorDeclarations(
       "menus",
-      sel(".o4-crumb:first-child")
+      ".o4-crumb:first-child"
     ).map(([property]) => property);
     expect(firstProperties).not.toContain("clip-path");
   });

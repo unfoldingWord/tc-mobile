@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
 import { strings } from "@/lib/strings";
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope } from "./o4-area-css";
 import { render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -17,8 +17,6 @@ import { cssRule, declarationValue } from "./support";
  * layout question the static render cannot answer; the Playwright spec
  * `e2e/header-crumbs-fit.spec.ts` measures it against the shipped build.
  */
-
-const sel = (selector: string) => areaSelector("menus", selector);
 
 describe("O4Crumbs' chapter chip (#1230)", () => {
   it("renders a chapter name as the chip's text", () => {
@@ -94,10 +92,10 @@ describe("3-components/menus.css, how the crumbs elide and share the row (#1230)
   const css = areaScope("menus");
 
   it("elides each crumb's own text with an ellipsis, on one line", () => {
-    const crumb = cssRule(css, sel(".o4-crumb"));
+    const crumb = cssRule(css, ".o4-crumb");
     expect(declarationValue(crumb, "white-space")).toBe("nowrap");
     expect(declarationValue(crumb, "min-width")).toBe("0");
-    const text = cssRule(css, sel(".o4-crumb > span"));
+    const text = cssRule(css, ".o4-crumb > span");
     expect(declarationValue(text, "overflow")).toBe("hidden");
     expect(declarationValue(text, "text-overflow")).toBe("ellipsis");
   });
@@ -107,13 +105,13 @@ describe("3-components/menus.css, how the crumbs elide and share the row (#1230)
     // takes an equal share of the room left. The max-content cap freezes a
     // crumb whose text already fits, handing the rest of its share to the
     // others, so a short "Chapter 2" stays whole beside a long book name.
-    const crumb = cssRule(css, sel(".o4-crumb"));
+    const crumb = cssRule(css, ".o4-crumb");
     expect(declarationValue(crumb, "flex")).toBe("1 1 0");
     expect(declarationValue(crumb, "max-width")).toBe("max-content");
   });
 
   it("never shrinks the segment crumb, a short number carrying the state tint", () => {
-    const segment = cssRule(css, sel(".o4-crumb[data-state]"));
+    const segment = cssRule(css, ".o4-crumb[data-state]");
     expect(declarationValue(segment, "flex")).toBe("none");
   });
 });

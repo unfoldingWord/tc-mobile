@@ -1,4 +1,4 @@
-/* O4 — Confirm dialogs (13, G5, G6). Owner: #946, #979 (the preview row). Every selector is prefixed with :root; see 3-components/index.css's header before editing this file. */
+/* O4 — Confirm dialogs (13, G5, G6). Owner: #946, #979 (the preview row). Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file. */
 
 /* The one confirm dialog, EraseConfirm (components/erase-confirm.tsx), serves
    the segment Erase (13) and the recorder's Erase-and-record-again path (G5).
@@ -21,11 +21,11 @@
 @layer components {
   /* Inset 18 from the screen edge on every side; the panel fills the rest of
      the width. */
-  :root .confirm-scrim {
+  .confirm-scrim {
     background: var(--s-dim);
     padding: 18px; /* #939 token */
   }
-  :root .confirm-panel {
+  .confirm-panel {
     width: 100%;
     background: var(--s-surface);
     border: 1px solid var(--s-card-edge);
@@ -34,7 +34,7 @@
     gap: 18px; /* #939 token */
     box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35); /* #939 token */
   }
-  :root .confirm-panel .t-title {
+  .confirm-panel .t-title {
     font-size: 22px; /* #939 token */
     font-weight: 800; /* #939 token */
     letter-spacing: normal;
@@ -42,7 +42,7 @@
   /* The trash glyph becomes a 76px round badge on the erase wash. The glyph is
      the badge's own content box: 76 less 21 padding a side leaves the
      design's 34px icon. */
-  :root .confirm-glyph {
+  .confirm-glyph {
     box-sizing: border-box;
     width: 76px; /* #939 token */
     height: 76px; /* #939 token */
@@ -55,7 +55,7 @@
      title and the two buttons, holding the waveform and the round Play/Pause
      transport — the workbench's `.prev`. Stretches to the panel's full width,
      like `.confirm-actions` below it. */
-  :root .confirm-preview {
+  .confirm-preview {
     align-self: stretch;
     display: flex;
     align-items: center;
@@ -69,7 +69,7 @@
   /* The workbench's `.tp.play` 60px round transport, scoped to this row only
      — the generic `.control--play` elsewhere in the app keeps its own size
      (`--c-control-md`). */
-  :root .confirm-preview-play {
+  .confirm-preview-play {
     width: 60px; /* #939 token */
     height: 60px; /* #939 token */
   }
@@ -77,29 +77,29 @@
      workbench's, in the G5 badge and on its confirm button (#1028, the #1022
      P3). Scale the circle only, inside its own box, so the badge's round wash
      stays 76px. Scoped to the record dialog: no other glyph is touched. */
-  :root .confirm-panel-record .confirm-glyph circle,
-  :root .confirm-panel-record .confirm-actions > :last-child circle {
+  .confirm-panel-record .confirm-glyph circle,
+  .confirm-panel-record .confirm-actions > :last-child circle {
     transform: scale(1.43);
     transform-box: fill-box;
     transform-origin: center;
   }
   /* Two equal columns across the panel: Cancel (keep) then Erase / Delete. */
-  :root .confirm-actions {
+  .confirm-actions {
     align-self: stretch;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 14px; /* #939 token */
   }
-  :root .confirm-actions > .control {
+  .confirm-actions > .control {
     width: auto;
     height: 76px; /* #939 token */
     border-radius: 14px; /* #939 token */
   }
-  :root .confirm-actions > .confirm-cancel {
+  .confirm-actions > .confirm-cancel {
     background: var(--s-well);
     color: var(--s-ink);
   }
-  :root .confirm-actions > .control svg {
+  .confirm-actions > .control svg {
     width: 28px; /* #939 token */
     height: 28px; /* #939 token */
   }

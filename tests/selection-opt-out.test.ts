@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector, fileRules } from "./o4-area-css";
+import { areaScope, fileRules } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -46,8 +46,8 @@ const COMPONENTS_PATH = path.resolve(
 const componentsCss = readFileSync(COMPONENTS_PATH, "utf8");
 const booksO4Css = areaScope("books");
 const menusO4Css = areaScope("menus");
-const CRUMBS_BAR = areaSelector("menus", ".o4-crumbs-bar");
-const BOOKS_CARD = areaSelector("books", ".books-card");
+const CRUMBS_BAR = ".o4-crumbs-bar";
+const BOOKS_CARD = ".books-card";
 
 /**
  * `.row`'s own real ambiguity, worked around rather than hidden: the

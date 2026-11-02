@@ -703,11 +703,6 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  /* The subject glyph, tinted destructive so the dialog reads as "delete"
-     before a word is parsed. */
-  .confirm-glyph {
-    color: var(--s-live);
-  }
   .confirm-actions {
     display: flex;
     justify-content: center;
@@ -1054,19 +1049,6 @@
   .recorder-toolbar.pair > .control,
   .recorder-toolbar.pair > .record-guide {
     justify-self: center;
-  }
-  /* The record hero at xl (68px), scoped to the pair so the global 52px record
-     variant and the erase-confirm button are untouched — beats the bare
-     .control--record by specificity only inside the pair. */
-  .recorder-toolbar.pair .control--record {
-    width: var(--c-control-xl);
-    height: var(--c-control-xl);
-  }
-  /* Play one step smaller than the hero (52px): the bare .control--play is the
-     44px md box, the pair bumps it. */
-  .recorder-toolbar.pair .control--play {
-    width: var(--c-control-lg);
-    height: var(--c-control-lg);
   }
   .recorder-toolbar.edit {
     grid-template-columns: repeat(4, minmax(0, 1fr)) var(--c-control-md);

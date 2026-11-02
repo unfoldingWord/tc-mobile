@@ -12,7 +12,7 @@ import { strings } from "@/lib/strings";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
-import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./o4-area-css";
 import { render } from "./render";
 import { cssRule, declarationValue, restingErase } from "./support";
 
@@ -222,13 +222,10 @@ describe("the same pattern on the book and segment menus", () => {
       ["menus", ".o4-menu-title"],
       ["books", ".books-sheet-name"],
     ] as const) {
-      const rule = cssRule(areaScope(area), areaSelector(area, selector));
+      const rule = cssRule(areaScope(area), selector);
       // The bans read every rule for the selector in the whole file, every
       // nested block included; the wrap pin reads the layer's one rule.
-      for (const [property, value] of selectorDeclarations(
-        area,
-        areaSelector(area, selector)
-      )) {
+      for (const [property, value] of selectorDeclarations(area, selector)) {
         const decl = `${property}: ${value}`;
         expect(decl, selector).not.toMatch(/white-space\s*:\s*nowrap/);
         expect(decl, selector).not.toMatch(/text-overflow/);

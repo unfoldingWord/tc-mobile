@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./o4-area-css";
 import {
   cssRule,
   declarationValue,
@@ -94,7 +94,7 @@ describe("the chapter screen's crumb row is a control-sized target (#164 R-10)",
   // The `.breadcrumb` button this gate was written for went with the old
   // look (#954); the row that took its place in the Segments header is
   // `.o4-crumbs-bar` (#1269), in the O4 menus stylesheet.
-  const body = cssRule(menusCss, areaSelector("menus", ".o4-crumbs-bar"));
+  const body = cssRule(menusCss, ".o4-crumbs-bar");
 
   // Reads the TOKEN, not a raw pixel value: the 44px floor is stated once in
   // 3-components.css's token block, and a rule that hard-codes 44 drifts
@@ -107,7 +107,7 @@ describe("the chapter screen's crumb row is a control-sized target (#164 R-10)",
     // In any block of the file, not only the layer's own rule.
     for (const [property, value] of selectorDeclarations(
       "menus",
-      areaSelector("menus", ".o4-crumbs-bar")
+      ".o4-crumbs-bar"
     ))
       expect(`${property}: ${value}`).not.toMatch(/--c-control-sm/);
   });

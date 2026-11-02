@@ -1,7 +1,7 @@
 import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
-import { areaSelector, readAreaCss } from "./o4-area-css";
+import { readAreaCss } from "./o4-area-css";
 import { stripCssComments } from "./support";
 
 /**
@@ -22,8 +22,6 @@ import { stripCssComments } from "./support";
  * What this cannot show: that a browser runs the loops, or stops them. That
  * is a cascade in a real engine, and nothing here renders one.
  */
-
-const sel = (selector: string) => areaSelector("motion", selector);
 const REDUCE = "@media (prefers-reduced-motion: reduce)";
 
 interface Block {
@@ -119,33 +117,30 @@ describe("every O4 loop (#950)", () => {
     [
       "guidePulse",
       [
-        sel(".control--record.is-guided"),
-        sel(".control--mic.is-guided"),
-        sel(".record-guide.is-guided"),
+        ".control--record.is-guided",
+        ".control--mic.is-guided",
+        ".record-guide.is-guided",
       ],
       "guidePulse var(--p-ambient-guide-pulse, 1.8s) ease-in-out infinite",
     ],
     [
       "liveEdge",
-      [sel('.recorder-stage[data-o4-look="recording"]::after')],
+      ['.recorder-stage[data-o4-look="recording"]::after'],
       "liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite",
     ],
     [
       "armedPulse",
-      [sel(".o4-tile--send.is-armed")],
+      [".o4-tile--send.is-armed"],
       "armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite",
     ],
     [
       "blink",
-      [sel(".recorder-status .rec-dot")],
+      [".recorder-status .rec-dot"],
       "blink var(--p-ambient-blink, 1s) steps(2) infinite",
     ],
     [
       "shake",
-      [
-        sel(".books-delete-ask > .o4-sheet-head"),
-        sel(".o4-err-body[data-refused]"),
-      ],
+      [".books-delete-ask > .o4-sheet-head", ".o4-err-body[data-refused]"],
       "shake var(--p-ambient-shake, 0.35s) ease-in-out 2",
     ],
   ])("pins %s to its target and its #967 duration", (name, sels, value) => {
@@ -193,10 +188,10 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     const stop = styleRules.find(
       (b) =>
         b.decls.get("animation") === "none" &&
-        selectorsOf(b).includes(sel("[inert] .is-guided"))
+        selectorsOf(b).includes("[inert] .is-guided")
     );
     expect(stop).toBeDefined();
-    expect(selectorsOf(stop!)).toContain(sel(".is-guided[inert]"));
+    expect(selectorsOf(stop!)).toContain(".is-guided[inert]");
     expect(stop!.at).toBeGreaterThan(pulse.at);
   });
 
@@ -209,11 +204,11 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     const stop = styleRules.find(
       (b) =>
         b.decls.get("animation") === "none" &&
-        selectorsOf(b).includes(sel(".control--record.is-guided:focus-visible"))
+        selectorsOf(b).includes(".control--record.is-guided:focus-visible")
     );
     expect(stop).toBeDefined();
     expect(selectorsOf(stop!)).toContain(
-      sel(".record-guide.is-guided:has(> .control:focus-visible)")
+      ".record-guide.is-guided:has(> .control:focus-visible)"
     );
     expect(stop!.at).toBeGreaterThan(pulse.at);
   });
@@ -224,11 +219,11 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     const pulse = animated.find(
       (b) => animationName(b.decls.get("animation")!) === "guidePulse"
     )!;
-    expect(selectorsOf(pulse)).toContain(sel(".control--mic.is-guided"));
+    expect(selectorsOf(pulse)).toContain(".control--mic.is-guided");
     const stop = styleRules.find(
       (b) =>
         b.decls.get("animation") === "none" &&
-        selectorsOf(b).includes(sel(".control--mic.is-guided:focus-visible"))
+        selectorsOf(b).includes(".control--mic.is-guided:focus-visible")
     );
     expect(stop).toBeDefined();
     expect(stop!.at).toBeGreaterThan(pulse.at);

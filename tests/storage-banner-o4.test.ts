@@ -17,7 +17,6 @@ import type { BookCard } from "@/types/view";
 
 import {
   areaScope,
-  areaSelector,
   declsFor,
   fileRules,
   scopeDeclarations,
@@ -438,7 +437,7 @@ describe("3-components/books.css, the banner rules", () => {
     r.selectors.some((s) => s.includes(".o4-storage"))
   );
   /** The one rule for `.o4-storage…` `sel`, read a property at a time. */
-  const decls = (sel: string) => declsFor(books, areaSelector("books", sel));
+  const decls = (sel: string) => declsFor(books, sel);
 
   it("exist (a floor, so the checks below cannot loop over nothing)", () => {
     expect(rules.length).toBeGreaterThanOrEqual(4);
@@ -464,7 +463,7 @@ describe("3-components/books.css, the banner rules", () => {
       ".o4-storage-why",
       ".o4-storage-words",
     ])
-      expect(selectors).toContain(areaSelector("books", cls));
+      expect(selectors).toContain(cls);
   });
 
   it("pins the workbench's 72/84/19/15 px sizes (state 17)", () => {

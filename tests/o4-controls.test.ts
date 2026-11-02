@@ -11,7 +11,6 @@ import {
 import {
   areaRule,
   areaScope,
-  areaSelector,
   readAreaCss,
   scopeDeclarations,
 } from "./o4-area-css";
@@ -112,7 +111,7 @@ describe("3-components/controls.css (#941)", () => {
   const layer = areaScope("controls");
   /** The one rule for `selector`, read a property at a time. */
   const rule = (selector: string) => {
-    const body = areaRule(layer, areaSelector("controls", selector));
+    const body = areaRule(layer, selector);
     return { get: (property: string) => declarationValue(body, property) };
   };
 

@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   areaScope,
-  areaSelector,
   declsFor,
   fileRules,
   scopeDeclarations,
@@ -50,10 +49,8 @@ const RULES = fileRules("sheets").map((r) => ({
 
 /** The layer's one rule for `selector`, read a property at a time. */
 const rule = (selector: string) => declsFor(LAYER, selector);
-
-const sel = (selector: string) => areaSelector("sheets", selector);
-const SCRIM = sel(".menu-scrim:has(.name-edit)");
-const SHEET = sel(".menu-panel:has(.name-edit)");
+const SCRIM = ".menu-scrim:has(.name-edit)";
+const SHEET = ".menu-panel:has(.name-edit)";
 
 describe("3-components/sheets.css — the name sheet (02, G4)", () => {
   it("has rules to check (a floor, so an emptied file cannot pass vacuously)", () => {
@@ -95,32 +92,32 @@ describe("3-components/sheets.css — the name sheet (02, G4)", () => {
     // sheet under the finger — the sheet sits at the top, clear of the notch.
     // Whether a given phone's keyboard then clears it is a device question
     // this source read cannot answer.
-    const focused = sel(".menu-scrim:has(.name-edit:focus-within)");
+    const focused = ".menu-scrim:has(.name-edit:focus-within)";
     expect(rule(focused).get("align-items")).toBe("flex-start");
     expect(
-      rule(sel(".menu-panel:has(.name-edit:focus-within)")).get("margin-top")
+      rule(".menu-panel:has(.name-edit:focus-within)").get("margin-top")
     ).toBe("calc(8px + env(safe-area-inset-top))");
     const order = (selector: string) =>
       LAYER_RULES.findIndex((r) => r.selectors.includes(selector));
     expect(order(focused)).toBeGreaterThan(order(SCRIM));
-    expect(
-      order(sel(".menu-panel:has(.name-edit:focus-within)"))
-    ).toBeGreaterThan(order(SHEET));
+    expect(order(".menu-panel:has(.name-edit:focus-within)")).toBeGreaterThan(
+      order(SHEET)
+    );
   });
 
   it("draws a 56 × 5 handle above the header, on the grip (#1268)", () => {
-    const bar = rule(sel(".menu-grip::before"));
+    const bar = rule(".menu-grip::before");
     expect(bar.get("content")).toBe('""');
     expect(bar.get("width")).toBe("56px");
     expect(bar.get("height")).toBe("5px");
     expect(bar.get("background")).toBe("var(--s-edge)");
     // Hidden unless the panel is a sheet, and shown on the name sheet.
-    expect(rule(sel(".menu-grip")).get("display")).toBe("none");
+    expect(rule(".menu-grip").get("display")).toBe("none");
     expect(rule(`${SHEET} .menu-grip`).get("display")).toBe("flex");
   });
 
   it("starts a drag only on the grip and the header row, never the body (#1268)", () => {
-    expect(rule(sel(".menu-grip")).get("touch-action")).toBe("none");
+    expect(rule(".menu-grip").get("touch-action")).toBe("none");
     expect(rule(`${SHEET} .menu-head`).get("touch-action")).toBe("none");
     // No other rule here takes the pan from the sheet's body.
     for (const { selectors, declarations } of RULES)
@@ -129,14 +126,14 @@ describe("3-components/sheets.css — the name sheet (02, G4)", () => {
   });
 
   it("springs a released sheet back, with no motion under reduced motion (#1268)", () => {
-    expect(rule(sel("[data-sheet-drag]")).get("transform")).toBe(
+    expect(rule("[data-sheet-drag]").get("transform")).toBe(
       "translateY(var(--sheet-drag-y, 0px))"
     );
-    expect(rule(sel('[data-sheet-drag="settling"]')).get("transition")).toBe(
+    expect(rule('[data-sheet-drag="settling"]').get("transition")).toBe(
       "transform 160ms ease"
     );
     expect(
-      declsFor(REDUCED, sel('[data-sheet-drag="settling"]')).get("transition")
+      declsFor(REDUCED, '[data-sheet-drag="settling"]').get("transition")
     ).toBe("none");
   });
 
@@ -151,9 +148,7 @@ describe("3-components/sheets.css — the name sheet (02, G4)", () => {
     );
     const settle = /^const SHEET_SETTLE_MS = (\d+);$/m.exec(menuSource);
     expect(settle, "no SHEET_SETTLE_MS declaration in menu.tsx").not.toBeNull();
-    const transition = rule(sel('[data-sheet-drag="settling"]')).get(
-      "transition"
-    );
+    const transition = rule('[data-sheet-drag="settling"]').get("transition");
     const spring = /^transform (\d+)ms\b/.exec(transition ?? "");
     expect(
       spring,
@@ -169,7 +164,7 @@ describe("3-components/sheets.css — the name sheet (02, G4)", () => {
   });
 
   it("sets the name input at 18/400, radius 12 — and never under iOS's 16px zoom floor", () => {
-    const input = rule(sel(".name-input"));
+    const input = rule(".name-input");
     expect(input.get("font-size")).toBe("18px");
     expect(input.get("font-weight")).toBe("400");
     expect(input.get("border-radius")).toBe("12px");
@@ -188,7 +183,7 @@ describe("3-components/sheets.css — the name sheet (02, G4)", () => {
     // The gap band runs past the global focus outline (offset + 2px width,
     // globals.css) plus 2px, so a keyboard user sees focus, a gap, then the
     // guide, as the record exception does.
-    const guided = rule(sel(".name-edit > .control.is-guided"));
+    const guided = rule(".name-edit > .control.is-guided");
     const shadow = guided.get("box-shadow") ?? "";
     expect(shadow).not.toMatch(/inset/);
     expect(shadow).toBe(
@@ -201,18 +196,16 @@ describe("3-components/sheets.css — the name sheet (02, G4)", () => {
     // The outset rule above outranks 3-components.css's `[inert] .is-guided`
     // kill on specificity, so it needs its own, later in the file.
     const kill = RULES.find((r) =>
-      r.selectors.includes(sel("[inert] .name-edit > .control.is-guided"))
+      r.selectors.includes("[inert] .name-edit > .control.is-guided")
     );
     expect(kill, "no inert rule for the guided Confirm").toBeDefined();
-    expect(kill!.selectors).toContain(
-      sel(".name-edit > .control.is-guided[inert]")
-    );
+    expect(kill!.selectors).toContain(".name-edit > .control.is-guided[inert]");
     expect(kill!.declarations.get("box-shadow")).toBe("none");
     const order = (selector: string) =>
       LAYER_RULES.findIndex((r) => r.selectors.includes(selector));
-    expect(
-      order(sel("[inert] .name-edit > .control.is-guided"))
-    ).toBeGreaterThan(order(sel(".name-edit > .control.is-guided")));
+    expect(order("[inert] .name-edit > .control.is-guided")).toBeGreaterThan(
+      order(".name-edit > .control.is-guided")
+    );
   });
 
   it("does not touch selection or the iOS callout (#556, #564)", () => {

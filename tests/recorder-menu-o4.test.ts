@@ -10,7 +10,7 @@ import {
 import { TILE_GLYPH } from "@/components/o4-tile-look";
 import { strings } from "@/lib/strings";
 
-import { areaScope, areaSelector, declsFor, fileRules } from "./o4-area-css";
+import { areaScope, declsFor, fileRules } from "./o4-area-css";
 
 /**
  * The recorder menu on the O4 tile grid (#949 G3, epic #936), including the
@@ -323,7 +323,7 @@ describe("3-components/menus.css, recorder-menu section (#949 G3)", () => {
   // Every rule in the whole file, every nested block included: "the cap is
   // its only rule" is a ban on any other, so it cannot stop at the layer.
   const rules = fileRules("menus");
-  const panel = areaSelector("menus", CAP_PANEL);
+  const panel = CAP_PANEL;
 
   it("keeps the recorder sheet under half the screen", () => {
     expect(declsFor(menus, panel).get("max-height")).toBe("50dvh");
