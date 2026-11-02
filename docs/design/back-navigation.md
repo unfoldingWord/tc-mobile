@@ -68,8 +68,8 @@ Each model was scored on four axes:
   2026-09-30 production gate and under three to the first-week-of-October
   training on Android phones;
 - **(d)** how much of the mechanism is Node-testable in `src/lib/nav`, the
-  layer Vitest can red-first cover (there is no jsdom or renderer here,
-  `AGENTS.md`). The nav adapter's own DOM paths (`use-nav-stack.ts`) are
+  layer Vitest can red-first cover (when this was written there was no
+  jsdom or renderer here; there is one now, `tests/render.ts`). The nav adapter's own DOM paths (`use-nav-stack.ts`) are
   covered by Playwright against the shipped build
   (`e2e/back-navigation.spec.ts`), not by Vitest; `App.tsx`,
   `books-screen.tsx`, `segments-screen.tsx` and `recorder.tsx`'s broader wiring
@@ -898,7 +898,7 @@ inference until it is run on an actual Android device.
 
 ## Constraints this design does not relax
 
-- No jsdom/renderer exists in this repo; `App.tsx`, `books-screen.tsx`,
+- (True when written; a render harness exists now, `tests/render.ts`.) No jsdom/renderer existed in this repo; `App.tsx`, `books-screen.tsx`,
   `segments-screen.tsx`, `recorder.tsx` stay review-only regardless of this
   document. Only the pure decisions in `src/lib/nav` are Vitest-covered —
   which is why this design pushes as much as possible into that layer. The nav
