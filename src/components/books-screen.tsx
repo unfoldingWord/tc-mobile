@@ -38,6 +38,7 @@ import {
 } from "./o4-book-menu";
 import { MoveTiles, Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
+import { isNativeShell } from "@/hooks/share-target";
 import { SquareButton } from "./o4-controls";
 import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
@@ -383,6 +384,9 @@ export function BooksScreen({
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
   // resolves the id back to a row, auto-closing the menu if that book vanishes.
   const [shareMenuBookId, setShareMenuBookId] = useState<BookId | null>(null);
+  // Export project outside the installed app (#1457, R3): set by a tap on the
+  // tile in a browser, which exports nothing and says where export works.
+  const [exportPointer, setExportPointer] = useState(false);
   // The chapter row's ⋮ menu (#1730): which chapter's menu is open. It holds
   // Move up / Move down only, and writes nothing until a tile is tapped.
   const [chapterMenuId, setChapterMenuId] = useState<ChapterId | null>(null);
@@ -627,6 +631,7 @@ export function BooksScreen({
     cancelLanguageAsk();
     cancelLicenceAsk();
     setSavingName(false);
+    setExportPointer(false);
     bookShare.reset();
     return true;
   }, [
@@ -1695,6 +1700,12 @@ export function BooksScreen({
   );
   const onPrepareBookExport = useCallback(() => {
     if (!shareMenuBook) return;
+    // R3: export works in the installed app only. A browser gets the pointer,
+    // in the sheet, and nothing else: no chapter stop, no language ask.
+    if (!isNativeShell()) {
+      setExportPointer(true);
+      return;
+    }
     focusRestore.capture();
     stopChapter();
     bookMenuSession.current += 1;
@@ -2918,6 +2929,9 @@ export function BooksScreen({
                     ),
                   }}
                 />
+                {exportPointer && (
+                  <Notice tone="info">{strings.exportProjectWebPointer}</Notice>
+                )}
                 {/* Move up / Move down (#1344), the pair the segment menu
                   draws too: the first book's Move up and the last book's
                   Move down are greyed with their reason (#135). */}

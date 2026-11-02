@@ -31,6 +31,12 @@ const share = vi.hoisted(() => ({
   prepareProject: null as unknown as ReturnType<typeof vi.fn>,
   prepare: null as unknown as ReturnType<typeof vi.fn>,
 }));
+// Export runs in the installed app only (#1457, R3): this file is about the
+// tile's state while Share prepares, so it stands in for that shell.
+vi.mock("@/hooks/share-target", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/share-target")>()),
+  isNativeShell: () => true,
+}));
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: [

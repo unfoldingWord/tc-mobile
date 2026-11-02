@@ -321,6 +321,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Hamisha mradi",
   tileExport: "Hamisha",
   exportProjectPreparing: "Inaandaa mradi ili uhamishwe.",
+  exportProjectWebPointer:
+    "Uhamishaji hufanya kazi katika programu iliyosakinishwa. Fungua programu ili kuhamisha mradi huu.",
   exportProjectSuffix: "mradi",
   exportProjectFilename(
     this: Strings,

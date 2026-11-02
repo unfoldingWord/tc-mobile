@@ -7,6 +7,8 @@ its body and empties it.
 
 ## Added
 
+- In a web browser, Export project now says that export works in the installed app, instead of trying to run (#1457).
+
 ## Changed
 
 ## Fixed

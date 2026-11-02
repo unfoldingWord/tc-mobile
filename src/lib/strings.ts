@@ -938,6 +938,8 @@ export const stringsEn = {
   exportProject: "Export project",
   tileExport: "Export",
   exportProjectPreparing: "Preparing the project to export.",
+  exportProjectWebPointer:
+    "Export works in the installed app. Open the app to export this project.",
   // ADR 0014 point 8 (amended 2026-10-22, #1627): `<book> - <word>.zip`, where
   // the word follows the app's language the way Share Book's chapter names do
   // (`chapterName`), so it differs from Share Book's `<book>.zip`. Sanitised

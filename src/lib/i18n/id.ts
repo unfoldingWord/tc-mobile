@@ -291,6 +291,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Ekspor proyek",
   tileExport: "Ekspor",
   exportProjectPreparing: "Menyiapkan proyek untuk diekspor.",
+  exportProjectWebPointer:
+    "Ekspor berfungsi di aplikasi yang terpasang. Buka aplikasi untuk mengekspor proyek ini.",
   languageAskTitle: "Bahasa buku ini",
   languageAskLead:
     "Rekaman ini dalam bahasa apa? Kamu memilihnya sekali, dan setiap ekspor buku ini memakainya.",
