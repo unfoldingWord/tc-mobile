@@ -222,9 +222,12 @@ committed. So the name is exclusive:
   `<clipId>.<n>.<ext>` splits unambiguously. Lowercase only, because a card
   formatted FAT or exFAT is expected to fold case, so two names differing only
   in case would be one file (inference, owed to P1).
-- The `.part` is created exclusively (it fails if the name exists), and the
-  rename to `<name>` never replaces an existing file; if `<name>` exists, the
-  attempt deletes its own `.part` and fails as in row S1.
+- The `.part` is created exclusively (it fails if its name exists), and the
+  rename to `<name>` never replaces an existing file. If the `.part` cannot be
+  created, the attempt fails as in row S1. If `<name>` exists at the rename,
+  the check has already passed, so the attempt fails as in row S1c: it keeps
+  its `.part` and reports it unless a complete pending row, a final
+  disposition or a named file holds the take.
 - A `clipId` is a `crypto.randomUUID()` (`clips.ts:14`), one safe path segment.
 
 Tests (commit-protocol child), read off the rule above: "a retry in a later
@@ -251,9 +254,11 @@ the row stores: the volume and the file name `<clipId>.<n>.<ext>` (§2).
   volume** (S7, T3), a complete pending row carries its `clipId` (S3, S1b), or
   a named PCM stands beside an uncommitted MP3 (T2), and the keep rule allows
   it.
-- **The state table is the only thing that decides a delete.** Where a
-  sentence in this section, the keep rule or the sweep steps reads differently
-  from a row's Outcome, the row decides and the sentence is a defect to repair.
+- **Precedence, one rule.** The state table is the only thing that decides a
+  delete: where a sentence in this section, the keep rule or the sweep steps
+  reads differently from a row's Outcome, the row decides and the sentence is a
+  defect to repair. Where the table itself is silent or ambiguous (no row fits,
+  or two rows fit with different outcomes), the file is kept and reported.
 
 Tests (commit-protocol child): "a volume mismatch does not delete the files on
 the inserted card" (V1) and "a volume mismatch does not delete a .part on the
@@ -302,8 +307,9 @@ card file. Every delete below cites it, and none adds a condition of its own.
 >   checked `.part` is deleted only against a complete pending row, a final
 >   disposition, or a named file.
 > - **Unknown means keep.** While a check cannot be evaluated (no durable
->   reference to compare against), or a sentence and a row still disagree, the
->   outcome is keep and report, never delete.
+>   reference to compare against), or the state table is silent or ambiguous
+>   (the ownership rule's precedence rule), the outcome is keep and report,
+>   never delete.
 > - Dependence reads through the ownership rule: while a row names another
 >   volume, every file on the inserted card with that row's `clipId` counts as
 >   possibly that row's file, so it is a file a committed take depends on.
