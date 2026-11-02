@@ -446,6 +446,74 @@ is the repeatable path. **The first green CI run is the first real verification.
 
 ---
 
+## 4b. iOS Simulator harness (local, #1840)
+
+A shell-driven way to run the native iOS build in the Simulator, for a person
+or an agent. It is local and Mac-only; no workflow runs it. It needs the Xcode
+from [§3](#3-one-time-mac-prerequisites) and `npm ci`.
+
+```bash
+npm run ios-sim -- boot                 # or --device "iPhone 18 Pro"
+npm run ios-sim -- build                # build:native, cap copy ios, unsigned Debug build into .ios-sim/app
+npm run ios-sim -- build --harness      # the XCUITest driver, into .ios-sim/harness
+npm run ios-sim -- install
+npm run ios-sim -- grant-mic
+npm run ios-sim -- launch
+npm run ios-sim -- eval 'document.body.innerText'
+npm run ios-sim -- eval 'navigator.mediaDevices.getUserMedia({audio:true}).then(s => s.getAudioTracks()[0].label)' --async
+npm run ios-sim -- describe             # the native accessibility tree
+npm run ios-sim -- tap 'New book'       # any accessibility label: web buttons, alerts, the share sheet
+npm run ios-sim -- home
+npm run ios-sim -- shot /tmp/screen.png
+npm run ios-sim -- logs --seconds 60
+```
+
+**How it works.**
+
+- **JS (`eval`):** [inspect-webkit](https://github.com/EvanBacon/inspect-webkit)'s
+  CDP bridge is started for one command and stopped after it. The command finds
+  the app's WebView by its process id, never by URL. A Debug build is
+  inspectable with no config change. The bridge's debugger has no
+  authentication, so it binds to loopback only, and `eval` refuses to run if
+  the bridge answers on any other address. `eval` runs with the app's own
+  origin, so it can read or delete that Simulator's IndexedDB and OPFS data;
+  none of this ships in the app. `--timeout` is in milliseconds for both
+  `eval --async` and `tap`.
+- **Native taps:** they go through `ios/Harness/`, a separate Xcode project with
+  one UI test (`DriveTests`). The UI test drives tC Mobile by bundle id; each
+  command is one `xcodebuild test-without-building`. `App.xcodeproj` and the
+  TestFlight lane never see the harness, and `tests/ios-harness-project.test.ts`
+  keeps it that way.
+
+**Quirks a flow has to allow for.**
+
+- **Async eval:** the bridge does not translate `awaitPromise`, so `--async` runs
+  the expression detached and polls `window.__harness` for the outcome.
+- **The first `describe` after a launch** shows only the WebView frame; the
+  page's own elements appear from the second.
+- **An `eval` started a few seconds after the last one** can find no WebView
+  target: the inspector sends the new bridge no listing, and quick retries
+  keep it in that state. Leave about five seconds between evals. A
+  replacement bridge in the same command did not help.
+- **`cap copy`, not `cap sync`:** `build` uses `cap copy`, because `cap sync`
+  rewrites `ios/App/CapApp-SPM/Package.swift` and drops its 15.4 floor
+  (#1052).
+
+**What the Simulator does not stand in for.** These stay on the device sheets
+(#974, `docs/release/device-pass-next-tester-build.md`):
+
+- **The microphone:** the Simulator's capture source is WebKit's mock device,
+  not the Mac's microphone. Recordings are real mp4/aac, but of a test signal.
+- **Refusing the microphone:** `simctl privacy revoke microphone` does not stop
+  that mock capture.
+- **Real AVAudioSession interruptions** (calls, Siri) and lock-screen
+  behaviour.
+- **Share-sheet delivery to another app:** the sheet can be opened and
+  dismissed, nothing more.
+- **Storage pressure,** and any timing or performance figure.
+
+---
+
 ## 5. Android → APK sideload
 
 Sideload only here. Google Play distribution is its own lane and runbook:
