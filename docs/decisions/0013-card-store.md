@@ -226,8 +226,8 @@ committed. So the name is exclusive:
   rename to `<name>` never replaces an existing file. If the `.part` cannot be
   created, the attempt fails as in row S1. If `<name>` exists at the rename,
   the check has already passed, so the attempt fails as in row S1c: it keeps
-  its `.part` and reports it unless a complete pending row, a final
-  disposition or a named file holds the take.
+  its `.part` and reports it unless a durable copy of the take (the keep
+  rule) exists.
 - A `clipId` is a `crypto.randomUUID()` (`clips.ts:14`), one safe path segment.
 
 Tests (commit-protocol child), read off the rule above: "a retry in a later
