@@ -43,9 +43,12 @@ promotion tagged `v1.0.0`. Do not mint a new suffixed version.
 A go after a no-go always cuts a patch bump, even when no fixes landed (DRI,
 2026-11-02, asked "after a staging -> main no-go where NO fixes land, the minor
 is carried forward to the next go ... At the next go with no fixes, what does
-the release step do?": "Always cut a patch bump"). The carried minor `X.Y.0`
-becomes `X.Y.(Z+1)` on `release/vX.Y.(Z+1)`, through steps 1 to 3. The release
-branch held by the no-go is never reused.
+the release step do?": "Always cut a patch bump"). The held version `X.Y.Z`,
+whatever its patch, becomes `X.Y.(Z+1)` on `release/vX.Y.(Z+1)`: a held
+`1.5.2` becomes `1.5.3`, never `1.5.1`. The held branch is never reused. The
+held version is the one the DRI's no-go record names (the sprint milestone
+description, AGENTS.md "Versions and milestones"); with no such record, stop
+and tell the DRI.
 
 Work through the list in order and don't skip a step. If a step can't be
 done, stop and say which one and why.
@@ -162,10 +165,12 @@ from.
 
 - [ ] Agent-allowed: if `release/vX.Y.Z` already exists
       (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/release/vX.Y.Z`),
-      do not use it. Never move, delete, recreate or reuse it. If it is a
-      branch held by a no-go, the rule in "Naming and cadence" applies: go
-      back to step 1 and cut the next patch, `X.Y.(Z+1)`, with a new
-      `CUT_SHA`. If it exists for any other reason, stop and tell the DRI.
+      do not use it. Never move, delete, recreate or reuse it. If it is the
+      version a no-go record holds, apply the held-version rule in "Naming
+      and cadence": restart at step 1 with the new version, with a new
+      `CUT_SHA`, and key this check off the new branch name. If the new
+      branch also exists, or the branch exists for any other reason, stop and
+      tell the DRI. Never skip version numbers silently.
 - [ ] Agent-allowed: create it at the final `CUT_SHA`:
       `gh api repos/unfoldingWord/tc-mobile/git/refs -f ref=refs/heads/release/vX.Y.Z -f sha=<CUT_SHA>`.
 - [ ] Agent-allowed: open the PR `release/vX.Y.Z → staging` with a
