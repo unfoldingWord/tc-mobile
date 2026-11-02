@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
 import { expect, test, type Page } from "./support/test";
-import { asInstalledApp } from "./support/installed-app";
+import {
+  asInstalledApp,
+  nativeShareCount,
+  readStagedFiles,
+  spyNativeShare,
+} from "./support/installed-app";
 import { unzipSync } from "fflate";
 
 import { validateBundleMetadata } from "../tests/support/scripture-bundle-schema";
@@ -36,14 +41,6 @@ test.use({
 });
 
 const SPOOL_DIR = "tc-mobile-share-spool";
-
-interface SharedFile {
-  readonly name: string;
-  readonly head: number[];
-  /** The whole shared file, base64. */
-  readonly base64: string;
-  readonly spoolFiles: string[];
-}
 
 interface Ingredient {
   checksum: { md5: string };
@@ -123,32 +120,7 @@ test("Export project sits right after Share book and shares the project zip from
   page,
 }, testInfo) => {
   await asInstalledApp(page);
-  await page.addInitScript((dir) => {
-    const w = window as unknown as { __shared?: unknown };
-    Object.assign(navigator, {
-      canShare: () => true,
-      share: async ({ files }: { files: File[] }) => {
-        const file = files[0]!;
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const root = await navigator.storage.getDirectory();
-        const spool = await root.getDirectoryHandle(dir);
-        const spoolFiles: string[] = [];
-        for await (const name of (
-          spool as unknown as { keys(): AsyncIterable<string> }
-        ).keys())
-          spoolFiles.push(name);
-        w.__shared = {
-          name: file.name,
-          head: [...bytes.slice(0, 4)],
-          base64: btoa(
-            Array.from(bytes, (b) => String.fromCharCode(b)).join("")
-          ),
-          spoolFiles,
-        };
-      },
-    });
-  }, SPOOL_DIR);
-
+  await spyNativeShare(page);
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto("/");
   await newBook(page);
@@ -238,18 +210,15 @@ test("Export project sits right after Share book and shares the project zip from
   await page.getByRole("button", { name: "More actions for Book 001" }).click();
   await page.getByRole("button", { name: "Export project" }).click();
   await pickLanguage(page);
-  await page.getByRole("button", { name: "Share now" }).click();
-
-  await expect
-    .poll(() => page.evaluate(() => "__shared" in (window as object)))
-    .toBe(true);
-  const shared = await page.evaluate(
-    () => (window as unknown as { __shared: SharedFile }).__shared
-  );
-  expect(shared.name).toBe("Book 001 - project.zip");
-  expect(shared.head).toEqual([0x50, 0x4b, 0x03, 0x04]);
-  expect(shared.spoolFiles).toHaveLength(1);
-  expectBundleContent(Buffer.from(shared.base64, "base64"));
+  // The installed app's route is one tap: stage the zip, then Share. The
+  // staged file is read back from the Filesystem plugin's own store.
+  await expect.poll(() => nativeShareCount(page)).toBe(1);
+  const staged = await readStagedFiles(page);
+  expect(staged).toHaveLength(1);
+  expect(staged[0]!.path).toMatch(/\/Book_001_-_project\.zip$/);
+  const bytes = Buffer.from(staged[0]!.base64, "base64");
+  expect([...bytes.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  expectBundleContent(bytes);
 
   await expect
     .poll(() =>
@@ -273,12 +242,7 @@ test("Export project on a book with no audio says there is nothing to share, in 
   // Headless Chromium has no Web Share; without a stub the flow refuses
   // before it builds anything, which is a different message.
   await asInstalledApp(page);
-  await page.addInitScript(() => {
-    Object.assign(navigator, {
-      canShare: () => true,
-      share: async () => undefined,
-    });
-  });
+  await spyNativeShare(page);
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto("/");
   await newBook(page);

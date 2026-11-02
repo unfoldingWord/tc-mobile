@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 
 import { expect, test, type Page } from "./support/test";
-import { asInstalledApp } from "./support/installed-app";
+import {
+  asInstalledApp,
+  nativeShareCount,
+  readStagedFiles,
+  spyNativeShare,
+} from "./support/installed-app";
 
 import { editRecordingButton } from "./recorder-fixtures";
 
@@ -54,17 +59,18 @@ async function recordOneSegment(page: Page): Promise<void> {
 }
 
 /** The one zip this page has shared so far, as Latin-1 text. */
+/**
+ * The zip the installed app's one-tap share just staged, as Latin-1 text so
+ * the test can find `metadata.json`'s language tag in its bytes. It waits for
+ * the one Share call of this page load, then reads the newest staged file.
+ */
 async function sharedZip(page: Page): Promise<string> {
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => (window as unknown as { __shared?: string[] }).__shared?.length
-      )
-    )
-    .toBe(1);
-  return page.evaluate(
-    () => (window as unknown as { __shared: string[] }).__shared[0]!
-  );
+  await expect.poll(() => nativeShareCount(page)).toBe(1);
+  const staged = await readStagedFiles(page);
+  expect(staged.length).toBeGreaterThan(0);
+  const newest = staged[staged.length - 1]!;
+  expect(newest.path).toMatch(/\/Book_001_-_project\.zip$/);
+  return Buffer.from(newest.base64, "base64").toString("latin1");
 }
 
 async function openBookMenu(page: Page): Promise<void> {
@@ -77,20 +83,7 @@ test("the first Export project asks the language once and the bundle carries it 
   page,
 }, testInfo) => {
   await asInstalledApp(page);
-  await page.addInitScript(() => {
-    const w = window as unknown as { __shared?: string[] };
-    Object.assign(navigator, {
-      canShare: () => true,
-      share: async ({ files }: { files: File[] }) => {
-        // Kept as Latin-1 text so the test can find `metadata.json`'s
-        // language tag in the zip's bytes.
-        const bytes = new Uint8Array(await files[0]!.arrayBuffer());
-        (w.__shared ??= []).push(
-          Array.from(bytes, (b) => String.fromCharCode(b)).join("")
-        );
-      },
-    });
-  });
+  await spyNativeShare(page);
   const listRequests: string[] = [];
   page.on("request", (r) => {
     if (/language-list-[\w-]+\.js/.test(r.url())) listRequests.push(r.url());
@@ -140,15 +133,13 @@ test("the first Export project asks the language once and the bundle carries it 
   await page
     .getByRole("button", { name: "Tok Pisin tpi", exact: true })
     .click();
-  await page.getByRole("button", { name: "Share now" }).click();
   expect(await sharedZip(page)).toMatch(/"tag": *"tpi"/);
 
-  // Asked once: after a reload, the next export goes straight to Share now.
+  // Asked once: after a reload, the next export goes straight through, with
+  // no ask, and the second staged file carries the stored tag.
   await openBookMenu(page);
   await page.getByRole("button", { name: "Export project" }).click();
-  await expect(page.getByRole("button", { name: "Share now" })).toBeVisible();
   await expect(search).toHaveCount(0);
-  await page.getByRole("button", { name: "Share now" }).click();
   expect(await sharedZip(page)).toMatch(/"tag": *"tpi"/);
   await page.screenshot({
     path: testInfo.outputPath("after-export-360.png"),
