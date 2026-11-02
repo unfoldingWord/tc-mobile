@@ -1,0 +1,176 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		4307B989C7F14A25A53618D2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9C99F833C61A4D84882AA96A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F1E8714F058D496AB96A679F;
+			remoteInfo = HarnessHost;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		2B9622517099478F9BD59C28 /* HarnessHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HarnessHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E89D404DF076460993CBA356 /* HarnessUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HarnessUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		CCCEF023322F4EEA8F9A62D9 /* HarnessHost */ = {isa = PBXFileSystemSynchronizedRootGroup; path = HarnessHost; sourceTree = "<group>"; };
+		18CB00FD50994DC1A362D9CF /* HarnessUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = HarnessUITests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A03435A418642EDB2D80197 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		B96803E83C0E487F99801C89 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		F167CDDCD72E4DDA801419F0 = {
+			isa = PBXGroup;
+			children = (
+				CCCEF023322F4EEA8F9A62D9 /* HarnessHost */,
+				18CB00FD50994DC1A362D9CF /* HarnessUITests */,
+				5B9F5A9B4E474B0FA3F7064D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5B9F5A9B4E474B0FA3F7064D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2B9622517099478F9BD59C28 /* HarnessHost.app */,
+				E89D404DF076460993CBA356 /* HarnessUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F1E8714F058D496AB96A679F /* HarnessHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1DB947D9AE424B3698E3CAA8;
+			buildPhases = (
+				3DFD57C66E5342D3938CA3CE /* Sources */,
+				1A03435A418642EDB2D80197 /* Frameworks */,
+				1DFF586786184206B3B5CA00 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (CCCEF023322F4EEA8F9A62D9 /* HarnessHost */);
+			name = HarnessHost;
+			productName = HarnessHost;
+			productReference = 2B9622517099478F9BD59C28 /* HarnessHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A56C502C24354B6B86CB70EC /* HarnessUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9EA3C0EB76414652A6CF94E5;
+			buildPhases = (
+				994D79242B5C496BB71EAFC6 /* Sources */,
+				B96803E83C0E487F99801C89 /* Frameworks */,
+			);
+			buildRules = ();
+			dependencies = (073624B139454CAF9102ACC4 /* PBXTargetDependency */);
+			fileSystemSynchronizedGroups = (18CB00FD50994DC1A362D9CF /* HarnessUITests */);
+			name = HarnessUITests;
+			productName = HarnessUITests;
+			productReference = E89D404DF076460993CBA356 /* HarnessUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9C99F833C61A4D84882AA96A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					A56C502C24354B6B86CB70EC = {TestTargetID = F1E8714F058D496AB96A679F;};
+				};
+			};
+			buildConfigurationList = F2D9BA9989EE46549DB884E2;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = F167CDDCD72E4DDA801419F0;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5B9F5A9B4E474B0FA3F7064D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F1E8714F058D496AB96A679F /* HarnessHost */,
+				A56C502C24354B6B86CB70EC /* HarnessUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1DFF586786184206B3B5CA00 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3DFD57C66E5342D3938CA3CE /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		994D79242B5C496BB71EAFC6 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		073624B139454CAF9102ACC4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F1E8714F058D496AB96A679F /* HarnessHost */;
+			targetProxy = 4307B989C7F14A25A53618D2 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A8F0A8CFA1964353BB314FDD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		82838CD783BA4A9497D157EB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = org.unfoldingword.tcmobile.harnesshost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		ED20C0C332824A8C85EFC825 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = org.unfoldingword.tcmobile.harnessuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = HarnessHost;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F2D9BA9989EE46549DB884E2 = {isa = XCConfigurationList; buildConfigurations = (A8F0A8CFA1964353BB314FDD /* Debug */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		1DB947D9AE424B3698E3CAA8 = {isa = XCConfigurationList; buildConfigurations = (82838CD783BA4A9497D157EB /* Debug */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		9EA3C0EB76414652A6CF94E5 = {isa = XCConfigurationList; buildConfigurations = (ED20C0C332824A8C85EFC825 /* Debug */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+/* End XCConfigurationList section */
+	};
+	rootObject = 9C99F833C61A4D84882AA96A /* Project object */;
+}
