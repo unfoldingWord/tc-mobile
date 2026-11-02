@@ -356,7 +356,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNoMatch: "没有找到语言。请输入其他名称或代码。",
   languageNarrow: "请多输入几个字，以查看其他语言。",
   languageCount: (n: number): string =>
-    plural(n, { one: "{n} 种语言匹配。", other: "{n} 种语言匹配。" }),
+    plural(n, { other: "{n} 种语言匹配。" }),
   languageCountMore: (n: number, shown: number): string =>
     plural(n, {
       other: `{n} 种语言匹配。显示前 ${shown} 种。请多输入几个字，缩小搜索范围。`,

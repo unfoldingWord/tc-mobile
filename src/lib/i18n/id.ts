@@ -303,7 +303,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNoMatch: "Tidak ada bahasa yang cocok. Coba nama atau kode lain.",
   languageNarrow: "Ketik lagi untuk melihat bahasa lain.",
   languageCount: (n: number): string =>
-    plural(n, { one: "{n} bahasa cocok.", other: "{n} bahasa cocok." }),
+    plural(n, { other: "{n} bahasa cocok." }),
   languageCountMore: (n: number, shown: number): string =>
     plural(n, {
       other: `{n} bahasa cocok. Menampilkan ${shown} yang pertama. Ketik lagi untuk mempersempit pencarian.`,
