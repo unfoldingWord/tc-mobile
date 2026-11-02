@@ -110,9 +110,22 @@ describe("runbook section 5 rollback read", () => {
       good("def5678", "1.2.3")
     );
     expect(code).toBe(1);
-    expect(out).toMatch(/FAIL: .*different builds/);
+    expect(out).toMatch(/FAIL: .*different builds.*record neither/);
     expect(out).toContain("abc1234");
     expect(out).toContain("def5678");
+  });
+
+  // Frank's #1823 follow-up: the same sha with two version strings is still
+  // two different records, so the whole record is compared, not the sha.
+  it("two good origins that serve the same sha but different versions: exit non-zero, record neither", async () => {
+    const { code, out } = await run(
+      good("abc1234", "1.2.3"),
+      good("abc1234", "1.2.4")
+    );
+    expect(code).toBe(1);
+    expect(out).toMatch(/FAIL: .*different builds.*record neither/);
+    expect(out).toContain("version=1.2.3");
+    expect(out).toContain("version=1.2.4");
   });
 
   it("two good origins that serve the same sha stay green with no mismatch line", async () => {
