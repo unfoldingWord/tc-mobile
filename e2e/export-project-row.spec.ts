@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
 import { expect, test, type Page } from "./support/test";
+import { asInstalledApp } from "./support/installed-app";
 import { unzipSync } from "fflate";
 
 import { validateBundleMetadata } from "../tests/support/scripture-bundle-schema";
@@ -121,6 +122,7 @@ async function recordOneSegment(page: Page): Promise<void> {
 test("Export project sits right after Share book and shares the project zip from the spool (#1457)", async ({
   page,
 }, testInfo) => {
+  await asInstalledApp(page);
   await page.addInitScript((dir) => {
     const w = window as unknown as { __shared?: unknown };
     Object.assign(navigator, {
@@ -270,6 +272,7 @@ test("Export project on a book with no audio says there is nothing to share, in 
 }) => {
   // Headless Chromium has no Web Share; without a stub the flow refuses
   // before it builds anything, which is a different message.
+  await asInstalledApp(page);
   await page.addInitScript(() => {
     Object.assign(navigator, {
       canShare: () => true,
@@ -286,5 +289,23 @@ test("Export project on a book with no audio says there is nothing to share, in 
     page.getByText("Record a segment before sharing this book.")
   ).toBeVisible();
   // No send is armed: the Share tile is still Share book.
+  await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
+});
+
+test("Export project in the browser build points to the installed app and asks nothing (#1457)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/");
+  await newBook(page);
+  await page.getByRole("button", { name: "More actions for Book 001" }).click();
+  await page.getByRole("button", { name: "Export project" }).click();
+  await expect(
+    page.getByText(
+      "Export works in the installed app. Open the app to export this project."
+    )
+  ).toBeVisible();
+  // No language ask and no armed send: the export did not start.
+  await expect(page.locator('input[type="search"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Share now" })).toHaveCount(0);
 });

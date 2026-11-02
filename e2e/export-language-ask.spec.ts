@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { expect, test, type Page } from "./support/test";
+import { asInstalledApp } from "./support/installed-app";
 
 import { editRecordingButton } from "./recorder-fixtures";
 
@@ -75,6 +76,7 @@ async function openBookMenu(page: Page): Promise<void> {
 test("the first Export project asks the language once and the bundle carries it (#1492)", async ({
   page,
 }, testInfo) => {
+  await asInstalledApp(page);
   await page.addInitScript(() => {
     const w = window as unknown as { __shared?: string[] };
     Object.assign(navigator, {
@@ -156,6 +158,7 @@ test("the first Export project asks the language once and the bundle carries it 
 test("the language ask at 360 px, dark and light (#1492)", async ({
   page,
 }, testInfo) => {
+  await asInstalledApp(page);
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto("/");
   await page.getByRole("button", { name: "New book" }).click();
