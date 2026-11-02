@@ -30,7 +30,7 @@ default, the text there says to keep using it.
    Android app needs **Android 7.0 (2016) or newer**, with Android System
    WebView kept up to date — an older phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor; DRI pick 2026-09-28 on #1017 "Keep Android 7 (Recommended)"); the WebView wording is docs/native/system-requirements.md "Platform floors" --> The iPhone
    app needs **iOS 15.4 or newer**, and it is an **iPhone app: there is no
-   iPad version** as of 1.0.1, and it has not been tried on an iPad. <!-- source: ios/App/App.xcodeproj/project.pbxproj IPHONEOS_DEPLOYMENT_TARGET = 15.4 and TARGETED_DEVICE_FAMILY = 1 (#1289, DRI pick 2026-10-01 "iPhone only for now"); PR #1289 "Not verified" (iPad compatibility mode not tried) --> The
+   iPad version** as of 1.2.2, and it has not been tried on an iPad. <!-- source: ios/App/App.xcodeproj/project.pbxproj IPHONEOS_DEPLOYMENT_TARGET = 15.4 and TARGETED_DEVICE_FAMILY = 1 (#1289, DRI pick 2026-10-01 "iPhone only for now"); PR #1289 "Not verified" (iPad compatibility mode not tried) --> The
    full requirements statement, with what is and is not measured, is
    [`docs/native/system-requirements.md`](../native/system-requirements.md);
    it states no memory (RAM) figure on purpose, and neither does this file. <!-- source: docs/native/system-requirements.md status paragraph; gh issue #1017 ("Don't publish the RAM figures until ... reported") -->
@@ -52,30 +52,25 @@ default, the text there says to keep using it.
    into a given phone is not checked here, so try it on one phone before the
    session. <!-- source: gh issue #248, DRI decision 2026-10-27 (https://github.com/unfoldingWord/tc-mobile/issues/248#issuecomment-6441801461: "The team has tested one and we wil be recommending it for all training events going forward.  $35 mic which is relatively inexpensive."); the rationale is the facilitators' report in gh issue #248, comment 2026-10-14 (its "not tested by the development team" is superseded by the decision above) -->
 
-5. **Know which build you are on.** The current build is **1.0.1**, the one
-   submitted to the App Store and Google Play; the same name appears in the
-   small build stamp at the bottom of every screen (`v1.0.1 · <short code>`;
-   the short code after the `·` changes with every build). Check it on each
-   phone before the session. The builds before it were release candidates
-   named `1.0.0-rc.1` to `1.0.0-rc.3`; a phone whose stamp still reads
-   `v1.0.0-rc.…` is on an old build and should be updated the way §2 says —
-   over the top, never by uninstalling. On an iPhone, TestFlight may not yet
-   offer the new build to every tester group; if it offers nothing newer and
-   the stamp is not the one named for the session (§2 says how to read it),
-   note the phone and tell the maintainer rather than reinstalling. <!-- source: src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); docs/progress_tracker.md "2026-10-02 ... v1.0.0 and v1.0.1 shipped" (1.0.1 is the store build; "Assign TestFlight build 1790903231 to the testers' group" is listed under Next, so assignment is not recorded as done); docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the previous one; happened on 1.0.0-rc.1) and §5a ("Release candidates use `tester-build-v1.0.0-rc.N`") -->
+5. **Know which build you are on.** The current tester build is **1.2.2**. The
+   same name appears in the small build stamp at the bottom of every screen
+   (`v1.2.2 · <short code>`; the short code after the `·` changes with every
+   build). Check it on each phone before the session. The 1.2 line is what the
+   team plans to promote to production at the end of the current sprint, if the
+   requirements owner and DRI decide to go, so ask the maintainer which build the session
+   names. On an iPhone, TestFlight may not yet offer the new build to every
+   tester group; if it offers nothing newer and the stamp is not the one named
+   for the session (§2 says how to read it), note the phone and tell the
+   maintainer rather than reinstalling. A phone whose stamp shows an older
+   version is on an old build: update it the way §2 says, over the top, never by
+   uninstalling. <!-- source: gh release view tester-build-v1.2.2 (published 2026-10-30); src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); AGENTS.md "Versions and milestones" (1.2 promoted staging -> main at Sprint 6's end, a DRI go/no-go); docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the previous one; happened on 1.0.0-rc.1) -->
 
-   **From 1.1.0, every phone has the same look.** The app has one look, and
-   no saved choice changes it. Open any menu: its top corner shows a **✕**.
-   Menus also close by dragging them down, the screen headers carry tappable
-   book and chapter names, and the icons are the larger ones. <!-- source: gh PR #1363 (deleted the earlier look and the design switch; first in tester-build-v1.1.0, not in v1.0.1); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`) and its drag to close (#1268); src/components/o4-crumbs.tsx (links, #1269; chapter name, #1230); src/components/segments-screen.tsx (the header); the O4 recorder stylesheet (glyphs drawn larger); nothing in src/ reads the saved look any more; not device-verified -->
-   - **A phone still on 1.0.1 or earlier may show the earlier look**, if it
-     saved that choice before the switch was removed: its menus' top corner
-     shows **‹**, **≡** or **⋮** instead of **✕**, and it has none of the
-     above. It still records, plays and shares normally. Update it the way §2
-     says, over the top; on 1.1.0 or later it shows the one look. <!-- source: v1.0.1's design module, readStoredDesign (a stored "current" wins; anything else reads as "o4") and its dismissGlyph (`hamburger ? dismissIcon : "back"` outside O4); gh issue #1244 (DRI decision 2026-09-30, the Books ≡ switch removed); the saved choice was a localStorage value, not part of the recordings (inference from v1.0.1's useDesign hook); not device-verified -->
-   - **Do not uninstall or reinstall to change the look. That deletes every
-     recording on the phone.** Write down which phone it is and tell the
-     maintainer.
+   **Every phone has the same look.** Open any menu: its top corner shows a
+   **✕**. Menus also close by dragging them down, and the screen headers carry
+   tappable book and chapter names. A phone whose stamp still shows 1.0.1 or
+   older may show **‹**, **≡** or **⋮** there instead; update it over the top
+   as above — do not reinstall to change the look, because that deletes every
+   recording. <!-- source: gh PR #1363 (deleted the earlier look and the design switch, first in tester-build-v1.1.0); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`) and its drag to close (#1268); src/components/o4-crumbs.tsx; not device-verified -->
 
 ## 2. Setting up a participant's phone
 
@@ -103,18 +98,21 @@ default, the text there says to keep using it.
    any other file means stop: do not keep it. <!-- source: docs/tester-install.md
    "Android" step 2 (the same guard); gh issue #248, comment 2026-09-24 -->
 
-   **In short:** an Android phone opens `app-release.apk` from the newest
-   release on <https://github.com/unfoldingWord/tc-mobile/releases> (the
-   durable address <https://github.com/unfoldingWord/tc-mobile/releases/latest>
-   lands on it) and taps through the "install from this source" warning; an
-   iPhone accepts a TestFlight invitation, installs the free TestFlight app,
-   then installs and opens tC Mobile through it — from the home screen
-   afterward, not from TestFlight itself. `tester-install.md` has the full
-   steps; this is only the shape of it. <!-- source: docs/tester-install.md
-   "Android (download link)" and "iPhone (TestFlight)" sections; GitHub
-   release v1.0.1 is the newest full release with app-release.apk attached
-   (the rc builds before it were pre-releases); docs/native/README.md §5 step
-   4, §4 -->
+   **In short:** an Android phone opens `app-release.apk` from the release the
+   tester announcement names (for 1.2.2, `tester-build-v1.2.2` on
+   <https://github.com/unfoldingWord/tc-mobile/releases>) and taps through the
+   "install from this source" warning; an iPhone accepts a TestFlight
+   invitation, installs the free TestFlight app, then installs and opens tC
+   Mobile through it — from the home screen afterward, not from TestFlight
+   itself. **Tester builds are marked Pre-release, so the "latest" address
+   <https://github.com/unfoldingWord/tc-mobile/releases/latest> still lands on
+   an older full release (1.0.1): use the link in the announcement, and check
+   the stamp afterwards.** `tester-install.md` has the full steps; this is only
+   the shape of it. <!-- source: docs/tester-install.md "Android (download
+   link)" and "iPhone (TestFlight)" sections; gh release list --repo
+   unfoldingWord/tc-mobile shows tester-build-v1.2.2 as Pre-release and v1.0.1
+   as Latest, and /releases/latest resolving to the newest non-pre-release is
+   GitHub's behaviour; docs/native/README.md §5 step 4, §4 -->
 
    The app also runs in a web browser at <https://tcmobile.app>. That is not
    the training route — the installed apps are — and recordings made in a
@@ -141,7 +139,7 @@ default, the text there says to keep using it.
    observed on Android 2026-09-25: "Uninstall v0.2.10, then install v0.2.12:
    the app shows 0.2.12, but all data from 0.2.10 is gone"; see also
    [the flip side of "nothing leaves the phone"](#the-flip-side-of-nothing-leaves-the-phone)
-   --> A fix that stopped an in-place Android update from silently continuing to run the old build (#934) has merged and ships in 1.0.1, but it is not confirmed on a phone as of this writing, nor checked on iOS at all. <!--
+   --> A fix that stopped an in-place Android update from silently continuing to run the old build (#934) has merged and ships from 1.0.1 on, but it is not confirmed on a phone as of this writing, nor checked on iOS at all. <!--
    source: gh issue #923, comment 2026-09-27 ("the fix is
    in v0.2.13 ... Only the phone check is left: on an Android phone holding
    v0.2.12 recordings, install the v0.2.13 APK over it (don't uninstall),
@@ -156,8 +154,11 @@ default, the text there says to keep using it.
    on it.** When the newer build changed how recordings are stored (1.1.0 and
    1.2.0 each did), the recordings stay on the phone but out of reach until a
    build at least as new as the one it last opened is installed over it
-   (AGENTS.md, "A rollback is not free once a phone has opened a build with a newer database
-   schema"). If the app says "This copy is out of date" and restarting does
+   (AGENTS.md, "Confirming a deploy and rolling one back" is the one statement
+   of this: "A rollback is not free once a phone has opened a build with a newer
+   database schema"). Opening 1.2.2 over any older build — a 1.0.1 store
+   phone or a 1.1.x tester phone — is such a change (§3, "What is new in
+   1.2"). If the app says "This copy is out of date" and restarting does
    not clear it, do not uninstall, because
    that deletes every recording. Write down the stamp and what you saw, as in
    section 5, and report it. (On Android, the phone itself refuses to install
@@ -206,7 +207,7 @@ default, the text there says to keep using it.
 
    After installing over an old build, close and reopen the app twice,
    then check the build stamp — the small text at the bottom of every
-   screen, a version and a short code in the shape `v1.0.1 · <short code>`
+   screen, a version and a short code in the shape `v1.2.2 · <short code>`
    (the short code changes with every build; more in
    [section 5](#5-reporting-a-problem)). If it still shows the old version,
    or recordings are missing, stop: do not uninstall — write down the stamp
@@ -255,10 +256,7 @@ default, the text there says to keep using it.
      recorder's bottom bar (§3). The drawer closes with the **✕** in its top
      corner, like every menu. From 1.1, if the drawer is opened while
      recording, a **Stop** tile (the square) comes first: tapping it closes
-     the drawer and ends the take, the same as the Stop button underneath. A
-     phone still on 1.0.1 or earlier with the earlier look (§1, step 5) shows
-     rows instead — Edit, "Mark segment N done", and "Reset segment and start
-     over" — and closes the drawer with a **⋮**. <!-- source: src/components/recorder-menu.tsx (RecorderMenuTiles: the Stop tile, record mode, only while `recording`; the Done tile in record mode and the Reset tile; its docblock: "Record mode has no Edit tile ... because the recorder screen carries its own edit control"; `hamburger`); src/components/recorder.tsx (onStopTake → onRecordButton); gh issue #369 (DRI pick 2026-10-19); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`); the rows and the ⋮ closer are v1.0.1's non-O4 branch of recorder-menu.tsx (`dismissIcon="more"`), deleted by gh PR #1363; not device-verified -->
+     the drawer and ends the take, the same as the Stop button underneath. <!-- source: src/components/recorder-menu.tsx (RecorderMenuTiles: the Stop tile, record mode, only while `recording`; the Done tile in record mode and the Reset tile; its docblock: "Record mode has no Edit tile ... because the recorder screen carries its own edit control"; `hamburger`); src/components/recorder.tsx (onStopTake → onRecordButton); gh issue #369 (DRI pick 2026-10-19); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`); the rows and the ⋮ closer are v1.0.1's non-O4 branch of recorder-menu.tsx (`dismissIcon="more"`), deleted by gh PR #1363; not device-verified -->
 
      The tile reads **Done**; the app's storage warnings and these notes say
      "finished" for the same state. <!-- source: src/lib/strings.ts tileFinished ("Done", D17 #949), tileErase ("Reset", #1220), eraseSegment ("Reset segment and start over"), enterEdit ("Edit recording", the scissors), storageLow ("Mark segments finished ..."); src/components/segment-row.tsx; not device-verified; George round 1 P2-1 on PR #1297 -->
@@ -307,9 +305,7 @@ been measured on a device yet.
 - **What the storage warnings mean.** They appear on the Books screen only
   when there is something to act on. The first two come as a banner with a
   phone icon, the title "Share your work soon" and a **Share your work**
-  button that shares every book on the phone as one zip; on a phone still on
-  1.0.1 or earlier with the earlier look (§1, step 5) they are a plain line of
-  text. <!-- source: src/components/storage-pressure-banner.tsx (state 17 banner, strings.storageShareSoon title, strings.shareAll button, #983/#987/#1045); src/components/books-screen.tsx pressureLine; the plain line is v1.0.1's non-O4 branch (the #247 Notice), deleted by gh PR #1363 -->
+  button that shares every book on the phone as one zip. <!-- source: src/components/storage-pressure-banner.tsx (state 17 banner, strings.storageShareSoon title, strings.shareAll button, #983/#987/#1045); src/components/books-screen.tsx pressureLine; the plain line is v1.0.1's non-O4 branch (the #247 Notice), deleted by gh PR #1363 -->
 
   **Share your work can refuse.** Before it builds anything it checks that
   the phone has room for the zip, and if not it says "This phone does not
@@ -383,9 +379,7 @@ been measured on a device yet.
   recorder menus and the naming sheets. It can also be closed by dragging the
   bar at its top (or the row with the ✕) down; a short drag lets it spring
   back open. About's licence text keeps a back arrow, because there it goes
-  back to the list rather than closing. **On a phone still on 1.0.1 or
-  earlier with the earlier look (§1, step 5) the menu's top corner shows ‹, ≡
-  or ⋮ instead of ✕, and that control closes the menu.** <!-- source: src/components/menu.tsx (`back` prop docblock, dismissGlyph, drag down to close); src/components/recorder-menu.tsx (hamburger); src/components/sheet-drag.ts; #1268; the ‹, ≡ and ⋮ closers are v1.0.1's (`dismissIcon`), deleted by gh PR #1363; not device-verified -->
+  back to the list rather than closing. <!-- source: src/components/menu.tsx (`back` prop docblock, dismissGlyph, drag down to close); src/components/recorder-menu.tsx (hamburger); src/components/sheet-drag.ts; #1268; the ‹, ≡ and ⋮ closers are v1.0.1's (`dismissIcon`), deleted by gh PR #1363; not device-verified -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). Each MP3 is named for the
@@ -487,133 +481,125 @@ your other notes (§5).
      item 3: gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
      Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->
 
-## What changed since 1.0.1
+## What is new in 1.2 (tester build 1.2.2)
 
-Everything below is on `develop` after the last tester-build tag
-(`tester-build-v1.1.0`) and has not been in any tester build or release;
-as of 2026-10-27 no tester build has been cut since that tag. **None of it has
-been run on a phone.** The tracker entries for 2026-10-23 to 10-24 and for
-2026-10-26 both say no device run of anything merged, and none later reports
-one. This list is level with `develop` as of 2026-10-27.
-Where this list says what a screen does, it says what the code is written to
-do, not what anyone saw. When a build carries these, treat each item as
-unconfirmed until you or a tester see it work. The next tester build has no
-date. <!-- source: git tag --contains on PRs #1623, #1561, #1541, #1630 returned no tag, so none is in tester-build-v1.1.0; docs/progress_tracker.md 2026-10-23 to 10-24 "Not run" and "Decisions (DRI)", "Next tester build: Not yet, no date"; gh release list --repo unfoldingWord/tc-mobile on 2026-10-27 shows tester-build-v1.1.0 (2026-10-14) as the newest tester build; docs/progress_tracker.md 2026-10-26 "Not run" ("No device run of anything merged today") -->
+This is what a facilitator meets that 1.0.1 did not have. It follows the
+1.2.2 tester release notes, which also say what to check on a phone. **None of
+it has been run on a phone.** The release notes say so, and this file has no
+later device result. Where this section says what a screen does, it says what
+the code is written to do, not what anyone saw. <!-- source: gh release view
+tester-build-v1.2.2 (published 2026-10-30; "Known limits": "None of this build's
+changes has been run on a phone yet"); git log tester-build-v1.2.2..HEAD for
+what is later -->
 
-This section does not replace "Known limits" below, which is still as of build
-1.0.1. A phone that opens a build with these changes cannot go back to an
-older build: it holds schema v14, and an older build cannot open it. Do not
-uninstall to clear a problem, because uninstalling deletes the recordings.
-<!-- source: docs/progress_tracker.md 2026-10-23 to 10-24 "Not run" ("Schema v14 is on develop"); AGENTS.md "A rollback is not free" -->
+**The first time 1.2.2 opens over an older build — a 1.0.1 store phone or a
+1.1.x tester phone — it upgrades the app's stored data.** The upgrade has not been run on a phone. Before updating a phone that
+matters, share what is on it. After updating, check that the stamp starts
+`v1.2.2`, that every book is there in its old order, and that an older
+recording still plays. Do not put an older build back and do not uninstall to
+clear a problem: §2 says what to do, and AGENTS.md, "Confirming a deploy and
+rolling one back", is the one statement of why. <!-- source: tester-build-v1.2.2
+notes; AGENTS.md "A rollback is not free once a phone has opened a build with a
+newer database schema" (v1.1.0 moved the schema from 9 to 11 and v1.2.0 from 11
+to 14, so 1.0.1 and 1.1.x are both older than 1.2.2's schema) -->
 
-- **A Settings screen.** A gear in the Books header opens it. It holds the
-  light and dark theme choice, a switch to always show chapter numbers, and
-  the volume switch below. <!-- source: PR #1623 (gear in the Books header, #1575); src/lib/strings.ts settingsOpen, settingsChapterNumbers, settingsNormalizeOnFinished; "Always show chapter numbers" is the requirements owner's option S12 per the comment in src/lib/strings.ts -->
-- **Play a whole chapter from its row.** A play control on a chapter row on
-  the Books screen plays the chapter's segments one after another. It was
-  built in slices (#1506, #1550, #1561). Not run on a phone, and not run on
-  iPhone, where audio start-up rules are the likeliest thing to differ.
-  <!-- source: PR #1561 "play a whole chapter from its row (#1469)"; src/lib/strings.ts playChapter; AGENTS.md "Device testing" on iOS audio contexts -->
-- **Even out the volume when done.** With this switch on, marking a segment
-  Finished evens out its loudness before the MP3 is made. The Settings switch
-  is named "Even out the volume when done" and is **off** when nothing has
-  been chosen. Once a segment is evened out, that cannot be undone for that
-  segment. The label is the developers' proposal and the requirements owner
-  has not confirmed it. A segment that was Finished before the upgrade, with
-  its MP3 still owed, is made from its original audio. Nobody has listened to
-  the result on a phone.
-  <!-- source: PR #1679 (normalize on Finished, #1433, schema v14), PR #1685 (the switch); PR #1746 comment 6474144416, DRI pick "Turn it off for 1.2 (Recommended)", src/lib/settings.ts readStoredNormalizeOnFinished; docs/progress_tracker.md 2026-10-23 to 10-24 "Completed" and "Not run" ("Normalization also owes a listening test") -->
-- **Export project.** The book's menu has a new "Export project" row below
-  "Share book". It shares one zip in the Scripture Bundle format. This is
-  export only: there is no import, so a project cannot be brought back in
-  from the zip. The file is named `<book> - project.zip`, with "project" in
-  the app's language. A real Chromium test read the zip back; no phone has
-  produced one. <!-- source: PR #1624 (the row, #1457), PR #1646 (file name follows the app language, #1627), PR #1661 (read back in Chromium); AGENTS.md Known open items 5 (export only, import later); src/lib/strings.ts exportProject, exportProjectFilename -->
-- **A language question at a book's first Export project.** The first time a
-  book is exported, a screen asks what language the recordings are in, with a
-  search by name or code. You choose once and every export of that book uses
-  the answer. <!-- source: PR #1630 (#1492); PR #1629 (SIL language list bundled); src/lib/strings.ts languageAskTitle, languageAskLead -->
-- **A licence question at Share Book.** When a book has no licence chosen,
-  Share Book asks which licence, with "CC BY-SA 4.0" already selected, and
-  then shares. Share Chapter asks the same question the first time it is used
-  on a book with no licence, so a book is asked once, whichever share comes
-  first. Shared file names carry the licence. The check that the phone's share
-  sheet still opens after the licence is saved has not been run. <!-- source: PR #1670 (the ask, #1455), PR #1703 (the same ask at Share Chapter), PR #1599 and #1573 (licence in file names); docs/progress_tracker.md 2026-10-23 to 10-24 "Share and licences" and "Not run" -->
-- **A Licence tile in a book's menu.** It reopens the licence question with
-  the saved licence selected, and saves a new choice without sharing. A book
-  made from a template has no such tile, because its licence is fixed. <!-- source: PR #1707 (#1455; "A book made from a template shows no tile"); not run on a phone -->
-- **A Template Library.** A "Templates" tile in the global menu opens a list
-  with one package, Open Bible Stories. Tapping it asks for the new book's
-  name, pre-filled with the title, then creates the book with its chapters.
-  A name another book already has is refused. <!-- source: PR #1655 (#246, #1450); PR #1633 (name refused, #1272 part); src/lib/strings.ts templatesOpen, templatesTitle -->
-- **The app follows the phone's language.** The app opens in the phone's
-  language when it is one of the complete app languages, and follows a change,
-  but never in the middle of a recording. Other languages fall back to
-  English. <!-- source: PR #1541 (#1482); src/lib/i18n/resolve.ts header ("Which supported UI language a phone's language list asks for") -->
-  The non-English app text is an **AI draft that no reader has checked**:
-  Spanish (#1586), French (#1592), Portuguese (#1602), Indonesian (#1622),
-  Swahili (#1626), Hindi (#1631) and Simplified Chinese (#1667). Expect
-  wording a speaker would fix, and write it down.
-  <!-- source: those PRs; docs/progress_tracker.md 2026-10-23 to 10-24 "Translations" ("No reader has checked any of these") -->
-- **The Share ring shows a separate read phase.** When a chapter's pieces are
-  joined for sharing, the read now shows as its own phase of the progress
-  ring. How the arc should look is still an open call for the DRI (#1078).
-  <!-- source: PR #1659 (#1078); docs/progress_tracker.md 2026-10-23 to 10-24 "Tests and gates" and "In progress" -->
-- **Hold a cut-off name to read it whole.** On the Books screen, holding a
-  book name or chapter title that is cut short shows the whole name above it
-  until you let go. The same hold now also works on a cut-off title or chapter name
-  on the chapter screen. A name that fits still holds to reorder, as before; on a
-  cut-off name the reorder hold is not available from the name text itself,
-  only from the cover or the number. <!-- source: PR #1711 (Books screen; "Cost, stated plainly"), PR #1738 (segments, #1284); not run on a phone -->
-- **Move up and Move down.** A book's menu and a segment's menu have Move up
-  and Move down, to reorder without press-and-hold. Each moves the row one
-  place and is greyed on the first or last row. Chapters still move only by
-  holding and dragging. <!-- source: PR #1731 (#1344; "Chapters are out ... #1730 tracks them"); not run on a phone -->
-- **On an iPhone, the microphone permission prompt follows the app language**
-  for Spanish, French, Hindi, Indonesian, Portuguese, Russian, Swahili and
-  Simplified Chinese; Arabic is held for the right-to-left device pass. The
-  texts are AI drafts no reader has checked, and the prompt has never been
-  seen on a phone. <!-- source: PR #1705 (#1458) -->
-- **A recording waiting at launch.** When the app opens and finds a recording
-  that was waiting to be saved, it finishes the save quietly, with no screen.
-  It now also writes one line in the problem record, `pending-take-replayed`,
-  without the red mark on Books **≡**, so Send problem report can show that a
-  waiting recording existed and was saved (§5 lists it). <!-- source: PR #1725 (#38); not run on a phone -->
-- **A reload after an update.** If the app cannot load a part of itself
-  because an update replaced it, it reloads once to pick up the new build,
-  unless a recording or unsaved audio is open; then it does not reload and
-  writes a problem-record line instead (§5 lists both). <!-- source: PR #1713 (#1421 O1: "Reload once, then fail"); not run on a phone -->
-- **Screen-reader names.** Many controls now have names that say what they do
-  for TalkBack and VoiceOver: the Settings on/off rows are switches, a failed
-  chapter play is named as a failure, a chapter's play says what it did, the
-  licence and language questions read full names and a result count, the
-  recorder's selection handles speak their position, and each language row is
-  named by the text it draws. No screen reader was run on a phone for any of
-  these. <!-- source: PRs #1716, #1718, #1721, #1722, #1723, #1728, #1737 (#1344); docs/progress_tracker.md 2026-10-26 "Not run" ("Every screen-reader change owes a TalkBack and a VoiceOver pass") -->
-- **Also in this span, smaller.** A recording finished while an earlier save
-  is still being replayed now waits for it instead of being lost (#1683; it
-  is held in memory only while it waits, so closing the app in that moment
-  can still lose it). Book-menu captions wrap at a narrow screen width
-  (#1682). The recorder menu shows the full chapter name (#1673). The
-  mic-refused card shakes on each repeated refusal (#1672). A chapter's number
-  is its place in the book, so a moved chapter takes the number of the place it
-  lands in and the numbers still read 1, 2, 3 (#1272, replacing #1634's "keeps
-  its own number"). <!-- source: those PRs; gh issue #1272 (the requirements owner's answer B, the DRI's Q1 (b) and Q4 (a)); the in-memory residual is stated in PR #1683 per docs/progress_tracker.md 2026-10-23 to 10-24 "Pending takes (#38)" -->
+- **A Settings screen.** A gear in the Books header opens it. It holds the light
+  and dark choice, "Always show chapter numbers", and "Even out the volume when
+  done". <!-- source: tester-build-v1.2.2 notes, "Settings"; src/lib/strings.ts settingsOpen, settingsChapterNumbers, settingsNormalizeOnFinished -->
+- **Even out the volume when done is off until someone turns it on.** With it
+  on, marking a segment Done evens out its loudness before the MP3 is made, and
+  that cannot be undone for that segment. Nobody has listened to the result on
+  a phone. <!-- source: tester-build-v1.2.2 notes, "Changed"; PR #1746 comment 6474144416, DRI pick "Turn it off for 1.2 (Recommended)"; src/lib/settings.ts readStoredNormalizeOnFinished; docs/progress_tracker.md 2026-10-23 to 10-24 "Not run" ("Normalization also owes a listening test") -->
+- **Play a whole chapter from its row** on the Books screen. Tap again to
+  pause and again to resume. If the chapter's recordings cannot be found, the
+  play button's ring turns the warning colour and a screen reader says it did
+  not play. Not run on a phone, and the iPhone is where audio start-up rules
+  are the likeliest to differ. <!-- source: tester-build-v1.2.2 notes ("Play a whole chapter", "Chapter play says when it can't play"); AGENTS.md "Device testing" on iOS audio contexts -->
+- **Export project** is in a book's menu. It shares one zip in the Scripture
+  Bundle format, named `<book> - project.zip` with "project" in the app's
+  language. It is export only: there is no import, so a project cannot be
+  brought back in from the zip. The first time for a book it asks what language
+  the recordings are in, with a search by name or code; you choose once and
+  every export of that book uses the answer. While a book is being prepared, the
+  button shows it is busy. <!-- source: tester-build-v1.2.2 notes ("Export project", "Export waits its turn"); AGENTS.md Known open items 5; src/lib/strings.ts exportProject, exportProjectFilename, languageAskTitle -->
+- **A licence question.** Share Chapter and Share Book ask which licence the
+  first time a book is shared, and a book's menu has a Licence tile to look at
+  or change it later without sharing. "CC BY-SA 4.0" is already selected on the
+  question. Ask the maintainer before the session which licence the training
+  uses. A book made from a template keeps the template's licence and shows no
+  Licence tile. <!-- source: tester-build-v1.2.2 notes ("Licences"); PR #1670, #1703, #1707 (#1455); the "ask the maintainer" line is this file's advice, not a decision -->
+- **Templates.** A Templates tile opens a list with Open Bible Stories. Tap
+  it, name the book, and the book is made from the template. A name another
+  book already has is refused. The list says "Loading the templates." while it
+  loads. <!-- source: tester-build-v1.2.2 notes ("Templates", "The Template Library tells you it's loading"); PR #1655, #1633 -->
+- **A test template for Titus, in the browser version on staging only.** It is
+  test data: nothing recorded in a book made from it is real work, and books
+  made from it may not carry over when the real template is released. It is not in the
+  Android or iPhone apps and not in production. <!-- source: tester-build-v1.2.2 notes, "A test template: Titus" -->
+- **The app follows the phone's language** for eight languages besides English;
+  the texts are AI drafts no speaker has read (§4). On an iPhone, the
+  microphone permission prompt follows too. Better licence wording in French,
+  Spanish and Chinese in 1.2.2 is also a first draft. <!-- source: tester-build-v1.2.2 notes -->
+- **Move a chapter, a book or a segment without press-and-hold.** Every
+  chapter on the Books screen has a **⋮**; a book's menu and a segment's menu
+  have Move up and Move down. Each moves the row one place and is greyed on the
+  first or last. On a chapter with many segments the progress dots may look a
+  little smaller. <!-- source: tester-build-v1.2.2 notes ("Move a chapter without press-and-hold", "Move up and Move down"); not run on a phone -->
+- **Hold a cut-off name to read it whole** on the Books, Segments and recorder
+  screens (§4). <!-- source: tester-build-v1.2.2 notes -->
+- **If the microphone is refused again after Try again,** the apps show the
+  steps to turn it on in the phone's settings; 1.2.2 makes those steps fit a
+  small screen. §2 step 3 is still the fallback. <!-- source: tester-build-v1.2.2 notes ("Microphone help") -->
+- **Removing a segment's recording says Reset everywhere.** Shared chapter files
+  start with the chapter's number ("Jonah - 03 Jonah runs.mp3"), a moved
+  chapter takes the number of the place it lands in, and a second book with the
+  same name as another is refused. <!-- source: tester-build-v1.2.2 notes ("Changed") -->
+- **The recorder stops by itself after five seconds of exact silence** and
+  saves what it captured. This is for a microphone that goes dead without
+  telling the app. It reacts only to exact digital silence (every sample zero),
+  not to a quiet pause, which still carries the microphone's noise. That a
+  phone never sends exact silence during a real pause has not been checked on
+  a phone, so write down any time it stops a recording while someone was
+  speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS = 5000; the no-zeros-in-a-pause assumption is checked by the #1294 device sheet); §5 -->
+- **A recording waiting at launch is saved quietly.** If the app closed while a
+  recording was waiting to be saved, the next launch saves it, with no screen,
+  if its saved copy is intact. It writes one line in the problem record that
+  does not light the mark (§5). While a recording is waiting behind an earlier
+  save, it is held in memory only, so closing the app in that moment can still
+  lose it. <!-- source: tester-build-v1.2.2 notes ("Fixed"); PR #1725, #1683 (#38); not run on a phone -->
+- **After an update, Share Book or Export project restarts the app once**
+  rather than failing, unless a recording is open or unsaved. §5 lists both
+  rows. <!-- source: tester-build-v1.2.2 notes ("Fixed"); src/hooks/stale-chunk-reload.ts -->
+- **Many screen-reader names were improved.** No screen reader was run on a
+  phone for any of them. <!-- source: tester-build-v1.2.2 notes ("Changed"); docs/progress_tracker.md 2026-10-26 "Not run" -->
+- **On Android, About shows a QR code for the Play listing**, so another person
+  can scan it. <!-- source: tester-build-v1.2.2 notes -->
 
-## 4. Known limits (as of 2026-10-02, build 1.0.1)
+**Coming in the next build, not in 1.2.2.** Vietnamese app text (an unchecked
+AI draft); Export project in a web browser telling the person to use the
+installed app; and a book made from a template scrolling into view on the
+Books shelf. Do not tell a participant on 1.2.2 that they have any of these.
+<!-- source: RELEASE_NOTES_UNRELEASED.md on develop at 4a91da4e; git log tester-build-v1.2.2..HEAD (#1830, #1828, #1825) -->
+
+## 4. Known limits (as of build 1.2.2)
 
 - **The iPhone app is iPhone-only.** There is no iPad version, and the app
   has not been tried on an iPad. An Android tablet is not something any
   build has been run on either; this file says "phone" throughout because
   phones are what has been tested. <!-- source: ios/App/App.xcodeproj/project.pbxproj TARGETED_DEVICE_FAMILY = 1 (#1289); PR #1289 "Not verified"; docs/progress_tracker.md 2026-10-02 "Not run" ("The iPhone-only build has not been installed on a device") -->
-- **Nothing in 1.0.0 or 1.0.1 has run on a phone beyond what the rc.3
-  testing covered.** Recording, editing, sharing and storage did not change
-  between rc.3 and 1.0.1; the 1.0.1 changes are the privacy link in About,
-  the iPhone-only build, and the privacy declarations. Treat every "not
-  confirmed on a phone" note below as still open. <!-- source: docs/progress_tracker.md 2026-10-02 "Not run"; GitHub release v1.0.1 body ("Recording, editing, sharing and storage are unchanged. None of this has been run on a phone yet.") -->
-- **Long names are cut off** with "…" in headers and menus, with no way yet
-  to read them in full. Short names work best (a book and chapter reference
-  rather than a sentence). <!-- source: gh issue #1284, open; GitHub release v1.0.1 body "Known limits in 1.0.1" -->
+- **Nothing new in 1.1 or 1.2 has a phone result in this file.** The 1.2.2
+  release notes say none of that build's changes had been run on a phone when it
+  was published, and nothing later is recorded here. Treat every "not confirmed
+  on a phone" note in this file as still open. <!-- source: GitHub release
+  tester-build-v1.2.2 notes, "Known limits" ("None of this build's changes has
+  been run on a phone yet"); no later device result is in docs/progress_tracker.md
+  as of the 2026-10-30 entries I read -->
+- **A long name can still be cut off** with "…" in headers and menus. Press and
+  hold a cut-off name on the Books, Segments or recorder screen to read it in
+  full, and hold the cover or the number badge to move it instead. Short names
+  still work best (a book and chapter reference rather than a sentence). <!--
+  source: GitHub release tester-build-v1.2.2 notes ("Read a long name in the
+  header"; 1.2.0 "Read a cut-off name"); gh issue #1284; not run on a phone -->
 - **After a phone alarm goes off during a recording**, the recorder's timer
   and a flat waveform may keep running after the alarm is dismissed, even
   though the saved recording ends where the alarm sounded — the screen says
@@ -644,7 +630,7 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
   2. **Leave the app open. Which screen you noted decides what the next
      press does:**
      - **The message is up and the button shows Play (not pause):** press
-       Play once. On rc.3 and 1.0.1 that press is the fresh start. Wait for
+       Play once. That press is the fresh start. Wait for
        the voice.
      - **The button shows pause and there is no message:** that Play is
        still trying. Pressing now only stops it — it does not set up the
@@ -662,7 +648,7 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
      the voice before anyone records again.** If it is still silent after
      that restart, leave that phone alone.
   4. **Send the report (§5) the first time this happens on a phone in a
-     session, even when a later press brought the voice back.** The rc.3 fix
+     session, even when a later press brought the voice back.** The fix
      has not been confirmed on a phone, so that report — with what you noted
      in step 1 and which press or step brought the sound back — is the device
      evidence #1251 is missing. Note the iPhone model and whether headphones
@@ -678,10 +664,15 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
   What rc.2 phones saw: after connecting Bluetooth headphones, and sometimes
   after coming back from the lock screen, the Play button failed or did
   nothing, and the moving line that shows the voice while recording stayed
-  flat. The recording should still be saved. **A fix shipped in rc.3 and is
-  in 1.0.1, but it is not confirmed on a phone, including with the silent
-  switch on.** What a person may still see on rc.3 and 1.0.1 (the rc.3
-  residuals): <!-- source: GitHub release v1.0.1 body, "Known limits in 1.0.1" ("Not yet confirmed on a phone: the rc.3 recovery of Play and the live waveform after locking an iPhone (#1251), including with the silent switch on") -->
+  flat. The recording should still be saved. **A fix shipped in rc.3 and is in
+  1.2.2, but it is not confirmed on a phone.** 1.2.0 also changed how playback
+  treats the iPhone silent switch; that is not confirmed on a phone either.
+  What a person may still see: <!-- source: GitHub release v1.0.1 body, "Known
+  limits in 1.0.1" ("Not yet confirmed on a phone: the rc.3 recovery of Play and
+  the live waveform after locking an iPhone (#1251), including with the silent
+  switch on"); GitHub release tester-build-v1.2.2 notes ("On iPhone, the silent
+  switch should no longer mute playback. Please try ... " and "None of this
+  build's changes has been run on a phone yet") -->
   - a Play that fails with "Could not play this recording."; the next Play
     then starts fresh;
   - a red mark on Books **≡** that can appear just from coming back to the
@@ -702,8 +693,17 @@ uninstall to clear a problem, because uninstalling deletes the recordings.
   decompresses it, and marking it Done again compresses it a second time. Each
   compression pass loses a small amount of quality, the way saving a photo as
   a JPEG twice does. This is expected, not a bug. <!-- source: docs/decisions/0009-transcode-on-finished.md, section 3 (generation count) -->
-- **English only.** The app's menus and messages are in English; there is no
-  other language option yet. Names people type can be in any script. <!-- source: gh issue #169, open; PR #1270 (typed names set their own text direction, rc.3) is part of #1267, which stays open, so no further right-to-left claim is made here -->
+- **Eight languages besides English are unchecked AI drafts.** The app opens
+  in the phone's language for Spanish, French, Portuguese, Indonesian, Swahili,
+  Hindi, Russian and Simplified Chinese, and there is no language switch inside
+  the app. No speaker of those languages has read the app text, so expect
+  wording that reads oddly and write it down. Any other phone language shows
+  English. Names people type can be in any script. <!-- source: GitHub release
+  tester-build-v1.2.2 notes, "Also new since 1.1.0" ("drafted by AI and not yet
+  read by a speaker of each language ... no language switch inside the app; it
+  follows the phone"); gh issue #169; PR #1270 (typed names set their own text
+  direction) is part of #1267, which stays open, so no further right-to-left
+  claim is made here -->
 - **Share Book and Share your work in the browser version on Android** can
   fail after the file is built: Share Book says "Could not share this book.
   Sharing a book works in the tC Mobile app." and the storage banner's Share
@@ -750,80 +750,108 @@ The app keeps its own short record of **some** of what goes wrong on that phone
 — the last 50 entries, and nothing a person typed or recorded. <!-- source: src/types/failure.ts (FAILURE_LOG_LIMIT = 50); src/lib/storage/failures.ts (the ring); src/lib/failure-text.ts (what a stored entry holds) --> It survives
 closing and reopening the app. <!-- source: src/lib/storage/db.ts v6 `failures` store; e2e/failure-log.spec.ts "the log survives a reload" -->
 
-**Read "some" literally — this is the part to get right.** What is written down
-today is: the app crashing or reloading itself, a problem nobody caught,
-failures while making an MP3 or preparing a share, a recording that fails to
-save, a book that fails to delete, an erase that fails, a segment name
-that fails to save, a few narrow faults
-inside the recorder: an interruption (a call, another app taking the
-microphone) that finds the recorder still running, a microphone wake-up at
-Record that failed or took longer than one second, a Stop or a Back whose
-teardown threw inside the app, and a recording that reached 20 minutes and was
-stopped and saved by the app — and, on the playback side, Play refusing to
-start because the shared context never freed itself for sound, whether that
-took too long, an earlier rejection did, or a fresh interruption arrived
-during the buffer-fill/yield right before the source would have started, or
-Play failing for any other reason (a recording that could not be loaded or
-decoded, or nothing saved to play), and the app's sound engine looking
-switched on while its clock had stopped — found when Play started but no
-sound followed within a second, while the level meter was drawing during a
-recording, or when the app came back to the screen. In the exported file these three
-show as `playback-clock-stalled` (Play started but no sound followed),
-`recorder-tap-clock-stalled` (the level meter's clock stopped during a
-recording) and `audio-clock-stalled-on-return` (found when the app came back
-to the screen). Each one also puts the red mark on Books **≡**. A
-recording that failed to start for a reason other than the microphone
-refusing, and a share that failed at the moment of sending, are also written
-down (`recorder-start` and `share-send`) and also put the red mark there.
-Right after an update, the app may restart once by itself when an action such
-as Share Book or Export project needs a part of the app it had not loaded yet;
-that restart is written down (`stale-chunk-reload`) without the red mark. If
-the same thing fails again, or a recording was open or unsaved so the app did
-not restart, it is written down as `stale-chunk` with the red mark. <!-- source: src/hooks/stale-chunk-reload.ts; src/lib/failure-marker.ts (#1421 O1) --> The
-app failing to wake its sound engine as a recording sheet opens, or as a
-recording is played back, is written down too (`sheet-open-resume`,
-`playback-buffer-tap-resume`) but does **not** put the red mark there,
-because it can happen routinely on an iPhone; the project lead decided to log
-it only. A few more recorder-screen
-failures are written down too: the recording sheet failing to save or close
-(`recorder-commit-stop`, `recorder-commit-close`, `recorder-close-tail`,
-`recorder-close-rejected`) and a recovered recording that could not be saved or
-shared (`recorder-recovered-save`, `recorder-recovered-share`) each put the red
-mark on Books **≡**, because a recording could have been lost or stuck; a Done
-mark the app could not save (`recorder-finished-flag`) and a waveform edit it
-could not apply (`recorder-edit-apply`) are written down but leave the mark
-off, because the screen already says so and the recording is untouched. Two
-more: a Back press that found the recording screen with nothing to close
-(`recorder-back-no-handle`) puts the red mark on, because the Back did nothing
-and it is not known whether the recording was saved; the sound engine failing to
-wake when someone taps Try again on a recording that would not open
-(`recorder-segment-resume-retry`) is written down and leaves the mark off, as
-the screen simply tries again. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand; recorder-release-track #479 — a track stop() that throws while the mic stream is released, reported per track so the other tracks are still stopped; recorder-take-cap #1005 — the elapsed tick sealing a take at the 20-minute cap, which the sheet then saves; not a failure, the one record that a take was cut); src/hooks/audio-io.ts (recorder-tap-clone-stop #479 — the level tap's cloned track throwing on its own stop()); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:97 (save-take, #456); src/hooks/use-save-take.ts:202 (erase-segment, #456 — performClearEditedSegment's cut-to-empty close, not the segment-store erase below); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one); src/hooks/use-chapter-segments.ts renameSegment's catch and src/components/segment-row.tsx's rejection handler (segment-rename, #591 — not the vanished-segment case, which shows the stale-segment state instead); src/hooks/audio-io.ts's playSamples (a single try/finally is now the ONE report site for all three keys below — dev lead pick, option A, 2026-09-19 judgment sheet, closing the row-accounting class George round-2 P3 and Frank rounds 1 and 3 each found one more exit of: playback-resume #469 — raceAudioResume's own rejection report, or playSamples's single exit reporting a captured one; fires for a LATE rejection arriving after the 1000 ms bound already won the race (except one on a context `discardSharedContext` closed, which `raceAudioResume` drops because that Play already wrote its row, #1213), for an early rejection whose OWN resume() call failed but the shared context turned out usable anyway because a DIFFERENT, concurrent resumeAudioContext() call elsewhere (playTake/playBuffer's own fire-and-forget in-gesture unlock) won first (Frank round-1 P2), OR for an early rejection on a claim that was superseded (a Stop, a competing Play) before either fail-closed check below ever ran — previously dropped with no row at all (Frank round-3 P2 @ audio-io.ts:678), now still reported since the finally is reached from every exit, superseded or not; an early rejection that leaves the context still unusable is instead folded into playback-resume-unusable below, carrying the REAL captured cause rather than a synthetic stand-in (previously always synthetic even when a real cause existed — Frank round-3 P2 @ audio-io.ts:694), so one failed Play never writes more than one row (George round-2 P3); playback-resume-timeout #469 — the single exit's fail-closed report when the 1000 ms bound was what left the context still needing resume; playback-resume-unusable #469 — the same single exit when the context still needs resume without the bound firing: an early rejection, a resume() that resolved but left the context still needing resume, or a fresh interruption arriving during the buffer-fill/yield after resume had already succeeded (George round-2 P2)); src/hooks/use-audio-session.ts playTake's and playBuffer's catches and the dangling-clip branch (playback-take, playback-buffer, playback-dangling, #1213 — each skips the #469 error, whose row playSamples already wrote, and writes nothing for a superseded Play); src/hooks/audio-io.ts playSamples, createLevelTap and checkSharedClockOnReturn (playback-clock-stalled, recorder-tap-clock-stalled, audio-clock-stalled-on-return, #1251 — a shared context reporting running whose currentTime did not advance for 1000 ms: after a Play's source.start, across the level tap's frames during a take, or after the page became visible again; the Play one fails that Play, and playTake/playBuffer's catches skip its error the way they skip the #469 one); src/hooks/audio-io.ts discardSharedContext (playback-context-close, #1213 — a failed close() of the shared context a fail-closed Play dropped); src/components/recorder.tsx (recorder-commit-stop — the Stop-commit net; recorder-commit-close — close()'s net; recorder-close-tail — executeTail's net; recorder-finished-flag — the mark arm's setFinished catch; recorder-recovered-save — retryHeldTake's catch; recorder-recovered-share — shareHeldTake's standing-refusal arm, not a dismissal); src/hooks/use-segment-editor.ts (recorder-edit-apply — runEdit's catch); src/hooks/use-nav-stack.ts (recorder-close-rejected — the commit-close-recorder case's requestClose rejection; recorder-back-no-handle — the same case's missing recorder handle); src/hooks/use-recorder-segment.ts (recorder-segment-resume-retry — retry()'s fire-and-forget resume); which of these light ≡ is src/lib/failure-marker.ts (ROUTINE_RECOVERABLE_CONTEXTS: recorder-finished-flag, recorder-edit-apply, recorder-segment-resume-retry do not); the DRI's pick, verbatim, "Log only, no ≡ (Recommended)", https://github.com/unfoldingWord/tc-mobile/pull/1692#issuecomment-6421765458 --> A
-recording the app stopped by itself, because for five seconds the microphone
-sent exact digital silence while the app's sound engine kept running, shows as
-`recorder-capture-stalled` and also puts the red mark on Books **≡**. The row
-is written when the app stops the recording; the app then saves what was
-captured, the same as after a Stop. If that save fails, the save-failed screen
-in "If a recording will not save" (section 4) appears and writes a row of its
-own. <!-- source: src/hooks/use-recorder.ts start()'s onCaptureSilent; src/lib/audio/capture-silence.ts CAPTURE_SILENCE_MS (exact zeros on a running context whose clock moved, with no track or recorder event); gh issue #1294, the requirements owner's R13 decision 2026-10-19; src/lib/failure-marker.ts (recorder-capture-stalled is in none of its exempt sets); the row is written right after seal() in onCaptureSilent, and the save is later, in src/components/recorder.tsx's layout effect on "processing" → commitTake → saveRecording, whose failure is src/hooks/use-save-take.ts's "save-take" row and the SaveFailed screen (gh PR #1511, George's follow-up on the "sealed and saved" wording); "only silence" was wider than the predicate: src/lib/audio/capture-silence.ts isDigitalSilence (every sample exactly zero), createSilenceWindow (clock moving, no pull gap or clock stall over CAPTURE_SILENCE_MAX_GAP_MS), src/hooks/audio-io.ts noteSilence (context "running"); inferred from the code, not run on a phone --> A recording that was still waiting to be saved when the app closed, and that the app saved by itself the next time it opened, shows as `pending-take-replayed`. That is not a problem: it is written down so a tester can tell a waiting recording was saved, and it does **not** put the red mark on Books **≡**. A reopen with nothing waiting writes nothing. <!-- source: src/hooks/use-save-take.ts commitReplayed (reports pending-take-replayed only when saveReplayedTake's outcome is "saved"; not for already-saved, and a refused or parked take has its pending-take-refused row instead); src/lib/failure-marker.ts INFORMATIONAL_CONTEXTS; tests/pending-take-replayed-row.test.ts; the DRI's pick on gh PR #1706 ("A: one text round + log row (Recommended)"); inferred from the code, not run on a phone --> The microphone not starting is written down now. A refusal — the translator
-said no, or the phone's or the browser's settings block the microphone — shows
-as `recorder-mic-refused` and does **not** put the red mark on Books **≡**,
-because the screen already says what to do and Record asks again. A
-microphone that is missing, busy in another app or failing shows as
-`recorder-mic-start` and **does** put the red mark there, because no
-recording can start. The level meter failing to open while a recording goes
-on (`recorder-tap-open`) also puts the red mark there; the sound engine failing
-to wake when the app comes back to the front mid-recording
-(`recorder-foreground-resume`), or when a recording that would not open is
-tried again (`recorder-decode-retry-resume`), is written down and leaves the
-mark off. <!-- source: src/hooks/use-recorder.ts (start()'s catch reports recorder-mic-refused for a NotAllowedError and recorder-mic-start for every other failure, behind its generation check; the createLevelTap catch reports recorder-tap-open; armForegroundResume reports recorder-foreground-resume; retryDecode reports recorder-decode-retry-resume); src/lib/failure-marker.ts ROUTINE_RECOVERABLE_CONTEXTS (the refusal and the two resumes do not light ≡), applying the pick on #1692, "Log only, no ≡ (Recommended)"; tests/use-recorder-failure-rows.test.ts; inferred from the code, not run on a phone --> What is **not** written
-down today is a Stop that fails the way you see it — the recorder's own
-notice that no sound was recorded or that the recording could not be decoded —
-or the recorder's "recording is not supported" line when the phone cannot
-record at all. Each shows its own message on screen and leaves no entry behind. <!-- source: the Stop notice is src/components/recorder.tsx's captureFailureText arms (Stop, close and the recovered-take retry), which only set on-screen copy and call neither console.error nor reportFailure, so they leave no row; start()'s "recording is not supported" line is a capability check with no cause and likewise writes no row (AGENTS.md, Errors have a channel); the use-audio-session.ts record-start catch, the buffer-Play and sheet-open resumes, share-flow.ts's send failure and recorder.tsx's commit nets now report (recorder-start, playback-buffer-tap-resume, sheet-open-resume, share-send, and the recorder-* contexts above); the two resume rows do not light ≡ per src/lib/failure-marker.ts (RESUME_FAILURES_LIGHT_MARKER, the pick on #1692); gh issue #205 round-2 G2 --> So
-when a Stop fails in front of you, **write it down yourself** (§5.2) and do
-not assume this report carries it. Routing it to the record is follow-up
-work, not something this build does. <!-- source: src/hooks/report-failure.ts:41 -->
+**Read "some" literally — this is the part to get right.** The lists below
+follow AGENTS.md, "Errors have a channel before they have copy", which is the
+engineering list. If the two ever differ, AGENTS.md is right and this is
+stale. The code in brackets is what shows in the exported file. <!-- source:
+AGENTS.md "Errors have a channel before they have copy"; src/lib/failure-marker.ts
+(lightsFailureMarker); the extra load rows named below were found by reading
+src/hooks (use-books.ts, use-chapter-segments.ts, use-recorder-segment.ts,
+use-template-library.ts, replay-pending-takes.ts), not by running anything -->
+
+**Written down, and puts the red mark on Books ≡:**
+
+- The app crashing or reloading itself, and a problem nobody caught
+  (`uncaught-error`, `unhandled-rejection`, `render`).
+- Making an MP3 or converting a finished recording failing (`encoder-health`,
+  `encoder-recover`, `transcode-sweep`, `transcode-segment`).
+- Sharing: a share that failed while being prepared (`share-prepare`) or at the
+  moment of sending (`share-send`), a share's temporary file that could not be
+  deleted afterwards (`share-spool-release`), and a book's Export project
+  bundle that failed (`book-export-bundle`).
+- A recording that fails to save (`save-take`). A recording waiting to be saved
+  whose hold could not be written or deleted, or was refused
+  (`pending-take-write`, `pending-take-delete`, `pending-take-refused`).
+- A failed delete of a book (`book-delete`), a failed Reset (`erase-segment`),
+  segment rename (`segment-rename`), segment delete (`segment-delete`), chapter,
+  book or segment move (`chapter-reorder`, `book-reorder`, `segment-reorder`),
+  book colour (`book-cover-colour`), the Export project language question
+  (`book-language`, `language-list`) and a licence save (`book-licence`).
+- The recorder: a recording that failed to start for a reason other than a
+  refusal (`recorder-start`); a microphone that is missing, busy or failing
+  (`recorder-mic-start`); the level meter failing to open (`recorder-tap-open`);
+  an interruption (a call, another app taking the microphone) that finds the
+  recorder still running (`recorder-interrupted-active`); the microphone
+  wake-up at Record that failed or took longer than a second
+  (`recorder-start-resume`, `recorder-start-resume-timeout`); a Stop or a Back
+  whose teardown threw (`recorder-cancel-stop`, `recorder-stop-flush`,
+  `recorder-release-track`, `recorder-tap-clone-stop`, `recorder-stop-backstop`);
+  the recording sheet failing to save or close (`recorder-commit-stop`,
+  `recorder-commit-close`, `recorder-close-tail`, `recorder-close-rejected`); a
+  recovered recording that could not be saved or shared
+  (`recorder-recovered-save`, `recorder-recovered-share`); a Back that found
+  nothing to close (`recorder-back-no-handle`); and a recording the app stopped
+  by itself after five seconds of exact digital silence, shown as
+  `recorder-capture-stalled`. That row is written when the app stops the
+  recording, before it saves what it captured. If the save then fails, the
+  save-failed screen in "If a recording will not save" appears and writes a row
+  of its own.
+- Playback: Play refusing to start because the app's sound engine would not
+  wake or stayed unusable (`playback-resume`, `playback-resume-timeout`,
+  `playback-resume-unusable`, `playback-context-close`); Play failing for any
+  other reason, including a recording that could not be loaded or decoded or
+  that has nothing saved (`playback-take`, `playback-buffer`,
+  `playback-dangling`); the wake-up inside a Play tap being refused
+  (`playback-tap-resume`); and a chapter play that failed (`chapter-play`). The
+  sound engine looking switched on while its clock had stopped is written as
+  `playback-clock-stalled` (Play started but no sound followed),
+  `recorder-tap-clock-stalled` (during a recording) or
+  `audio-clock-stalled-on-return` (when the app came back to the screen).
+- A part of the app that would not load after an update and could not reload
+  (`stale-chunk`): the app had already reloaded once for this build, or a
+  recording was open or unsaved.
+- A licence text in About that failed to load (`about-licence-text`), and the
+  tester-only phone check's own failures (`phone-check`).
+- Screens that would not load: the books list, a chapter, a recording opened
+  from a segment, or a template (`books-load`, `chapter-load`,
+  `recorder-segment-load`, `recorder-segment-reload`, `template-load`,
+  `template-create`), and a waiting recording the launch could not read
+  (`pending-take-read`). These are in the code but not in AGENTS.md's list.
+
+**Written down, but does not put the red mark on ≡:**
+
+- A recording sealed at the 20-minute cap (`recorder-take-cap`). Not a failure:
+  the one record that a recording was cut. Like the silence row above, it is
+  written before the save.
+- A waiting recording that the app saved by itself the next time it opened
+  (`pending-take-replayed`). Not a problem: it lets a tester tell a waiting
+  recording existed and was saved. A reopen with nothing waiting writes
+  nothing.
+- The app reloading itself once after an update (`stale-chunk-reload`).
+- The microphone being refused (`recorder-mic-refused`): the screen already says
+  what to do and Record asks again.
+- A Done mark the app could not save (`recorder-finished-flag`), a waveform edit
+  it could not apply (`recorder-edit-apply`): the screen says so and the
+  recording is untouched.
+- The sound engine failing to wake on a routine step: coming back to the
+  front mid-recording (`recorder-foreground-resume`), Try again on a recording
+  that would not open (`recorder-decode-retry-resume`, `recorder-segment-resume-retry`),
+  a sheet opening (`sheet-open-resume`) and a Play on a recording
+  (`playback-buffer-tap-resume`). This can happen routinely on an iPhone, so it
+  is logged only.
+- A book's menu that could not read whether the book came from a template
+  (`book-provenance-read`): the Licence tile stays hidden and the next open reads
+  again.
+
+<!-- source: src/lib/failure-marker.ts (INFORMATIONAL_CONTEXTS, ROUTINE_RECOVERABLE_CONTEXTS, RESUME_CONTEXTS: everything not in those sets lights the mark); the DRI's picks "Log it, don't light ≡ (Recommended)" (#1076), "Log only, no ≡ (Recommended)" (https://github.com/unfoldingWord/tc-mobile/pull/1692#issuecomment-6421765458) and "A: one text round + log row (Recommended)" (https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6425490363); the silence stop is the requirements owner's R13 decision on gh issue #1294; inferred from the code, not run on a phone -->
+
+**What is not written down today:** a Stop that fails the way you see it (the
+recorder's own notice that no sound was recorded or that the recording could not
+be decoded), and the recorder's "recording is not supported" line when the phone
+cannot record at all. Each shows its own message on screen and leaves no entry
+behind. So when a Stop fails in front of you, **write it down yourself**
+(§5.2) and do not assume this report carries it. <!-- source: AGENTS.md "What is
+still never written down is the recorder sheet's own Stop notice (captureFailureText ...)"; src/components/recorder.tsx captureFailureText calls neither console.error nor reportFailure -->
 
 1. On the **Books** screen (the first screen), look at the **≡** button in the
    top corner. If something has gone wrong, it carries a small red mark. A
@@ -895,7 +923,7 @@ goes wrong, still write down:
 2. **Android or iOS version**, if you can find it (Android: Settings → About
    phone; iPhone: Settings → General → About).
 3. **The build stamp** — a small line of text at the bottom of the app screen
-   reading something like `v1.0.1 · <short code>`. This tells us exactly which
+   reading something like `v1.2.2 · <short code>`. This tells us exactly which
    build was running. <!-- source: src/components/build-stamp.tsx; rendered at the bottom of every screen via src/app/App.tsx -->
 4. **What was tapped**, in order, right before the problem.
 5. **What happened** — the exact wording of any message on screen. A photo of
