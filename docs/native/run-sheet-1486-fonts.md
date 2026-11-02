@@ -108,12 +108,12 @@ Run each check and paste its output into the notes.
 ```
 mkdir -p /tmp/run-1486
 adb logcat -c
-adb logcat -v threadtime > /tmp/run-1486/logcat-all.txt &
-grep -E 'Capacitor|tcmobile|AndroidRuntime|FATAL|chromium' /tmp/run-1486/logcat-all.txt
+adb logcat -v threadtime -e 'Capacitor|tcmobile|AndroidRuntime|FATAL|chromium' > /tmp/run-1486/logcat-all.txt &
+grep -E 'AndroidRuntime|FATAL' /tmp/run-1486/logcat-all.txt
 ```
 
-The raw capture holds other apps' log lines. Keep `logcat-all.txt` local and
-never attach or paste it; quote only the filtered lines a result needs.
+The capture keeps only lines matching those tags, which can still include other
+apps' lines. Keep `logcat-all.txt` local and never attach or paste it; quote only the filtered lines a result needs. **ASSUMPTION:** this phone's `logcat` supports `-e`; if it refuses the flag, say so in the notes and capture without it, kept local.
 
 Screenshots: `adb exec-out screencap -p > /tmp/run-1486/<name>.png`. A screenshot
 is the only honest record of tofu, so take one per screen and open each image

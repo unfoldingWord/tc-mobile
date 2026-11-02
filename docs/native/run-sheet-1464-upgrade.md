@@ -133,14 +133,25 @@ date.
 
 **Route B: the phone holds real v11 recordings.** Before the second install:
 
-1. **HUMAN:** in the app on 1.1.0, use Share Book for every book and send each
-   zip somewhere off the phone (the share sheet's Drive, a messaging app, or
-   Files > Downloads). If "Share your work" is offered, use it too. **ASSUMPTION:**
+1. **HUMAN:** in the app on 1.1.0, use Share Book for every book and save each
+   zip to **Files > Downloads** on the phone. If "Share your work" is offered,
+   use it too. A Drive or messaging-app destination is allowed only after the
+   DRI accepts that destination in writing (it puts real oral-translation
+   audio in another service), and even then the zip must still be pulled to the
+   machine and counted (steps 2 and 5) before row G can pass. **ASSUMPTION:**
    Share Book writes MP3 per chapter in a zip, so this keeps the audio but may
    not keep chapter names, shelf order, colours or the PCM of unfinished
    segments. It is a rescue copy of the sound, not a restore point.
-2. If the zips went to Files > Downloads, pull them:
-   `adb shell ls /sdcard/Download | grep -i zip` and `adb pull /sdcard/Download/<file> ~/tc-mobile-rescue-copies/` (run
+   **Watch for the share notice.** At `tester-build-v1.1.0`, Share Book shows a
+   notice whenever `bookShare.missing > 0 || bookShare.partialSegments > 0`
+   (`src/components/books-screen.tsx:1442`, `src/lib/export/book.ts`): "N
+   chapters could not be included." and/or "N segments could not be included."
+   (`shareBookMissing` and `shareMissing` in `src/lib/strings.ts`, as at that
+   tag). A chapter file is written even when some of its segments are missing,
+   so a file per chapter does not prove the copy is complete. Write down, per
+   book, whether the notice appeared.
+2. Pull the zips: `adb shell ls /sdcard/Download | grep -i zip` and
+   `adb pull /sdcard/Download/<file> ~/tc-mobile-rescue-copies/` (run
    `mkdir -p ~/tc-mobile-rescue-copies` first). That folder is outside `/tmp` and
    outside the scratch directory on purpose: it may hold the only off-phone copy
    of real recordings, and no cleanup step in this sheet touches it.
@@ -148,20 +159,22 @@ date.
    what the phone's Books screen shows. Names of books stay in local notes only.
    **A short count means the copy is not confirmed** for that book: do not
    treat "we counted them" as enough, and go to step 4.
-3. Photograph or screenshot the Books and Segments screens as the "before"
-   record (`adb exec-out screencap -p > /tmp/run-1464/before-books.png`). Look at
-   each image before keeping it; delete any that shows a person's name or a
-   place.
+3. **HUMAN:** for every recording that matters, play it from the zip on the
+   machine (extract to a folder under `~/tc-mobile-rescue-copies`) and check it
+   by ear against what the phone plays. Note which recordings were checked.
 4. If the DRI cannot produce a confirmed off-phone copy for every book that
    matters, **stop**. Do not upgrade. Report on #1464 that no safe copy was
    possible.
 5. **A zip is not enough on its own to pass row G.** Route B passes only when
-   either every book that matters is Finished audio and was counted in the
-   zips (step 2), or the DRI writes in row G what the copy lacks (no PCM of
-   unfinished segments, no chapter or segment names, no shelf order, no
-   colours) and says, in their own words, that they accept losing it
-   (**HUMAN**). If an unfinished segment matters and the DRI does not accept
-   that, row G is a **stop**: do not run U1.
+   all of these hold: every book that matters is Finished audio and was counted
+   in the zips (step 2); Share Book showed **no** "could not be included" notice
+   for any book (step 1); and every recording the DRI cares about was checked by
+   ear off the phone (step 3). If any of those fails, row G is a **stop** and
+   U1 is not run, unless the DRI writes in row G the specific loss (which
+   book, chapter or segment, and what is lost: no PCM of unfinished segments,
+   no chapter or segment names, no shelf order, no colours, the notice's
+   missing chapters or segments, or an unchecked recording) and says, in their
+   own words, that they accept losing it (**HUMAN**).
 6. Keep `~/tc-mobile-rescue-copies` until the DRI confirms the recordings are
    safe elsewhere (**HUMAN**); only the DRI deletes it.
 
@@ -172,13 +185,13 @@ Start before the first install and leave it running in a second shell:
 ```
 mkdir -p /tmp/run-1464
 adb logcat -c
-adb logcat -v threadtime > /tmp/run-1464/logcat-all.txt &
-# filtered view, re-run any time:
-grep -E 'Capacitor|tcmobile|AndroidRuntime|FATAL|chromium|IndexedDB' /tmp/run-1464/logcat-all.txt
+adb logcat -v threadtime -e 'Capacitor|tcmobile|AndroidRuntime|FATAL|chromium|IndexedDB' > /tmp/run-1464/logcat-all.txt &
+# the capture is already filtered to these tags; narrow further any time:
+grep -E 'AndroidRuntime|FATAL' /tmp/run-1464/logcat-all.txt
 ```
 
-The raw capture holds other apps' log lines. Keep `logcat-all.txt` local and
-never attach or paste it; quote only the filtered lines a result needs.
+The capture keeps only lines matching those tags, which can still include other
+apps' lines. Keep `logcat-all.txt` local and never attach or paste it; quote only the filtered lines a result needs. **ASSUMPTION:** this phone's `logcat` supports `-e`; if it refuses the flag, say so in the notes and capture without it, kept local.
 
 `AndroidRuntime` or `FATAL EXCEPTION` lines are a crash. The release APK's
 WebView is not inspectable (only a diagnostic build is, README §5a), so the
@@ -219,11 +232,18 @@ HUMAN does these in the app on 1.1.0 (allow the microphone at the first prompt):
   can be told apart. Leave at least two segments unfinished.
 - S5 Mark at least two segments Finished. Wait about 15 seconds for the
   conversion; the Books `≡` must show no red mark.
-- S6 Write the "before" table (below): books and order, chapter and segment
-  names and counts, which segments are Finished, what each plays.
+- S6 Write the **before-inventory**: one table, filled after S1 to S5 and
+  before U1, listing **every book on the shelf, including books that were
+  already there** (not only the ones from S1), in shelf order, with: name, cover
+  colour, number of chapters, chapter and segment counts, the renamed chapter
+  and segment, which segments are Finished and which are not, and what each
+  plays. A book that was on the shelf and is missing from this inventory is a
+  **stop**: fix the inventory before U1. On Route B, take the screenshots of
+  this same shelf now (`adb exec-out screencap -p > /tmp/run-1464/before-books.png`
+  and one for each Segments screen). Look at each image before keeping it;
+  delete any that shows a person's name or a place.
 
-Also note the cover colours and the free storage figure
-(`adb shell df /data | tail -1`).
+Also note the free storage figure (`adb shell df /data | tail -1`).
 
 ### U1 Upgrade in place
 
@@ -239,18 +259,18 @@ Also note the cover colours and the free storage figure
 
 ### U2 What survived
 
-HUMAN walks the app with the "before" table:
+HUMAN walks the app with the before-inventory from S6:
 
-| Check                                                                               | How                      |
-| ----------------------------------------------------------------------------------- | ------------------------ |
-| Every book is on the shelf, same order, same names                                  | compare with S6          |
-| Cover colours unchanged                                                             | compare with S6          |
-| Every chapter is there, the renamed one keeps its name                              | open each book           |
-| Every segment is there, the renamed one keeps its name                              | open each chapter        |
-| Finished marks unchanged                                                            | compare with S6          |
-| Every segment plays and says the word it said before (Finished and unfinished both) | tap Play on each, by ear |
-| Close the app fully, reopen: nothing changes                                        | force-stop and reopen    |
-| Books `≡` shows no red mark (or, if one appears, send the log and attach it)        | look; send log if marked |
+| Check                                                                               | How                        |
+| ----------------------------------------------------------------------------------- | -------------------------- |
+| Every book is on the shelf, same order, same names                                  | compare with the inventory |
+| Cover colours unchanged                                                             | compare with the inventory |
+| Every chapter is there, the renamed one keeps its name                              | open each book             |
+| Every segment is there, the renamed one keeps its name                              | open each chapter          |
+| Finished marks unchanged                                                            | compare with the inventory |
+| Every segment plays and says the word it said before (Finished and unfinished both) | tap Play on each, by ear   |
+| Close the app fully, reopen: nothing changes                                        | force-stop and reopen      |
+| Books `≡` shows no red mark (or, if one appears, send the log and attach it)        | look; send log if marked   |
 
 Cross-check from the machine, without touching data: `adb shell dumpsys diskstats | grep -i tcmobile`
 for app data size before and after (**ASSUMPTION:** this output shape varies by
@@ -290,7 +310,7 @@ route (A or B), build versions installed in order, date.
 | --- | ------------------------------------------------- | ------------------------- | -------- | ------------ |
 | G   | Data safety gate passed (route and evidence)      |                           |          |              |
 | S0  | Phone on 1.1.x, stamp matches (versionName noted) |                           |          |              |
-| S6  | "Before" table written                            |                           |          |              |
+| S6  | Before-inventory written, every book listed       |                           |          |              |
 | U1  | Install over succeeded, versionName 1.2.2         |                           |          |              |
 | U1  | First open: no error screen                       |                           |          |              |
 | U2  | Books, order, names unchanged                     |                           |          |              |
@@ -316,7 +336,7 @@ route (A or B), build versions installed in order, date.
   problem to work around.
 - Stop and ask the DRI if: the phone holds real recordings and no confirmed
   copy exists; the install reports any error; the app shows "This copy is out
-  of date", a database error screen, or fewer books than the "before" table;
+  of date", a database error screen, or a book from the before-inventory missing;
   the phone shows a low-battery warning or under 1 GB free.
 - If a recording is missing after the upgrade: **do not retry, reinstall or
   roll back.** Leave the phone as it is, send the failure log through the
@@ -341,7 +361,9 @@ route (A or B), build versions installed in order, date.
    version, the builds, and a link to the #1464 comment. Open it as a docs PR
    from `develop` with the Sprint 6 milestone and `release-notes: N/A`. Run
    `npm run check:pr-body` first.
-3. Do not commit logs, screenshots or the APKs. Delete `/tmp/run-1464` when
+3. Attach the before and after screenshots to the #1464 comment, after
+   reviewing each for names and places; on a Route B loss the before image is
+   the metadata the zip may not hold. Do not commit logs, screenshots or the APKs. Delete `/tmp/run-1464` when
    done, after the comment is posted, and never
    `~/tc-mobile-rescue-copies` (Route B step 6).
 4. Do not close #1464 from this run; it needs the iPhone entry and the web
