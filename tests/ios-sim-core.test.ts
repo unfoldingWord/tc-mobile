@@ -11,6 +11,7 @@ import {
   pickTarget,
   pollSlot,
   slotExpression,
+  timeoutMs,
 } from "../scripts/ios-sim-core.mjs";
 
 // The pure half of the iOS Simulator harness (#1840): everything the CLI
@@ -235,5 +236,27 @@ describe("the inspector bridge's bind address", () => {
         utun3: undefined,
       })
     ).toEqual(["10.250.0.36", "2001:db8::5"]);
+  });
+});
+
+describe("timeoutMs", () => {
+  it("reads --timeout as milliseconds, with a default when it is absent", () => {
+    expect(timeoutMs(undefined, 30_000)).toBe(30_000);
+    expect(timeoutMs("2500", 30_000)).toBe(2500);
+  });
+
+  it("refuses a value that is not a positive number, so nothing waits forever", () => {
+    for (const bad of [
+      "foo",
+      "30s",
+      "NaN",
+      "Infinity",
+      "0",
+      "-5",
+      true,
+    ] as const)
+      expect(() => timeoutMs(bad, 30_000)).toThrow(
+        /--timeout wants a positive number of milliseconds/
+      );
   });
 });

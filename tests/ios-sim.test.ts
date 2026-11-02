@@ -167,6 +167,44 @@ describe("eval", () => {
     expect(f.err.join("\n")).toMatch(/Error: denied/);
   });
 
+  it("prints undefined for an expression with no value", async () => {
+    const f = fakes({
+      withPage: async (_pid, body) =>
+        body(async () => ({ result: { type: "undefined" } })),
+    });
+    expect(await main(["eval", "void 0"], f.deps)).toBe(0);
+    expect(f.out).toEqual(["undefined"]);
+  });
+
+  it("exits 1 when the result has no JSON value, rather than printing one", async () => {
+    // The shapes inspect-webkit 0.0.5 returns for `1n` and `() => 1`.
+    for (const [expression, result, shown] of [
+      ["1n", { type: "bigint", description: "1n" }, "1n"],
+      ["() => 1", { type: "function", value: {} }, "function"],
+    ] as const) {
+      const f = fakes({
+        withPage: async (_pid, body) => body(async () => ({ result })),
+      });
+      expect(await main(["eval", expression], f.deps)).toBe(1);
+      expect(f.out).toEqual([]);
+      expect(f.err.join("\n")).toContain(`no JSON value (${shown})`);
+    }
+  });
+
+  it("refuses a --timeout that is not a number before evaluating anything", async () => {
+    // withPage throws, so a broken guard fails here instead of polling forever.
+    const f = fakes({
+      withPage: async () => {
+        throw new Error("evaluated despite a bad --timeout");
+      },
+    });
+    expect(
+      await main(["eval", "x()", "--async", "--timeout", "foo"], f.deps)
+    ).toBe(2);
+    expect(f.err.join("\n")).toMatch(/--timeout wants a positive number/);
+    expect(f.evaluated).toEqual([]);
+  });
+
   it("refuses eval with no expression", async () => {
     const f = fakes();
     expect(await main(["eval"], f.deps)).toBe(2);
@@ -221,6 +259,51 @@ describe("tap, home and describe", () => {
     });
     expect(await main(["tap", "Nope"], f.deps)).toBe(1);
     expect(f.err.join("\n")).toMatch(/no element labelled Nope/);
+  });
+
+  it("hands the UI test --timeout in seconds, read from milliseconds like eval's", async () => {
+    for (const [argv, seconds] of [
+      [["tap", "Copy"], "10"],
+      [["tap", "Copy", "--timeout", "2000"], "2"],
+    ] as const) {
+      const f = fakes({ findXctestrun: () => "/x/Harness.xctestrun" });
+      expect(await main([...argv], f.deps)).toBe(0);
+      const run = f.calls.find((c) =>
+        c.args.includes("test-without-building")
+      )!;
+      expect(run.env?.TEST_RUNNER_HARNESS_TIMEOUT).toBe(seconds);
+    }
+  });
+
+  it("refuses a tap --timeout that is not a number", async () => {
+    const f = fakes({ findXctestrun: () => "/x/Harness.xctestrun" });
+    expect(await main(["tap", "Copy", "--timeout=30s"], f.deps)).toBe(2);
+    expect(f.calls.some((c) => c.args.includes("test-without-building"))).toBe(
+      false
+    );
+  });
+
+  it("describe prints the tree between the markers", async () => {
+    const f = fakes({
+      findXctestrun: () => "/x/Harness.xctestrun",
+      run: (_cmd, args) =>
+        args.includes("test-without-building")
+          ? {
+              status: 0,
+              stdout:
+                "HARNESS_TREE_BEGIN\nApplication 'tC Mobile'\nHARNESS_TREE_END\n",
+              stderr: "",
+            }
+          : { status: 0, stdout: BOOTED, stderr: "" },
+    });
+    expect(await main(["describe"], f.deps)).toBe(0);
+    expect(f.out).toEqual(["Application 'tC Mobile'"]);
+  });
+
+  it("describe exits 1 when the run printed no tree, even if it passed", async () => {
+    const f = fakes({ findXctestrun: () => "/x/Harness.xctestrun" });
+    expect(await main(["describe"], f.deps)).toBe(1);
+    expect(f.err.join("\n")).toMatch(/describe printed no element tree/);
   });
 
   it("refuses tap with no label", async () => {

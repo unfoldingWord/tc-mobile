@@ -123,8 +123,22 @@ export async function pollSlot(read, { timeoutMs, intervalMs, now, sleep }) {
   }
 }
 
+/**
+ * `--timeout` in milliseconds, for eval and tap alike. Anything but a positive
+ * finite number is refused: `NaN` never satisfies pollSlot's deadline check.
+ */
+export function timeoutMs(value, fallback) {
+  if (value === undefined) return fallback;
+  const ms = typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(ms) || ms <= 0)
+    throw new Error(
+      `--timeout wants a positive number of milliseconds, got ${value}`
+    );
+  return ms;
+}
+
 /** What DriveTests.swift handles; tests/ios-harness-project.test.ts keeps the two in step. */
-export const HARNESS_ACTIONS = ["tap", "home", "activate", "describe"];
+export const HARNESS_ACTIONS = ["tap", "home", "describe"];
 const ACTIONS = new Set(HARNESS_ACTIONS);
 
 /** The env `xcodebuild test-without-building` hands DriveTests (TEST_RUNNER_ is stripped). */

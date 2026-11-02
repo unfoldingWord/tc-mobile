@@ -75,6 +75,11 @@ export declare function pollSlot(
   }
 ): Promise<unknown>;
 
+export declare function timeoutMs(
+  value: string | true | undefined,
+  fallback: number
+): number;
+
 export declare const HARNESS_ACTIONS: readonly string[];
 
 export declare function harnessEnv(options: {

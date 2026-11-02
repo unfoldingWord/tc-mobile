@@ -475,7 +475,10 @@ npm run ios-sim -- logs --seconds 60
   the app's WebView by its process id, never by URL. A Debug build is
   inspectable with no config change. The bridge's debugger has no
   authentication, so it binds to loopback only, and `eval` refuses to run if
-  the bridge answers on any other address.
+  the bridge answers on any other address. `eval` runs with the app's own
+  origin, so it can read or delete that Simulator's IndexedDB and OPFS data;
+  none of this ships in the app. `--timeout` is in milliseconds for both
+  `eval --async` and `tap`.
 - **Native taps:** they go through `ios/Harness/`, a separate Xcode project with
   one UI test (`DriveTests`). The UI test drives tC Mobile by bundle id; each
   command is one `xcodebuild test-without-building`. `App.xcodeproj` and the
@@ -488,6 +491,10 @@ npm run ios-sim -- logs --seconds 60
   the expression detached and polls `window.__harness` for the outcome.
 - **The first `describe` after a launch** shows only the WebView frame; the
   page's own elements appear from the second.
+- **An `eval` started a few seconds after the last one** can find no WebView
+  target: the inspector sends the new bridge no listing, and quick retries
+  keep it in that state. Leave about five seconds between evals. A
+  replacement bridge in the same command did not help.
 - **`cap copy`, not `cap sync`:** `build` uses `cap copy`, because `cap sync`
   rewrites `ios/App/CapApp-SPM/Package.swift` and drops its 15.4 floor
   (#1052).

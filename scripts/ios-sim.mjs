@@ -7,7 +7,7 @@
  *   npm run ios-sim -- build [--harness]
  *   npm run ios-sim -- boot [--device "<name>"] | install | launch | grant-mic
  *   npm run ios-sim -- eval '<expression>' [--async] [--timeout <ms>] [--port <n>]
- *   npm run ios-sim -- tap '<accessibility label>' | home | describe
+ *   npm run ios-sim -- tap '<accessibility label>' [--timeout <ms>] | home | describe
  *   npm run ios-sim -- shot <file.png> | logs [--seconds <n>]
  *
  * JS goes through inspect-webkit's CDP bridge, started for one command and
@@ -36,6 +36,7 @@ import {
   pickTarget,
   pollSlot,
   slotExpression,
+  timeoutMs,
 } from "./ios-sim-core.mjs";
 
 const USAGE = `usage: npm run ios-sim -- <command>
@@ -104,12 +105,31 @@ function valueOf(reply) {
       `page threw: ${reply.exceptionDetails?.text ?? reply.result?.description ?? "unknown error"}`
     );
   }
-  return reply.result?.value;
+  const result = reply.result;
+  // The bridge returns a function as `value: {}` and a bigint with no value.
+  const unserializable =
+    result?.type === "function" ||
+    (result && result.type !== "undefined" && !("value" in result));
+  if (unserializable)
+    throw new Fail(
+      `the result has no JSON value (${result.type === "function" ? "function" : (result.description ?? result.type)}); return something serializable`
+    );
+  return result?.value;
+}
+
+/** `--timeout` in milliseconds, or a usage failure. */
+function timeoutFlag(flags, fallback) {
+  try {
+    return timeoutMs(flags.timeout, fallback);
+  } catch (e) {
+    throw new Fail(e.message, 2);
+  }
 }
 
 async function evalCommand(deps, positionals, flags) {
   const [expression] = positionals;
   if (!expression) throw new Fail("eval needs an expression", 2);
+  const waitMs = timeoutFlag(flags, 30_000);
   const device = booted(deps, flags);
   const pid = runningPid(deps, device.udid);
   const value = await deps.withPage(
@@ -121,7 +141,7 @@ async function evalCommand(deps, positionals, flags) {
       return pollSlot(
         async () => valueOf(await evaluate(slotExpression(slot))),
         {
-          timeoutMs: Number(flags.timeout ?? 30_000),
+          timeoutMs: waitMs,
           intervalMs: 200,
           now: deps.now,
           sleep: deps.sleep,
@@ -139,13 +159,13 @@ function harnessCommand(deps, action, positionals, flags) {
   const label = positionals[0];
   if (action === "tap" && !label)
     throw new Fail("tap needs an accessibility label", 2);
+  const timeoutS = timeoutFlag(flags, 10_000) / 1000;
   const device = booted(deps, flags);
   const xctestrun = (deps.findXctestrun ?? findXctestrun)(deps);
   if (!xctestrun)
     throw new Fail(
       "the harness is not built: run `npm run ios-sim -- build --harness`"
     );
-  const timeoutS = flags.timeout === undefined ? 10 : Number(flags.timeout);
   const result = deps.run(
     "xcodebuild",
     [
@@ -163,6 +183,10 @@ function harnessCommand(deps, action, positionals, flags) {
       /HARNESS_TREE_BEGIN\n([\s\S]*?)\nHARNESS_TREE_END/
     );
     if (tree) deps.out(tree[1]);
+    else if (result.status === 0)
+      throw new Fail(
+        `describe printed no element tree:\n${output.split("\n").slice(-20).join("\n")}`
+      );
   }
   if (result.status !== 0) {
     const reason = output
@@ -389,10 +413,10 @@ function realDeps() {
 }
 
 /** The first of `addresses` that accepts a TCP connection on `port`, or null. */
-export async function reachableOn(port, addresses, timeoutMs = 500) {
+export async function reachableOn(port, addresses, waitMs = 500) {
   for (const host of addresses) {
     const open = await new Promise((resolve) => {
-      const socket = net.connect({ host, port, timeout: timeoutMs });
+      const socket = net.connect({ host, port, timeout: waitMs });
       const done = (ok) => {
         socket.destroy();
         resolve(ok);

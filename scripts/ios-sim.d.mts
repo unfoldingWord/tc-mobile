@@ -39,7 +39,7 @@ export interface Deps {
 export declare function reachableOn(
   port: number,
   addresses: string[],
-  timeoutMs?: number
+  waitMs?: number
 ): Promise<string | null>;
 
 export declare function main(argv: string[], deps?: Deps): Promise<number>;

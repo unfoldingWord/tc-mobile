@@ -17,8 +17,6 @@ final class DriveTests: XCTestCase {
         switch action {
         case "home":
             XCUIDevice.shared.press(.home)
-        case "activate":
-            app.activate()
         case "tap":
             // An alert or sheet may belong to the app or to SpringBoard; try the app first.
             let target = [app, springboard]
@@ -30,7 +28,7 @@ final class DriveTests: XCTestCase {
             print("HARNESS_STATE \(app.state.rawValue)")
             print("HARNESS_TREE_BEGIN\n\(app.debugDescription)\nHARNESS_TREE_END")
         default:
-            XCTFail("HARNESS_ACTION must be home, activate, tap or describe")
+            XCTFail("HARNESS_ACTION must be home, tap or describe")
         }
     }
 }
