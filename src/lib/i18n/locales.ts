@@ -29,6 +29,7 @@ import { table as id } from "./id";
 import { table as pt } from "./pt";
 import { table as ru } from "./ru";
 import { table as sw } from "./sw";
+import { table as vi } from "./vi";
 import { table as zhHans } from "./zh-Hans";
 
 /** What each non-English language has translated, by `Locale["tag"]`. */
@@ -41,6 +42,7 @@ export const LOCALE_OVERRIDES: Readonly<Record<string, Partial<Strings>>> = {
   pt,
   ru,
   sw,
+  vi,
   "zh-Hans": zhHans,
 };
 

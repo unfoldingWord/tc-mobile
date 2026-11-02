@@ -415,7 +415,7 @@ describe("no complete locale table embeds beyond the English set (#169)", () => 
     // The seven languages complete today must all be walked; a new complete
     // language only adds to the list, so this needs no edit for it.
     expect(complete).toEqual(
-      expect.arrayContaining(["es", "fr", "hi", "id", "pt", "ru", "sw"])
+      expect.arrayContaining(["es", "fr", "hi", "id", "pt", "ru", "sw", "vi"])
     );
     for (const code of complete) {
       const source = readFileSync(path.join(I18N_DIR, `${code}.ts`), "utf8");
