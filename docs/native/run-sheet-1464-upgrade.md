@@ -121,7 +121,7 @@ made from inside the app, or the data is disposable. The DRI picks one.
 **Route A: disposable data (preferred).** The DRI confirms (**HUMAN**) that the
 app on this phone holds nothing that matters, or that the app is not installed.
 Then the run makes its own recordings on 1.1.0 (steps S1 to S6 below) and the
-upgrade is tested on those. Record "disposable, confirmed by the DRI" and the
+upgrade is then run over those. Note "disposable, per the DRI" and the
 date.
 
 **Route B: the phone holds real v11 recordings.** Before the second install:
