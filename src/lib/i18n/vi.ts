@@ -301,7 +301,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNoMatch: "Không có ngôn ngữ nào khớp. Hãy thử tên hoặc mã khác.",
   languageNarrow: "Gõ thêm để thấy các ngôn ngữ khác.",
   languageCount: (n: number): string =>
-    plural(n, { one: "{n} ngôn ngữ khớp.", other: "{n} ngôn ngữ khớp." }),
+    plural(n, { other: "{n} ngôn ngữ khớp." }),
   languageCountMore: (n: number, shown: number): string =>
     plural(n, {
       other: `{n} ngôn ngữ khớp. Đang hiện ${shown} ngôn ngữ đầu tiên. Gõ thêm để thu hẹp kết quả.`,

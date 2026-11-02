@@ -530,6 +530,24 @@ describe("i18n draft quality gates (#1485)", () => {
       it(`${tag} has no draft-quality problems`, () => {
         expect(tableProblems(tag, LOCALE_OVERRIDES[tag] ?? {})).toEqual([]);
       });
+
+      it(`${tag} carries only plural categories its language selects`, () => {
+        // `plural()` ignores a category the locale never selects, so a stray
+        // one is dead wording that reads as a distinction the language does
+        // not make (#1830 review). Source-level read: the tables hold
+        // functions, so the keys are only visible in the file.
+        const source = readFileSync(
+          path.resolve(import.meta.dirname, "../src/lib/i18n", `${tag}.ts`),
+          "utf8"
+        );
+        const own: readonly string[] = new Intl.PluralRules(tag, {
+          type: "cardinal",
+        }).resolvedOptions().pluralCategories;
+        const used = [
+          ...source.matchAll(/[{,]\s*(zero|one|two|few|many):\s*["`]/g),
+        ].map((m) => m[1] ?? "");
+        expect(used.filter((c) => !own.includes(c))).toEqual([]);
+      });
     }
   });
 });
