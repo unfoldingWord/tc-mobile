@@ -19,22 +19,31 @@ import { lightsFailureMarker } from "@/lib/failure-marker";
  * HOW CONTEXTS ARE FOUND. `src/` is parsed with the TypeScript compiler, so a
  * comment or a string that merely mentions a call is never read as one. The
  * context argument is read at each call of a sink in `SINKS`: `reportFailure`
- * itself and the thin wrappers that forward a literal to it. Every string
- * literal inside that argument counts, so a ternary of two literals yields
- * both.
+ * itself and the thin wrappers that forward a literal to it.
  *
- * COMPUTED CONTEXTS. A sink call whose context argument holds no literal is a
- * computed site. Each is listed in `COMPUTED_SITES` with where its literals
- * come from. A computed site not listed there fails, so a new one cannot slip
- * in unclassified. The wrappers' literals are read at THEIR call sites (they
- * are sinks too), which is why a computed forwarding site is safe to allow.
+ * ONE RULE FOR "RESOLVED". An argument (and each member of a classification
+ * set in `failure-marker.ts`) is resolved only when every leaf is a string
+ * literal, after unwrapping parentheses, `as`, `satisfies`, `!` and `<T>`
+ * casts and reading both branches of a conditional. If any leaf is not, the
+ * whole site is unresolved; it is never half read. The literal leaves of an
+ * unresolved site are still recorded, so they must be classified too.
  *
- * WHAT THIS DOES NOT SEE: a context built by string concatenation or a
- * template literal with an interpolation is not a literal; it would land in
- * `COMPUTED_SITES` or fail. A new wrapper that forwards to `reportFailure`
- * under a name not in `SINKS` is a computed site at its `reportFailure` call,
- * which is how it gets noticed. A class is a statement about whether ≡
- * lights; it does not say a row is written on a device.
+ * COMPUTED CONTEXTS. An unresolved sink site is a computed site, keyed
+ * `file::argument text`. Each is listed in `COMPUTED_SITES` with where its
+ * literals come from; one not listed there fails, and a listed one that is no
+ * longer live fails too. The wrappers' literals are read at THEIR call sites
+ * (they are sinks too), which is why a computed forwarding site is safe to
+ * allow. An unresolved member of a classification set is kept as text, so the
+ * liveness check reports it instead of dropping it.
+ *
+ * WHAT THIS DOES NOT SEE: the callee is matched by name, so a sink imported
+ * under an alias, called through element access (`sinks["reportFailure"](…)`)
+ * or reached by spread (`reportFailure(...args)`) is invisible. A context
+ * built from an identifier that points at a literal (`const c = "x"`) is a
+ * computed site, not a read of `"x"`. A new wrapper that forwards to
+ * `reportFailure` under a name not in `SINKS` is a computed site at its
+ * `reportFailure` call, which is how it gets noticed. A class is a statement
+ * about whether ≡ lights; it does not say a row is written on a device.
  */
 
 type Class = "lights" | "logged only";
@@ -79,9 +88,6 @@ const REPORT_SINK_FILES: ReadonlySet<string> = new Set([
   "hooks/stale-chunk-reload.ts",
 ]);
 
-/** Files whose `reportFailure` is the definition or a signature, not a call. */
-const SKIP_FILES: ReadonlySet<string> = new Set(["hooks/report-failure.ts"]);
-
 const SRC = path.resolve(__dirname, "../src");
 
 function sourceFiles(dir: string): string[] {
@@ -100,31 +106,56 @@ function calleeName(expression: ts.Expression): string | null {
   return null;
 }
 
-/** What a context argument can evaluate to: the string literals it can be,
- *  and the branches that are not literals. A conditional contributes both of
- *  its branches (never its condition, which only picks), recursively, so a
- *  computed branch beside a literal one is still reported as unresolved. */
-function resolve(
-  node: ts.Node,
-  into: { literals: string[]; unresolved: ts.Node[] }
-): void {
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-    into.literals.push(node.text);
-  } else if (ts.isParenthesizedExpression(node)) {
-    resolve(node.expression, into);
-  } else if (ts.isConditionalExpression(node)) {
-    resolve(node.whenTrue, into);
-    resolve(node.whenFalse, into);
-  } else {
-    into.unresolved.push(node);
+/** Peel the wrappers that change a node's type but not its value. */
+function unwrap(node: ts.Node): ts.Node {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isNonNullExpression(current) ||
+    ts.isTypeAssertionExpression(current)
+  ) {
+    current = current.expression;
   }
+  return current;
 }
 
-/** The literals alone, for the classification sets in `failure-marker.ts`. */
-function literalsIn(node: ts.Node): string[] {
-  const into = { literals: [] as string[], unresolved: [] as ts.Node[] };
-  resolve(node, into);
-  return into.literals;
+/**
+ * The one rule. A node is resolved only when EVERY leaf is a string literal,
+ * after unwrapping parentheses, `as`, `satisfies`, `!` and `<T>` casts and
+ * descending into both branches of a conditional (never its condition, which
+ * only picks). Returns the literals, or `null` when any leaf is not one, so a
+ * mixed argument is never half read. Used by both readers: a sink argument and
+ * a member of a classification set.
+ */
+function resolveAll(node: ts.Node): string[] | null {
+  const inner = unwrap(node);
+  if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner)) {
+    return [inner.text];
+  }
+  if (ts.isConditionalExpression(inner)) {
+    const whenTrue = resolveAll(inner.whenTrue);
+    const whenFalse = resolveAll(inner.whenFalse);
+    return whenTrue === null || whenFalse === null
+      ? null
+      : [...whenTrue, ...whenFalse];
+  }
+  return null;
+}
+
+/** The string-literal leaves of a node, even when it also has other leaves.
+ *  Only for classifying what a mixed site CAN be; never proof a site is
+ *  resolved. */
+function literalLeaves(node: ts.Node): string[] {
+  const inner = unwrap(node);
+  if (ts.isConditionalExpression(inner)) {
+    return [
+      ...literalLeaves(inner.whenTrue),
+      ...literalLeaves(inner.whenFalse),
+    ];
+  }
+  return resolveAll(inner) ?? [];
 }
 
 interface Scan {
@@ -141,7 +172,6 @@ function probe(code: string): Scan {
 
 /** Scan one file's text. `relative` is its path under `src/`. */
 function scanSource(relative: string, text: string, out: Scan): void {
-  if (SKIP_FILES.has(relative)) return;
   const source = ts.createSourceFile(
     relative,
     text,
@@ -150,6 +180,22 @@ function scanSource(relative: string, text: string, out: Scan): void {
     relative.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   );
   const visit = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "PHONE_CHECK_CONTEXT" &&
+      node.initializer !== undefined
+    ) {
+      // The constant the phone check's computed sites forward.
+      const value = resolveAll(node.initializer);
+      if (value === null) {
+        out.computed.push(
+          `${relative}::PHONE_CHECK_CONTEXT = ${node.initializer.getText(source)}`
+        );
+      } else {
+        for (const literal of value) out.contexts.add(literal);
+      }
+    }
     if (ts.isCallExpression(node)) {
       const name = calleeName(node.expression);
       // A bare local `report` is a sink only where it forwards a context;
@@ -160,20 +206,20 @@ function scanSource(relative: string, text: string, out: Scan): void {
           : SINKS[name];
       const arg = index === undefined ? undefined : node.arguments[index];
       if (arg !== undefined) {
-        const found = { literals: [] as string[], unresolved: [] as ts.Node[] };
-        resolve(arg, found);
-        for (const literal of found.literals) out.contexts.add(literal);
-        for (const branch of found.unresolved) {
-          out.computed.push(`${relative}::${branch.getText(source)}`);
+        const resolved = resolveAll(arg);
+        if (resolved === null) {
+          // Mixed or computed: the whole site is unresolved. Its literal
+          // leaves are still recorded so they must be classified too.
+          for (const literal of literalLeaves(arg)) out.contexts.add(literal);
+          out.computed.push(`${relative}::${arg.getText(source)}`);
+        } else {
+          for (const literal of resolved) out.contexts.add(literal);
         }
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  for (const m of text.matchAll(/\bPHONE_CHECK_CONTEXT\s*=\s*"([^"]+)"/g)) {
-    out.contexts.add(m[1] as string);
-  }
 }
 
 function scan(read: (file: string) => string, files: string[]): Scan {
@@ -302,11 +348,12 @@ const MARKER_SETS: readonly string[] = [
 
 /** Name -> string literals of each top-level collection constant in
  *  `failure-marker.ts` (a `new Set([...])` or an array of strings). */
-function markerCollections(): Map<string, string[]> {
-  const file = path.join(SRC, "lib/failure-marker.ts");
+function markerCollections(
+  text: string = readFileSync(path.join(SRC, "lib/failure-marker.ts"), "utf8")
+): Map<string, string[]> {
   const source = ts.createSourceFile(
-    file,
-    readFileSync(file, "utf8"),
+    "lib/failure-marker.ts",
+    text,
     ts.ScriptTarget.Latest,
     true
   );
@@ -316,11 +363,22 @@ function markerCollections(): Map<string, string[]> {
     for (const declaration of statement.declarationList.declarations) {
       const init = declaration.initializer;
       if (!ts.isIdentifier(declaration.name) || init === undefined) continue;
-      const list = ts.isNewExpression(init) ? init.arguments?.[0] : init;
+      const inner = unwrap(init);
+      const list = ts.isNewExpression(inner)
+        ? inner.arguments?.[0] === undefined
+          ? undefined
+          : unwrap(inner.arguments[0])
+        : inner;
       if (list !== undefined && ts.isArrayLiteralExpression(list)) {
+        // A member that does not resolve is kept as its source text, which no
+        // `src/` context equals, so the liveness check reports it instead of
+        // dropping it. A conditional member contributes each branch it can be.
         found.set(
           declaration.name.text,
-          list.elements.flatMap((element) => literalsIn(element))
+          list.elements.flatMap(
+            (element) =>
+              resolveAll(element) ?? [`<unresolved> ${element.getText(source)}`]
+          )
         );
       }
     }
@@ -332,12 +390,23 @@ const live = scan((file) => readFileSync(file, "utf8"), sourceFiles(SRC));
 
 describe("every failure-log context is classified (#1838)", () => {
   it("every computed sink call is a listed forwarding site", () => {
-    const unlisted = live.computed.filter((site) => !(site in COMPUTED_SITES));
+    const unlisted = live.computed.filter(
+      (site) => !Object.hasOwn(COMPUTED_SITES, site)
+    );
     expect(unlisted).toEqual([]);
   });
 
+  it("every listed forwarding site is still a live computed site", () => {
+    const stale = Object.keys(COMPUTED_SITES)
+      .filter((site) => !live.computed.includes(site))
+      .sort();
+    expect(stale).toEqual([]);
+  });
+
   it("every context written in src/ is in the table", () => {
-    const missing = [...live.contexts].filter((c) => !(c in CLASSES)).sort();
+    const missing = [...live.contexts]
+      .filter((c) => !Object.hasOwn(CLASSES, c))
+      .sort();
     expect(missing).toEqual([]);
   });
 
@@ -398,25 +467,96 @@ describe("every failure-log context is classified (#1838)", () => {
         'reportFailure(e, flag ? "save-take" : "unknown-" + suffix);'
       );
       expect(out.contexts.has("save-take")).toBe(true);
-      expect(out.computed).toEqual(['hooks/probe.ts::"unknown-" + suffix']);
+      expect(out.computed).toEqual([
+        'hooks/probe.ts::flag ? "save-take" : "unknown-" + suffix',
+      ]);
     });
 
     it("a computed branch nested inside a conditional is kept", () => {
       const out = probe(
         'reportFailure(e, x ? "a-one" : y ? "b-two" : dynamic);'
       );
-      expect(out.computed).toEqual(["hooks/probe.ts::dynamic"]);
+      expect(out.computed).toEqual([
+        'hooks/probe.ts::x ? "a-one" : y ? "b-two" : dynamic',
+      ]);
       const deep = probe(
         'reportFailure(e, x ? (y ? other : "a-one") : "b-two");'
       );
-      expect(deep.computed).toEqual(["hooks/probe.ts::other"]);
+      expect(deep.computed).toEqual([
+        'hooks/probe.ts::x ? (y ? other : "a-one") : "b-two"',
+      ]);
     });
 
     it("a computed branch is rejected unless listed", () => {
       const out = probe('reportFailure(e, flag ? "save-take" : dynamic);');
-      expect(out.computed.filter((site) => !(site in COMPUTED_SITES))).toEqual([
-        "hooks/probe.ts::dynamic",
+      expect(
+        out.computed.filter((site) => !Object.hasOwn(COMPUTED_SITES, site))
+      ).toEqual(['hooks/probe.ts::flag ? "save-take" : dynamic']);
+    });
+  });
+
+  describe("wrapped and mixed leaves, at both readers", () => {
+    it("`as const`, `satisfies`, parentheses and `!` resolve at a sink", () => {
+      const out = probe(
+        [
+          'reportFailure(e, "a-one" as const);',
+          'reportFailure(e, ("b-two") satisfies string);',
+          'reportFailure(e, flag ? ("c-three" as const) : "d-four");',
+        ].join("\n")
+      );
+      expect([...out.contexts].sort()).toEqual([
+        "a-one",
+        "b-two",
+        "c-three",
+        "d-four",
       ]);
+      expect(out.computed).toEqual([]);
+    });
+
+    it("a wrapped non-literal leaf at a sink is still a computed site", () => {
+      const out = probe("reportFailure(e, (name as string));");
+      expect(out.computed).toEqual(["hooks/probe.ts::(name as string)"]);
+    });
+
+    it("a mixed argument at a sink is one unresolved site, not a half read", () => {
+      const out = probe('reportFailure(e, flag ? "a-one" : name);');
+      expect(out.computed).toHaveLength(1);
+    });
+
+    it("`as const` inside a classification set is still a member", () => {
+      const sets = markerCollections(
+        'const A: ReadonlySet<string> = new Set(["x-ctx" as const, ("y-ctx") satisfies string]);'
+      );
+      expect(sets.get("A")).toEqual(["x-ctx", "y-ctx"]);
+    });
+
+    it("a non-literal set member is kept so liveness reports it", () => {
+      const sets = markerCollections(
+        'const A: readonly string[] = ["x-ctx", other, flag ? "y-ctx" : mixed];'
+      );
+      const members = sets.get("A") ?? [];
+      expect(members).toHaveLength(3);
+      expect(members[0]).toBe("x-ctx");
+      for (const member of members.slice(1)) {
+        expect(live.contexts.has(member)).toBe(false);
+      }
+    });
+
+    it("an array wrapped in `as const` is still read as a set", () => {
+      const sets = markerCollections(
+        'const A = ["x-ctx"] as const; const B = new Set(["y-ctx"] as const);'
+      );
+      expect(sets.get("A")).toEqual(["x-ctx"]);
+      expect(sets.get("B")).toEqual(["y-ctx"]);
+    });
+
+    it("PHONE_CHECK_CONTEXT is read from its initializer, not from comments", () => {
+      const real = probe('export const PHONE_CHECK_CONTEXT = "phone-real";');
+      expect([...real.contexts]).toEqual(["phone-real"]);
+      const commented = probe(
+        "// PHONE_CHECK_CONTEXT = \"phone-comment\"\nexport const PHONE_CHECK_CONTEXT = 'phone-single';"
+      );
+      expect([...commented.contexts]).toEqual(["phone-single"]);
     });
   });
 });
