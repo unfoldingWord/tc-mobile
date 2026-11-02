@@ -11,6 +11,57 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-02 — Sprint 6 day 1: Vietnamese (the first level-3 language), #954 PRs 5–7 and #460 closed, the failure-context gate, device run sheets at round 5, 32 PRs merged
+
+One coordinator session. It ran lanes of 4–7 in waves, as plain background agents in their own worktrees. Every develop merge passed `merge_gate.py`: both bench lenses clean at the exact head SHA and CI green. #1826 is the exception. It merged directly past its cap on the DRI's stop rule. The DRI's own session ran 1.2.2 (`2eb33b3`) on a local Android device and the iOS Simulator; its issues (#1840, PR #1854) and the device-run issues stay with that session.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **#1415 lockfile gate:** "No gate, close #1415 (Recommended)".
+- **Progress-ring track (#1469):** "Decorative (Recommended)".
+- **#1823 origin rule:** "Record neither (Recommended)".
+- **#954 after PR 5 hit its stop rule:** "All ten in one PR (Recommended)".
+- **Level-3 pilot:** "Yes, Vietnamese".
+- **Card spike (#1472):** "draft a run sheet - i have an android device connected and will get a separate session to run it".
+- **Tester versions:** "Plain X.Y.Z only (Recommended)". After a no-go, the next go: "Always cut a patch bump".
+- **#1826 at the cap:** "One restructure round (Recommended)", then "Apply stop rule: merge (Recommended)".
+- **Requirements-owner round:** "Post the round now (Recommended)". **Device runs:** "Yes, all three (Recommended)". **Sprint 6 scope:** "Keep as is (Recommended)".
+- **#1608 permission contact:** "The DRI (you)", then "support@unfoldingword.org (Recommended)".
+- **Next wave:** "Device bugs + #460 next (Recommended)".
+- **#460:** "Name them as tokens (Recommended)", then "Close, record the 5 (Recommended)".
+- **#1836 at the cap:** "Round 5 + stop rule (Recommended)". The judgment sheet is on the PR.
+- **Standing:** product questions that block a lane go to the requirements owner as a Review-round card on the project site, with a Zulip note (DRI: "we can also ask questions to tim in the artifact as needed to unblick. just need to let him know in zulip").
+
+### Merged to develop (32)
+
+- **Languages:** #1830 Vietnamese (vi), the first level-3 AI draft; #1833 records that the other six level-3 languages are not in the app; #1827 adds the level-3 Latin-script glossary columns; #1843 drops stray plural `one` keys in vi, id and zh-Hans and gates them.
+- **Styles (#954, #460):** #1831 flattens `:root` out of all ten area files (PRs 5 and 6); #1852 retires the o4 class names from tiles, errors, storage and menus (PR 7); #1855 names the recurring spacing values as component tokens.
+- **Export and templates:** #1828 and #1847 make the web build's Export project point to the installed app; #1825 and #1841 show a template-created book on the shelf.
+- **Failure log:** #1845 classifies every failure-log context for the Books ≡ marker (gate test); #1849 names the omitted contexts in AGENTS.md.
+- **Release and ops:** #1821, #1829 (tc-release skill version rules); #1823 and #1846 (the rollback read compares origins and the whole deploy record); #1832 (build:templates through a node wrapper); #1834 and #1853 (facilitator runbook matches 1.2.2, and its source markers no longer cite closed issues as open); #1848 (tester-install link); #1839 (trademark notice and permission contact in MIT.txt).
+- **ADR 0013:** #1826 and #1835 close its named residuals. It stays Proposed.
+- **Tests and deps:** #1816, #1817, #1819 (deps, with the oxc runtime pinned to 0.156.0); #1822 and #1850 (the oxc pin gate); #1824 (ring track decorative); #1842 (use-theme through the hook); #1844 (stale no-jsdom claims).
+
+### Issues closed
+
+#174, #460, #1415, #1469, #1804, #1809, #1820, #1837, #1838, #1851.
+
+### Open, and where each stands
+
+- **#1836, the Android run sheets for #974, #1464 and #1486.** Round 5 is at `f66af8f1`, past the cap on the DRI's pick. Each round tightened the same data-safety gate around real recordings: Route B's rescue copy, the throwaway-book rule, the share notice for partial chapters, and one before-inventory. The stop rule: merge if round 5 has no new UNSAFE/P1/P2; otherwise park it and split the #1464 sheet out. Until it merges, the sheets in the PR are the only version, and none has been run on a device.
+- **#954 PR 7 (#1852) merged with one done-when row unmet.** No style-diff comparison exists for it: only the base capture finished. The method defect it exposed is recorded on #954. PR 8 (`refactor/954-retire-o4-crumbs-sheets`) is next, and it runs with no other lane on `books-screen.tsx` and `recorder.tsx`.
+- **The requirements owner.** Round 9 (Y1, #246: after a template creates a book, show it on the shelf or open it) went up today, with a Zulip note. Round 7's W1 and W2 and Round 8's X1 and X2 are still open.
+- **The DRI.** ADR 0016 (Capacitor or Expo) and ADR 0013 are both still Proposed. ADR 0016's 20-minute save threshold is open.
+
+### Notes for the next session
+
+- A scout read a stale develop: two of its slices (#460's About panel, #1473's ADR text) had already merged. Fetch develop before scouting, and have each lane check its slice is still open before it builds.
+- The project site was refreshed (version 28): home, v2, review intros, sprints, decisions, board and checks. 28 `lanes/*` records were rewritten to their real GitHub states. They had shown "in-review" or "building" since 19 Oct; the other five were already marked merged. A new record tracks #1836.
+
+---
+
 ## 2026-10-30 — Sprint 5 day 12: tester-build-v1.2.2 published (Play draft and TestFlight group still the DRI's), the milestones retitled and Sprint 5 closed out, 7 PRs merged
 
 One coordinator session. It started with the v1.2.2 native lanes stuck, published the tester build, and then ran one wave of five lanes. Every merge to develop met the DRI's rule for this session, verbatim: "you're permitted to merge on clean and green". So both bench lenses were clean at the exact head and every check was green (`merge_gate.py`).
