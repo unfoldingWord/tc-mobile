@@ -54,10 +54,10 @@ phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 2
 1. **Open the download link** we send you in your phone's web browser, or
    scan the QR code we post with it. Use the link in the tester announcement:
    tester builds are marked **Pre-release** on GitHub, so the "latest" address
-   (<https://github.com/unfoldingWord/tc-mobile/releases/latest>) still lands on
+   (`github.com/unfoldingWord/tc-mobile/releases/latest`) still lands on
    an older full release (1.0.1) and is not the build to install. If you have
    no link, open <https://github.com/unfoldingWord/tc-mobile/releases>, pick
-   the newest release whose name starts `tester-build-`, and tap
+   the newest release whose tag starts `tester-build-`, and tap
    `app-release.apk`. <!-- source: gh release list --repo unfoldingWord/tc-mobile shows tester-build-v1.2.2 as Pre-release and v1.0.1 as Latest; /releases/latest resolving to the newest non-pre-release is GitHub's behaviour, not this repo's; tester builds are tagged tester-build-vX.Y.Z (docs/native/README.md "Tester announcement template", #629); the older android-release-vX.Y.Z tags stay up so shared links work; the repo is public so the asset link needs no login; same wording as the facilitator runbook (PR #1834) -->
    **Stay with one install route.** If you installed tC Mobile from one of
    these APKs, keep updating from them; do not switch to Google Play, or the
