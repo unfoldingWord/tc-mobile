@@ -72,7 +72,7 @@ Run each check and paste its output into the notes.
 
 ## Builds, and the order they go on
 
-All three are on the GitHub releases page. They are signed with the same
+Both are on the GitHub releases page. They are signed with the same
 release certificate, so each installs over the one before it in place.
 
 | Order | Release tag           | APK SHA-256 (from the release notes)                               | `DB_VERSION` |
@@ -143,6 +143,16 @@ date.
 4. If the DRI cannot produce a confirmed off-phone copy for every book that
    matters, **stop**. Do not upgrade. Report on #1464 that no safe copy was
    possible.
+5. **A zip is not enough on its own to pass row G.** Route B passes only when
+   either every book that matters is Finished audio and was counted in the
+   zips (step 2), or the DRI writes in row G what the copy lacks (no PCM of
+   unfinished segments, no chapter or segment names, no shelf order, no
+   colours) and says, in their own words, that they accept losing it
+   (**HUMAN**). If an unfinished segment matters and the DRI does not accept
+   that, row G is a **stop**: do not run U1.
+6. `/tmp/run-1464/backup/` is a scratch path. If it is the only off-phone copy,
+   the DRI moves it somewhere durable they name (**HUMAN**) before U1, and the
+   notes record that it was moved, not where.
 
 ## Capturing output
 
@@ -248,9 +258,12 @@ HUMAN: Share Chapter once. The Android share sheet must open with a file.
 - Web two-copy case (an old tab open while a new one upgrades): open.
 - Rollback: forbidden in practice (see above); this sheet never installs an
   older APK over a newer one.
-- A 1.0.x start (schema 9 to 11 then to 14): #974 has the separate 9 to 11 row.
-  Not required here; if the phone is already on 1.0.x, a stop at 1.1.0 first
-  is the same procedure with one more install.
+- Any start below schema 11, including #974's #964 row (v8 to v9): open. This
+  run starts at 11, and `src/lib/storage/db.ts` runs the v9, v10 and v11 steps
+  only when `oldVersion` is below them, so nothing here exercises them. Do not
+  mark #974's row U passed from this sheet for that part. If the phone is
+  already on 1.0.x, a stop at 1.1.0 first is the same procedure with one more
+  install.
 
 ## Results
 
@@ -313,7 +326,9 @@ route (A or B), build versions installed in order, date.
    from `develop` with the Sprint 6 milestone and `release-notes: N/A`. Run
    `npm run check:pr-body` first.
 3. Do not commit logs, screenshots or the APKs. Delete `/tmp/run-1464` when
-   done, after the comment is posted.
+   done, after the comment is posted, **except** `/tmp/run-1464/backup/`:
+   that stays until the DRI confirms a durable copy exists elsewhere
+   (Route B step 6).
 4. Do not close #1464 from this run; it needs the iPhone entry and the web
    two-copy case.
 
@@ -322,5 +337,6 @@ route (A or B), build versions installed in order, date.
 1. Stop the logcat capture.
 2. Leave the app installed at 1.2.2. Do not uninstall and do not roll back.
 3. Delete the downloaded APKs and any screenshots from the machine's scratch
-   directory once the results are posted. Leave the throwaway test books on a
+   directory once the results are posted. Never delete `backup/` before the
+   DRI confirms a durable copy elsewhere. Leave the throwaway test books on a
    Route A phone unless the DRI asks to remove them in the app.

@@ -102,14 +102,18 @@ list of what you struck for the dated comment.
 
 ### Group 1, the upgrade
 
-- **U** v11 to v14 upgrade in place, and the #964 row (v8 to v9): run
-  `docs/native/run-sheet-1464-upgrade.md`. The v8 to v9 step is long past (the
-  database is now 14); #974's own comment says to install the build before and
-  after, which only a 1.0.x phone can do. **ASSUMPTION:** it is covered by
-  the 1.1.0 to 1.2.2 run and need not be run alone.
+- **U** v11 to v14 upgrade in place: run
+  `docs/native/run-sheet-1464-upgrade.md`. U passes only on that sheet's
+  rows run in this session. **The #964 row (v8 to v9) is not covered by it:**
+  that run starts at schema 11, and `src/lib/storage/db.ts` runs the v9 step
+  only when `oldVersion` is below 9. #974's own comment says to install the
+  build before and after, which needs a phone holding pre-v9 data. Leave the
+  #964 row open (`couldn't reach`), as the 1464 sheet's U5 does.
 - **N** #923 / #934, native service worker: after the upgrade, the app opens
   straight into the new build, not stuck on the old one until a second launch.
-  Observed when U1 of the upgrade sheet opens the app for the first time.
+  Observed only when this session watched U1 of the upgrade sheet open the app
+  for the first time. If it did not (for example the phone was already on
+  1.2.2), N is `couldn't reach`.
 
 ### Group 2, the O4 look
 
@@ -127,13 +131,13 @@ shows a toggle, record it.
   dialog and returns to where it was. Use a recording made for this run.
 - **O3** Share busy glyph (#947): share a chapter. While it is packing, the
   overlay glyph is teal. A mid-run screenshot is enough.
-- **O4** Microphone refused (#948): refuse the microphone (phone Settings > Apps
-  > tC Mobile > Permissions). The panel shows the mic. Tap Try again, refuse
-  > again: the numbered steps for the phone's settings appear with a compact
-  > header, Retry and Back stay on screen, and the steps match the phone's real
-  > Settings route (#1569, #1571). A first refusal still shows the older panel.
-  > Restart shows the restart glyph where it applies. Allow the microphone again
-  > afterwards (**HUMAN**).
+- **O4** Microphone refused (#948): refuse the microphone (phone Settings, then
+  Apps, then tC Mobile, then Permissions). The panel shows the mic. Tap Try
+  again, then refuse again: the numbered steps for the phone's settings appear
+  with a compact header, Retry and Back stay on screen, and the steps match the
+  phone's real Settings route (#1569, #1571). A first refusal still shows the
+  older panel. Restart shows the restart glyph where it applies. Allow the
+  microphone again afterwards (**HUMAN**).
 - **O5** Crash and save-failed screens (#948): if they can be provoked, both use
   O4 paint. Otherwise write `couldn't reach: not reachable on hand`. Do not
   provoke a failure that could lose data.
@@ -275,7 +279,9 @@ iPhone and VoiceOver row; browser and PWA rows (#272 web, the PWA install and
 update path, the two-copy case); the `persisted()` / `persist()` reads (#406),
 which need an inspector, so a diagnostic APK (README §5a), whose install over a
 release-signed 1.2.2 is allowed only with a newer version code and never by
-uninstalling; the instrumented playback probe (#555, #612, #269), same reason.
+uninstalling (the CI diagnostic APK carries the release signer, README §5a; a
+locally built, differently signed APK cannot update the app, so do not use
+one); the instrumented playback probe (#555, #612, #269), same reason.
 Also not runnable: any row waiting on a build newer than 1.2.2.
 
 ## Results
