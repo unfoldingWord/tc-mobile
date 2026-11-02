@@ -226,8 +226,8 @@ committed. So the name is exclusive:
   rename to `<name>` never replaces an existing file. If the `.part` cannot be
   created, the attempt fails as in row S1. If `<name>` exists at the rename,
   the check has already passed, so the attempt fails as in row S1c: it keeps
-  its `.part` and reports it unless a complete pending row, a final
-  disposition or a named file holds the take.
+  its `.part` and reports it unless a durable copy of the take (the keep
+  rule) exists.
 - A `clipId` is a `crypto.randomUUID()` (`clips.ts:14`), one safe path segment.
 
 Tests (commit-protocol child), read off the rule above: "a retry in a later
@@ -297,15 +297,18 @@ card file. Every delete below cites it, and none adds a condition of its own.
 >   an earlier launch may have been torn mid-write or may have passed its
 >   check just before a kill. It may be deleted only when it is not the only
 >   copy of a take: a defined check has determinately failed against a
->   durable reference, or an intact alternative exists for every take that
->   depends on its clip. A `.part` that passes the check and is the only copy
+>   durable reference, or a **durable copy** of its take exists. A durable
+>   copy is a complete pending row whose `clipId` is the `.part`'s clip, a
+>   final disposition for that take, or a named file whose length and CRC32
+>   match the `.part`'s. An empty set of dependents is not a durable copy,
+>   and neither is a named file holding other bytes for the same `clipId`.
+>   A `.part` that passes the check and is the only copy
 >   is kept and reported the way S4's file is, never played as audio (rows
 >   S1c, S2b). What the sweep checks a `.part` against, so that it can say
 >   "passes" or "fails", is open (below).
 > - **Bytes held only in memory are not an alternative.** A take whose only
 >   other copy is the running attempt's buffer is one kill from lost, so a
->   checked `.part` is deleted only against a complete pending row, a final
->   disposition, or a named file.
+>   checked `.part` is deleted only against a durable copy of its take.
 > - **Unknown means keep.** While a check cannot be evaluated (no durable
 >   reference to compare against), or the state table is silent or ambiguous
 >   (the ownership rule's precedence rule), the outcome is keep and report,
@@ -332,8 +335,8 @@ A save to the card, in order:
    has not passed its check is not a copy of the take), so a session's failed
    writes do not fill the card. If the check passed and the rename then
    fails, including because the name exists, the `.part` is the checked copy:
-   it is kept and reported unless a complete pending row, a final disposition
-   or a named file already holds the take (row S1c).
+   it is kept and reported unless a durable copy of the take (the keep rule)
+   already exists (row S1c).
 
    **Step 1a, the checked read-back.** Still before any transaction, the
    plugin opens `<name>` by its final name, reads it whole, and checks its
@@ -452,10 +455,10 @@ each is owed to P4. All tests belong to the commit-protocol child.
 | Row | Path      | When                                                                                                                                                                | Card file                                  | `clipMeta` for the `clipId` | Intact alternative (keep rule)                                                                                     | Outcome                                                                                                                                                                                                                    | Test                                                                                                                |
 | --- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | S1  | save      | Step 1 fails before the check has passed, alive (missing, full, read-only, `.part` creation refused)                                                                | `.part` or none                            | Unchanged                   | Not needed: a `.part` that has not passed its check is not a copy                                                  | The attempt deletes only a `.part` it created itself; when creation was refused because the name exists, it deletes nothing, since the file that blocked it may be a kept S1c or S2b copy; take held; §4's card rows apply | "a failed step 1 deletes its own .part, keeps the take held and writes no row"                                      |
-| S1c | save      | The check passed, then the rename fails, alive (including: the name exists)                                                                                         | `.part`, checked                           | Unchanged                   | A complete pending row, a final disposition or a named file; bytes held only in memory do not count                | The attempt deletes nothing when no such alternative exists: the `.part` is **kept** and reported, never played as audio. With one, the next sweep may delete it (as S2)                                                   | "a checked .part whose rename failed is kept and reported unless a durable copy holds the take"                     |
+| S1c | save      | The check passed, then the rename fails, alive (including: the name exists)                                                                                         | `.part`, checked                           | Unchanged                   | A durable copy of the take (keep rule); bytes held only in memory do not count                                     | The attempt deletes nothing when no such alternative exists: the `.part` is **kept** and reported, never played as audio. With one, the next sweep may delete it (as S2)                                                   | "a checked .part whose rename failed is kept and reported unless a durable copy holds the take"                     |
 | S1b | save      | The step 1a read-back of the final name fails, alive                                                                                                                | Final, not named, failed its check         | Unchanged                   | A complete pending row, a final disposition, or the committed file; else none                                      | The attempt deletes nothing; no transaction opens; `clipData` and the held take are untouched. The next sweep deletes the file at step 4 only when an intact alternative exists, otherwise keeps and reports it at step 5  | "a failed read-back after the rename opens no transaction, deletes nothing, and leaves clipData and the held take"  |
-| S2  | save      | Killed during step 1; the `.part` determinately fails a defined check against a durable reference, or an alternative exists for every take that depends on its clip | `.part`, from a previous launch at restart | Unchanged                   | Complete pending row or committed file, or the `.part` is torn                                                     | The next sweep deletes the `.part`. A `.part` whose check cannot be decided is not this row: it is kept (S2b). Without a row the take is lost, as it is today                                                              | "a .part from a previous launch is deleted only when it determinately fails its check or an alternative exists"     |
-| S2b | save      | Killed during step 1; the `.part` passes its check, or its check cannot be decided, and no alternative exists                                                       | `.part`, from a previous launch            | Absent or unchanged         | None                                                                                                               | The sweep **keeps** it and reports it, as S4; it is never played as audio. Unknown means keep. What the check compares against is open (below)                                                                             | "a .part that is the only copy is kept and reported"                                                                |
+| S2  | save      | Killed during step 1; the `.part` determinately fails a defined check against a durable reference, or a durable copy of its take exists (keep rule)                 | `.part`, from a previous launch at restart | Unchanged                   | A durable copy (keep rule), or the `.part` is torn                                                                 | The next sweep deletes the `.part`. A `.part` whose check cannot be decided, or with no dependent and no durable copy, is not this row: it is kept (S2b)                                                                   | "a .part from a previous launch is deleted only when it determinately fails its check or a durable copy exists"     |
+| S2b | save      | Killed during step 1; the `.part` passes its check, or its check cannot be decided, and no durable copy exists                                                      | `.part`, from a previous launch            | Absent or unchanged         | None                                                                                                               | The sweep **keeps** it and reports it, as S4; it is never played as audio. Unknown means keep. What the check compares against is open (below)                                                                             | "a .part that is the only copy is kept and reported"                                                                |
 | S3  | save      | Killed after the rename (step 1a passed or not reached), before step 2 commits                                                                                      | Final, not named                           | Absent                      | Complete pending row with this `clipId`                                                                            | The sweep deletes the file; the take's PCM stays in its IndexedDB row and the replay saves it                                                                                                                              | "a kill after the rename leaves the take held when a complete pending row holds it, and the sweep removes the file" |
 | S3b | save      | As S3, but the row's `stored` base is missing or corrupt                                                                                                            | Final, not named                           | Absent                      | None: the row is not complete                                                                                      | The sweep **keeps** the file and reports it; it is the only complete copy                                                                                                                                                  | "a completed orphan whose pending base is missing or corrupt is kept and reported"                                  |
 | S4  | save      | Killed after the rename, before step 2 commits                                                                                                                      | Final, not named                           | Absent                      | None: no pending row                                                                                               | The file is the only copy and passed its read-back. The sweep **keeps** it and reports it                                                                                                                                  | "an unnamed final file with no row and no meta is kept and reported"                                                |
@@ -480,8 +483,9 @@ no `.part` or final file of this launch exists when it runs.
    volume** is kept, and the app reports "card not present" or "card changed"
    (ownership rule; V1, V2). This runs first, so no later step deletes it.
 2. A `.part` is from a previous launch. It is deleted only when a defined
-   check has determinately failed against a durable reference, or an intact
-   alternative exists for every take that depends on its clip (S2). A `.part`
+   check has determinately failed against a durable reference, or a durable
+   copy of its take exists (the keep rule; an empty set of dependents is not
+   one) (S2). A `.part`
    that passes its check, or whose check cannot be decided ("cannot tell"), and
    that is the only copy is kept and reported (S2b). Unknown means keep.
 3. A final file that a `clipMeta` location names (volume and file) is kept.
@@ -660,7 +664,8 @@ T1 to T3; picks are not answers.
   the only copy whenever its length is plausible; or accept that a `.part`
   cannot be told apart and say so. Until decided, a `.part` whose check cannot
   be evaluated is kept and reported (S2b, "unknown means keep"); only a
-  determinate failure against a durable reference, or an alternative, deletes.
+  determinate failure against a durable reference, or a durable copy of the
+  take, deletes.
 - **Which file is the archive when the winner record fails** (§5): the record
   names a file that is missing or fails its CRC, and the previous backup is
   still on the card. The pick rule covers only the pass path; nothing is
