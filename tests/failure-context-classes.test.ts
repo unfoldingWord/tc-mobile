@@ -100,17 +100,31 @@ function calleeName(expression: ts.Expression): string | null {
   return null;
 }
 
-/** The literals a context argument can evaluate to: the argument itself, or
- *  either branch of a conditional (never its condition, which only picks). */
-function literalsIn(node: ts.Node): string[] {
+/** What a context argument can evaluate to: the string literals it can be,
+ *  and the branches that are not literals. A conditional contributes both of
+ *  its branches (never its condition, which only picks), recursively, so a
+ *  computed branch beside a literal one is still reported as unresolved. */
+function resolve(
+  node: ts.Node,
+  into: { literals: string[]; unresolved: ts.Node[] }
+): void {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-    return [node.text];
+    into.literals.push(node.text);
+  } else if (ts.isParenthesizedExpression(node)) {
+    resolve(node.expression, into);
+  } else if (ts.isConditionalExpression(node)) {
+    resolve(node.whenTrue, into);
+    resolve(node.whenFalse, into);
+  } else {
+    into.unresolved.push(node);
   }
-  if (ts.isParenthesizedExpression(node)) return literalsIn(node.expression);
-  if (ts.isConditionalExpression(node)) {
-    return [...literalsIn(node.whenTrue), ...literalsIn(node.whenFalse)];
-  }
-  return [];
+}
+
+/** The literals alone, for the classification sets in `failure-marker.ts`. */
+function literalsIn(node: ts.Node): string[] {
+  const into = { literals: [] as string[], unresolved: [] as ts.Node[] };
+  resolve(node, into);
+  return into.literals;
 }
 
 interface Scan {
@@ -118,48 +132,57 @@ interface Scan {
   readonly computed: string[];
 }
 
-function scan(read: (file: string) => string, files: string[]): Scan {
-  const contexts = new Set<string>();
-  const computed: string[] = [];
-  for (const file of files) {
-    const relative = path.relative(SRC, file).split(path.sep).join("/");
-    if (SKIP_FILES.has(relative)) continue;
-    const text = read(file);
-    const source = ts.createSourceFile(
-      file,
-      text,
-      ts.ScriptTarget.Latest,
-      true,
-      file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
-    );
-    const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node)) {
-        const name = calleeName(node.expression);
-        // A bare local `report` is a sink only where it forwards a context;
-        // elsewhere (use-books, the chapter queue, the exporter) it is not.
-        const index =
-          name === null ||
-          (name === "report" && !REPORT_SINK_FILES.has(relative))
-            ? undefined
-            : SINKS[name];
-        const arg = index === undefined ? undefined : node.arguments[index];
-        if (arg !== undefined) {
-          const literals = literalsIn(arg);
-          if (literals.length > 0) {
-            for (const literal of literals) contexts.add(literal);
-          } else {
-            computed.push(`${relative}::${arg.getText(source)}`);
-          }
+/** Scan fixture text as if it were `hooks/probe.ts`. */
+function probe(code: string): Scan {
+  const out: Scan = { contexts: new Set(), computed: [] };
+  scanSource("hooks/probe.ts", code, out);
+  return out;
+}
+
+/** Scan one file's text. `relative` is its path under `src/`. */
+function scanSource(relative: string, text: string, out: Scan): void {
+  if (SKIP_FILES.has(relative)) return;
+  const source = ts.createSourceFile(
+    relative,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    relative.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const name = calleeName(node.expression);
+      // A bare local `report` is a sink only where it forwards a context;
+      // elsewhere (use-books, the chapter queue, the exporter) it is not.
+      const index =
+        name === null || (name === "report" && !REPORT_SINK_FILES.has(relative))
+          ? undefined
+          : SINKS[name];
+      const arg = index === undefined ? undefined : node.arguments[index];
+      if (arg !== undefined) {
+        const found = { literals: [] as string[], unresolved: [] as ts.Node[] };
+        resolve(arg, found);
+        for (const literal of found.literals) out.contexts.add(literal);
+        for (const branch of found.unresolved) {
+          out.computed.push(`${relative}::${branch.getText(source)}`);
         }
       }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-    for (const m of text.matchAll(/\bPHONE_CHECK_CONTEXT\s*=\s*"([^"]+)"/g)) {
-      contexts.add(m[1] as string);
     }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  for (const m of text.matchAll(/\bPHONE_CHECK_CONTEXT\s*=\s*"([^"]+)"/g)) {
+    out.contexts.add(m[1] as string);
   }
-  return { contexts, computed };
+}
+
+function scan(read: (file: string) => string, files: string[]): Scan {
+  const out: Scan = { contexts: new Set(), computed: [] };
+  for (const file of files) {
+    const relative = path.relative(SRC, file).split(path.sep).join("/");
+    scanSource(relative, read(file), out);
+  }
+  return out;
 }
 
 /**
@@ -353,5 +376,47 @@ describe("every failure-log context is classified (#1838)", () => {
       }
     }
     expect(dead).toEqual([]);
+  });
+
+  describe("conditional contexts", () => {
+    it("a fully literal conditional is accepted, both branches read", () => {
+      const out = probe('reportFailure(e, flag ? "a-one" : "b-two");');
+      expect([...out.contexts].sort()).toEqual(["a-one", "b-two"]);
+      expect(out.computed).toEqual([]);
+    });
+
+    it("a nested fully literal conditional is accepted", () => {
+      const out = probe(
+        'reportFailure(e, x ? "a-one" : y ? "b-two" : "c-three");'
+      );
+      expect([...out.contexts].sort()).toEqual(["a-one", "b-two", "c-three"]);
+      expect(out.computed).toEqual([]);
+    });
+
+    it("a mixed conditional keeps its computed branch", () => {
+      const out = probe(
+        'reportFailure(e, flag ? "save-take" : "unknown-" + suffix);'
+      );
+      expect(out.contexts.has("save-take")).toBe(true);
+      expect(out.computed).toEqual(['hooks/probe.ts::"unknown-" + suffix']);
+    });
+
+    it("a computed branch nested inside a conditional is kept", () => {
+      const out = probe(
+        'reportFailure(e, x ? "a-one" : y ? "b-two" : dynamic);'
+      );
+      expect(out.computed).toEqual(["hooks/probe.ts::dynamic"]);
+      const deep = probe(
+        'reportFailure(e, x ? (y ? other : "a-one") : "b-two");'
+      );
+      expect(deep.computed).toEqual(["hooks/probe.ts::other"]);
+    });
+
+    it("a computed branch is rejected unless listed", () => {
+      const out = probe('reportFailure(e, flag ? "save-take" : dynamic);');
+      expect(out.computed.filter((site) => !(site in COMPUTED_SITES))).toEqual([
+        "hooks/probe.ts::dynamic",
+      ]);
+    });
   });
 });
