@@ -168,6 +168,9 @@ adb logcat -v threadtime > /tmp/run-1464/logcat-all.txt &
 grep -E 'Capacitor|tcmobile|AndroidRuntime|FATAL|chromium|IndexedDB' /tmp/run-1464/logcat-all.txt
 ```
 
+The raw capture holds other apps' log lines. Keep `logcat-all.txt` local and
+never attach or paste it; quote only the filtered lines a result needs.
+
 `AndroidRuntime` or `FATAL EXCEPTION` lines are a crash. The release APK's
 WebView is not inspectable (only a diagnostic build is, README §5a), so the
 in-app failure log is the main record of what the migration did: Books `≡`, a

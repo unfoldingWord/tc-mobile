@@ -82,6 +82,9 @@ adb logcat -v threadtime > /tmp/run-974/logcat-all.txt &
 grep -E 'Capacitor|tcmobile|AndroidRuntime|FATAL|chromium' /tmp/run-974/logcat-all.txt
 ```
 
+The raw capture holds other apps' log lines. Keep `logcat-all.txt` local and
+never attach or paste it; quote only the filtered lines a result needs.
+
 Screenshots: `adb exec-out screencap -p > /tmp/run-974/<name>.png`. Open each
 one before keeping it; retake or delete one that shows a notification,
 contact, carrier or location. The release APK's WebView is not inspectable

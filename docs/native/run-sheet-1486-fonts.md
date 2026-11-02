@@ -110,6 +110,9 @@ adb logcat -v threadtime > /tmp/run-1486/logcat-all.txt &
 grep -E 'Capacitor|tcmobile|AndroidRuntime|FATAL|chromium' /tmp/run-1486/logcat-all.txt
 ```
 
+The raw capture holds other apps' log lines. Keep `logcat-all.txt` local and
+never attach or paste it; quote only the filtered lines a result needs.
+
 Screenshots: `adb exec-out screencap -p > /tmp/run-1486/<name>.png`. A screenshot
 is the only honest record of tofu, so take one per screen and open each image
 before keeping it: the phone's status bar or notifications can show a name,
@@ -129,19 +132,28 @@ judge shape, not meaning, and mark `cannot-tell` on any doubt.
 ### F1 The Phone check, in the phone's own language
 
 1. **HUMAN:** open the app. On the Books screen, tap the version line at the
-   bottom (`v1.2.2 · abcdef0`) **5 times within 3 seconds** (the gesture #974 gives). The Phone check opens. Do **not** tap Start yet.
-2. Scroll to **Script samples** (the section sits with the other probes). Take
-   a screenshot. Fill the first table from what the phone draws: one cell per
-   sample, plus the digit lines.
-3. Phone check also has a Start button and a memory test. They are not part of
-   this run; leave them unless the DRI asks. Start never touches books or
-   recordings (the screen says so); the memory test can restart the app.
-4. Copy the report: tap **Copy report**. **HUMAN** pastes it into a place the
+   bottom (`v1.2.2 · abcdef0`) **5 times within 3 seconds** (the gesture #974
+   gives). The Phone check opens.
+2. **HUMAN:** tap **Start** and wait for "Done." Start is required before any
+   capture. Read from the code (`src/hooks/use-phone-check.ts`): opening the
+   screen only restores the last saved results, or nothing; only a Start run
+   calls `readDeviceInfo`, and the report writes "not run" for device data that
+   is null. So `navigator.language` and `navigator.languages` in the report are
+   either from this Start or are stale values saved by an earlier one. Start
+   never touches books or recordings (the screen says so).
+3. Scroll to **Script samples**. Take a screenshot. Fill the first table from
+   what the phone draws: one cell per sample, plus the digit lines. (The
+   samples draw without Start; only the language values need it.)
+4. The separate **Start memory test** is not part of this run; leave it unless
+   the DRI asks. It can restart the app.
+5. Copy the report: tap **Copy report**. **HUMAN** pastes it into a place the
    session can read (for example the session chat). The report carries
    `navigator.language`, `navigator.languages` and one empty line per sample.
    Fill each line with `rendered`, `tofu` or `partial` to match the table. If
-   the pasted report lacks the language lines, record that: it means the build
-   is not the one expected.
+   the language lines say "not run" or are missing, Start did not complete;
+   run it again before concluding anything. A report that still lacks them
+   after a completed Start is a finding to record, not proof of the wrong build
+   (check the build stamp for that).
 
 ### F2 `navigator.language` after the phone's language changes
 
@@ -152,8 +164,10 @@ because that feeds the native-language decision.
    (F1).
 2. **HUMAN:** Settings > System > Languages (the path varies by vendor;
    **ASSUMPTION**), add a second language, for example Hindi, and move it to
-   the top. Reopen the app, tap the version line 5 times, scroll to Script
-   samples, **Copy report**, and compare. Does the phone check text change?
+   the top. Reopen the app, tap the version line 5 times, tap **Start** and
+   wait for "Done." (a fresh measurement; without it the report shows the values
+   saved by the earlier Start), scroll to Script samples, **Copy report**, and
+   compare. Does the phone check text change?
    (It is English-only by design, S11, so it should not.) Does the rest of
    the app switch to that language? Take screenshots.
 3. Repeat for two more languages the DRI picks from the app's supported list
@@ -197,7 +211,7 @@ cat > /tmp/run-1486/fixture/index.html <<'EOF'
 <p lang="ur" dir="rtl">Urdu: بائبل کا زبانی ترجمہ</p>
 <p>Digits: 0123456789 / <span lang="ar">٠١٢٣٤٥٦٧٨٩</span> / <span lang="hi">०१२३४५६७८९</span></p>
 EOF
-cd /tmp/run-1486/fixture && python3 -m http.server 8000 &
+cd /tmp/run-1486/fixture && python3 -m http.server 8000 --bind 127.0.0.1 &
 adb reverse tcp:8000 tcp:8000
 adb shell am start -a android.intent.action.VIEW -d http://localhost:8000/
 ```
