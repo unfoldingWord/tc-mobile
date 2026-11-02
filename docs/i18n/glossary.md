@@ -40,8 +40,11 @@ ships: Arabic, English, French, Hindi, Indonesian, Mandarin (Simplified),
 Portuguese, Russian, Spanish and Swahili. English is the source and the
 reference column. The 16 level-3 languages follow later; section 5 carries
 AI-draft columns for the seven Latin-script ones (below), and the other level-3
-languages are not in this file. This file adds no locale to the app: the
-language registry is unchanged.
+languages are not in this file. Of the seven, Vietnamese (`vi`) is in the app
+as a complete AI-draft locale (#1830), the DRI's pilot pick on #357 ("Yes,
+Vietnamese",
+<https://github.com/unfoldingWord/tc-mobile/issues/357#issuecomment-6580657589>);
+the other six level-3 languages are not in the app.
 
 | Code      | Language              | Script     | Direction     |
 | --------- | --------------------- | ---------- | ------------- |
@@ -72,7 +75,8 @@ Tagalog `tl`, Tok Pisin `tpi`, Turkish `tr`, Vietnamese `vi`). The requirements
 owner's R8-level3 decision (#1458) is "After 2.0.0", with the note "the 16
 level-3 languages are v2-desired (will become v3-required if they miss the v2
 launch)". Because of that, these columns sit under their own level-3 headings
-in section 5 and nothing here puts a level-3 language in the app. Their cells
+in section 5. Only `vi` is in the app (the DRI's pilot pick on #357, #1830);
+the other six are not. Their cells
 are AI proposals under Q1 and Q3: no human has reviewed any, and no native
 reader has been asked.
 

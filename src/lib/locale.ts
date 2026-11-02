@@ -68,7 +68,8 @@ export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
 
 /**
  * The UI languages v2 supports (#1482; decision D6-languages, "The 10 level-4
- * languages in v2"), each stating its own direction for the reason above.
+ * languages in v2", plus Vietnamese, the first level-3 language, #357), each
+ * stating its own direction for the reason above.
  * `SHIPPED_LOCALE` is the English entry itself, not a copy of it.
  *
  * Mandarin is `zh-Hans`: the Simplified script is part of the tag, because
