@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./o4-area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
@@ -16,7 +16,6 @@ import { cssRule, declarationValue } from "./support";
  * fixed height, so extra dot rows grow the row. Whether the cascade lays that
  * out is `e2e/books-chapter-dots-fit.spec.ts`'s job, against the built app.
  */
-const sel = (selector: string) => areaSelector("books", selector);
 const css = areaScope("books");
 
 /** The declaration, or null when the rule does not declare it at all. */
@@ -40,20 +39,18 @@ function declaredAnywhere(selector: string, property: string): string[] {
 
 describe("the O4 chapter row's room for its dots (#1229)", () => {
   it("never lets the dots shrink the title line", () => {
-    expect(declared(sel(".books-chapter-title"), "flex")).toBe("none");
-    expect(declared(sel(".books-chapter-title"), "height")).toBe("20px");
+    expect(declared(".books-chapter-title", "flex")).toBe("none");
+    expect(declared(".books-chapter-title", "height")).toBe("20px");
   });
 
   it("gives the middle column a 44px floor, not a fixed height", () => {
-    expect(declared(sel(".books-chapter-mid"), "min-height")).toBe("44px");
-    expect(declaredAnywhere(sel(".books-chapter-mid"), "height")).toEqual([]);
-    expect(declaredAnywhere(sel(".books-chapter-mid"), "max-height")).toEqual(
-      []
-    );
+    expect(declared(".books-chapter-mid", "min-height")).toBe("44px");
+    expect(declaredAnywhere(".books-chapter-mid", "height")).toEqual([]);
+    expect(declaredAnywhere(".books-chapter-mid", "max-height")).toEqual([]);
   });
 
   it("gives the row the design's 68px as a floor, 12 + 44 + 12, and lets it grow", () => {
-    const row = sel(".books-chapter");
+    const row = ".books-chapter";
     expect(declared(row, "min-height")).toBe("68px");
     expect(declaredAnywhere(row, "height")).toEqual([]);
     expect(declaredAnywhere(row, "max-height")).toEqual([]);

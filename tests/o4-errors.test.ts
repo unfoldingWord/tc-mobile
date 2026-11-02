@@ -6,12 +6,7 @@ import { PermissionPanel } from "@/components/permission-panel";
 import { SaveFailed } from "@/components/save-failed";
 import { strings } from "@/lib/strings";
 
-import {
-  areaScope,
-  areaSelector,
-  readAreaCss,
-  scopeDeclarations,
-} from "./o4-area-css";
+import { areaScope, readAreaCss, scopeDeclarations } from "./o4-area-css";
 import { one, render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -175,10 +170,10 @@ describe("3-components/errors.css", () => {
   // #1747 (from #1630): each weight reads the type-scale primitive, not a
   // literal number.
   it.each([
-    [areaSelector("errors", ".o4-err-title"), "var(--p-weight-heavy)"],
-    [areaSelector("errors", ".o4-err-sub"), "var(--p-weight-strong)"],
-    [areaSelector("errors", ".o4-err-step"), "var(--p-weight-strong)"],
-    [areaSelector("errors", ".o4-err-step::before"), "var(--p-weight-heavy)"],
+    [".o4-err-title", "var(--p-weight-heavy)"],
+    [".o4-err-sub", "var(--p-weight-strong)"],
+    [".o4-err-step", "var(--p-weight-strong)"],
+    [".o4-err-step::before", "var(--p-weight-heavy)"],
   ])("%s takes its font-weight from a token", (selector, token) => {
     expect(declarationValue(cssRule(css, selector), "font-weight")).toBe(token);
   });

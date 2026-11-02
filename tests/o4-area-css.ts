@@ -42,31 +42,6 @@ export function readAreaCss(file: Area | "index"): string {
 }
 
 /**
- * The prefix each area file's selectors carry today. #954's flatten slices
- * remove the standalone `:root ` from one group of files at a time; each
- * slice flips its own files' entries here, so the readers follow without
- * editing every selector string they hold. The map goes when the last file
- * is flattened.
- */
-const AREA_PREFIX: Readonly<Record<Area, string>> = {
-  books: ":root ",
-  controls: ":root ",
-  dialogs: ":root ",
-  errors: ":root ",
-  menus: ":root ",
-  motion: ":root ",
-  recorder: ":root ",
-  segments: ":root ",
-  share: ":root ",
-  sheets: ":root ",
-};
-
-/** `selector` as `area`'s file spells it: `areaSelector("books", ".books-card")`. */
-export function areaSelector(area: Area, selector: string): string {
-  return `${AREA_PREFIX[area]}${selector}`;
-}
-
-/**
  * The text of one block of an area file: the components layer's own rules by
  * default, or the block at `preludes` inside it (`"@media
  * (prefers-reduced-motion: reduce)"`, `"@keyframes shake"`). `cssScope`
@@ -160,7 +135,7 @@ export function scopeDeclarations(scope: string): [string, string][] {
  * The declaration body of the ONE rule in `scope` whose selector list holds
  * `selector` (whitespace collapsed on both sides), for `declarationValue`.
  * `cssRule` matches a selector only where it opens its rule on its own line;
- * this also finds one member of a list (`:root .books-lifted` in
+ * this also finds one member of a list (`.books-lifted` in
  * `segments.css`'s three-selector lift rule) and a selector Prettier wrapped.
  * Throws on a missing, ambiguous or empty rule, as `cssRule` does.
  */

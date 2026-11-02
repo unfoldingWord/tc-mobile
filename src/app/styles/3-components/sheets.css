@@ -1,4 +1,4 @@
-/* O4 — Bottom sheets and the name sheet (02, G4). Owner: #943. Every selector is prefixed with :root; see 3-components/index.css's header before editing this file. */
+/* O4 — Bottom sheets and the name sheet (02, G4). Owner: #943. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file. */
 
 /* WHAT A "NAME SHEET" IS HERE. Every naming surface in the app (New book, Add
    chapter, and the book, chapter and segment renames, #264/#314/#609) is the
@@ -13,7 +13,7 @@
    own selectable text. tests/o4-sheets.test.ts pins that. */
 @layer components {
   /* The backdrop: O4's dim role, and the sheet docked to the bottom edge. */
-  :root .menu-scrim:has(.name-edit) {
+  .menu-scrim:has(.name-edit) {
     background: var(--s-dim);
     align-items: flex-end;
   }
@@ -21,7 +21,7 @@
   /* The sheet shell: inset 8, radius 26, pad 12/16/20 (design reference §3).
      The safe-area insets move from the drawer's padding into the margin, so
      the sheet clears the home indicator and a landscape notch. */
-  :root .menu-panel:has(.name-edit) {
+  .menu-panel:has(.name-edit) {
     flex: 1 1 auto;
     width: auto;
     height: auto;
@@ -46,10 +46,10 @@
      the whole form rather than the field, so a tap on Confirm, which moves
      focus from the field to the button, does not move the sheet out from
      under the finger. The top margin takes the inset the bottom one gave up. */
-  :root .menu-scrim:has(.name-edit:focus-within) {
+  .menu-scrim:has(.name-edit:focus-within) {
     align-items: flex-start;
   }
-  :root .menu-panel:has(.name-edit:focus-within) {
+  .menu-panel:has(.name-edit:focus-within) {
     margin-top: calc(8px + env(safe-area-inset-top));
   }
 
@@ -67,7 +67,7 @@
      layout keeps the bar's 5px. `touch-action: none` on it and on the header
      row, where a drag also starts, stops the browser taking the finger for a
      pan and cancelling the drag; the body, which scrolls, keeps its own. */
-  :root .menu-grip {
+  .menu-grip {
     display: none;
     flex: none;
     align-self: stretch;
@@ -76,17 +76,17 @@
     margin: -10px 0;
     touch-action: none;
   }
-  :root .menu-grip::before {
+  .menu-grip::before {
     content: "";
     width: 56px;
     height: 5px;
     border-radius: 3px; /* #939 token */
     background: var(--s-edge);
   }
-  :root .menu-panel:has(.name-edit) .menu-grip {
+  .menu-panel:has(.name-edit) .menu-grip {
     display: flex;
   }
-  :root .menu-panel:has(.name-edit) .menu-head {
+  .menu-panel:has(.name-edit) .menu-head {
     touch-action: none;
   }
 
@@ -95,20 +95,20 @@
      release that does not close springs it back. The spring is the only
      motion, and it is off under reduced motion: the sheet goes straight
      home. */
-  :root [data-sheet-drag] {
+  [data-sheet-drag] {
     transform: translateY(var(--sheet-drag-y, 0px));
   }
-  :root [data-sheet-drag="settling"] {
+  [data-sheet-drag="settling"] {
     transition: transform 160ms ease;
   }
   @media (prefers-reduced-motion: reduce) {
-    :root [data-sheet-drag="settling"] {
+    [data-sheet-drag="settling"] {
       transition: none;
     }
   }
 
   /* The sheet title, 20/700. */
-  :root .menu-panel:has(.name-edit) .t-title {
+  .menu-panel:has(.name-edit) .t-title {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -119,14 +119,14 @@
   }
 
   /* The name row: field, then the commit control. */
-  :root .name-edit {
+  .name-edit {
     gap: 12px;
   }
 
   /* The name input, 18/400, radius 12. 18px also stays above the 16px floor
      that keeps iOS Safari from zooming a focused field (3-components.css,
      .name-input). */
-  :root .name-input {
+  .name-input {
     min-height: 60px;
     padding: 0 14px;
     background: var(--s-floor);
@@ -137,7 +137,7 @@
 
   /* The commit control as G4's green check, 80 × 80 on the done role. Busy
      and guided marks come from 3-components.css unchanged. */
-  :root .name-edit > .control {
+  .name-edit > .control {
     flex: none;
     width: 80px;
     height: 80px;
@@ -152,7 +152,7 @@
      band that clears the global focus outline (offset + its 2px width, from
      globals.css) by 2px, so focus, gap and guide read as three separate
      bands. The sheet's 16px side and 20px bottom padding hold the ring. */
-  :root .name-edit > .control.is-guided {
+  .name-edit > .control.is-guided {
     box-shadow:
       0 0 0 calc(var(--c-focus-offset) + 4px) var(--s-surface),
       0 0 0 calc(var(--c-focus-offset) + 4px + var(--c-guide-ring))
@@ -161,8 +161,8 @@
 
   /* The rule above outranks 3-components.css's inert kill on specificity, so
      a guided control nobody can tap keeps it off here too. */
-  :root [inert] .name-edit > .control.is-guided,
-  :root .name-edit > .control.is-guided[inert] {
+  [inert] .name-edit > .control.is-guided,
+  .name-edit > .control.is-guided[inert] {
     box-shadow: none;
   }
 }

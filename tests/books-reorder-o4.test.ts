@@ -9,7 +9,7 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
-import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { areaRule, areaScope } from "./o4-area-css";
 import { declarationValue } from "./support";
 
 /**
@@ -480,19 +480,18 @@ describe("3-components/books.css: the lift (§3, §4)", () => {
   // than reading whichever comes first.
   const main = areaScope("books");
   const motion = areaScope("books", "@media (prefers-reduced-motion: reduce)");
-  const sel = (selector: string) => areaSelector("books", selector);
   /** What `selector`'s rule in `scope` declares for `property`. */
   const value = (scope: string, selector: string, property: string) =>
     declarationValue(areaRule(scope, selector), property).replace(/\s+/g, " ");
 
   it("lifts the row at scale 1.03 on z 8 and slides the neighbours over 160 ms", () => {
-    const lifted = sel(".books-chapters[data-reordering] > .books-lifted");
+    const lifted = ".books-chapters[data-reordering] > .books-lifted";
     expect(value(main, lifted, "z-index")).toBe("8");
     expect(value(main, lifted, "transform")).toBe(
       "translateY(var(--reorder-y, 0px)) scale(1.03)"
     );
     expect(value(main, lifted, "transition")).toBe("none");
-    const item = sel(".books-chapters[data-reordering] > li");
+    const item = ".books-chapters[data-reordering] > li";
     expect(value(main, item, "transform")).toBe(
       "translateY(var(--reorder-y, 0px))"
     );
@@ -500,24 +499,20 @@ describe("3-components/books.css: the lift (§3, §4)", () => {
   });
 
   it("gives a lifted chapter row the raised ground (§3)", () => {
-    expect(
-      value(main, sel(".books-lifted > .books-chapter"), "background")
-    ).toBe("var(--s-raised)");
+    expect(value(main, ".books-lifted > .books-chapter", "background")).toBe(
+      "var(--s-raised)"
+    );
   });
 
   it("casts the lift shadow from 3-components/segments.css's one rule, on the item rather than the guided button", () => {
-    expect(
-      value(
-        areaScope("segments"),
-        areaSelector("segments", ".books-lifted"),
-        "box-shadow"
-      )
-    ).toBe("0 14px 30px rgba(0, 0, 0, 0.38)");
+    expect(value(areaScope("segments"), ".books-lifted", "box-shadow")).toBe(
+      "0 14px 30px rgba(0, 0, 0, 0.38)"
+    );
   });
 
   it("drops the slide under reduced motion", () => {
     expect(
-      value(motion, sel(".books-chapters[data-reordering] > li"), "transition")
+      value(motion, ".books-chapters[data-reordering] > li", "transition")
     ).toBe("none");
   });
 });

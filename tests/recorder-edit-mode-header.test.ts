@@ -16,7 +16,7 @@ import type { SegmentId } from "@/types/domain";
 
 import { render } from "./render";
 import { mountInteractive, type InteractiveMount } from "./interactive-mount";
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope } from "./o4-area-css";
 import { cssRule, declarationValue, restingErase } from "./support";
 
 // Hoisted mocks for the interactive header render below (`vi.mock` runs
@@ -396,8 +396,8 @@ describe("the Editing marker's corner (#1243)", () => {
 
   it("takes the stamp's corner", () => {
     const o4 = areaScope("recorder");
-    const marker = cssRule(o4, areaSelector("recorder", ".recorder-editing"));
-    const stamp = cssRule(o4, areaSelector("recorder", ".recorder-stamp"));
+    const marker = cssRule(o4, ".recorder-editing");
+    const stamp = cssRule(o4, ".recorder-stamp");
     for (const property of ["top", "inset-inline-end", "z-index"]) {
       expect(declarationValue(marker, property), property).toBe(
         declarationValue(stamp, property)

@@ -11,7 +11,6 @@ import type { SegmentRow as Row } from "@/types/view";
 
 import {
   areaScope,
-  areaSelector,
   declsFor,
   fileRules,
   readAreaCss,
@@ -241,10 +240,9 @@ describe("3-components/segments.css (#944)", () => {
   // selector or a primitive must not satisfy, or trip, a check below
   // (AGENTS.md, the share-scrim trap).
   const layer = areaScope("segments");
-  const sel = (selector: string) => areaSelector("segments", selector);
   /** What `selector`'s one rule in the layer declares for `property`. */
   const value = (selector: string, property: string) =>
-    declsFor(layer, sel(selector)).get(property);
+    declsFor(layer, selector).get(property);
 
   it("holds its rules inside the components layer", () => {
     expect(scopeRules(layer).length).toBeGreaterThanOrEqual(10);
@@ -291,7 +289,7 @@ describe("3-components/segments.css (#944)", () => {
     // block nested in the file, so every `.row` rule is read, not only the
     // layer's own.
     const rowRules = fileRules("segments").filter((r) =>
-      r.selectors.includes(sel(".row"))
+      r.selectors.includes(".row")
     );
     expect(rowRules.length).toBeGreaterThanOrEqual(1);
     for (const { body } of rowRules) {

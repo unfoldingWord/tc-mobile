@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { CoverTile, O4BookHead, O4CoverPick } from "@/components/o4-book-menu";
 import { COVER_COLOUR_KEYS } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
-import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { areaRule, areaScope } from "./o4-area-css";
 import { one, render } from "./render";
 import { declarationValue } from "./support";
 
@@ -117,7 +117,7 @@ describe("the book menu's rules", () => {
   /** What `selector`'s one rule in `area` declares for `property`. */
   const value = (area: "books" | "menus", selector: string, property: string) =>
     declarationValue(
-      areaRule(area === "books" ? books : menus, areaSelector(area, selector)),
+      areaRule(area === "books" ? books : menus, selector),
       property
     );
 

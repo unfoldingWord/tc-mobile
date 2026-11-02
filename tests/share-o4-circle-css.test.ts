@@ -4,7 +4,6 @@ import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
 
 import {
   areaScope,
-  areaSelector,
   declsFor,
   fileRules,
   readAreaCss,
@@ -54,10 +53,8 @@ function valueFor(selector: string, prop: string): string | undefined {
   ).toBeLessThanOrEqual(1);
   return hits[0]?.decls.get(prop);
 }
-
-const sel = (selector: string) => areaSelector("share", selector);
 const outcome = (s: ShareSettled | "busy", part: string) =>
-  sel(`.share-scrim[data-outcome="${s}"] ${part}`);
+  `.share-scrim[data-outcome="${s}"] ${part}`;
 
 /** D16's table, plus D14 (sent) and D15 (busy), as core / glyph ink. */
 const CORE: Record<ShareSettled | "busy", readonly [string, string]> = {
@@ -88,8 +85,8 @@ describe("O4 share circle stylesheet (#947)", () => {
   });
 
   it("the resting core is the send core with white ink (D14, D15)", () => {
-    expect(valueFor(sel(".share-o4-core"), "background")).toBe("var(--s-send)");
-    expect(valueFor(sel(".share-o4-glyph"), "color")).toBe("var(--s-tile-ink)");
+    expect(valueFor(".share-o4-core", "background")).toBe("var(--s-send)");
+    expect(valueFor(".share-o4-glyph", "color")).toBe("var(--s-tile-ink)");
   });
 
   it("every outcome's core and glyph ink follow D16's table", () => {
@@ -113,31 +110,29 @@ describe("O4 share circle stylesheet (#947)", () => {
     for (const s of [...SHARE_SETTLED, "busy" as const])
       if (s !== "sent" && s !== "partial")
         expect(ring(s), `${s} should draw no ring`).toBeUndefined();
-    expect(valueFor(sel(".share-o4-frame"), "box-shadow")).toBeUndefined();
+    expect(valueFor(".share-o4-frame", "box-shadow")).toBeUndefined();
   });
 
   it("keeps the workbench geometry: 140 core in a 176 frame, ring starting at twelve o'clock", () => {
     for (const prop of ["width", "height"]) {
-      expect(valueFor(sel(".share-o4-frame"), prop), prop).toBe("176px");
-      expect(valueFor(sel(".share-o4-core"), prop), prop).toBe("140px");
+      expect(valueFor(".share-o4-frame", prop), prop).toBe("176px");
+      expect(valueFor(".share-o4-core", prop), prop).toBe("140px");
     }
-    expect(valueFor(sel(".share-o4-ring"), "transform")).toBe("rotate(-90deg)");
+    expect(valueFor(".share-o4-ring", "transform")).toBe("rotate(-90deg)");
   });
 
   it("the progress ring fills in the send-ring colour over a well track", () => {
-    expect(valueFor(sel(".share-o4-track"), "stroke")).toBe("var(--s-well)");
-    expect(valueFor(sel(".share-o4-fill"), "stroke")).toBe(
-      "var(--s-send-ring)"
-    );
+    expect(valueFor(".share-o4-track", "stroke")).toBe("var(--s-well)");
+    expect(valueFor(".share-o4-fill", "stroke")).toBe("var(--s-send-ring)");
   });
 
   it("chips: 38px circles in the workbench's wrapping row (D21)", () => {
-    const chip = sel(".share-o4-chip");
+    const chip = ".share-o4-chip";
     expect(valueFor(chip, "width")).toBe("38px");
     expect(valueFor(chip, "height")).toBe("38px");
     expect(valueFor(chip, "border-radius")).toBe("50%");
-    expect(valueFor(sel(".share-o4-chips"), "flex-wrap")).toBe("wrap");
-    expect(valueFor(sel(".share-o4-chips"), "gap")).toBe("10px");
+    expect(valueFor(".share-o4-chips", "flex-wrap")).toBe("wrap");
+    expect(valueFor(".share-o4-chips", "gap")).toBe("10px");
   });
 
   it("a waiting chip draws exactly as a chip that stays: no rule names either state (Q1, vShare)", () => {
@@ -151,12 +146,12 @@ describe("O4 share circle stylesheet (#947)", () => {
     expect(named).toEqual([]);
     // A floor, so a parse that finds no chip rule at all cannot pass above.
     expect(
-      RULES.filter((r) => r.selectors.includes(sel(".share-o4-chip")))
+      RULES.filter((r) => r.selectors.includes(".share-o4-chip"))
     ).toHaveLength(1);
   });
 
   it("chips: grey with faint ink unless finished (send, white ink) or current (amber) (D21 as corrected)", () => {
-    const chip = sel(".share-o4-chip");
+    const chip = ".share-o4-chip";
     // The base chip: an item that does not go out, and, while packing, a
     // go-out item still waiting (the workbench's vShare gives both no class).
     expect(valueFor(chip, "background")).toBe("var(--s-well)");
@@ -187,7 +182,7 @@ describe("O4 share circle stylesheet (#947)", () => {
 });
 
 describe("a long book's chip row is bounded and scrolls (DRI pick (a) on #1023)", () => {
-  const chips = sel(".share-o4-chips");
+  const chips = ".share-o4-chips";
 
   it("caps the row at three rows of chips and scrolls inside it", () => {
     // Three 38px rows and the two 10px gaps between them.
@@ -200,11 +195,11 @@ describe("a long book's chip row is bounded and scrolls (DRI pick (a) on #1023)"
   it("gives up height before the circle or the status line does", () => {
     // The panel never grows past the scrim; inside it only the chip row
     // shrinks (min-height 0), while the frame and the text keep their size.
-    expect(valueFor(sel(".share-progress"), "max-height")).toBe("100%");
+    expect(valueFor(".share-progress", "max-height")).toBe("100%");
     expect(valueFor(chips, "min-height")).toBe("0");
     expect(valueFor(chips, "flex")).toBe("0 1 auto");
-    expect(valueFor(sel(".share-o4-frame"), "flex")).toBe("none");
-    expect(valueFor(sel(".share-progress-text"), "flex")).toBe("none");
+    expect(valueFor(".share-o4-frame", "flex")).toBe("none");
+    expect(valueFor(".share-progress-text", "flex")).toBe("none");
   });
 
   it("smooth-scrolls only when reduced motion is not asked for", () => {

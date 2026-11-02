@@ -9,7 +9,7 @@ import {
 } from "@/lib/audio/mic-retry";
 import { strings } from "@/lib/strings";
 
-import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { areaRule, areaScope } from "./o4-area-css";
 import { one, render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -19,12 +19,9 @@ import { cssRule, declarationValue } from "./support";
  * hook; the stylesheet reads show the rule and its reduced-motion off switch.
  * Nothing here runs an animation in a browser.
  */
-const SELECTOR = areaSelector("motion", ".o4-err-body[data-refused]");
+const SELECTOR = ".o4-err-body[data-refused]";
 /** The delete ask's head shakes on the same rule (#1089 reused it). */
-const DELETE_HEAD = areaSelector(
-  "motion",
-  ".books-delete-ask > .o4-sheet-head"
-);
+const DELETE_HEAD = ".books-delete-ask > .o4-sheet-head";
 const REDUCED = "@media (prefers-reduced-motion: reduce)";
 
 const panel = (settingsPlatform: "android-app" | "ios-app" | null) =>

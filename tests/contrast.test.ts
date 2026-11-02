@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./o4-area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -380,7 +380,7 @@ describe("the chapter-play ring fill clears the non-text floor (#1469)", () => {
   const booksCss = areaScope("books");
 
   it("the ring paints its fill with --s-voice, so this pin scores the real paint", () => {
-    const ring = cssRule(booksCss, areaSelector("books", ".books-play-ring"));
+    const ring = cssRule(booksCss, ".books-play-ring");
     const background = declarationValue(ring, "background");
     expect(background).toMatch(/^conic-gradient\(\s*var\(--s-voice\)\s+calc\(/);
   });
@@ -655,10 +655,7 @@ describe("the trim selection has its own blue, --s-select (#1471)", () => {
     const recorder = areaScope("recorder");
     const band = cssRule(components, ".selection-band");
     const stem = cssRule(components, ".selection-stem");
-    const knob = cssRule(
-      recorder,
-      areaSelector("recorder", ".selection-handle::after")
-    );
+    const knob = cssRule(recorder, ".selection-handle::after");
 
     it("the band fill is a 20% wash of --s-select", () => {
       expect(declarationValue(band, "background")).toBe(
@@ -682,7 +679,7 @@ describe("the trim selection has its own blue, --s-select (#1471)", () => {
       // of recorder.css is read, every nested block included.
       const knobs = selectorDeclarations(
         "recorder",
-        areaSelector("recorder", ".selection-handle::after")
+        ".selection-handle::after"
       ).map(([property, value]) => `${property}: ${value}`);
       for (const rule of [band, stem, ...knobs]) {
         expect(stripCssComments(rule)).not.toMatch(

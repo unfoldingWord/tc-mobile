@@ -10,7 +10,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
-import { areaScope, areaSelector, declsFor } from "./o4-area-css";
+import { areaScope, declsFor } from "./o4-area-css";
 import { render } from "./render";
 import { restingErase } from "./support";
 
@@ -521,28 +521,25 @@ describe("3-components/segments.css: the lift (§3, §4)", () => {
     "segments",
     "@media (prefers-reduced-motion: reduce)"
   );
-  const sel = (selector: string) => areaSelector("segments", selector);
 
   it("lifts the row at scale 1.03 on z 8 and slides the neighbours over 160 ms", () => {
     const lifted = declsFor(
       main,
-      sel(".segments-list[data-reordering] > .segments-item--lifted")
+      ".segments-list[data-reordering] > .segments-item--lifted"
     );
     expect(lifted.get("z-index")).toBe("8");
     expect(lifted.get("transform")).toBe(
       "translateY(var(--reorder-y, 0px)) scale(1.03)"
     );
     expect(lifted.get("transition")).toBe("none");
-    const item = declsFor(main, sel(".segments-list[data-reordering] > li"));
+    const item = declsFor(main, ".segments-list[data-reordering] > li");
     expect(item.get("transform")).toBe("translateY(var(--reorder-y, 0px))");
     expect(item.get("transition")).toBe("transform 160ms ease");
   });
 
   it("drops the slide under reduced motion", () => {
     expect(
-      declsFor(motion, sel(".segments-list[data-reordering] > li")).get(
-        "transition"
-      )
+      declsFor(motion, ".segments-list[data-reordering] > li").get("transition")
     ).toBe("none");
   });
 });

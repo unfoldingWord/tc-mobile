@@ -21,7 +21,6 @@ import type { BookCard, ChapterRow } from "@/types/view";
 import {
   areaRule,
   areaScope,
-  areaSelector,
   readAreaCss,
   scopeDeclarations,
   scopeRules,
@@ -222,8 +221,7 @@ const NARROWEST_VIEWPORT = 320;
  */
 function narrowestDotColumn(): number {
   const books = areaScope("books");
-  const rule = (selector: string) =>
-    declarations(areaRule(books, areaSelector("books", selector)));
+  const rule = (selector: string) => declarations(areaRule(books, selector));
   const shell = declarations(
     cssRule(cssCode("src/app/styles/3-components.css"), ".app-shell")
   )
@@ -636,7 +634,6 @@ describe("3-components/books.css (#942)", () => {
   // whole file, every nested block included.
   const layer = areaScope("books");
   const rules = scopeRules(layer);
-  const sel = (selector: string) => areaSelector("books", selector);
 
   /** The value `selector`'s rule declares for `property`, primitives resolved. */
   const block = (selector: string, property: string) =>
@@ -672,9 +669,9 @@ describe("3-components/books.css (#942)", () => {
     // own selector that sets one would out-specify it and erase the ring —
     // in the layer or in any block nested in the file.
     for (const selector of [
-      sel(".books-card-hit"),
-      sel(".books-chapter"),
-      sel(".books-ghost"),
+      ".books-card-hit",
+      ".books-chapter",
+      ".control.books-ghost",
     ]) {
       const properties = selectorDeclarations("books", selector).map(
         ([property]) => property
@@ -686,7 +683,7 @@ describe("3-components/books.css (#942)", () => {
   it("carries the issue's geometry", () => {
     const geometry: [string, Record<string, string>][] = [
       [".books-header", { height: "56px" }],
-      [".books-ghost", { width: "44px", height: "48px" }],
+      [".control.books-ghost", { width: "44px", height: "48px" }],
       [
         ".books-card",
         {
@@ -729,7 +726,7 @@ describe("3-components/books.css (#942)", () => {
     ];
     for (const [selector, declared] of geometry) {
       for (const [property, value] of Object.entries(declared)) {
-        expect(block(sel(selector), property), `${selector} ${property}`).toBe(
+        expect(block(selector, property), `${selector} ${property}`).toBe(
           value
         );
       }
