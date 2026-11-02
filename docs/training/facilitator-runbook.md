@@ -67,7 +67,10 @@ default, the text there says to keep using it.
 
    **Every phone has the same look.** Open any menu: its top corner shows a
    **✕**. Menus also close by dragging them down, and the screen headers carry
-   tappable book and chapter names. <!-- source: gh PR #1363 (deleted the earlier look and the design switch, first in tester-build-v1.1.0); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`) and its drag to close (#1268); src/components/o4-crumbs.tsx; not device-verified -->
+   tappable book and chapter names. A phone whose stamp still shows 1.0.1 or
+   older may show **‹**, **≡** or **⋮** there instead; update it over the top
+   as above — do not reinstall to change the look, because that deletes every
+   recording. <!-- source: gh PR #1363 (deleted the earlier look and the design switch, first in tester-build-v1.1.0); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`) and its drag to close (#1268); src/components/o4-crumbs.tsx; not device-verified -->
 
 ## 2. Setting up a participant's phone
 
@@ -153,8 +156,9 @@ default, the text there says to keep using it.
    build at least as new as the one it last opened is installed over it
    (AGENTS.md, "Confirming a deploy and rolling one back" is the one statement
    of this: "A rollback is not free once a phone has opened a build with a newer
-   database schema"). Opening 1.2.2 over a 1.1.x build is such a change (§3,
-   "What is new in 1.2"). If the app says "This copy is out of date" and restarting does
+   database schema"). Opening 1.2.2 over any older build — a 1.0.1 store
+   phone or a 1.1.x tester phone — is such a change (§3, "What is new in
+   1.2"). If the app says "This copy is out of date" and restarting does
    not clear it, do not uninstall, because
    that deletes every recording. Write down the stamp and what you saw, as in
    section 5, and report it. (On Android, the phone itself refuses to install
@@ -488,15 +492,16 @@ tester-build-v1.2.2 (published 2026-10-30; "Known limits": "None of this build's
 changes has been run on a phone yet"); git log tester-build-v1.2.2..HEAD for
 what is later -->
 
-**The first time 1.2.2 opens over a 1.1.x build, it upgrades the app's stored
-data.** The upgrade has not been run on a phone. Before updating a phone that
+**The first time 1.2.2 opens over an older build — a 1.0.1 store phone or a
+1.1.x tester phone — it upgrades the app's stored data.** The upgrade has not been run on a phone. Before updating a phone that
 matters, share what is on it. After updating, check that the stamp starts
 `v1.2.2`, that every book is there in its old order, and that an older
 recording still plays. Do not put an older build back and do not uninstall to
 clear a problem: §2 says what to do, and AGENTS.md, "Confirming a deploy and
 rolling one back", is the one statement of why. <!-- source: tester-build-v1.2.2
 notes; AGENTS.md "A rollback is not free once a phone has opened a build with a
-newer database schema" -->
+newer database schema" (v1.1.0 moved the schema from 9 to 11 and v1.2.0 from 11
+to 14, so 1.0.1 and 1.1.x are both older than 1.2.2's schema) -->
 
 - **A Settings screen.** A gear in the Books header opens it. It holds the light
   and dark choice, "Always show chapter numbers", and "Even out the volume when
@@ -551,8 +556,11 @@ newer database schema" -->
   same name as another is refused. <!-- source: tester-build-v1.2.2 notes ("Changed") -->
 - **The recorder stops by itself after five seconds of exact silence** and
   saves what it captured. This is for a microphone that goes dead without
-  telling the app. A very quiet pause could also trigger it, so write down any
-  time that happens. <!-- source: tester-build-v1.2.2 notes ("Changed"); §5 -->
+  telling the app. It reacts only to exact digital silence (every sample zero),
+  not to a quiet pause, which still carries the microphone's noise. That a
+  phone never sends exact silence during a real pause has not been checked on
+  a phone, so write down any time it stops a recording while someone was
+  speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS = 5000; the no-zeros-in-a-pause assumption is checked by the #1294 device sheet); §5 -->
 - **A recording waiting at launch is saved quietly.** If the app closed while a
   recording was waiting to be saved, the next launch saves it, with no screen,
   if its saved copy is intact. It writes one line in the problem record that
