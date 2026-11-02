@@ -226,8 +226,8 @@ committed. So the name is exclusive:
   rename to `<name>` never replaces an existing file. If the `.part` cannot be
   created, the attempt fails as in row S1. If `<name>` exists at the rename,
   the check has already passed, so the attempt fails as in row S1c: it keeps
-  its `.part` and reports it unless a durable copy of the take (the keep
-  rule) exists.
+  its `.part` and reports it unless a durable copy of the take (the delete
+  predicate) exists.
 - A `clipId` is a `crypto.randomUUID()` (`clips.ts:14`), one safe path segment.
 
 Tests (commit-protocol child), read off the rule above: "a retry in a later
@@ -280,7 +280,9 @@ kept and reported.**
 > - **(b)** some other durable copy of the take these bytes hold is identified
 >   for every dependent take, and the set of dependents is not empty. A durable
 >   copy is a complete pending row, a final disposition, or a named file that
->   passes its own length and CRC32 read-back (below, per dependent).
+>   passes its own length and CRC32 read-back (below, per dependent). For a `.part`, the named file must match the
+>   `.part`'s length and CRC32: a named file holding other bytes for the same
+>   `clipId` is not a copy of it.
 >
 > Otherwise the file is kept and reported to the failure log. **An empty
 > dependent set is not a copy. Bytes held only in memory are not a copy. A
