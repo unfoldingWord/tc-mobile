@@ -3604,7 +3604,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             where the sheet is already inert — deliberately so: this gate states
             the header's own invariant rather than depending on the sheet's. */}
           <header
-            className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[2px]"
+            className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[var(--c-header-pad-y)]"
             inert={overlayUp || undefined}
           >
             <Control
@@ -3777,17 +3777,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           ) : (
             <>
               {stopError && (
-                <div className="px-[12px] pt-[var(--p-space-3)]">
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
                   <Notice>{stopError}</Notice>
                 </div>
               )}
               {editor.error && (
-                <div className="px-[12px] pt-[var(--p-space-3)]">
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
                   <Notice>{strings.editFailed}</Notice>
                 </div>
               )}
               {eraseFailure && (
-                <div className="px-[12px] pt-[var(--p-space-3)]">
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
                   {/* strings[key] (#172 part 2), not the fixed eraseFailed
                     sentence for every key — a full disk gets `noRoom`'s
                     actionable copy instead of the generic erase failure. */}
@@ -4169,7 +4169,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // only animates while a take is live and rests empty otherwise —
                 // the sheet never re-renders per frame (D-LEVEL-PULL: it polls
                 // `audio.readLevel` on its own clock).
-                <div className="px-[16px]">
+                <div className="px-[var(--c-meter-pad-x)]">
                   <VuMeter
                     readLevel={audio.readLevel}
                     // Per-frame trust signal (#76): a wired tap whose context goes
@@ -4362,7 +4362,7 @@ export function LoadErrorPanel({
   return (
     <div
       role="alert"
-      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
+      className="flex flex-1 flex-col items-center justify-center gap-[var(--c-panel-gap)] px-[var(--c-panel-pad-x)] text-center"
     >
       <span className="text-live">
         <Icon name="alert" size={52} />
@@ -4445,7 +4445,7 @@ function SaveDecodeFailedPanel({
   return (
     <div
       role="alert"
-      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
+      className="flex flex-1 flex-col items-center justify-center gap-[var(--c-panel-gap)] px-[var(--c-panel-pad-x)] text-center"
     >
       <span className="text-live">
         <Icon name="alert" size={52} />
@@ -4521,7 +4521,7 @@ function SaveDecodeFailedPanel({
           />
         </>
       ) : null}
-      <div className="mt-[10px] flex flex-col items-center gap-[var(--p-space-3)]">
+      <div className="mt-[var(--c-panel-actions-inset)] flex flex-col items-center gap-[var(--p-space-3)]">
         <Control
           icon="trash"
           label={
