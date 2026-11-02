@@ -133,7 +133,10 @@ date.
    not keep chapter names, shelf order, colours or the PCM of unfinished
    segments. It is a rescue copy of the sound, not a restore point.
 2. If the zips went to Files > Downloads, pull them:
-   `adb shell ls /sdcard/Download | grep -i zip` and `adb pull /sdcard/Download/<file> /tmp/run-1464/backup/`.
+   `adb shell ls /sdcard/Download | grep -i zip` and `adb pull /sdcard/Download/<file> ~/tc-mobile-rescue-copies/` (run
+   `mkdir -p ~/tc-mobile-rescue-copies` first). That folder is outside `/tmp` and
+   outside the scratch directory on purpose: it may hold the only off-phone copy
+   of real recordings, and no cleanup step in this sheet touches it.
    Open each zip on the machine (`unzip -l`) and count the chapter MP3s against
    what the phone's Books screen shows. Names of books stay in local notes only.
 3. Photograph or screenshot the Books and Segments screens as the "before"
@@ -150,9 +153,8 @@ date.
    colours) and says, in their own words, that they accept losing it
    (**HUMAN**). If an unfinished segment matters and the DRI does not accept
    that, row G is a **stop**: do not run U1.
-6. `/tmp/run-1464/backup/` is a scratch path. If it is the only off-phone copy,
-   the DRI moves it somewhere durable they name (**HUMAN**) before U1, and the
-   notes record that it was moved, not where.
+6. Keep `~/tc-mobile-rescue-copies` until the DRI confirms the recordings are
+   safe elsewhere (**HUMAN**); only the DRI deletes it.
 
 ## Capturing output
 
@@ -326,9 +328,8 @@ route (A or B), build versions installed in order, date.
    from `develop` with the Sprint 6 milestone and `release-notes: N/A`. Run
    `npm run check:pr-body` first.
 3. Do not commit logs, screenshots or the APKs. Delete `/tmp/run-1464` when
-   done, after the comment is posted, **except** `/tmp/run-1464/backup/`:
-   that stays until the DRI confirms a durable copy exists elsewhere
-   (Route B step 6).
+   done, after the comment is posted, and never
+   `~/tc-mobile-rescue-copies` (Route B step 6).
 4. Do not close #1464 from this run; it needs the iPhone entry and the web
    two-copy case.
 
@@ -337,6 +338,7 @@ route (A or B), build versions installed in order, date.
 1. Stop the logcat capture.
 2. Leave the app installed at 1.2.2. Do not uninstall and do not roll back.
 3. Delete the downloaded APKs and any screenshots from the machine's scratch
-   directory once the results are posted. Never delete `backup/` before the
-   DRI confirms a durable copy elsewhere. Leave the throwaway test books on a
+   directory once the results are posted. Never delete
+   `~/tc-mobile-rescue-copies` before the DRI confirms the recordings are safe
+   elsewhere. Leave the throwaway test books on a
    Route A phone unless the DRI asks to remove them in the app.
