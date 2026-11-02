@@ -77,7 +77,7 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
       aria-modal="true"
       aria-labelledby={TITLE_ID}
       aria-describedby={TEACH_ID}
-      className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+      className="flex w-full max-w-md flex-col items-center gap-[var(--c-panel-gap)] px-[var(--c-panel-pad-x)] text-center"
     >
       <span className="text-live">
         <Icon name={mark} size={56} />

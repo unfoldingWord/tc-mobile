@@ -1341,7 +1341,7 @@ export const SegmentsScreen = forwardRef<
   return (
     <div className="flex h-full flex-col gap-[var(--c-gap-items)]">
       <header
-        className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[2px]"
+        className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[var(--c-header-pad-y)]"
         inert={listInert || undefined}
       >
         <Control

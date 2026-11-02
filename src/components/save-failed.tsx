@@ -142,7 +142,7 @@ export function SaveFailed({
       role="alertdialog"
       aria-modal="true"
       aria-label={strings.saveFailedDialog(editOnly)}
-      className="err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+      className="err flex w-full max-w-md flex-col items-center px-[var(--c-panel-pad-x)] text-center"
     >
       {/* The failed state's mark sits in the error circle (#948); while a
           retry is saving, the muted retry glyph stands in for it. */}
@@ -252,7 +252,7 @@ export function SaveFailed({
             </p>
           )}
 
-          <div className="mt-[10px] flex flex-col items-center gap-[var(--p-space-3)]">
+          <div className="mt-[var(--c-panel-actions-inset)] flex flex-col items-center gap-[var(--p-space-3)]">
             <Control
               icon="trash"
               label={discardLabel}

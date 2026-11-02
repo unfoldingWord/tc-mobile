@@ -91,7 +91,7 @@ export function PermissionPanel({
   // prompt-audio path, no helper action), and a control that does nothing is
   // a stub.
   return (
-    <div className="err err-split flex flex-1 flex-col items-center px-[22px] text-center">
+    <div className="err err-split flex flex-1 flex-col items-center px-[var(--c-panel-pad-x)] text-center">
       {/* `data-refused` is the shake's hook (#1089, 3-components/motion.css). It is set
           only while the steps show, which is the `refused` phase, and Retry
           takes the steps away (the phase leaves `refused` at the tap), so each

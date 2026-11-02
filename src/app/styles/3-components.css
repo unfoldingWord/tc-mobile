@@ -78,6 +78,22 @@
     --c-gap-items: var(--p-space-4);
     --c-gap-blocks: var(--p-space-6);
 
+    /* Spacing for the recurring values the components used to spell as
+       arbitrary pixels (#460). Each is named by ROLE, not by value, so two
+       roles that happen to share a number stay separate tokens. The raw px
+       values match no \`--p-space-*\` level (4, 6, 8, 14, 20, 28, 40, 56) and
+       are kept exactly: this is a naming pass, not a rounding one. */
+    --c-panel-pad-x: 22px;
+    --c-panel-gap: 18px;
+    --c-panel-actions-inset: 10px;
+    --c-notice-inset-x: 12px;
+    --c-toolbar-pad-x: 16px;
+    --c-meter-pad-x: 16px;
+    --c-header-pad-y: 2px;
+    --c-empty-pad-x: 24px;
+    --c-licence-gap-tight: 3px;
+    --c-licence-gap-section: 10px;
+
     /* Touch targets never go below 44px — with one standing exception, named
        here rather than left as a claim the tokens contradict (George R5 P3):
        `--c-control-sm` is 40px and is what `.control--quiet` uses, which is

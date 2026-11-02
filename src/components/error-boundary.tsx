@@ -275,7 +275,7 @@ function CrashScreen() {
         aria-modal="true"
         aria-labelledby={TITLE_ID}
         aria-describedby={TEACH_ID}
-        className="err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+        className="err flex w-full max-w-md flex-col items-center px-[var(--c-panel-pad-x)] text-center"
       >
         <span className="err-circle err-circle--warn" aria-hidden="true">
           <Icon name="alert" size={72} />
