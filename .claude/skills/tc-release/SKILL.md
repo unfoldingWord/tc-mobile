@@ -9,12 +9,12 @@ This is a checklist, not authority. Every merge, publish and scope choice is
 the DRI's, asked in a picker and quoted verbatim on the PR it concerns. The
 reference is `docs/release/promotion-v1.0.0.md` §3a (release candidates) and,
 for the production promotion, §3 step 3 (the production gate and its checks),
-with §6 as the summary checklist. Read them before starting. Where this skill
-and the runbook disagree, the runbook wins, and fix this file; for the
-production gate the text that wins is §3 step 3, not a summary of it. The
-runbook is the v1.0.0 plan and names its refs for that release
-(`1.0.0-rc.N`, `v1.0.0`); this file names them generically, and the runbook's
-v1.0.0 names are the worked example of the `vX.Y.Z` forms below.
+with §6 as the summary checklist. Read them before starting. Procedural
+disagreements (a step, a gate, a check, or their order) resolve to the
+runbook, and you fix this file to match it. Version strings resolve to this
+file: `X.Y.Z`, `release/vX.Y.Z` and `tester-build-vX.Y.Z`. The runbook's
+`1.0.0-rc.N` and `v1.0.0` are the historical v1.0.0 example of those forms.
+For the production gate the text that wins is §3 step 3, not a summary of it.
 
 ## Naming and cadence
 
@@ -28,8 +28,8 @@ follows and does not restate beyond these quotes:
 - "The `staging -> main` promotion goes to the DRI as a go/no-go and tags
   `main` with the version it ships. A production hotfix between sprint ends
   is a patch on the shipped minor."
-- "A no-go carries the minor forward (DRI, 2026-10-30: "Carry it forward
-  (Recommended)"). Production stays on its current version."
+- "A no-go carries the minor forward (DRI, 2026-10-30: 'Carry it forward
+  (Recommended)'). Production stays on its current version."
 - "A tester build is a GitHub pre-release tagged `tester-build-vX.Y.Z`", and
   the release branch is `release/vX.Y.Z`.
 
@@ -307,7 +307,7 @@ are written by hand for every release, from the published announcement.
 - [ ] Agent-allowed: tester reports go into issues by kind and source, roles
       only (public repo: no names, places or device-owner details).
 
-## Production promotion additionally (worked example: v1.0.0)
+## Production promotion additionally
 
 Follow runbook §3 and §6; §3 step 3 is the reference for this list. Three
 more commits name it:
