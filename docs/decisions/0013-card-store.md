@@ -23,7 +23,7 @@ the findings comment exists, and rewrites each owed line from it.
 Revised 2026-11-02 to close the four residuals tracked on #1473 (three named
 when [#1785](https://github.com/unfoldingWord/tc-mobile/pull/1785) merged, one
 added after): the state table now decides every delete, a checked `.part` that
-is the only copy is kept, backup recovery records its winner, and a verified
+is the only copy is kept, backup recovery records its winner, and a checked
 read-back precedes any delete of `clipData` or release of a held take. Status
 stays Proposed. The #1472 spike still gates acceptance, and every test name
 below is a planned test, not a test that exists.
@@ -317,7 +317,7 @@ A save to the card, in order:
    the attempt itself still holds the bytes for, row S1), so a session's failed
    writes do not fill the card.
 
-   **Step 1a, the verified read-back.** Still before any transaction, the
+   **Step 1a, the checked read-back.** Still before any transaction, the
    plugin opens `<name>` by its final name, reads it whole, and checks its
    length and CRC32 against the bytes it was given. Step 1's read-back is of
    the `.part`, under another name and before the rename, so it does not show
@@ -325,7 +325,7 @@ A save to the card, in order:
    a `clipData` row, no release of a held take, and no delete of a superseded
    file happens before it. The DRI's pick on #1473 (2026-10-29), verbatim:
    "4th residual on #1473 (Recommended)", which records that ADR 0013 must
-   resolve this before it moves from Proposed to Accepted: a verified
+   resolve this before it moves from Proposed to Accepted: a checked
    read-back of the card file (length and hash) comes before any delete of
    `clipData` or release of the held take. If 1a fails, no transaction opens,
    the held take and any `clipData` bytes are untouched, and the final-named
