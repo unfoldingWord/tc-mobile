@@ -91,8 +91,10 @@ Run each check and paste its output into the notes.
    gh release download tester-build-v1.2.2 --repo unfoldingWord/tc-mobile --pattern app-release.apk --dir /tmp/run-1486
    sha256sum /tmp/run-1486/app-release.apk
    # expect 5092fcfea1163eb80853f95d671dfc38a654876c0ccf9f78d7ec1889a0955744 (from the release notes)
-   adb install -r /tmp/run-1486/app-release.apk
    ```
+
+   A mismatch means stop; do not install. Only after the hash matches:
+   `adb install -r /tmp/run-1486/app-release.apk`.
 
    If an ordinary tester build is already installed and its `versionName` is
    1.2.2 or higher, use it as is. If it is lower than 1.2.2 and holds

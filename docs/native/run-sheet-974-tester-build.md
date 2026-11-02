@@ -57,20 +57,27 @@ Run each check and paste its output into the notes.
    the release notes). If the phone is on 1.2.2 already, go on. If it is on an
    older build, **stop and run `run-sheet-1464-upgrade.md` first**: 1.2.2
    raises the database version from 11 to 14, one way. If it is not installed
-   and the DRI confirms the phone holds nothing that matters:
+   and the DRI confirms the phone holds nothing that matters, download and
+   hash first:
 
    ```
    mkdir -p /tmp/run-974
    gh release download tester-build-v1.2.2 --repo unfoldingWord/tc-mobile --pattern app-release.apk --dir /tmp/run-974
    sha256sum /tmp/run-974/app-release.apk
-   adb install -r /tmp/run-974/app-release.apk
    ```
 
-   The hash must equal the one above. Never `adb install -d`, never uninstall.
+   The hash must equal the one above; a mismatch means stop and do not
+   install. Only then: `adb install -r /tmp/run-974/app-release.apk`. Never
+   `adb install -d`, never uninstall.
    The footer's build stamp on Books must start `v1.2.2` (**HUMAN** reads it).
 
-5. **Throwaway data.** Several rows erase a recording (Record again, Reset,
-   delete). Use only recordings made for this run. **HUMAN** confirms that.
+5. **Throwaway data.** Several rows erase or change data (Record again, Reset,
+   delete, cut, reorder). **HUMAN** confirms which books on the phone were created for this run.
+   **One rule:** if any book on the phone was not created for
+   this run (including books left by the upgrade sheet's Route B), then O2's
+   delete-book, O10's cut, O11's reorder and R5's record-again are
+   `couldn't reach`. They run only inside a book created for this run that
+   holds nothing else.
 6. **Role.** The report is by role, never name: "developer" or "the DRI".
 
 ## Capturing output
@@ -342,8 +349,9 @@ and RAM, build, date, role. One row per item that was run:
   factory reset, or `adb install -d`. Uninstalling deletes the recordings.
   **Clear cache** is allowed only for L5, only on a phone with throwaway
   recordings.
-- **Rows that erase** (O2, R5, delete and Reset) use only recordings made for
-  this run.
+- **Rows that erase or change data** (O2, O10, O11, R5, delete and Reset) obey
+  prerequisite 5's one rule: inside a book created for this run that holds
+  nothing else, or `couldn't reach`.
 - Do not fill a phone's storage to reach S5, S6 or the low-space rows; use a
   phone that is already low, or write `couldn't reach`.
 - Do not provoke a crash or a save failure on purpose (O5).

@@ -62,10 +62,17 @@ Run each check and paste its output into the notes.
    and is a different test).
 5. **The app's current state.** `adb shell dumpsys package org.unfoldingword.tcmobile | grep -E "versionName|versionCode|firstInstallTime|lastUpdateTime"`.
    Package name `org.unfoldingword.tcmobile` is from `capacitor.config.ts`.
-   Three outcomes:
-   - not installed: continue to "Build 1" below;
+   Four outcomes:
+   - not installed: continue to S0 below, after the "Data safety gate"
+     (Route A, since there is nothing to copy);
    - installed with `versionName` `1.1.0` (or another 1.1.x): the phone is
      already at the starting point; go to "Data safety gate";
+   - installed with any `versionName` below 1.1.0 (for example 1.0.x), or any
+     other value that is not 1.1.x: **stop**. This sheet's only copy procedure
+     (the "Data safety gate") runs on a phone that is already at 1.1.x, and the
+     install over a 1.0.x phone would raise its schema before any copy exists.
+     Report it and use another phone. Pre-v9 behaviour stays `couldn't reach`
+     here, with no procedure in this sheet.
    - installed with `versionName` 1.2.x or later: **stop**. The phone has
      already opened a v14 database, so there is nothing to upgrade. Report that
      and use a different phone.
@@ -267,8 +274,7 @@ HUMAN: Share Chapter once. The Android share sheet must open with a file.
   run starts at 11, and `src/lib/storage/db.ts` runs the v9, v10 and v11 steps
   only when `oldVersion` is below them, so nothing here exercises them. Do not
   mark #974's row U passed from this sheet for that part. If the phone is
-  already on 1.0.x, a stop at 1.1.0 first is the same procedure with one more
-  install.
+  already on 1.0.x, stop: see prerequisite 5.
 
 ## Results
 
