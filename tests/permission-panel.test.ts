@@ -75,7 +75,7 @@ describe("PermissionPanel (#276)", () => {
     // sentence is the second line INSIDE the alert, so the refine is still
     // announced by the live region.
     const alert = one(container, '[role="alert"]');
-    expect(one(alert, ".o4-err-sub").textContent).toBe(message);
+    expect(one(alert, ".err-sub").textContent).toBe(message);
     expect(alert.textContent).toBe(strings.micOffTitle + message);
   });
 });

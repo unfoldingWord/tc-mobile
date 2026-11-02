@@ -43,7 +43,7 @@ describe("mic-denied title, O4 (D15)", () => {
   it("reads the O4 key, with no second line, when there is no sentence", () => {
     const alert = alertOf(null);
     expect(alert.textContent).toBe(strings.micOffTitle);
-    expect(alert.querySelector(".o4-err-sub")).toBeNull();
+    expect(alert.querySelector(".err-sub")).toBeNull();
   });
 
   it("keeps the title fixed when a refusal sentence is passed", () => {
@@ -53,10 +53,10 @@ describe("mic-denied title, O4 (D15)", () => {
 
   it("puts the refusal sentence on a second line inside the alert", () => {
     const alert = alertOf(strings.micSiteBlocked);
-    const sub = one(alert, ".o4-err-sub");
+    const sub = one(alert, ".err-sub");
     expect(sub.textContent).toBe(strings.micSiteBlocked);
     // Last, after the title, so it reads as the line under it.
     expect(alert.lastChild).toBe(sub);
-    expect(alert.querySelectorAll(".o4-err-sub")).toHaveLength(1);
+    expect(alert.querySelectorAll(".err-sub")).toHaveLength(1);
   });
 });

@@ -36,7 +36,7 @@ import {
   O4BookHead,
   O4CoverPick,
 } from "./o4-book-menu";
-import { MoveTiles, Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { MoveTiles, Tile, TileGrid, TileSpacer } from "./tile-menu";
 import { Notice } from "./notice";
 import { isNativeShell } from "@/hooks/share-target";
 import { SquareButton } from "./o4-controls";

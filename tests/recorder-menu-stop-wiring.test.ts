@@ -158,7 +158,7 @@ describe("the recorder's ⋮ menu Stop tile (#369)", () => {
     const tile = byLabel(panel, strings.stop);
     expect(tile, "the menu's Stop tile").toBeDefined();
     // The first tile in the drawer (the DRI's "first row").
-    expect(panel.querySelector("button.o4-tile")).toBe(tile);
+    expect(panel.querySelector("button.tile")).toBe(tile);
     await act(async () => tile!.click());
     expect(document.querySelector(".menu-panel")).toBeNull();
     expect(stopRecording).toHaveBeenCalledTimes(1);

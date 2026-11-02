@@ -185,7 +185,7 @@ function dialog(name: string): HTMLElement | null {
 const bookSheet = () => dialog(strings.bookMenuTitle);
 const appMenu = () => dialog(strings.menuTitle);
 function tilesIn(el: HTMLElement): HTMLButtonElement[] {
-  return [...el.querySelectorAll<HTMLButtonElement>(".o4-tiles button")];
+  return [...el.querySelectorAll<HTMLButtonElement>(".tiles button")];
 }
 function swatch(name: string): HTMLButtonElement {
   const found = [
@@ -201,7 +201,7 @@ describe("O4: the book menu on the tile grid (04)", () => {
     await openFrom(strings.bookMenuOpen("Mark"));
     const sheet = bookSheet();
     expect(sheet).not.toBeNull();
-    const grid = sheet!.querySelector(".o4-tiles");
+    const grid = sheet!.querySelector(".tiles");
     expect(grid, "the sheet holds one tile grid").not.toBeNull();
     const labels = tilesIn(sheet!).map((t) => t.getAttribute("aria-label"));
     expect(labels).toEqual([
@@ -215,17 +215,17 @@ describe("O4: the book menu on the tile grid (04)", () => {
     ]);
     // Delete sits past the spacer, at the far end, as the workbench draws it.
     const kids = [...grid!.children];
-    const gapAt = kids.findIndex((k) => k.classList.contains("o4-tiles-gap"));
+    const gapAt = kids.findIndex((k) => k.classList.contains("tiles-gap"));
     const deleteAt = kids.findIndex((k) =>
       k.contains(button(strings.deleteBook))
     );
     expect(gapAt).toBeGreaterThan(-1);
     expect(deleteAt).toBe(gapAt + 1);
-    expect(button(strings.deleteBook).classList).toContain("o4-tile--erase");
+    expect(button(strings.deleteBook).classList).toContain("tile--erase");
     // Rename is the head's pencil, beside the book's small cover and name.
     const pen = button(strings.renameBook);
     expect(pen.classList).toContain("o4-head-pen");
-    expect(pen.closest(".o4-tiles")).toBeNull();
+    expect(pen.closest(".tiles")).toBeNull();
     const bar = pen.closest(".o4-sheet-bar");
     expect(bar?.querySelector(".books-sheet-name")?.textContent).toBe("Mark");
   });
@@ -259,10 +259,10 @@ describe("O4: the book menu on the tile grid (04)", () => {
     await openFrom(strings.bookMenuOpen("Mark"));
     await click(strings.deleteBook);
     expect(document.activeElement).toBe(button(strings.keepBook));
-    expect(bookSheet()!.querySelector(".o4-tiles")).toBeNull();
+    expect(bookSheet()!.querySelector(".tiles")).toBeNull();
     await click(strings.keepBook);
     expect(document.activeElement).toBe(button(strings.deleteBook));
-    expect(button(strings.deleteBook).classList).toContain("o4-tile");
+    expect(button(strings.deleteBook).classList).toContain("tile");
   });
 });
 
@@ -360,7 +360,7 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     await openFrom(strings.menuOpen);
     const menu = appMenu();
     expect(menu).not.toBeNull();
-    const grid = menu!.querySelector(".o4-tiles");
+    const grid = menu!.querySelector(".tiles");
     expect(grid).not.toBeNull();
     const tiles = tilesIn(menu!);
     expect(tiles).toHaveLength(2);
@@ -368,7 +368,7 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     // The Template Library tile (#246), after About.
     expect(templates.getAttribute("aria-label")).toBe(strings.templatesOpen);
     expect(about.getAttribute("aria-label")).toBe(strings.aboutOpen);
-    expect(about.classList).toContain("o4-tile--plain");
+    expect(about.classList).toContain("tile--plain");
     const caption = about.querySelector(".control-caption")?.textContent;
     expect(caption).toBeTruthy();
     expect(about.getAttribute("aria-label")!.toLowerCase()).toContain(

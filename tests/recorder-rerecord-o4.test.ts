@@ -340,7 +340,7 @@ describe("the record-again confirm (G5, #979)", () => {
     expect(document.querySelector(".confirm-panel")).toBeNull();
     // The take is kept, so the refusal is the in-place notice, not the
     // full-body panel that replaces an empty segment's sheet.
-    expect(document.querySelector(".o4-err")).toBeNull();
+    expect(document.querySelector(".err")).toBeNull();
     expect(container.textContent).toContain("Microphone blocked");
     expect(barRerecord().getAttribute("aria-label")).toBe(strings.rerecord);
   });

@@ -1,6 +1,6 @@
 /* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
 
-   #941's half: the tile primitive (`components/o4-tile-menu.tsx`) and the
+   #941's half: the tile primitive (`components/tile-menu.tsx`) and the
    bottom-sheet shell a menu takes on while it holds a tile grid. #949
    appends its per-menu rules below; it does not restructure these.
 
@@ -14,15 +14,15 @@
    holds tiles becomes a bottom sheet — the name sheets that share the same
    menu surface are #943's, in sheets.css, and are untouched here. */
 @layer components {
-  .o4-tiles {
+  .tiles {
     display: flex;
     align-items: flex-start;
     gap: 10px;
   }
-  .o4-tiles-gap {
+  .tiles-gap {
     flex: 1;
   }
-  .o4-tile {
+  .tile {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 76px auto;
     row-gap: 8px;
@@ -32,17 +32,17 @@
     background: transparent;
     color: var(--s-tile-ink);
   }
-  .o4-tile::before {
+  .tile::before {
     content: "";
     grid-area: 1 / 1;
     width: 76px;
     height: 76px;
     border-radius: 20px; /* #939 token */
   }
-  .o4-tile > svg {
+  .tile > svg {
     grid-area: 1 / 1;
   }
-  .o4-tile > .control-caption {
+  .tile > .control-caption {
     grid-area: 2 / 1;
     color: var(--s-ink-muted);
     font-size: 14px; /* #939 token */
@@ -73,7 +73,7 @@
      screen. This rule is sized to the arithmetic below, not derived from an
      exact box-model proof.
 
-     `o4-tiles--compact` is scoped to that one grid, not to every TileGrid: a
+     `tiles--compact` is scoped to that one grid, not to every TileGrid: a
      three-tile row (no stored clip, Clear absent) already fits and stays at
      the pinned token (`tests/o4-menus-chapter-segment.test.ts` asserts it
      keeps its spacer and does NOT get this class). 64px tiles — still well
@@ -82,45 +82,45 @@
      (360-wide) content width by simple arithmetic (4 × 64 + 3 × 6 = 274),
      with margin left for a real device's `env(safe-area-inset)`, which a
      Playwright viewport carries as 0. */
-  .o4-tiles--compact {
+  .tiles--compact {
     gap: 6px;
   }
-  .o4-tiles--compact .o4-tile {
+  .tiles--compact .tile {
     grid-template-rows: 64px auto;
     width: 64px;
   }
-  .o4-tiles--compact .o4-tile > .control-caption {
+  .tiles--compact .tile > .control-caption {
     max-width: calc(100% + 6px);
   }
-  .o4-tiles--compact .o4-tile::before {
+  .tiles--compact .tile::before {
     width: 64px;
     height: 64px;
   }
 
-  .o4-tile--edit::before {
+  .tile--edit::before {
     background: var(--s-edit);
   }
-  .o4-tile--name::before {
+  .tile--name::before {
     background: var(--s-name);
   }
-  .o4-tile--send::before {
+  .tile--send::before {
     background: var(--s-send);
   }
-  .o4-tile--erase {
+  .tile--erase {
     color: var(--s-live);
   }
-  .o4-tile--erase::before {
+  .tile--erase::before {
     background: var(--s-live-quiet);
     box-shadow: inset 0 0 0 2px var(--s-live);
   }
-  .o4-tile--plain {
+  .tile--plain {
     color: var(--s-ink);
   }
-  .o4-tile--plain::before {
+  .tile--plain::before {
     background: var(--s-well);
   }
 
-  .menu-scrim:has(.o4-tiles) {
+  .menu-scrim:has(.tiles) {
     align-items: flex-end;
     justify-content: center;
     padding: 8px calc(8px + env(safe-area-inset-right))
@@ -128,7 +128,7 @@
       calc(8px + env(safe-area-inset-left));
     background: var(--s-dim);
   }
-  .menu-panel:has(.o4-tiles) {
+  .menu-panel:has(.tiles) {
     width: 100%;
     height: auto;
     max-height: 100%;
@@ -142,12 +142,12 @@
      sheets have an 18px gap where the name sheets have 16, so the grip gives
      back 2px more below, as the handle they drew before did. The header row
      is the other place a drag starts. */
-  .menu-panel:has(.o4-tiles) .menu-grip,
+  .menu-panel:has(.tiles) .menu-grip,
   .menu-panel:has(.books-delete-ask) .menu-grip {
     display: flex;
     margin-bottom: -12px;
   }
-  .menu-panel:has(.o4-tiles) .menu-head,
+  .menu-panel:has(.tiles) .menu-head,
   .menu-panel:has(.books-delete-ask) .menu-head {
     touch-action: none;
   }
@@ -173,16 +173,16 @@
 
      A marked Done tile is also `pressed`, so it wears `.control.is-on`;
      naming `.control` here keeps the done ink over that rule's (#954). */
-  .control.o4-tile--done {
+  .control.tile--done {
     color: var(--s-done-ink);
   }
-  .o4-tile--done::before {
+  .tile--done::before {
     background: var(--s-done);
   }
-  .o4-tile--doneoff {
+  .tile--doneoff {
     color: var(--s-ink-faint);
   }
-  .o4-tile--doneoff::before {
+  .tile--doneoff::before {
     background: var(--s-well);
   }
 
@@ -354,7 +354,7 @@
     color: var(--s-done-text);
   }
 
-  .o4-menu-preview {
+  .menu-preview {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -364,10 +364,10 @@
     border-radius: 14px; /* #939 token */
     background: var(--s-floor);
   }
-  .o4-menu-preview[data-state="finished"] {
+  .menu-preview[data-state="finished"] {
     --c-wave-stroke: var(--s-done);
   }
-  .o4-menu-badge {
+  .menu-badge {
     display: flex;
     flex: none;
     align-items: center;
@@ -380,11 +380,11 @@
     font-size: 17px; /* #939 token */
     font-weight: 800; /* #939 token */
   }
-  .o4-menu-badge[data-state="finished"] {
+  .menu-badge[data-state="finished"] {
     background: var(--s-done-quiet); /* D19: the pale wash */
     color: var(--s-done-text);
   }
-  .o4-menu-preview-mid {
+  .menu-preview-mid {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -392,7 +392,7 @@
     gap: 2px;
     min-width: 0;
   }
-  .o4-menu-title {
+  .menu-title {
     color: var(--s-ink);
     font-size: 16px; /* #939 token */
     font-weight: 800; /* #939 token */
@@ -420,17 +420,17 @@
     background: var(--s-name);
     color: var(--s-tile-ink);
   }
-  .o4-menu-play {
+  .menu-play {
     flex: none;
     width: 60px;
     height: 60px;
     border-radius: 50%;
   }
-  .o4-menu-preview[data-state="finished"] .o4-menu-play {
+  .menu-preview[data-state="finished"] .menu-play {
     background: var(--s-done);
     color: var(--s-done-ink);
   }
-  .o4-tile[aria-disabled="true"] {
+  .tile[aria-disabled="true"] {
     opacity: 0.35;
   }
 

@@ -49,9 +49,9 @@ describe("mic denied, O4 (state 16)", () => {
     );
 
   it("puts the mic glyph in the error circle", () => {
-    const circle = one(panel(), ".o4-err-circle");
-    expect(circle.classList.contains("o4-err-circle--denied")).toBe(true);
-    expect(circle.classList.contains("o4-err-circle--warn")).toBe(false);
+    const circle = one(panel(), ".err-circle");
+    expect(circle.classList.contains("err-circle--denied")).toBe(true);
+    expect(circle.classList.contains("err-circle--warn")).toBe(false);
     expect(circle.getAttribute("aria-hidden")).toBe("true");
     // The mic glyph — the one icon on this screen that says WHICH thing is off.
     expect(circle.querySelector("svg")?.getAttribute("width")).toBe("58");
@@ -61,7 +61,7 @@ describe("mic denied, O4 (state 16)", () => {
     const container = panel();
     const alert = one(container, '[role="alert"]');
     expect(alert.textContent).toBe(strings.micOffTitle);
-    expect(alert.classList.contains("o4-err-title")).toBe(true);
+    expect(alert.classList.contains("err-title")).toBe(true);
     const buttons = [...container.querySelectorAll("button")];
     expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
       strings.micRetry,
@@ -70,15 +70,15 @@ describe("mic denied, O4 (state 16)", () => {
     for (const button of buttons) expect(alert.contains(button)).toBe(false);
     // Retry is the wide guide button and still the one that takes focus.
     const retry = buttons[0]!;
-    expect(retry.classList.contains("o4-err-wide")).toBe(true);
+    expect(retry.classList.contains("err-wide")).toBe(true);
     expect(retry.hasAttribute("autofocus")).toBe(true);
   });
 });
 
 describe("crash / recovery, O4 (state 18)", () => {
   it("puts the alert mark in the warn circle", () => {
-    const circle = one(crashScreen(), ".o4-err-circle");
-    expect(circle.classList.contains("o4-err-circle--warn")).toBe(true);
+    const circle = one(crashScreen(), ".err-circle");
+    expect(circle.classList.contains("err-circle--warn")).toBe(true);
     expect(circle.querySelector("svg")?.getAttribute("width")).toBe("72");
   });
 
@@ -89,13 +89,13 @@ describe("crash / recovery, O4 (state 18)", () => {
     expect(dialog.getAttribute("aria-describedby")).toBe("app-failed-teach");
     const title = one(container, "#app-failed-title");
     expect(title.textContent).toBe(strings.appFailed);
-    expect(title.classList.contains("o4-err-title")).toBe(true);
+    expect(title.classList.contains("err-title")).toBe(true);
     expect(one(container, "#app-failed-teach").textContent).toBe(
       strings.appReloadTeach
     );
 
     const restart = one(container, `[aria-label="${strings.appReload}"]`);
-    expect(restart.classList.contains("o4-err-wide")).toBe(true);
+    expect(restart.classList.contains("err-wide")).toBe(true);
     // The restart glyph, not retry's circular-arrow-with-notch: workbench
     // state 18 draws the restart mark on this button, as `PermissionPanel`
     // does on its own wide Restart.
@@ -130,10 +130,10 @@ describe("crash / recovery, O4 (state 18)", () => {
 describe("SaveFailed, O4", () => {
   it("puts the alert mark in the error circle, and keeps Retry and Send", () => {
     const container = render(createElement(SaveFailed, saveFailedProps));
-    const circle = one(container, ".o4-err-circle");
-    expect(circle.classList.contains("o4-err-circle--warn")).toBe(false);
+    const circle = one(container, ".err-circle");
+    expect(circle.classList.contains("err-circle--warn")).toBe(false);
     const retry = one(container, '[aria-label="Try saving again"]');
-    expect(retry.classList.contains("o4-err-wide")).toBe(true);
+    expect(retry.classList.contains("err-wide")).toBe(true);
     one(container, `[aria-label="${strings.shareFailureLog}"]`);
     expect(
       one(container, '[role="alertdialog"]').getAttribute("aria-label")
@@ -147,7 +147,7 @@ describe("SaveFailed, O4", () => {
     expect(container.textContent).toContain(strings.saveFailedSaving);
     // The circle is the failure's ground; the in-flight state keeps its
     // plain spinner glyph so the two states cannot read alike.
-    expect(container.querySelector(".o4-err-circle")).toBeNull();
+    expect(container.querySelector(".err-circle")).toBeNull();
   });
 });
 
@@ -170,10 +170,10 @@ describe("3-components/errors.css", () => {
   // #1747 (from #1630): each weight reads the type-scale primitive, not a
   // literal number.
   it.each([
-    [".o4-err-title", "var(--p-weight-heavy)"],
-    [".o4-err-sub", "var(--p-weight-strong)"],
-    [".o4-err-step", "var(--p-weight-strong)"],
-    [".o4-err-step::before", "var(--p-weight-heavy)"],
+    [".err-title", "var(--p-weight-heavy)"],
+    [".err-sub", "var(--p-weight-strong)"],
+    [".err-step", "var(--p-weight-strong)"],
+    [".err-step::before", "var(--p-weight-heavy)"],
   ])("%s takes its font-weight from a token", (selector, token) => {
     expect(declarationValue(cssRule(css, selector), "font-weight")).toBe(token);
   });

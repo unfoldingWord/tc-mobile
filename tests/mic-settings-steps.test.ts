@@ -63,14 +63,11 @@ const EXPECTED: Record<MicSettingsPlatform, string[]> = {
 describe("PermissionPanel settings steps (#1569)", () => {
   for (const [platform, texts] of Object.entries(EXPECTED)) {
     it(`${platform}: numbered steps, each led by an icon`, () => {
-      const list = one(
-        panel(platform as MicSettingsPlatform),
-        "ol.o4-err-steps"
-      );
+      const list = one(panel(platform as MicSettingsPlatform), "ol.err-steps");
       const items = [...list.querySelectorAll("li")];
       expect(items.map((li) => li.textContent)).toEqual(texts);
       for (const li of items) {
-        const icon = one(li, ".o4-err-step-icon");
+        const icon = one(li, ".err-step-icon");
         expect(icon.getAttribute("aria-hidden")).toBe("true");
         expect(icon.querySelector("svg")).not.toBeNull();
         // The icon comes before the words.
@@ -87,10 +84,7 @@ describe("PermissionPanel settings steps (#1569)", () => {
     }
     installLocale({ tag: "fr", dir: "ltr" });
     for (const platform of Object.keys(EXPECTED)) {
-      const list = one(
-        panel(platform as MicSettingsPlatform),
-        "ol.o4-err-steps"
-      );
+      const list = one(panel(platform as MicSettingsPlatform), "ol.err-steps");
       const items = [...list.querySelectorAll("li")];
       expect(items.length).toBeGreaterThan(0);
       for (const li of items) expect(li.textContent).toMatch(/^FR /);
@@ -106,8 +100,8 @@ describe("PermissionPanel settings steps (#1569)", () => {
   });
 
   it("a first refusal (no platform) shows no steps", () => {
-    expect(panel(null).querySelector(".o4-err-steps")).toBeNull();
-    expect(panel().querySelector(".o4-err-steps")).toBeNull();
+    expect(panel(null).querySelector(".err-steps")).toBeNull();
+    expect(panel().querySelector(".err-steps")).toBeNull();
   });
 
   it("steps mode: compact header, and the long sentence is absent", () => {
@@ -120,11 +114,11 @@ describe("PermissionPanel settings steps (#1569)", () => {
         settingsPlatform: "ios-app",
       })
     );
-    const head = one(container, ".o4-err-head");
-    expect(head.querySelector(".o4-err-circle--compact")).not.toBeNull();
+    const head = one(container, ".err-head");
+    expect(head.querySelector(".err-circle--compact")).not.toBeNull();
     expect(one(head, '[role="alert"]').textContent).toBe(strings.micOffTitle);
     expect(container.textContent).not.toContain(sentence);
-    expect(container.querySelector(".o4-err-sub")).toBeNull();
+    expect(container.querySelector(".err-sub")).toBeNull();
   });
 
   it("first refusal keeps the old layout: big circle, sentence under the title", () => {
@@ -137,16 +131,16 @@ describe("PermissionPanel settings steps (#1569)", () => {
         settingsPlatform: null,
       })
     );
-    expect(container.querySelector(".o4-err-head")).toBeNull();
-    expect(container.querySelector(".o4-err-circle--compact")).toBeNull();
-    expect(one(container, ".o4-err-sub").textContent).toBe(sentence);
+    expect(container.querySelector(".err-head")).toBeNull();
+    expect(container.querySelector(".err-circle--compact")).toBeNull();
+    expect(one(container, ".err-sub").textContent).toBe(sentence);
     expect(one(container, '[role="alert"]').textContent).toContain(sentence);
   });
 
   it("keeps the steps outside the alert and Retry and Back present", () => {
     const container = panel("android-app");
     const alert = one(container, '[role="alert"]');
-    expect(alert.querySelector(".o4-err-steps")).toBeNull();
+    expect(alert.querySelector(".err-steps")).toBeNull();
     expect(container.querySelectorAll("button")).toHaveLength(2);
   });
 });

@@ -5,7 +5,7 @@
  * Lifted out of `books-screen.tsx` for the reason `encoder-notice.ts` was: a
  * mount predicate left in JSX here is reached only by mounting `BooksScreen`
  * and its effectful hook graph (`useStoragePressure`, `useBooks`, …), which
- * `tests/storage-banner-o4.test.ts` does for the O4 banner and not for each
+ * `tests/storage-banner.test.ts` does for the O4 banner and not for each
  * branch, while a function is pinned branch by branch. #540 (George's review of #537, the core PR this wires up) found
  * exactly that failure mode in the core PR's own published JSX recipe:
  * `Notice`'s default `tone` is `"alert"`, and `"low" | "critical"` is a valid

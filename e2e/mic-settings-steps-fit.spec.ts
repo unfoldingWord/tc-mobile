@@ -58,17 +58,17 @@ test("the second-refusal steps show every step with Retry and Back on screen", a
   const back = page.getByRole("button", { name: "Go back" });
   await expect(retry).toBeVisible();
   // First refusal: the panel as it always was.
-  await expect(page.locator(".o4-err-steps")).toHaveCount(0);
-  await expect(page.locator(".o4-err-title")).toContainText(
+  await expect(page.locator(".err-steps")).toHaveCount(0);
+  await expect(page.locator(".err-title")).toContainText(
     "Your device is not letting the app use the microphone"
   );
 
   await retry.click();
-  const steps = page.locator(".o4-err-steps li");
+  const steps = page.locator(".err-steps li");
   await expect(steps).toHaveCount(4);
   // The steps showing: the compact header, and the long sentence is gone.
-  await expect(page.locator(".o4-err-head")).toBeVisible();
-  await expect(page.locator(".o4-err-title")).toHaveText("Microphone is off");
+  await expect(page.locator(".err-head")).toBeVisible();
+  await expect(page.locator(".err-title")).toHaveText("Microphone is off");
 
   const viewport = page.viewportSize()!;
   for (const control of [retry, back]) {
@@ -99,7 +99,7 @@ test("the second-refusal steps show every step with Retry and Back on screen", a
     expect(box.x + box.width).toBeLessThanOrEqual(content.right);
   }
   // Nothing in the body can scroll sideways.
-  const body = page.locator(".o4-err-body");
+  const body = page.locator(".err-body");
   const sideways = await body.evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(sideways).toBe(0);
 
@@ -115,11 +115,11 @@ test("a step text with one long word wraps inside its row", async ({
   await openRecorder(page);
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await page.getByRole("button", { name: "Try again" }).click();
-  const step = page.locator(".o4-err-steps li").first();
+  const step = page.locator(".err-steps li").first();
   await expect(step).toBeVisible();
   // A translation may carry a word longer than the row. The text must wrap
   // inside the row, not push the row past the list.
-  const text = step.locator(".o4-err-step-text");
+  const text = step.locator(".err-step-text");
   await text.evaluate((el) => {
     el.textContent = "Mikrofonberechtigungseinstellungen".repeat(2);
   });
@@ -143,10 +143,10 @@ test.describe("on a shorter screen", () => {
     const retry = page.getByRole("button", { name: "Try again" });
     const back = page.getByRole("button", { name: "Go back" });
     await retry.click();
-    const steps = page.locator(".o4-err-steps li");
+    const steps = page.locator(".err-steps li");
     await expect(steps).toHaveCount(4);
 
-    const body = page.locator(".o4-err-body");
+    const body = page.locator(".err-body");
     // The fallback is exercised: the body, not the page, overflows.
     expect(
       await body.evaluate((el) => el.scrollHeight - el.clientHeight)
@@ -173,7 +173,7 @@ test.describe("on a shorter screen", () => {
  */
 async function shakeSettled(page: Page) {
   await page
-    .locator(".o4-err-body")
+    .locator(".err-body")
     .evaluate((el) =>
       Promise.all(el.getAnimations().map((a) => a.finished)).then(() => {})
     );
@@ -181,7 +181,7 @@ async function shakeSettled(page: Page) {
 
 /** The panel's content box: its border box less its inline padding. */
 async function contentBox(page: Page) {
-  return page.locator(".o4-err-split").evaluate((el) => {
+  return page.locator(".err-split").evaluate((el) => {
     const r = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
     return {

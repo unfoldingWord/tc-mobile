@@ -433,7 +433,7 @@
      warn, the 19px bold line, and an 84px r14 button on the voice fill.
      The workbench draws one line; the #247 reason under it is ours, since
      its speaker button, which speaks that reason, is not built (#952). */
-  .o4-storage {
+  .storage {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -442,12 +442,12 @@
     background: var(--s-warn-quiet);
     border: 1.5px solid color-mix(in srgb, var(--s-warn) 55%, transparent);
   }
-  .o4-storage-row {
+  .storage-row {
     display: flex;
     align-items: center;
     gap: 12px;
   }
-  .o4-storage-icon {
+  .storage-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -458,25 +458,25 @@
     background: color-mix(in srgb, var(--s-warn) 28%, transparent);
     color: var(--s-warn-text);
   }
-  .o4-storage-words {
+  .storage-words {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: 4px;
     min-width: 0;
   }
-  .o4-storage-title {
+  .storage-title {
     font-size: var(--p-text-19);
     font-weight: var(--p-weight-bold);
     line-height: 1.25;
     color: var(--s-warn-text);
   }
-  .o4-storage-why {
+  .storage-why {
     font-size: var(--p-text-15);
     line-height: 1.3;
     color: var(--s-warn-text);
   }
-  .o4-storage-share {
+  .storage-share {
     flex-shrink: 0;
     width: 84px;
     height: 84px;
@@ -496,7 +496,7 @@
   .books-menu-head {
     flex: 1;
   }
-  .o4-tile--cover::before {
+  .tile--cover::before {
     background: var(--book-cover);
   }
   .books-cover-pick {
@@ -638,14 +638,14 @@
      takes 54 px boxes and a 4 px gap: 5 x 54 + 4 x 4 = 286 px, inside the
      288 px content width of a 320 px sheet too. 54 px is above the 44 px
      touch floor. A template book has no Licence tile and keeps the 64 px row. */
-  .o4-tiles--compact:has(.o4-tile--licence) {
+  .tiles--compact:has(.tile--licence) {
     gap: 4px;
   }
-  .o4-tiles--compact:has(.o4-tile--licence) .o4-tile {
+  .tiles--compact:has(.tile--licence) .tile {
     grid-template-rows: 54px auto;
     width: 54px;
   }
-  .o4-tiles--compact:has(.o4-tile--licence) .o4-tile::before {
+  .tiles--compact:has(.tile--licence) .tile::before {
     width: 54px;
     height: 54px;
   }

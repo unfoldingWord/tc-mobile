@@ -1,7 +1,7 @@
 import { forwardRef, type ComponentProps, type ReactNode } from "react";
 
 import { Control } from "./control";
-import { TILE_GLYPH, tileClass, type TileTone } from "./o4-tile-look";
+import { TILE_GLYPH, tileClass, type TileTone } from "./tile-look";
 import { strings } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
  *
  * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), in their O4
  * branches, and by the book, app (≡) and recorder (⋮) menus. The
- * tones, glyph size and classes live in `o4-tile-look.ts`.
+ * tones, glyph size and classes live in `tile-look.ts`.
  */
 type ControlProps = ComponentProps<typeof Control>;
 
@@ -58,7 +58,7 @@ export const Tile = forwardRef<
  * `className` is an escape hatch for a row that cannot fit at the pinned
  * 76 × 76 token (`docs/design/o4-design-system.md`'s "Menu tile" row) — today
  * that is only the segment menu's four-real-tile case (Done, Edit, Delete,
- * Erase, #1119 round 5, George Medium 1): `o4-tiles--compact` in
+ * Erase, #1119 round 5, George Medium 1): `tiles--compact` in
  * `3-components/menus.css` shrinks the tile box and the row gap for that one grid,
  * scoped by class rather than by tile COUNT, so a three-tile row (this same
  * menu with no stored clip) is untouched and stays at the documented size.
@@ -70,7 +70,7 @@ export function TileGrid({
   children?: ReactNode;
   className?: string;
 }) {
-  return <div className={cn("o4-tiles", className)}>{children}</div>;
+  return <div className={cn("tiles", className)}>{children}</div>;
 }
 
 /**
@@ -78,7 +78,7 @@ export function TileGrid({
  * sits in every O4 menu (workbench G1, G2, G3). Decorative.
  */
 export function TileSpacer() {
-  return <span className="o4-tiles-gap" aria-hidden="true" />;
+  return <span className="tiles-gap" aria-hidden="true" />;
 }
 
 /**

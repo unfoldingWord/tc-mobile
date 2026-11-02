@@ -190,20 +190,20 @@ function tile(label: string): HTMLButtonElement {
     ...dialog().querySelectorAll<HTMLButtonElement>("button"),
   ].filter((el) => el.getAttribute("aria-label") === label);
   expect(found, `one dialog button labelled "${label}"`).toHaveLength(1);
-  expect(found[0]!.classList.contains("o4-tile"), label).toBe(true);
+  expect(found[0]!.classList.contains("tile"), label).toBe(true);
   return found[0]!;
 }
 
-/** The tile's tone class, e.g. `edit` for `o4-tile--edit`. */
+/** The tile's tone class, e.g. `edit` for `tile--edit`. */
 function tone(el: Element): string | undefined {
   return [...el.classList]
-    .find((c) => c.startsWith("o4-tile--"))
-    ?.slice("o4-tile--".length);
+    .find((c) => c.startsWith("tile--"))
+    ?.slice("tile--".length);
 }
 
 /** Label-in-name (WCAG 2.5.3): the visible caption word is in the name. */
 function expectCaptionInName() {
-  const tiles = [...dialog().querySelectorAll("button.o4-tile")];
+  const tiles = [...dialog().querySelectorAll("button.tile")];
   expect(tiles.length).toBeGreaterThanOrEqual(1);
   for (const el of tiles) {
     const caption = el.querySelector(".control-caption")?.textContent ?? "";
@@ -217,10 +217,10 @@ function expectCaptionInName() {
 
 /** The tiles' names, in grid order, with the spacer marked `|`. */
 function gridOrder(): string[] {
-  const grid = dialog().querySelector(".o4-tiles");
+  const grid = dialog().querySelector(".tiles");
   expect(grid).not.toBeNull();
   return [...grid!.children].map((el) =>
-    el.classList.contains("o4-tiles-gap")
+    el.classList.contains("tiles-gap")
       ? "|"
       : (el.getAttribute("aria-label") ?? el.tagName)
   );
@@ -269,17 +269,15 @@ describe("the segment menu (07) on the tile grid", () => {
     // Order is Done, Edit, Reset, Delete, contiguous — NO gap. Four real
     // tiles (this `recorded` fixture's hasClip case) do not fit the pinned
     // 76 x 76 token at 320-360px (#1119 round 5, George Medium 1), so this
-    // grid drops the spacer entirely and goes `o4-tiles--compact`
+    // grid drops the spacer entirely and goes `tiles--compact`
     // (`3-components/menus.css`) instead of pushing Reset/Delete to the far end —
     // there is no room left to push into. The three-tile, no-clip case below (`never-recorded segment`)
     // still fits at full size and keeps its spacer.
-    const grid = dialog().querySelector(".o4-tiles")!;
-    expect(grid.classList.contains("o4-tiles--compact")).toBe(true);
+    const grid = dialog().querySelector(".tiles")!;
+    expect(grid.classList.contains("tiles--compact")).toBe(true);
     expect(
-      [...grid.querySelectorAll("button, .o4-tiles-gap")].map((el) =>
-        el.classList.contains("o4-tiles-gap")
-          ? "|"
-          : el.getAttribute("aria-label")
+      [...grid.querySelectorAll("button, .tiles-gap")].map((el) =>
+        el.classList.contains("tiles-gap") ? "|" : el.getAttribute("aria-label")
       )
     ).toEqual([
       strings.markFinished(3),
@@ -294,7 +292,7 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(pen.closest(".o4-sheet-bar"), "Rename sits in the head").not.toBe(
       null
     );
-    expect(pen.closest(".o4-tiles"), "Rename is not a tile").toBeNull();
+    expect(pen.closest(".tiles"), "Rename is not a tile").toBeNull();
     expect(pen.classList.contains("o4-head-pen")).toBe(true);
     expectCaptionInName();
   });
@@ -335,7 +333,7 @@ describe("the segment menu (07) on the tile grid", () => {
       await mount(recorded);
       await openRow();
       // Four action tiles, then Move up and Move down (#1344).
-      const tiles = [...dialog().querySelectorAll(".o4-tiles button.o4-tile")];
+      const tiles = [...dialog().querySelectorAll(".tiles button.tile")];
       expect(tiles.length).toBe(6);
       const red = tiles.filter((el) => tone(el) === "erase");
       expect(red.map((el) => el.getAttribute("aria-label"))).toEqual([
@@ -435,10 +433,10 @@ describe("the segment menu (07) on the tile grid", () => {
     // Three real tiles (no Reset) already fit the pinned 76 x 76 token
     // (#1119 round 5's arithmetic): this row keeps its spacer and stays at
     // full size, unlike the four-tile `recorded` case above.
-    const grid = dialog().querySelector(".o4-tiles")!;
-    expect(grid.classList.contains("o4-tiles--compact")).toBe(false);
+    const grid = dialog().querySelector(".tiles")!;
+    expect(grid.classList.contains("tiles--compact")).toBe(false);
     expect(
-      grid.querySelector(".o4-tiles-gap"),
+      grid.querySelector(".tiles-gap"),
       "the 3-tile row keeps its spacer"
     ).not.toBeNull();
   });
@@ -452,7 +450,7 @@ describe("the segment menu (07) on the tile grid", () => {
       // Scoped to the dialog: the row's own Play behind the scrim has the
       // same name.
       const play = dialog().querySelector<HTMLButtonElement>(
-        `.o4-menu-preview button[aria-label="${strings.playSegment(3)}"]`
+        `.menu-preview button[aria-label="${strings.playSegment(3)}"]`
       );
       expect(play).not.toBeNull();
       await act(async () => play!.click());
@@ -512,20 +510,18 @@ describe("the segment menu (07) on the tile grid", () => {
   it("moves the segment's name into the preview row, beside its badge and wave", async () => {
     await mount(titled);
     await openRow();
-    const preview = dialog().querySelector(".o4-menu-preview");
+    const preview = dialog().querySelector(".menu-preview");
     expect(preview).not.toBeNull();
     // D20 puts a live Play in this row, so the row itself can no longer be
     // aria-hidden; its badge and name/wave still are.
     expect(
-      preview!.querySelector(".o4-menu-badge")?.getAttribute("aria-hidden")
+      preview!.querySelector(".menu-badge")?.getAttribute("aria-hidden")
     ).toBe("true");
     expect(
-      preview!
-        .querySelector(".o4-menu-preview-mid")
-        ?.getAttribute("aria-hidden")
+      preview!.querySelector(".menu-preview-mid")?.getAttribute("aria-hidden")
     ).toBe("true");
-    expect(preview!.querySelector(".o4-menu-badge")?.textContent).toBe("3");
-    expect(preview!.querySelector(".o4-menu-title")?.textContent).toBe(
+    expect(preview!.querySelector(".menu-badge")?.textContent).toBe("3");
+    expect(preview!.querySelector(".menu-title")?.textContent).toBe(
       "the sower"
     );
     expect(preview!.querySelector("canvas")).not.toBeNull();
@@ -538,11 +534,11 @@ describe("the segment menu (07) on the tile grid", () => {
   it("sets the direction of the segment's typed name in the preview row (#1267)", async () => {
     await mount(titled);
     await openRow();
-    expect(dialog().querySelector(".o4-menu-title")?.getAttribute("dir")).toBe(
+    expect(dialog().querySelector(".menu-title")?.getAttribute("dir")).toBe(
       "auto"
     );
     // The badge is a bare number: no direction of its own.
-    expect(dialog().querySelector(".o4-menu-badge")?.hasAttribute("dir")).toBe(
+    expect(dialog().querySelector(".menu-badge")?.hasAttribute("dir")).toBe(
       false
     );
   });
@@ -635,22 +631,20 @@ describe("3-components/menus.css, #949's chapter and segment menu section", () =
   const menus = areaScope("menus");
 
   it("pins the erase tile's live ink (#973's deferral)", () => {
-    expect(declsFor(menus, ".o4-tile--erase").get("color")).toBe(
-      "var(--s-live)"
-    );
+    expect(declsFor(menus, ".tile--erase").get("color")).toBe("var(--s-live)");
   });
 
   it("paints done green with its own ink, and not-yet-done on the well in faint ink (G8)", () => {
-    expect(declsFor(menus, ".o4-tile--done::before").get("background")).toBe(
+    expect(declsFor(menus, ".tile--done::before").get("background")).toBe(
       "var(--s-done)"
     );
-    expect(declsFor(menus, ".control.o4-tile--done").get("color")).toBe(
+    expect(declsFor(menus, ".control.tile--done").get("color")).toBe(
       "var(--s-done-ink)"
     );
-    expect(declsFor(menus, ".o4-tile--doneoff::before").get("background")).toBe(
+    expect(declsFor(menus, ".tile--doneoff::before").get("background")).toBe(
       "var(--s-well)"
     );
-    expect(declsFor(menus, ".o4-tile--doneoff").get("color")).toBe(
+    expect(declsFor(menus, ".tile--doneoff").get("color")).toBe(
       "var(--s-ink-faint)"
     );
   });
@@ -677,25 +671,24 @@ describe("3-components/menus.css, #949's chapter and segment menu section", () =
     expect(pen.get("height")).toBe("52px");
     expect(pen.get("background")).toBe("var(--s-name)");
     expect(pen.get("color")).toBe("var(--s-tile-ink)");
+    expect(declsFor(menus, '.tile[aria-disabled="true"]').get("opacity")).toBe(
+      "0.35"
+    );
     expect(
-      declsFor(menus, '.o4-tile[aria-disabled="true"]').get("opacity")
-    ).toBe("0.35");
-    expect(
-      declsFor(
-        menus,
-        '.o4-menu-preview[data-state="finished"] .o4-menu-play'
-      ).get("background")
+      declsFor(menus, '.menu-preview[data-state="finished"] .menu-play').get(
+        "background"
+      )
     ).toBe("var(--s-done)");
   });
 
   it("draws the preview row 78 tall on the floor, its badge a 44 circle, a finished badge on the done wash (D19)", () => {
-    const preview = declsFor(menus, ".o4-menu-preview");
+    const preview = declsFor(menus, ".menu-preview");
     expect(preview.get("min-height")).toBe("78px");
     expect(preview.get("background")).toBe("var(--s-floor)");
-    const badge = declsFor(menus, ".o4-menu-badge");
+    const badge = declsFor(menus, ".menu-badge");
     expect(badge.get("width")).toBe("44px");
     expect(badge.get("height")).toBe("44px");
-    const finished = declsFor(menus, '.o4-menu-badge[data-state="finished"]');
+    const finished = declsFor(menus, '.menu-badge[data-state="finished"]');
     expect(finished.get("background")).toBe("var(--s-done-quiet)");
     expect(finished.get("color")).toBe("var(--s-done-text)");
   });

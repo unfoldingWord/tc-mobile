@@ -9,7 +9,7 @@ import {
 import { CoverPicker } from "./cover-picker";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
-import { Tile, TileGrid } from "./o4-tile-menu";
+import { Tile, TileGrid } from "./tile-menu";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
 
@@ -103,7 +103,7 @@ export const LicenceTile = forwardRef<
     <Tile
       ref={ref}
       tone="plain"
-      className="o4-tile--licence"
+      className="tile--licence"
       icon="copies"
       label={strings.licenceTileLabel}
       caption={strings.tileLicence}

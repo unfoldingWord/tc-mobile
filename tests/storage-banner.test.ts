@@ -177,8 +177,8 @@ async function mount(element: ReturnType<typeof createElement>) {
 describe("state 17", () => {
   it("draws the banner with the phone icon as decoration", () => {
     const container = banner(low);
-    one(container, ".o4-storage");
-    const icon = one(container, ".o4-storage-icon");
+    one(container, ".storage");
+    const icon = one(container, ".storage-icon");
     expect(icon.getAttribute("aria-hidden")).toBe("true");
     // The workbench draws `I.phone(34)`.
     expect(icon.querySelector("svg")?.getAttribute("width")).toBe("34");
@@ -187,10 +187,10 @@ describe("state 17", () => {
 
   it("leads with the workbench's line and keeps the #247 reason", () => {
     const container = banner(critical);
-    expect(one(container, ".o4-storage-title").textContent).toBe(
+    expect(one(container, ".storage-title").textContent).toBe(
       strings.storageShareSoon
     );
-    expect(one(container, ".o4-storage-why").textContent).toBe(
+    expect(one(container, ".storage-why").textContent).toBe(
       strings.storageCritical
     );
   });
@@ -202,17 +202,17 @@ describe("state 17", () => {
     "%s keeps the Notice's urgency on its words, not on the button",
     (_band, notice, role) => {
       const container = banner(notice);
-      const words = one(container, ".o4-storage-words");
+      const words = one(container, ".storage-words");
       expect(words.getAttribute("role")).toBe(role);
       expect(words.querySelector("button")).toBeNull();
-      expect(one(container, ".o4-storage").getAttribute("data-tone")).toBe(
+      expect(one(container, ".storage").getAttribute("data-tone")).toBe(
         notice.tone
       );
     }
   );
 
   it("offers Share your work, not Send log (#948 D14)", () => {
-    const button = one(banner(low), "button.o4-storage-share");
+    const button = one(banner(low), "button.storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareAll);
     expect(button.hasAttribute("aria-busy")).toBe(false);
   });
@@ -220,7 +220,7 @@ describe("state 17", () => {
   it("says it is preparing, and stays focusable, while tap 1 runs", () => {
     share.status = "preparing";
     const container = banner(low);
-    const button = one(container, "button.o4-storage-share");
+    const button = one(container, "button.storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareAllPreparing);
     expect(button.getAttribute("aria-busy")).toBe("true");
     expect(button.hasAttribute("disabled")).toBe(false);
@@ -228,13 +228,13 @@ describe("state 17", () => {
 
   it("becomes Share now once armed", () => {
     share.status = "ready";
-    const button = one(banner(low), "button.o4-storage-share");
+    const button = one(banner(low), "button.storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareSend);
   });
 
   it("names an unconfirmed last attempt", () => {
     share.sendUnconfirmed = true;
-    const button = one(banner(low), "button.o4-storage-share");
+    const button = one(banner(low), "button.storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareAllUnconfirmed);
   });
 
@@ -247,7 +247,7 @@ describe("state 17", () => {
   ] as const)("words the %s refusal", (code, text) => {
     share.error = code;
     const container = banner(low);
-    expect(one(container, ".o4-storage .notice").textContent).toBe(text);
+    expect(one(container, ".storage .notice").textContent).toBe(text);
   });
 
   it("says what a ready archive left out, in books and chapters", () => {
@@ -256,7 +256,7 @@ describe("state 17", () => {
     share.incompleteChapters = 1;
     share.incompleteBooks = 1;
     const container = banner(low);
-    expect(one(container, ".o4-storage .notice").textContent).toBe(
+    expect(one(container, ".storage .notice").textContent).toBe(
       `${strings.shareAllMissing(2)} ${strings.shareAllIncomplete(1)}`
     );
   });
@@ -276,7 +276,7 @@ describe("the button runs the library share", () => {
       })
     );
     const button = container.querySelector<HTMLButtonElement>(
-      "button.o4-storage-share"
+      "button.storage-share"
     )!;
     await act(async () => button.click());
     expect(share.prepare).toHaveBeenCalledTimes(1);
@@ -321,7 +321,7 @@ describe("the button runs the library share", () => {
     );
     await act(async () =>
       container
-        .querySelector<HTMLButtonElement>("button.o4-storage-share")!
+        .querySelector<HTMLButtonElement>("button.storage-share")!
         .click()
     );
     const nameChapter = share.prepare.mock.calls[0]![2];
@@ -348,7 +348,7 @@ describe("the button runs the library share", () => {
       })
     );
     const button = container.querySelector<HTMLButtonElement>(
-      "button.o4-storage-share"
+      "button.storage-share"
     )!;
     await act(async () => button.click());
     expect(share.send).toHaveBeenCalledTimes(1);
@@ -382,7 +382,7 @@ describe("tap 1 -> tap 2 hands focus to the armed Send (#1046 item 2)", () => {
       )
     );
     const button = document.querySelector<HTMLButtonElement>(
-      "button.o4-storage-share"
+      "button.storage-share"
     )!;
     expect(document.activeElement).toBe(button);
   });
@@ -424,8 +424,8 @@ describe("Books shows the banner where the #247 line was", () => {
 
   it("draws state 17", async () => {
     const container = await screen();
-    one(container, ".o4-storage");
-    expect(one(container, ".o4-storage-why").textContent).toBe(
+    one(container, ".storage");
+    expect(one(container, ".storage-why").textContent).toBe(
       strings.storageCritical
     );
   });
@@ -434,9 +434,9 @@ describe("Books shows the banner where the #247 line was", () => {
 describe("3-components/books.css, the banner rules", () => {
   const books = areaScope("books");
   const rules = scopeRules(books).filter((r) =>
-    r.selectors.some((s) => s.includes(".o4-storage"))
+    r.selectors.some((s) => s.includes(".storage"))
   );
-  /** The one rule for `.o4-storage…` `sel`, read a property at a time. */
+  /** The one rule for `.storage…` `sel`, read a property at a time. */
   const decls = (sel: string) => declsFor(books, sel);
 
   it("exist (a floor, so the checks below cannot loop over nothing)", () => {
@@ -444,42 +444,36 @@ describe("3-components/books.css, the banner rules", () => {
   });
 
   it("paint the warn wash and warn ink, per state 17", () => {
-    expect(decls(".o4-storage").get("background")).toBe("var(--s-warn-quiet)");
-    expect(decls(".o4-storage-title").get("color")).toBe("var(--s-warn-text)");
-    expect(decls(".o4-storage-icon").get("color")).toBe("var(--s-warn-text)");
-    expect(decls(".o4-storage-share").get("background")).toBe("var(--s-voice)");
+    expect(decls(".storage").get("background")).toBe("var(--s-warn-quiet)");
+    expect(decls(".storage-title").get("color")).toBe("var(--s-warn-text)");
+    expect(decls(".storage-icon").get("color")).toBe("var(--s-warn-text)");
+    expect(decls(".storage-share").get("background")).toBe("var(--s-voice)");
   });
 
   // #1046 item 1: George on #1037 found this describe block checked a rule
-  // count, O4 scoping and colour, but nothing required `.o4-storage-why`,
-  // `.o4-storage-row` or `.o4-storage-words` to exist, and nothing pinned the
+  // count, O4 scoping and colour, but nothing required `.storage-why`,
+  // `.storage-row` or `.storage-words` to exist, and nothing pinned the
   // 72/84/19/15 px sizes the PR claims (icon box, share button, title and
   // why-line type). Both gaps are closed here, the same slice-the-rule-block
   // way the rest of this describe already reads the stylesheet.
-  it("names .o4-storage-row, .o4-storage-why and .o4-storage-words", () => {
+  it("names .storage-row, .storage-why and .storage-words", () => {
     const selectors = rules.flatMap((r) => r.selectors);
-    for (const cls of [
-      ".o4-storage-row",
-      ".o4-storage-why",
-      ".o4-storage-words",
-    ])
+    for (const cls of [".storage-row", ".storage-why", ".storage-words"])
       expect(selectors).toContain(cls);
   });
 
   it("pins the workbench's 72/84/19/15 px sizes (state 17)", () => {
-    expect(decls(".o4-storage-icon").get("width")).toBe("72px");
-    expect(decls(".o4-storage-icon").get("height")).toBe("72px");
-    expect(decls(".o4-storage-share").get("width")).toBe("84px");
-    expect(decls(".o4-storage-share").get("height")).toBe("84px");
+    expect(decls(".storage-icon").get("width")).toBe("72px");
+    expect(decls(".storage-icon").get("height")).toBe("72px");
+    expect(decls(".storage-share").get("width")).toBe("84px");
+    expect(decls(".storage-share").get("height")).toBe("84px");
     // The title and why-line sizes are structural primitives, not literal
     // px (AGENTS.md: "component and app-level rules read [structural
     // primitives] directly"), so the rule cited here is the token name; a
     // sibling suite, `tests/o4-primitives.test.ts`, pins `--p-text-19` and
     // `--p-text-15` themselves to 19px/15px.
-    expect(decls(".o4-storage-title").get("font-size")).toBe(
-      "var(--p-text-19)"
-    );
-    expect(decls(".o4-storage-why").get("font-size")).toBe("var(--p-text-15)");
+    expect(decls(".storage-title").get("font-size")).toBe("var(--p-text-19)");
+    expect(decls(".storage-why").get("font-size")).toBe("var(--p-text-15)");
   });
 
   it("take colour only from layer-2 roles", () => {
@@ -489,7 +483,7 @@ describe("3-components/books.css, the banner rules", () => {
     // Every banner rule in the whole file, nested blocks included, not only
     // the layer's own rules.
     const everywhere = fileRules("books").filter((r) =>
-      r.selectors.some((s) => s.includes(".o4-storage"))
+      r.selectors.some((s) => s.includes(".storage"))
     );
     expect(everywhere.length).toBeGreaterThanOrEqual(rules.length);
     for (const rule of everywhere)

@@ -16,15 +16,15 @@ export type TileTone =
 export const TILE_GLYPH = 30;
 
 /**
- * A tile's classes. `Tile` (`o4-tile-menu.tsx`) reads this, and so does the
+ * A tile's classes. `Tile` (`tile-menu.tsx`) reads this, and so does the
  * one caller that cannot swap its `Control` for a `Tile`:
  * `share-menu-section.tsx`, whose two-gesture ternary is pinned as ONE
  * `Control` per branch (`tests/share-progress.test.ts`), so it keeps its
  * element and dresses it as a tile instead (#949).
  *
- * Its own module, not `o4-tile-menu.tsx`, because a file that exports
+ * Its own module, not `tile-menu.tsx`, because a file that exports
  * components may export nothing else (`react-refresh/only-export-components`).
  */
 export function tileClass(tone: TileTone, className?: string): string {
-  return cn("o4-tile", `o4-tile--${tone}`, className);
+  return cn("tile", `tile--${tone}`, className);
 }

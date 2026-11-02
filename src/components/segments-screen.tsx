@@ -16,7 +16,7 @@ import { LicenceAsk } from "./licence-ask";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
-import { Tile } from "./o4-tile-menu";
+import { Tile } from "./tile-menu";
 import { Notice } from "./notice";
 import { NOTHING_FAILED_TONE } from "./notice-tone";
 import { SegmentRow } from "./segment-row";
