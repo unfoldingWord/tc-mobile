@@ -13,6 +13,7 @@ its body and empties it.
 ## Changed
 
 - A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.
+- About & licenses now shows the translationCore trademark notice after the licence text, with an email address to ask for permission (#1608).
 
 ## Fixed
 
