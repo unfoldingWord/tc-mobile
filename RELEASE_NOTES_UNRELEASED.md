@@ -9,6 +9,8 @@ its body and empties it.
 
 ## Changed
 
+- A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.
+
 ## Fixed
 
 ## Removed

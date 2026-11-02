@@ -9,6 +9,7 @@ import { useTemplateLibrary } from "@/hooks/use-template-library";
 import { listBooks } from "@/lib/storage/books";
 import { getDb } from "@/lib/storage/db";
 import { loadObsTemplate } from "@/lib/templates/obs";
+import type { BookId } from "@/types/domain";
 
 import { clearAllStores } from "./support";
 
@@ -54,7 +55,7 @@ function Probe({
   onCreated,
 }: {
   onApi: (api: Library) => void;
-  onCreated: () => void;
+  onCreated: (bookId: BookId) => void;
 }) {
   const api = useTemplateLibrary(false, onCreated);
   useEffect(() => {
@@ -112,6 +113,9 @@ describe("useTemplateLibrary replays a create whose write landed", () => {
     });
     expect(second).toEqual({ ok: true });
     expect(onCreated).toHaveBeenCalledTimes(1);
+    // It names the stored book, so the shelf can reveal it (#246).
+    const [stored] = await listBooks();
+    expect(onCreated).toHaveBeenCalledWith(stored!.id);
     expect(store.calls).toBe(2);
 
     // Nothing new was written, and the one book carries the name.
