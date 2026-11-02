@@ -293,7 +293,9 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
 describe("the O4 roles clear the floors the workbench claimed for them (round 4, G9)", () => {
   // Computed from token values only, like the rest of this file. These are
   // the O4 pairs that carry an icon, text or a control's boundary; decorative
-  // marks (`--s-mark-empty`) are deliberately not gated here.
+  // marks (`--s-mark-empty`) are deliberately not gated here. The DRI decided
+  // the ring track is decorative (#1469, "Decorative (Recommended)"):
+  // https://github.com/unfoldingWord/tc-mobile/issues/1469#issuecomment-6578909918
   const tileFills = ["--s-edit", "--s-name", "--s-send"] as const;
   const coverFills = [
     "--s-cover-amber",
@@ -371,8 +373,10 @@ describe("the O4 roles clear the floors the workbench claimed for them (round 4,
 describe("the chapter-play ring fill clears the non-text floor (#1469)", () => {
   // The ring is the control's progress mark, so its FILL takes 3:1 on both
   // grounds a chapter row can sit on. The TRACK (`--s-mark-empty`) is not
-  // gated here: it is read as decorative, which is a pending decision, not a
-  // pinned one — nothing below asserts its ratio either way.
+  // gated here: the DRI decided it is decorative (#1469, "Decorative
+  // (Recommended)"), so it stays ungated by the 3:1 rule and nothing below
+  // asserts its ratio:
+  // https://github.com/unfoldingWord/tc-mobile/issues/1469#issuecomment-6578909918
   const booksCss = areaScope("books");
 
   it("the ring paints its fill with --s-voice, so this pin scores the real paint", () => {
