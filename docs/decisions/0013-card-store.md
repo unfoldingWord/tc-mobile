@@ -28,6 +28,17 @@ read-back precedes any delete of `clipData` or release of a held take. Status
 stays Proposed. The #1472 spike still gates acceptance, and every test name
 below is a planned test, not a test that exists.
 
+Revised again 2026-11-02 for the residuals #1826's round 5 left on #1473
+(<https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6583624665>):
+case (b) was cited for deletes its definition excludes. The delete predicate
+gains three cases, each with its own durable trigger: (d) RELEASED for a clip
+an erase, a delete or a replacing save let go of, (e) UNCOMMITTED-OUTPUT for a
+transcode's MP3 that no row ever named, and (f) WINNER-RECORD for the backup a
+new one replaces. Every alternative a `.part` or an unnamed final is matched
+against must match its bytes, a pending row included, and a final that failed
+step 1a is kept when it is the only copy outside memory. Status stays
+Proposed.
+
 ## Context
 
 [ADR 0011](0011-v2-storage-and-export.md) records the decision that recordings
@@ -205,6 +216,11 @@ renumbered because v13 and v14 have shipped.
   the rollback line there.
 - If the volume UUID is not stable (P1), the location names the volume some
   other way, and this section is rewritten before the schema child is built.
+- The release record that case (d) needs (§3) is part of the same step: a
+  durable record, written in the transaction that deletes a card-located
+  `clipMeta` row, naming that row's volume and file. No such record exists
+  today. It is required; where it lives and its exact shape are the schema
+  child's to decide.
 
 ### 3. The commit protocol
 
@@ -231,7 +247,7 @@ committed. So the name is exclusive:
 
 Tests (commit-protocol child), read off the rule above: "a retry in a later
 launch does not reuse a name a row already names, or the name of a file the
-sweep kept (S1c, S1d, S2b, S3b, S4, S5b)" and "a restarted attempt refuses to rename onto a
+sweep kept (S1c, S1d, S1e, S2b, S3b, S4, S5b, S6b, S6c, T2b)" and "a restarted attempt refuses to rename onto a
 name clipMeta already stores".
 
 **The ownership rule.** A card file belongs to a row only through the full pair
@@ -239,8 +255,9 @@ the row stores: the volume and the file name `<clipId>.<n>.<ext>` (§2).
 "Names", everywhere in this ADR, means that pair. From it:
 
 - Steps 3 and 4 delete only a pair this attempt created (step 1) or read in its
-  own transaction (step 2), and only as Delete (a) or Delete (b) (the delete
-  predicate, below). Nothing deletes by `clipId` or by file name alone.
+  own transaction (step 2), and only as Delete (a), Delete (b), Delete (d) or
+  Delete (e) (the delete predicate, below). Nothing deletes by `clipId` or by
+  file name alone: case (d) deletes the pair a release record names.
 - A row whose location names **another volume** than the inserted card may own
   any file on the inserted card that carries its `clipId`: the volume id may
   not be stable (owed to P1), the card may be a different one, or a reader may
@@ -248,9 +265,9 @@ the row stores: the volume and the file name `<clipId>.<n>.<ext>` (§2).
   take, so it is Keep (c) while the mismatch lasts (V1, V2). This covers a `.part` as well as a final file: a `.part`
   carrying that `clipId` may be a checked copy of the take. The app reports
   "card not present" or "card changed" (§4).
-- The sweep deletes an unnamed final file only as Delete (b), by the state
-  table's row for it (S3, S7, T2, T3). No sentence in this section adds a
-  condition.
+- The sweep deletes an unnamed final file only as Delete (b) (S3, S7, T3),
+  Delete (e) (T2) or Delete (d) (E2), by the state table's row for it. No
+  sentence in this section adds a condition.
 - **Precedence, one rule.** The state table decides, by the case label in its
   Case cell. Where a sentence in this ADR reads differently from a row, the row
   decides and the sentence is a defect to repair. Where the table itself is
@@ -263,12 +280,15 @@ inserted card" (V2).
 
 **The delete predicate.** This is the only condition under which this ADR
 deletes a card file. It has
-three cases, defined once here, and every delete in this ADR cites a case by
+six cases, defined once here, and every delete in this ADR cites a case by
 its label. **State-table rows carry no delete condition of their own.** A
 row's When-cell selects the situation, and its Outcome says only "Delete (a)",
-"Delete (b)" or "Keep (c), report", who acts (this attempt, or the next
-sweep), and any non-delete effect. **Any delete in this ADR that does not cite
-a case label is a defect, and the file is kept and reported.**
+"Delete (b)", "Delete (d)", "Delete (e)" or "Keep (c), report", who acts (this
+attempt, the transaction's caller, or the next sweep), and any non-delete
+effect. Case (f) is the backup folder's (§5) and is cited there. **Any delete
+in this ADR that does not cite a case label is a defect, and the file is kept
+and reported.** Each delete cites exactly one case; a row whose When-cell
+allows two (S2) names both, and the attempt or sweep records which one held.
 
 > - **(a) DETERMINATE-FAIL.** A defined check ran to completion against a
 >   durable reference and failed. The defined checks are the write's own
@@ -276,26 +296,88 @@ a case label is a defect, and the file is kept and reported.**
 >   attempt holds. An interrupted, unavailable or I/O-errored check is **not**
 >   this case. A previous-launch `.part` has no durable reference (open,
 >   below), so (a) is not available to the sweep for one until that question
->   is decided.
+>   is decided. A final-named clip file that failed step 1a is (a) only while
+>   its take has a durable copy outside memory: a complete pending row, or
+>   `clipData` bytes for its clip. Without one it is (c) (row S1e): that file
+>   passed step 1's check before the rename, so it may hold the take's bytes
+>   more faithfully than its failed read suggests, and a kill after deleting
+>   it would leave nothing outside memory (inference).
 > - **(b) DURABLE-COPY.** For **every** dependent take of the file, a durable
 >   copy exists, and the set of dependents is not empty. A durable copy is a
->   complete pending row, a final disposition, or a named file whose length
->   **and** CRC32 match. A same-`clipId` file with different bytes is not a
->   copy. An empty dependent set is not (b). Bytes held only in memory are not
->   a copy.
+>   complete pending row, a final disposition, or a named file, and a pending
+>   row or a named file counts only when its bytes **match** (below). A
+>   same-`clipId` file or a pending row with different bytes is not a copy. An
+>   empty dependent set is not (b). Bytes held only in memory are not a copy.
+>   **A final disposition is not bytes and is never byte-matched.** It is a
+>   `saved` or `discarded` row in `takeDispositions` (`db.ts:294`; `given-up`
+>   is not final), written by `recordDisposition` (`takes.ts:253`) on the
+>   transaction that settled the take (`takes.ts:372`, `:474`, `:499`,
+>   `:648`). What it proves is that the pending take is settled and needs no
+>   bytes from this file: `saved` means the transaction that committed the
+>   take's own bytes also wrote it, and `discarded` means the take was given
+>   up. It proves nothing about this file's bytes, so it is a copy only for
+>   that pending dependent; any other dependent still needs its own copy.
 > - **(c) KEEP.** Everything else. The file is kept and reported to the
 >   failure log. A check that cannot be evaluated, a state table that is
->   silent or ambiguous, and a file that meets neither (a) nor (b) are all
->   (c). A file that is the only copy is never deleted under (c).
+>   silent or ambiguous, and a file that meets none of (a), (b), (d), (e) or
+>   (f) are all (c). A file that is the only copy is never deleted under (c).
+> - **(d) RELEASED.** A recorded, durable intent to let go of a clip. The
+>   trigger is a **release record**: the transaction that removes a clip's
+>   last use and its card-located `clipMeta` row, through
+>   `deleteClipIfUnreferenced` (`clips.ts:149`; an erase, a segment or book
+>   delete, a save that replaced the take with another clip, or a pending row
+>   ending), reads the row's location before deleting it and writes, in the
+>   same transaction, a record naming that volume and file. The file is then
+>   deleted by the record's location, and the record is deleted after the
+>   file is gone, shown by a completed delete or by a completed listing of the
+>   inserted card's folder without that name; an I/O error or an unavailable
+>   card is not "gone", and leaves the record (E1, E2). At the delete, (d) holds only while the record's volume is
+>   the inserted card's, no `clipMeta` location names the pair, and no
+>   unsettled pending take's `clipId` or `stored` base names the clip;
+>   otherwise the file and the record are (c). A file no release record names
+>   is never (d): an unexplained orphan is not a release (S4). The record does
+>   not exist today; it is **required**, and its schema belongs to the schema
+>   child (§2), not to this ADR.
+> - **(e) UNCOMMITTED-OUTPUT.** A transcode output that no row ever named. The
+>   file is an `.mp3` final; no `clipMeta` location names it; and the
+>   committed row for its `clipId` names a `.pcm` file on the same volume that
+>   passes the length and CRC32 stored in that row, checked to completion at
+>   the delete. (e) does not rest on the dependent set: the committed take for
+>   its clip reads the named PCM, which has just passed its check, so deleting
+>   the MP3 removes no take's only bytes, and the transcode can make them again
+>   from that PCM. The trigger needs no new
+>   record, because it is read from the committed row and the card: only
+>   `commitTranscode` writes MP3 bytes (`transcode.ts:209`), and every save
+>   builds its clip as `pcm` (`buildClipMeta`, `clips.ts:53`), so an unnamed
+>   `.mp3` beside a named `.pcm` of the same clip is a transcode's output. If
+>   the named PCM fails its check or the check cannot finish, the MP3 is (c)
+>   (row T2b), because it may then be the clip's only readable audio. (e) covers
+>   finals only; a transcode's previous-launch `.part` is decided by S2 or S2b
+>   like any other `.part`.
+> - **(f) WINNER-RECORD.** The backup folder only (§5). The file is the
+>   previous backup of a book, named as the superseded file by that book's
+>   winner record, and the file the record names as the winner passes the
+>   length and CRC32 the record holds when the delete runs. A backup has no
+>   dependent take, and the new bytes differ from the old by design, so this
+>   is neither (a) nor (b). A file the record does not name, a record whose
+>   winner is missing or fails its check, and a record whose superseded name
+>   equals its winner name are (c).
 >
 > **What "match" means.** For a `.part`, and for an unnamed final that no row
-> records (rows S1c, S1d, S2, S2b, S3, S3b, S4), the copy's length and CRC32
-> must equal that file's own. For a final that a committed row has superseded
-> (rows S7, T0 to T4), the dependents are the takes the rows record, and the
-> copy is the file the committed row names, which must pass the length and
-> CRC32 stored in that row (§2): a transcode's MP3 differs in bytes from the
-> PCM it replaces, and that is why the row, not the old file, is the
-> reference.
+> records (rows S1c, S1d, S2, S2b, S3, S3b, S4, S5, S6, S6b, S6c), every
+> alternative that is bytes, a pending row as much as a named file, must have
+> that file's own length and CRC32. For a pending row, that is the length and
+> CRC32 of the bytes its save would write (the take it rebuilds). A final
+> disposition is not bytes and is not matched; (b) says what it proves. For a
+> final that a committed row has superseded (rows S7, S7b, T3, T3b, T4, T4b),
+> the dependents are the takes the rows record, and the copy is the file the
+> committed row names, which must pass the length and CRC32 stored in that row
+> (§2): a transcode's MP3 differs in bytes from the PCM it replaces, and that
+> is why the row, not the old file, is the reference. A same-extension final
+> that a save superseded under the same `clipId` holds the same take's bytes
+> (inference: every take mints a fresh `clipId`, `clips.ts:139`, so only a
+> retry of one take shares it), so S7 also requires its length and CRC32 to
+> equal the named file's; one that differs is a losing attempt's file (S6c).
 >
 > - **Takes that can depend on a file:** a committed take whose `clipMeta` row
 >   is for the file's clip (the row may name this file or another), for a
@@ -333,7 +415,7 @@ a case label is a defect, and the file is kept and reported.**
 
 The rule applies to the backup folder in the same way: the previous backup is
 (c) until the new one has passed its read-back and the winner record names it
-(§5), when it is Delete (b); a new backup that fails its read-back, run to
+(§5), when it is Delete (f); a new backup that fails its read-back, run to
 completion, is Delete (a).
 
 A save to the card, in order:
@@ -362,8 +444,9 @@ A save to the card, in order:
    read-back of the card file (length and hash) comes before any delete of
    `clipData` or release of the held take. If 1a fails, no transaction opens
    and the held take and any `clipData` bytes are untouched. The file is then
-   Delete (a) when the read-back ran to completion and mismatched (S1b), and
-   Keep (c) when it could not finish (S1d).
+   Delete (a) when the read-back ran to completion and mismatched and the take
+   has a durable copy outside memory (S1b), Keep (c) when it mismatched and
+   the take has none (S1e), and Keep (c) when it could not finish (S1d).
    Whether the read at 1a reaches the card and not a cache is owed to P4.
 
 2. **One strict IndexedDB transaction**, opened only after a pass at 1a, writes the take row, the `clipMeta`
@@ -381,8 +464,9 @@ A save to the card, in order:
 3. **If that transaction ends without naming `<name>`** (it failed, or found
    the take already saved or discarded), the attempt reads `clipMeta` and
    `pendingTakes` again and acts on `<name>`, and nothing else, by the state
-   table: Delete (b) when a durable copy exists (S5, S6), otherwise Keep (c),
-   report (S5b). The take stays held in its `pendingTakes` row if it has one, as a
+   table: Delete (b) when a matching durable copy exists (S5, S6), Delete (e)
+   for a transcode's MP3 whose named PCM passes its check (T0, T1),
+   otherwise Keep (c), report (S5b, S6b, T2b). The take stays held in its `pendingTakes` row if it has one, as a
    failed save is today (`"save-take"`, #456).
 4. **After it commits**, in the same session, the attempt deletes the exact
    file step 2 read as superseded, by that file's location: Delete (b) when
@@ -394,9 +478,12 @@ A save to the card, in order:
    references any more (a take replaced by another clip, an erase, a delete).
    It already counts a pending `stored` base as a use (`bySourceClip`,
    `clips.ts:126`, `db.ts:286`), which is the predicate's third kind of
-   dependent, and on the card it too deletes by the location its row names, as
-   Delete (b). A delete that fails, or that ends as Keep (c), leaves the file for the
-   sweep, never a dangling row.
+   dependent. On the card, its transaction writes the release record (case
+   (d)) beside the `clipMeta` delete, and after that transaction commits its
+   caller deletes the file the record names, as Delete (d), then the record
+   (row E1). A delete that fails, or that ends as Keep (c), leaves the file
+   for the sweep, never a dangling row; a kill before the file delete leaves
+   the record for the sweep (E2).
 
 Steps 3 and 4 delete only a file the attempt itself named or read. No attempt
 deletes by `clipId`, so a failed attempt cannot remove the bytes another
@@ -421,10 +508,12 @@ the card the PCM and the MP3 briefly coexist, so the card needs room for both.
   returns `"stale"` without replacing the PCM (`transcode.ts:193-199`), and a
   later sweep converts the clip once the row has ended. On the card the same
   check runs inside step 2's transaction. When it fires, the step 2 transaction
-  writes nothing, the PCM file stays named, and the new MP3 goes through step 3
-  (row T0).
+  writes nothing, the PCM file stays named, and the new MP3 goes through step 3:
+  Delete (e) when the named PCM passes its check (row T0), Keep (c) when it
+  fails or the check cannot finish (T2b).
 - If the transaction fails, step 3 acts on the new MP3 by the state table:
-  Delete (b), the named PCM being the durable copy (T1).
+  Delete (e) when the named PCM passes its row's check (T1), Keep (c) when it
+  fails or the check cannot finish (T2b).
 - Once it commits, step 4 acts on the PCM by its exact location in the same
   session: Delete (b) when no pending base needs it (T4), Keep (c) when one
   does (T4b). The guard means no pending base needed it at the commit; a row
@@ -460,41 +549,54 @@ A `pendingTakes` row carries the clip id its save will write (`clipId`,
 commit protocol is read off this table. **A row carries no delete condition of
 its own.** Its When-cell selects the situation; its Case cell names which
 delete-predicate case applies; its Outcome says only "Delete (a)", "Delete
-(b)" or "Keep (c), report", who acts, and any non-delete effect. "Named" means
+(b)", "Delete (d)", "Delete (e)" or "Keep (c), report", who acts, and any
+non-delete effect. "Named" means
 a `clipMeta` location names that volume and file. "Killed" covers a
 force-stop and a power-off; what the card holds after each is owed to P4. All
 tests belong to the commit-protocol child. The When-cells do not overlap, with
-one stated exception: S7, T2 and T3 describe one shape (an unnamed final
-superseded by a committed row) from three causes, and all three give the same
-case per dependent, so a file matching more than one is not a conflict. Every
+one stated exception: S7 and T3 describe one shape (an unnamed final
+superseded by a committed row) from two causes, and both give the same case
+per dependent, so a file matching both is not a conflict. T2 is not that
+shape: its MP3 was never named, so nothing superseded it, and S7's When-cell
+excludes it. S6c is not that shape either: a losing attempt's file differs in
+bytes from the same-extension file the row names, and S7's When-cell excludes
+it. Every
 sweep row below holds only for a file whose `clipId` has no row naming another
-volume; V1 and V2 own that case.
+volume; V1 and V2 own that case. A file a release record names is decided by
+E1 to E3 and by no other row.
 
-| Row | Path      | When                                                                                                                                                                                                          | Card file                              | Case       | Outcome                                                                                                                                                                                       | Test                                                                                                                                    |
-| --- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| S1  | save      | Alive. The write failed or was refused (missing, full, read-only, write error, create refused), or the step 1 read-back ran to completion and mismatched                                                      | `.part` this attempt created, or none  | (a)        | This attempt: Delete (a) the `.part` it created. When creation was refused it created nothing, so it deletes nothing (the blocker may be an S1c or S2b file). Take held; §4's card rows apply | "a failed step 1 deletes its own .part and keeps the take held, and a refused create deletes nothing"                                   |
-| S1d | save      | Alive. A read-back, step 1's of the `.part` or step 1a's of the final name, could not finish (I/O error, card unavailable, interrupted)                                                                       | `.part` or final, not named, unchecked | (c)        | This attempt: Keep (c), report. No transaction opens; the take stays held. The next sweep decides the file as S2, S2b, S3, S3b or S4                                                          | "an interrupted read-back keeps the .part"                                                                                              |
-| S1c | save      | Alive. Step 1's read-back passed and the rename failed (including: the name exists)                                                                                                                           | `.part`, checked                       | (c)        | This attempt: Keep (c), report; never played as audio. The next sweep decides it as S2 or S2b                                                                                                 | "a checked .part whose rename failed is kept and reported unless a durable copy holds the take"                                         |
-| S1b | save      | Alive. Step 1a's read-back of the final name ran to completion and mismatched                                                                                                                                 | Final, not named, failed its check     | (a)        | This attempt: Delete (a) that final file. No transaction opens; `clipData` and the held take are untouched                                                                                    | "a failed read-back after the rename opens no transaction, deletes only that file, and leaves clipData and the held take"               |
-| S2  | save      | A previous launch's `.part`; (a) holds, or (b) holds with a complete pending row or a named file whose length and CRC32 match the `.part`'s                                                                   | `.part`                                | (a) or (b) | Next sweep: Delete (a) or Delete (b). "The take is lost" applies only under (a) when no row holds it, as today                                                                                | "a .part from a previous launch is deleted only under (a) or (b)"; "an older committed file with different bytes does not count as (b)" |
-| S2b | save      | A previous launch's `.part` for which neither (a) nor (b) holds (it passes its check, cannot be checked, nothing depends on it, or only a different-bytes file exists)                                        | `.part`                                | (c)        | Next sweep: Keep (c), report, as S4; never played as audio. What a sweep checks a `.part` against is open (below)                                                                             | "a .part that is the only copy is kept and reported"                                                                                    |
-| S3  | save      | A previous launch's unnamed final; no committed row for its `clipId`; a complete pending row carries its `clipId`                                                                                             | Final, not named                       | (b)        | Next sweep: Delete (b). The take's PCM stays in its IndexedDB row and the replay saves it                                                                                                     | "a kill after the rename leaves the take held when a complete pending row holds it, and the sweep removes the file"                     |
-| S3b | save      | As S3, but the row's `stored` base is missing or corrupt, so the row is not complete                                                                                                                          | Final, not named                       | (c)        | Next sweep: Keep (c), report; it is the only complete copy                                                                                                                                    | "a completed orphan whose pending base is missing or corrupt is kept and reported"                                                      |
-| S4  | save      | A previous launch's unnamed final with no pending row and no committed row for its `clipId`. Step 1's check passed; step 1a may not have run                                                                  | Final, not named                       | (c)        | Next sweep: Keep (c), report                                                                                                                                                                  | "an unnamed final file with no row and no meta is kept and reported"                                                                    |
-| S5  | save      | Alive. Step 2 failed, or found the take discarded or saved with this attempt's own bytes, and a final disposition, a complete pending row, or a named file whose length and CRC32 match this attempt's exists | This attempt's final, not named        | (b)        | This attempt (step 3): Delete (b) its own file only                                                                                                                                           | "a failed save deletes only its own file"                                                                                               |
-| S5b | save      | Alive. Step 2 failed, and none of the three durable copies in S5 exists                                                                                                                                       | This attempt's final, not named        | (c)        | This attempt: Keep (c), report. The save can be retried under a new name                                                                                                                      | "a failed save with no complete held copy keeps its file"                                                                               |
-| S6  | save      | Alive. Step 2 found another attempt's file named under the same `clipId`. The winner's named file matches this attempt's length and CRC32                                                                     | Loser's final, not named               | (b)        | The losing attempt: Delete (b) its own file only; the winner's file is untouched. If the winner's file does not match, this attempt keeps it under (c)                                        | "two attempts under one clipId: the losing one deletes only its own file"                                                               |
-| S7  | save      | After step 2 commits, a superseded final is not named and the committed row names the new final; every dependent has its durable copy                                                                         | Superseded final, not named            | (b)        | This attempt (step 4), or the next sweep after a kill: Delete (b)                                                                                                                             | "a kill before the superseded delete leaves it for the next sweep"                                                                      |
-| S7b | save      | As S7, but a pending `stored` base on the superseded bytes has no durable copy                                                                                                                                | Superseded final, not named            | (c)        | Keep (c), report                                                                                                                                                                              | "a superseded file a pending stored base still reads is kept"                                                                           |
-| T0  | transcode | Alive. The guard returned `"stale"` (a pending `stored` base names this clip); the transaction wrote nothing                                                                                                  | New MP3 final, not named               | (b)        | This attempt (step 3): Delete (b) the new MP3; the named PCM, which passes the length and CRC32 in its row, is the copy. The PCM stays named; a later sweep retries                           | "a pending stored base blocks the transcode and the PCM stays named"                                                                    |
-| T1  | transcode | Alive. The transaction failed                                                                                                                                                                                 | New MP3 final, not named               | (b)        | This attempt (step 3): Delete (b) the new MP3 only; the PCM stays named; a later sweep turn retries (ADR 0009)                                                                                | "a failed transcode deletes only the new MP3 and keeps the PCM named"                                                                   |
-| T2  | transcode | A previous launch's unnamed MP3 beside a named PCM that passes its row's length and CRC32                                                                                                                     | New MP3 final, not named               | (b)        | Next sweep: Delete (b); the transcode runs again                                                                                                                                              | "a kill before the transcode commit leaves the PCM and removes the MP3"                                                                 |
-| T3  | transcode | A previous launch, killed after commit: an unnamed PCM beside a named MP3 that passes its row's length and CRC32; no pending `stored` base names the clip                                                     | PCM final, not named; MP3 named        | (b)        | Next sweep: Delete (b) the PCM; the MP3 stays named                                                                                                                                           | "a restart after a transcode removes the PCM and keeps the MP3 named when no stored base needs it"                                      |
-| T3b | transcode | As T3, but a pending `stored` base names the clip; a Finished MP3 never satisfies a splice                                                                                                                    | PCM final, not named; MP3 named        | (c)        | Next sweep: Keep (c) the PCM, report; the MP3 stays the named file                                                                                                                            | "a restart after a transcode keeps the PCM, with the MP3 still named, when a stored base still splices onto it"                         |
-| T4  | transcode | Alive. The transaction committed; an unnamed PCM beside the named MP3; no pending `stored` base names the clip                                                                                                | PCM final, not named; MP3 named        | (b)        | This attempt (step 4): Delete (b) the PCM by its exact location, in this session                                                                                                              | "a committed transcode deletes the PCM in the same session"                                                                             |
-| T4b | transcode | As T4, but a pending `stored` base names the clip                                                                                                                                                             | PCM final, not named; MP3 named        | (c)        | This attempt: Keep (c) the PCM, report, as T3b                                                                                                                                                | "a committed transcode keeps the PCM in the same session when a stored base still splices onto it"                                      |
-| V1  | sweep     | The inserted card's volume is not the one a row names for this final's `clipId`                                                                                                                               | Final carrying that row's `clipId`     | (c)        | Next sweep: Keep (c); report "card not present" or "card changed"                                                                                                                             | "a volume mismatch does not delete the files on the inserted card"                                                                      |
-| V2  | sweep     | As V1, but the file is a `.part`                                                                                                                                                                              | `.part` carrying that row's `clipId`   | (c)        | Next sweep: Keep (c); report "card not present" or "card changed"                                                                                                                             | "a volume mismatch does not delete a .part on the inserted card"                                                                        |
+| Row | Path      | When                                                                                                                                                                                                                                                                                                                                                           | Card file                              | Case       | Outcome                                                                                                                                                                                                                                                                                                                                       | Test                                                                                                                                                                                                                                 |
+| --- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S1  | save      | Alive. The write failed or was refused (missing, full, read-only, write error, create refused), or the step 1 read-back ran to completion and mismatched                                                                                                                                                                                                       | `.part` this attempt created, or none  | (a)        | This attempt: Delete (a) the `.part` it created. When creation was refused it created nothing, so it deletes nothing (the blocker may be an S1c or S2b file). Take held; §4's card rows apply                                                                                                                                                 | "a failed step 1 deletes its own .part and keeps the take held, and a refused create deletes nothing"                                                                                                                                |
+| S1d | save      | Alive. A read-back, step 1's of the `.part` or step 1a's of the final name, could not finish (I/O error, card unavailable, interrupted)                                                                                                                                                                                                                        | `.part` or final, not named, unchecked | (c)        | This attempt: Keep (c), report. No transaction opens; the take stays held. The next sweep decides the file as S2, S2b, S3, S3b or S4                                                                                                                                                                                                          | "an interrupted read-back, of the .part at step 1 or of the final at step 1a, keeps that file and opens no transaction"                                                                                                              |
+| S1c | save      | Alive. Step 1's read-back passed and the rename failed (including: the name exists)                                                                                                                                                                                                                                                                            | `.part`, checked                       | (c)        | This attempt: Keep (c), report; never played as audio. The next sweep decides it as S2 or S2b                                                                                                                                                                                                                                                 | "this attempt keeps a checked .part whose rename failed and reports it; only the next sweep may delete it, as S2"                                                                                                                    |
+| S1b | save      | Alive. Step 1a's read-back of the final name ran to completion and mismatched, and the take has a durable copy outside memory: a complete pending row, or `clipData` bytes for its clip                                                                                                                                                                        | Final, not named, failed its check     | (a)        | This attempt: Delete (a) that final file. No transaction opens; `clipData` and the held take are untouched                                                                                                                                                                                                                                    | "a failed read-back after the rename opens no transaction, deletes only that file, and leaves clipData and the held take"                                                                                                            |
+| S1e | save      | As S1b, but the take has no complete pending row and no `clipData` bytes: its only copy outside the card file is in memory                                                                                                                                                                                                                                     | Final, not named, failed its check     | (c)        | This attempt: Keep (c), report. No transaction opens; the save can be retried under a new name. The next sweep decides the file as S3, S3b or S4                                                                                                                                                                                              | "a failed read-back of a take held only in memory keeps the final and opens no transaction"                                                                                                                                          |
+| S2  | save      | A previous launch's `.part`; (a) holds, or (b) holds with a complete pending row or a named file, either of whose length and CRC32 match the `.part`'s                                                                                                                                                                                                         | `.part`                                | (a) or (b) | Next sweep: Delete (a) or Delete (b). "The take is lost" applies only under (a) when no row holds it, as today                                                                                                                                                                                                                                | "a .part from a previous launch is deleted only under (a) or (b)"; "an older committed file with different bytes does not count as (b)"; "a pending row whose take has different bytes does not count as (b)"                        |
+| S2b | save      | A previous launch's `.part` for which neither (a) nor (b) holds (it passes its check, cannot be checked, nothing depends on it, or only a different-bytes file or pending row exists)                                                                                                                                                                          | `.part`                                | (c)        | Next sweep: Keep (c), report, as S4; never played as audio. What a sweep checks a `.part` against is open (below)                                                                                                                                                                                                                             | "a .part that is the only copy is kept and reported"                                                                                                                                                                                 |
+| S3  | save      | A previous launch's unnamed final; no committed row for its `clipId`; a complete pending row carries its `clipId`, and the take it rebuilds matches the file's length and CRC32                                                                                                                                                                                | Final, not named                       | (b)        | Next sweep: Delete (b). The take's PCM stays in its IndexedDB row and the replay saves it                                                                                                                                                                                                                                                     | "a kill after the rename leaves the take held when a complete pending row holds it, and the sweep removes the file"                                                                                                                  |
+| S3b | save      | As S3, but the row's `stored` base is missing or corrupt, so the row is not complete, or the take it rebuilds does not match the file's length and CRC32                                                                                                                                                                                                       | Final, not named                       | (c)        | Next sweep: Keep (c), report; it may be the only complete copy                                                                                                                                                                                                                                                                                | "a completed orphan whose pending base is missing or corrupt is kept and reported"; "an orphan whose pending row rebuilds different bytes is kept and reported"                                                                      |
+| S4  | save      | A previous launch's unnamed final with no pending row, no committed row for its `clipId`, and no release record naming it: an unexplained orphan. Step 1's check passed; step 1a may not have run, or failed (S1e)                                                                                                                                             | Final, not named                       | (c)        | Next sweep: Keep (c), report                                                                                                                                                                                                                                                                                                                  | "an unexplained orphan (no pending row, no clipMeta row, no release record) is kept and reported"                                                                                                                                    |
+| S5  | save      | Alive. Step 2 failed, or found the take discarded or saved with this attempt's own bytes, and either a final disposition for the take exists (not byte-matched, (b)), or a complete pending row or a named file exists whose bytes match this attempt's length and CRC32                                                                                       | This attempt's final, not named        | (b)        | This attempt (step 3): Delete (b) its own file only                                                                                                                                                                                                                                                                                           | "a failed save deletes only its own file"                                                                                                                                                                                            |
+| S5b | save      | Alive. Step 2 failed, and none of the three durable copies in S5 exists                                                                                                                                                                                                                                                                                        | This attempt's final, not named        | (c)        | This attempt: Keep (c), report. The save can be retried under a new name                                                                                                                                                                                                                                                                      | "a failed save with no complete held copy keeps its file"                                                                                                                                                                            |
+| S6  | save      | Alive. Step 2 found another attempt's file named under the same `clipId`. The winner's named file matches this attempt's length and CRC32                                                                                                                                                                                                                      | Loser's final, not named               | (b)        | The losing attempt: Delete (b) its own file only; the winner's file is untouched                                                                                                                                                                                                                                                              | "two attempts under one clipId: the losing one deletes only its own file"                                                                                                                                                            |
+| S6b | save      | As S6, but the winner's named file does not match this attempt's length and CRC32, or its check cannot be completed                                                                                                                                                                                                                                            | Loser's final, not named               | (c)        | The losing attempt: Keep (c) its own file, report; the winner's file is untouched                                                                                                                                                                                                                                                             | "two attempts under one clipId with different bytes: the losing one keeps its file and reports it"                                                                                                                                   |
+| S6c | sweep     | A previous launch's unnamed final whose `clipId`'s committed row names another file with the same extension, and whose length or CRC32 differs from that named file's, or whose comparison cannot finish: the S6b shape after a kill                                                                                                                           | Loser's final, not named               | (c)        | Next sweep: Keep (c), report                                                                                                                                                                                                                                                                                                                  | "after a kill, a losing attempt's file with different bytes from the named file is kept and reported, not deleted as superseded"                                                                                                     |
+| S7  | save      | After step 2 commits, a superseded final is not named and the committed row names the new final; every dependent has its durable copy. A same-extension superseded file has the named file's length and CRC32. Not an unnamed `.mp3` beside a named `.pcm` (T2), and not the S6c shape                                                                         | Superseded final, not named            | (b)        | This attempt (step 4), or the next sweep after a kill: Delete (b)                                                                                                                                                                                                                                                                             | "a kill before the superseded delete leaves it for the next sweep"                                                                                                                                                                   |
+| S7b | save      | As S7, but a pending `stored` base on the superseded bytes has no durable copy                                                                                                                                                                                                                                                                                 | Superseded final, not named            | (c)        | Keep (c), report                                                                                                                                                                                                                                                                                                                              | "a superseded file a pending stored base still reads is kept"                                                                                                                                                                        |
+| T0  | transcode | Alive. The guard returned `"stale"` (a pending `stored` base names this clip); the transaction wrote nothing; the named PCM's check against its row's length and CRC32 ran to completion and passed                                                                                                                                                            | New MP3 final, not named               | (e)        | This attempt (step 3): Delete (e) the new MP3. The PCM stays named; a later sweep retries                                                                                                                                                                                                                                                     | "a pending stored base blocks the transcode and the PCM stays named"                                                                                                                                                                 |
+| T1  | transcode | Alive. The transaction failed; the named PCM's check against its row's length and CRC32 ran to completion and passed                                                                                                                                                                                                                                           | New MP3 final, not named               | (e)        | This attempt (step 3): Delete (e) the new MP3 only; the PCM stays named; a later sweep turn retries (ADR 0009)                                                                                                                                                                                                                                | "a failed transcode deletes only the new MP3 and keeps the PCM named"                                                                                                                                                                |
+| T2  | transcode | A previous launch's unnamed MP3 beside a named PCM whose check against its row's length and CRC32 ran to completion and passed                                                                                                                                                                                                                                 | New MP3 final, not named               | (e)        | Next sweep: Delete (e); the transcode runs again                                                                                                                                                                                                                                                                                              | "a kill before the transcode commit leaves the PCM and removes the MP3"                                                                                                                                                              |
+| T2b | transcode | As T0, T1 or T2, but the named PCM fails its row's length and CRC32, or the check cannot finish (I/O error, card unavailable, interrupted)                                                                                                                                                                                                                     | New MP3 final, not named               | (c)        | This attempt (step 3) or the next sweep: Keep (c) the MP3, report; the PCM stays named                                                                                                                                                                                                                                                        | "a transcode output is kept when the named PCM fails or cannot finish its check"                                                                                                                                                     |
+| T3  | transcode | A previous launch, killed after commit: an unnamed PCM beside a named MP3 that passes its row's length and CRC32; no pending `stored` base names the clip                                                                                                                                                                                                      | PCM final, not named; MP3 named        | (b)        | Next sweep: Delete (b) the PCM; the MP3 stays named                                                                                                                                                                                                                                                                                           | "a restart after a transcode removes the PCM and keeps the MP3 named when no stored base needs it"                                                                                                                                   |
+| T3b | transcode | As T3, but a pending `stored` base names the clip; a Finished MP3 never satisfies a splice                                                                                                                                                                                                                                                                     | PCM final, not named; MP3 named        | (c)        | Next sweep: Keep (c) the PCM, report; the MP3 stays the named file                                                                                                                                                                                                                                                                            | "a restart after a transcode keeps the PCM, with the MP3 still named, when a stored base still splices onto it"                                                                                                                      |
+| T4  | transcode | Alive. The transaction committed; an unnamed PCM beside the named MP3; no pending `stored` base names the clip                                                                                                                                                                                                                                                 | PCM final, not named; MP3 named        | (b)        | This attempt (step 4): Delete (b) the PCM by its exact location, in this session                                                                                                                                                                                                                                                              | "a committed transcode deletes the PCM in the same session"                                                                                                                                                                          |
+| T4b | transcode | As T4, but a pending `stored` base names the clip                                                                                                                                                                                                                                                                                                              | PCM final, not named; MP3 named        | (c)        | This attempt: Keep (c) the PCM, report, as T3b                                                                                                                                                                                                                                                                                                | "a committed transcode keeps the PCM in the same session when a stored base still splices onto it"                                                                                                                                   |
+| V1  | sweep     | The inserted card's volume is not the one a row names for this final's `clipId`                                                                                                                                                                                                                                                                                | Final carrying that row's `clipId`     | (c)        | Next sweep: Keep (c); report "card not present" or "card changed"                                                                                                                                                                                                                                                                             | "a volume mismatch does not delete the files on the inserted card"                                                                                                                                                                   |
+| V2  | sweep     | As V1, but the file is a `.part`                                                                                                                                                                                                                                                                                                                               | `.part` carrying that row's `clipId`   | (c)        | Next sweep: Keep (c); report "card not present" or "card changed"                                                                                                                                                                                                                                                                             | "a volume mismatch does not delete a .part on the inserted card"                                                                                                                                                                     |
+| E1  | release   | Alive. A transaction that removed a clip's last use and its card-located `clipMeta` row (erase, segment or book delete, a save that replaced the take, a pending row ending) committed with a release record naming the volume and file; the volume is the inserted card's; no `clipMeta` location names the pair and no unsettled pending take names the clip | Final the record names                 | (d)        | That transaction's caller, after the commit: Delete (d) the file, then delete the record. When the file is absent, the record is deleted only after the inserted card's folder was listed to completion and the name was not in it; an I/O error, an unavailable card, an unfinished listing or a failed file delete leaves the record for E2 | "an erased clip's card file is deleted by its release record, and the record goes after it"; "a book delete deletes each released clip's card file by its record"; "a release record survives when the card folder cannot be listed" |
+| E2  | sweep     | A previous launch's release record survives (a kill between the commit and the file delete, or between the file delete and the record delete); the rest as E1                                                                                                                                                                                                  | Final the record names, or none        | (d)        | Next sweep: Delete (d) the file if the completed listing shows it; then remove the record, which is record cleanup, not a card-file delete. The absence rule is E1's: no completed listing, no removal                                                                                                                                        | "a kill between an erase's commit and its file delete is finished by the next sweep"                                                                                                                                                 |
+| E3  | release   | A release record whose volume is not the inserted card's, or whose pair a `clipMeta` location names, or whose clip an unsettled pending take names                                                                                                                                                                                                             | Final the record names                 | (c)        | The caller or the next sweep: Keep (c) the file and the record, report; on a volume mismatch the record waits for its card                                                                                                                                                                                                                    | "a release record for another card deletes nothing on the inserted card"; "a release record whose file a row names again keeps the file"                                                                                             |
 
 **The orphan sweep** applies the delete predicate to each file in the card
 folder, by the state table. It runs once per launch, before that launch's
@@ -503,11 +605,15 @@ exists when it runs. It adds no condition of its own.
 
 1. A file, `.part` or final, whose `clipId` has a row naming **another
    volume**: Keep (c), report (V1, V2). This runs first.
-2. A `.part`: Delete (a) or Delete (b), or Keep (c) (S2, S2b).
-3. A final file that a `clipMeta` location names (volume and file): Keep (c).
-4. Any other final file: Delete (b) or Keep (c), by the row that matches it
-   (S3, S3b, S4, S7, S7b, T2, T3, T3b).
-5. Every (c) is reported to the failure log. How a kept file is offered back
+2. Each surviving release record: Delete (d) the file it names, then the
+   record (E2), or Keep (c) both (E3). A file no release record names is
+   never deleted by this step.
+3. A `.part`: Delete (a) or Delete (b), or Keep (c) (S2, S2b).
+4. A final file that a `clipMeta` location names (volume and file): Keep (c).
+5. Any other final file: Delete (b), Delete (e) or Keep (c), by the row that
+   matches it (S3, S7, T3 are (b); T2 is (e); S3b, S4, S6c, S7b, T2b, T3b
+   are (c)).
+6. Every (c) is reported to the failure log. How a kept file is offered back
    to the user is not decided (open, below).
 
 That one page at a time writes the card folder is an assumption (the Android
@@ -542,15 +648,15 @@ Each behaviour below needs a test in the build child named, before it ships
 (ADR 0011). The tests are named here; the children that carry them are not
 filed yet (#1456's child list).
 
-| Failure (ADR 0011's list)                                    | Proposed behaviour                                                                                                                                                                                                                                                                                  | Test, and the child that carries it                                                                                                                                                                                                                                | Owed to                                |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| **Card missing** at save                                     | Step 1 fails with a typed code before any transaction. The take stays held, the app says so in place, and it offers to save on the phone (#1456's "held, not lost, and can be saved on the phone instead").                                                                                         | "a failed step 1 deletes its own .part and keeps the take held, and a refused create deletes nothing" (row S1) — card missing, full or different                                                                                                                   | P1, P5                                 |
-| **Card full**                                                | A free-space read before step 1 predicts it; if the write still fails, the typed "full" code takes the same path as a missing card.                                                                                                                                                                 | "a full card is refused before the write and the take stays held" — same child                                                                                                                                                                                     | P6                                     |
-| **Card read-only**                                           | The same path, with its own code if the plugin can tell it apart. The spike's codes (`FULL`, `UNMOUNTED`, `IO`, `NO_SESSION`, `NOT_FOUND`, `GRANT`) name none for it.                                                                                                                               | "a read-only card keeps the take held" — same child                                                                                                                                                                                                                | Not probed by #1472; needs a row added |
-| **Card swapped** between sessions                            | A row whose location names another volume reads as "card not present", never as lost. No row is deleted, no file is written to the other card's folder for that clip, and the sweep deletes **nothing** on the inserted card that carries the row's `clipId` (§3, the ownership rule; rows V1, V2). | "a clip on another card reads as not present and its row survives" — same child; "a volume mismatch does not delete the files on the inserted card" (row V1) and "a volume mismatch does not delete a .part on the inserted card" (row V2) — commit protocol child | P1, P9                                 |
-| **Row pointing at a missing file** (card present, file gone) | The segment shows its audio as missing, the read reports to the failure log (as `"playback-dangling"` does today, `src/hooks/use-audio-session.ts:550`), and the row is never deleted automatically.                                                                                                | "a missing or CRC-mismatched card file leaves the row and reports it" — commit protocol child                                                                                                                                                                      | P1                                     |
-| **Partial file after a kill** while it was the only copy     | Read off §3's state table by case: a `.part` is Delete (a) or Delete (b) (S2) or Keep (c) (S1c, S1d, S2b); an unnamed final is Delete (b) (S3, S7, T2, T3) or Keep (c) (S3b, S4, S5b, S7b, T3b).                                                                                                    | The tests of rows S1, S1b, S1c, S1d, S2, S2b, S3, S3b, S4, S5, S5b, S6, S7, S7b, T0 to T4b, V1 and V2 — commit protocol child                                                                                                                                      | P4                                     |
-| **Card pulled mid-recording**                                | Nothing is written while recording, so storage is untouched. The facilitator is warned against it when the card store is switched on, per D2-microsd's note.                                                                                                                                        | None beyond the missing-card test; the warning is copy                                                                                                                                                                                                             | P5                                     |
+| Failure (ADR 0011's list)                                    | Proposed behaviour                                                                                                                                                                                                                                                                                                                               | Test, and the child that carries it                                                                                                                                                                                                                                | Owed to                                |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| **Card missing** at save                                     | Step 1 fails with a typed code before any transaction. The take stays held, the app says so in place, and it offers to save on the phone (#1456's "held, not lost, and can be saved on the phone instead").                                                                                                                                      | "a failed step 1 deletes its own .part and keeps the take held, and a refused create deletes nothing" (row S1) — card missing, full or different                                                                                                                   | P1, P5                                 |
+| **Card full**                                                | A free-space read before step 1 predicts it; if the write still fails, the typed "full" code takes the same path as a missing card.                                                                                                                                                                                                              | "a full card is refused before the write and the take stays held" — same child                                                                                                                                                                                     | P6                                     |
+| **Card read-only**                                           | The same path, with its own code if the plugin can tell it apart. The spike's codes (`FULL`, `UNMOUNTED`, `IO`, `NO_SESSION`, `NOT_FOUND`, `GRANT`) name none for it.                                                                                                                                                                            | "a read-only card keeps the take held" — same child                                                                                                                                                                                                                | Not probed by #1472; needs a row added |
+| **Card swapped** between sessions                            | A row whose location names another volume reads as "card not present", never as lost. No row is deleted, no file is written to the other card's folder for that clip, and the sweep deletes **nothing** on the inserted card that carries the row's `clipId` (§3, the ownership rule; rows V1, V2).                                              | "a clip on another card reads as not present and its row survives" — same child; "a volume mismatch does not delete the files on the inserted card" (row V1) and "a volume mismatch does not delete a .part on the inserted card" (row V2) — commit protocol child | P1, P9                                 |
+| **Row pointing at a missing file** (card present, file gone) | The segment shows its audio as missing, the read reports to the failure log (as `"playback-dangling"` does today, `src/hooks/use-audio-session.ts:550`), and the row is never deleted automatically.                                                                                                                                             | "a missing or CRC-mismatched card file leaves the row and reports it" — commit protocol child                                                                                                                                                                      | P1                                     |
+| **Partial file after a kill** while it was the only copy     | Read off §3's sweep rows by case: a `.part` is Delete (a) or Delete (b) (S2) or Keep (c) (S2b); an unnamed final is Delete (b) (S3, S7, T3), Delete (e) (T2), Delete (d) when a release record names it (E2), or Keep (c) (S3b, S4, S6c, S7b, T2b, T3b, E3). The alive rows' kept files (S1c, S1d, S1e, S5b, S6b) reach the sweep as these rows. | The tests of rows S1, S1b to S1e, S2, S2b, S3, S3b, S4, S5, S5b, S6 to S6c, S7, S7b, T0 to T4b (T2b included), V1, V2 and E1 to E3 — commit protocol child                                                                                                         | P4                                     |
+| **Card pulled mid-recording**                                | Nothing is written while recording, so storage is untouched. The facilitator is warned against it when the card store is switched on, per D2-microsd's note.                                                                                                                                                                                     | None beyond the missing-card test; the warning is copy                                                                                                                                                                                                             | P5                                     |
 
 Where the card's state changes while the app runs, which events reach the
 plugin in the foreground and the background, and what is seen on resume, is
@@ -569,7 +675,7 @@ ADR covers only where it is written and how.
   put in the previous backup's place. The previous backup is never truncated
   first (`openFileDescriptor(uri, "rwt")` is not used), so a kill part-way
   leaves it whole. If the folder cannot replace one file with another in one
-  step, the previous backup is Delete (b) only once the new one has passed its
+  step, the previous backup is Delete (f) only once the new one has passed its
   read-back and the winner record below names it, and Keep (c) until then, so
   at every moment one checked backup exists under some name. A new backup whose
   read-back ran to completion and failed is Delete (a); one whose read-back
@@ -579,17 +685,22 @@ ADR covers only where it is written and how.
 - **Recovery records its winner.** Once the new file passes its read-back, and
   before the previous backup is deleted (inference: a delete first would leave
   a kill with no record naming either file), the backup writes a small record that survives a
-  kill. It holds the new file's expected CRC32 (the variant in §2) and the name
-  the file has at that moment. After a kill, recovery picks the file the record
-  names, if that file passes its CRC. A second file that also passes its CRC is
-  **kept, not chosen**, until the record names the winner; a CRC pass alone is neither (a) nor (b), so it is Keep (c).
+  kill. It holds the new file's expected length and CRC32 (the variant in §2),
+  the name the file has at that moment, and the name of the previous backup it
+  supersedes, which is what case (f) deletes and nothing else. After a kill,
+  recovery picks the file the record names, if that file passes its check, and
+  the superseded file it names is then Delete (f). A second file that also passes its CRC is
+  **kept, not chosen**, until the record names the winner; a CRC pass alone
+  meets none of (a), (b) or (f), so it is Keep (c), and it stays (c) unless a
+  record names it as the superseded file.
   A file that passes its CRC is therefore not
   by that fact "the archive". Where the record lives and how it is replaced
   without the same hazard (a kill while it is half-written) are open (below).
   Tests (backup child): "recovery picks the file the record names", "a second
   backup file that passes its CRC is kept until the record names the winner",
-  and "a kill before the record is written leaves the previous backup as the
-  archive".
+  "a kill before the record is written leaves the previous backup as the
+  archive", and "only the file the record names as superseded is deleted, and
+  another file in the backup folder is kept".
 - The grant is persisted. Whether it survives an app restart, a reboot, and
   the card out and in, and that it stops resolving on a different card, is
   owed to P8.
@@ -663,9 +774,11 @@ T1 to T3; picks are not answers.
 - **Where a held take's bytes live** when the card store is on: IndexedDB as
   today, or the card. #1751 left pending-take bytes out of scope for the
   commit-protocol child to decide.
-- **The recovery path for rows S3b, S4 and S5b.** The sweep keeps a card file that
-  passed step 1's check (step 1a may not have run) and is the only copy of a take and reports it. How the app offers it back
-  to the user is open, for a later child.
+- **The recovery path for rows S1e, S3b, S4, S5b, S6b and S6c.** The sweep keeps a
+  card file that passed step 1's check (step 1a may not have run, or failed
+  on a take held only in memory) and may be the only copy of a take, and
+  reports it. How the app offers it back to the user is open, for a later
+  child.
 - **What the sweep checks a `.part` against** (row S2b). A `.part` has no row,
   so the expected length and CRC32 are known only to the attempt that died.
   Options, none decided: record the expected length and CRC32 somewhere that
