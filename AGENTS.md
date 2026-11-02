@@ -713,8 +713,9 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   between sprint ends is a patch on the shipped minor.
 - **A no-go carries the minor forward** (DRI, 2026-10-30: "Carry it forward
   (Recommended)"). Production stays on its current version. The held minor is
-  promoted at the next go, with a patch bump if fixes land, and no extra minor
-  is cut for it. The sprint milestone closes as normal, and its description
+  promoted at the next go with a patch bump, even when no fixes landed
+  (DRI, 2026-11-02: "Always cut a patch bump"), and the held release
+  branch is never reused. No extra minor is cut for it. The sprint milestone closes as normal, and its description
   records the no-go.
 - **One GitHub milestone per sprint, due on its last day; sprint milestones
   replace version milestones.** Titles read

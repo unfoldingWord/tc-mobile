@@ -33,9 +33,19 @@ follows and does not restate beyond these quotes:
 - "A tester build is a GitHub pre-release tagged `tester-build-vX.Y.Z`", and
   the release branch is `release/vX.Y.Z`.
 
-v1.0.0 is the worked example: its tester candidates were `1.0.0-rc.N`
-(`release/v1.0.0-rc.N`, `tester-build-v1.0.0-rc.N`) and the production
-promotion tagged `v1.0.0`.
+`X.Y.Z` is three numeric parts with no pre-release suffix (DRI, 2026-11-02,
+asked "may tester versions carry a pre-release suffix like 1.3.0-rc.1, or only
+plain numbers like 1.3.0?": "Plain X.Y.Z only (Recommended)"). `1.0.0-rc.N` is
+history only: v1.0.0's tester candidates were `1.0.0-rc.N`
+(`release/v1.0.0-rc.N`, `tester-build-v1.0.0-rc.N`) and its production
+promotion tagged `v1.0.0`. Do not mint a new suffixed version.
+
+A go after a no-go always cuts a patch bump, even when no fixes landed (DRI,
+2026-11-02, asked "after a staging -> main no-go where NO fixes land, the minor
+is carried forward to the next go ... At the next go with no fixes, what does
+the release step do?": "Always cut a patch bump"). The carried minor `X.Y.0`
+becomes `X.Y.(Z+1)` on `release/vX.Y.(Z+1)`, through steps 1 to 3. The release
+branch held by the no-go is never reused.
 
 Work through the list in order and don't skip a step. If a step can't be
 done, stop and say which one and why.
@@ -152,7 +162,10 @@ from.
 
 - [ ] Agent-allowed: if `release/vX.Y.Z` already exists
       (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/release/vX.Y.Z`),
-      stop and tell the DRI. Never move, delete, recreate or reuse it.
+      do not use it. Never move, delete, recreate or reuse it. If it is a
+      branch held by a no-go, the rule in "Naming and cadence" applies: go
+      back to step 1 and cut the next patch, `X.Y.(Z+1)`, with a new
+      `CUT_SHA`. If it exists for any other reason, stop and tell the DRI.
 - [ ] Agent-allowed: create it at the final `CUT_SHA`:
       `gh api repos/unfoldingWord/tc-mobile/git/refs -f ref=refs/heads/release/vX.Y.Z -f sha=<CUT_SHA>`.
 - [ ] Agent-allowed: open the PR `release/vX.Y.Z → staging` with a
