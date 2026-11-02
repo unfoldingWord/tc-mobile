@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { expect, test, type ElementHandle, type Page } from "./support/test";
+import { asInstalledApp } from "./support/installed-app";
 
 import { editRecordingButton } from "./recorder-fixtures";
 import { seedToRecorder, seedToSegments } from "./support/seed";
@@ -411,7 +412,9 @@ export async function sweep(
       return measure(page, '[role="dialog"]');
     }
     case "language-ask": {
-      // A book with no language asks first on Export project (#1492).
+      // A book with no language asks first on Export project (#1492), in the
+      // installed app: a browser gets the pointer instead (#1457).
+      await asInstalledApp(page);
       await openAsk(page, tag, "Export project");
       await expect(page.locator('input[type="search"]')).toBeVisible();
       await expect(

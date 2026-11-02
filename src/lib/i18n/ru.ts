@@ -387,6 +387,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Экспортировать проект",
   tileExport: "Экспорт",
   exportProjectPreparing: "Готовим проект к экспорту.",
+  exportProjectWebPointer:
+    "Экспорт работает в установленном приложении. Откройте приложение, чтобы экспортировать этот проект.",
   exportProjectSuffix: "проект",
   exportProjectFilename(
     this: Strings,

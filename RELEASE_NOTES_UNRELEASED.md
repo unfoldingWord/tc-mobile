@@ -7,6 +7,8 @@ its body and empties it.
 
 ## Added
 
+- In a web browser, Export project now says that export works in the installed app, instead of trying to run (#1457).
+
 ## Changed
 
 - A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.
