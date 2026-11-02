@@ -326,6 +326,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceNameCc0: "Creative Commons Zero 1.0, phạm vi công cộng",
   licenceChoiceName: (name: string, label: string): string =>
     `${name} (${label})`,
+  exportProjectWebPointer:
+    "Tính năng xuất hoạt động trong ứng dụng đã cài. Hãy mở ứng dụng để xuất dự án này.",
   exportProjectSuffix: "dự án",
   exportProjectFilename(
     this: Strings,

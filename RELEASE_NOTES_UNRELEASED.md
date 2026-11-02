@@ -8,6 +8,7 @@ its body and empties it.
 ## Added
 
 - Vietnamese: a phone set to Vietnamese now opens tC Mobile in Vietnamese, including the iPhone microphone prompt. This first draft is machine-written and no Vietnamese speaker has read it yet.
+- In a web browser, Export project now says that export works in the installed app, instead of trying to run (#1457).
 
 ## Changed
 

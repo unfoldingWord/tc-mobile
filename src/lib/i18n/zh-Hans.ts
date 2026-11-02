@@ -337,6 +337,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "导出项目",
   tileExport: "导出",
   exportProjectPreparing: "正在准备要导出的项目。",
+  exportProjectWebPointer:
+    "导出功能仅在已安装的应用中可用。请打开应用来导出此项目。",
   exportProjectSuffix: "项目",
   exportProjectFilename(
     this: Strings,

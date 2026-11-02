@@ -321,6 +321,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "प्रोजेक्ट निर्यात करें",
   tileExport: "निर्यात",
   exportProjectPreparing: "निर्यात के लिए प्रोजेक्ट तैयार किया जा रहा है।",
+  exportProjectWebPointer:
+    "निर्यात इंस्टॉल किए गए ऐप में काम करता है। इस प्रोजेक्ट को निर्यात करने के लिए ऐप खोलें।",
   exportProjectSuffix: "प्रोजेक्ट",
   exportProjectFilename(
     this: Strings,

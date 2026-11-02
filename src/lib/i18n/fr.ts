@@ -319,6 +319,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Exporter le projet",
   tileExport: "Exporter",
   exportProjectPreparing: "Préparation du projet à exporter.",
+  exportProjectWebPointer:
+    "L'exportation fonctionne dans l'application installée. Ouvre l'application pour exporter ce projet.",
   languageAskTitle: "Langue de ce livre",
   languageAskLead:
     "Dans quelle langue sont les enregistrements ? Vous la choisissez une fois, et chaque exportation de ce livre l’utilise.",
