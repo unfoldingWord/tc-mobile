@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
 import { idleChapterAudio } from "./chapter-audio";
@@ -24,6 +32,8 @@ import type { BookCard } from "@/types/view";
 const mark = "book-0000-4000-8000-000000000001" as BookId;
 const env = vi.hoisted(() => ({
   native: false,
+  languageCode: "en" as string | undefined,
+  stopChapter: null as unknown as Mock<() => void>,
   prepareProject: null as unknown as ReturnType<typeof vi.fn>,
 }));
 
@@ -40,7 +50,7 @@ vi.mock("@/hooks/use-books", () => ({
         number: 1,
         coverColourKey: "teal",
         chapters: [],
-        languageCode: "en",
+        languageCode: env.languageCode,
       },
     ] as BookCard[],
     newBookNumber: 1,
@@ -92,6 +102,8 @@ const layers = new Map<string, Layer>();
 
 beforeEach(() => {
   env.native = false;
+  env.languageCode = "en";
+  env.stopChapter = vi.fn<() => void>();
   env.prepareProject = vi.fn(() => Promise.resolve("dismissed"));
   layers.clear();
   document.body.innerHTML = "<div id='root'></div>";
@@ -118,7 +130,7 @@ async function mountAndOpenMenu() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
-        audio: idleChapterAudio(),
+        audio: idleChapterAudio({ stopChapter: env.stopChapter }),
         onOpenChapter: vi.fn(),
         pushLayer: (layer: Layer) => layers.set(layer.id, layer),
         popLayer: (id: string) => {
@@ -135,6 +147,15 @@ const sheet = () =>
   );
 
 describe("Export project in a browser (R3)", () => {
+  it("stops no chapter and opens no language ask, even for a book with no language", async () => {
+    env.languageCode = undefined;
+    await mountAndOpenMenu();
+    await click(strings.exportProject);
+    expect(env.stopChapter).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain(strings.languageAskTitle);
+    expect(env.prepareProject).not.toHaveBeenCalled();
+  });
+
   it("starts no export and points to the installed app, in the sheet", async () => {
     await mountAndOpenMenu();
     expect(sheet()?.textContent).not.toContain(strings.exportProjectWebPointer);
@@ -159,6 +180,15 @@ describe("Export project in a browser (R3)", () => {
     expect(sheet()).toBeNull();
     await click(strings.bookMenuOpen("Mark"));
     expect(sheet()?.textContent).not.toContain(strings.exportProjectWebPointer);
+  });
+});
+
+describe("the real native-shell probe", () => {
+  it("is false under Vitest, so a browser build takes the pointer path", async () => {
+    const real = await vi.importActual<typeof import("@/hooks/share-target")>(
+      "@/hooks/share-target"
+    );
+    expect(real.isNativeShell()).toBe(false);
   });
 });
 
