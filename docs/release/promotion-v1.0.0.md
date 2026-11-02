@@ -528,11 +528,10 @@ the same way on `https://tcmobile.app` and
     elif rec=$(printf '%s' "$body" |
       jq -enr 'input | select([.sha, .version] | all(type=="string" and length>0 and (test("[[:cntrl:][:space:]\u200e\u200f\u202a-\u202e\u2066-\u2069]")|not))) | "sha=\(.sha) version=\(.version)"'); then
       echo "OK: $origin $rec"
-      sha=${rec%% *}
       if [ -z "$seen" ]; then
-        seen=$sha
-      elif [ "$seen" != "$sha" ]; then
-        echo "FAIL: the two origins serve different builds ($seen, then $sha); record neither"
+        seen=$rec
+      elif [ "$seen" != "$rec" ]; then
+        echo "FAIL: the two origins serve different builds ($seen, then $rec); record neither"
         rc=1
       fi
     else
@@ -560,7 +559,8 @@ or print a second `OK:` line. Read every line, because `FAIL:` goes to stdout
 beside `OK:`. The timeouts make a silent origin fail instead of hanging.
 `jq -en 'input | …'` exits non-zero on an empty body, where plain `jq -e`
 exits 0. The two origins must serve the same build: when both answer with a
-valid record but the `sha` values differ, the block prints
+valid record but the records differ (a different `sha` or a different
+`version`), the block prints
 `FAIL: the two origins serve different builds` naming both and exits 1.
 That is not a choice between them. Record neither, wait a few minutes and run
 it again (a deploy may be mid-rollout), and if the two still differ, stop and
