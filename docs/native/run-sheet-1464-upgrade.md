@@ -241,7 +241,8 @@ HUMAN does these in the app on 1.1.0 (allow the microphone at the first prompt):
   **stop**: fix the inventory before U1. On Route B, take the screenshots of
   this same shelf now (`adb exec-out screencap -p > /tmp/run-1464/before-books.png`
   and one for each Segments screen). Look at each image before keeping it;
-  delete any that shows a person's name or a place.
+  delete any that shows a person's name or a place. Route B images show real
+  book and chapter titles, so they stay local (Recording the result step 3).
 
 Also note the free storage figure (`adb shell df /data | tail -1`).
 
@@ -270,7 +271,7 @@ HUMAN walks the app with the before-inventory from S6:
 | Finished marks unchanged                                                            | compare with the inventory |
 | Every segment plays and says the word it said before (Finished and unfinished both) | tap Play on each, by ear   |
 | Close the app fully, reopen: nothing changes                                        | force-stop and reopen      |
-| Books `≡` shows no red mark (or, if one appears, send the log and attach it)        | look; send log if marked   |
+| Books `≡` shows no red mark (or, if one appears, send the log; Recording step 3)    | look; send log if marked   |
 
 Cross-check from the machine, without touching data: `adb shell dumpsys diskstats | grep -i tcmobile`
 for app data size before and after (**ASSUMPTION:** this output shape varies by
@@ -340,7 +341,8 @@ route (A or B), build versions installed in order, date.
   the phone shows a low-battery warning or under 1 GB free.
 - If a recording is missing after the upgrade: **do not retry, reinstall or
   roll back.** Leave the phone as it is, send the failure log through the
-  app's own share row, take a screenshot, and report on #1464. Roll forward
+  app's own share row, take a screenshot, and report on #1464 (on Route B the
+  log and the screenshot stay local; Recording the result step 3). Roll forward
   with a fix; the recordings are not deleted by a refused open (AGENTS.md).
 - No names, no places. Refer to people by role ("the DRI") and to phones by
   model and Android version. Do not post the adb serial, a volume label, a
@@ -361,10 +363,17 @@ route (A or B), build versions installed in order, date.
    version, the builds, and a link to the #1464 comment. Open it as a docs PR
    from `develop` with the Sprint 6 milestone and `release-notes: N/A`. Run
    `npm run check:pr-body` first.
-3. Attach the before and after screenshots to the #1464 comment, after
-   reviewing each for names and places; on a Route B loss the before image is
-   the metadata the zip may not hold. Do not commit logs, screenshots or the APKs. Delete `/tmp/run-1464` when
-   done, after the comment is posted, and never
+3. **Screenshots and the failure log.** On Route A, attach the before and
+   after screenshots of `Test A` to the #1464 comment, after reviewing each for
+   names and places. On Route B, the #1464 comment gets the counts and the
+   results table only: no shelf or Segments screenshot and no failure log.
+   They show real book and chapter titles (the log may quote them), and #1464
+   is on a public repository. Attach one only after the DRI writes, for that
+   specific file, that it shows no book or chapter title, person, place or
+   audio (**HUMAN**). On a Route B loss the before images are the metadata the
+   zip may not hold: move them, and the log, into `~/tc-mobile-rescue-copies`
+   before cleanup. Do not commit logs, screenshots or the APKs. Delete
+   `/tmp/run-1464` when done, after the comment is posted, and never
    `~/tc-mobile-rescue-copies` (Route B step 6).
 4. Do not close #1464 from this run; it needs the iPhone entry and the web
    two-copy case.
