@@ -49,16 +49,16 @@ export function readAreaCss(file: Area | "index"): string {
  * is flattened.
  */
 const AREA_PREFIX: Readonly<Record<Area, string>> = {
-  books: ":root ",
-  controls: ":root ",
-  dialogs: ":root ",
+  books: "",
+  controls: "",
+  dialogs: "",
   errors: ":root ",
   menus: ":root ",
   motion: ":root ",
   recorder: ":root ",
-  segments: ":root ",
+  segments: "",
   share: ":root ",
-  sheets: ":root ",
+  sheets: "",
 };
 
 /** `selector` as `area`'s file spells it: `areaSelector("books", ".books-card")`. */

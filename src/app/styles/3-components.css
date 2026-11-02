@@ -703,11 +703,6 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  /* The subject glyph, tinted destructive so the dialog reads as "delete"
-     before a word is parsed. */
-  .confirm-glyph {
-    color: var(--s-live);
-  }
   .confirm-actions {
     display: flex;
     justify-content: center;

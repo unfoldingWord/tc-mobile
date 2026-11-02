@@ -3,14 +3,14 @@
  * area of the app. `3-components.css` beside this folder holds the base
  * component rules; the files here restyle them, area by area.
  *
- * WHY EVERY SELECTOR STARTS WITH `:root`. The prefix is not a scope —
- * `:root` is `<html>`, so it matches on every page — it holds each rule one
+ * THE `:root` PREFIX, BEING TAKEN OFF (#954). It was not a scope — `:root`
+ * is `<html>`, so it matches on every page — it held each rule one
  * pseudo-class (0,1,0) above a `3-components.css` rule of the same selector,
- * which these rules override. Without it, a rule here would drop one class
- * below a base rule it beats today. Static analysis cannot tell which of
- * those pairs ever meet on one element, so the prefix stays until a
- * computed-style comparison of the built app shows a flattened rule paints
- * the same (#954). A new rule here takes the prefix too.
+ * which these rules override. books, controls, dialogs, segments and sheets
+ * are flat now; the other five files still carry it until their own flatten
+ * slice, and a new rule in one of them takes the prefix too. A flat rule
+ * must not lose to a base rule it beats: `tests/component-cascade.test.ts`
+ * lists every pair where it would.
  *
  * ONE FILE PER AREA:
  *

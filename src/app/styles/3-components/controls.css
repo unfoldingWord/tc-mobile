@@ -1,4 +1,4 @@
-/* O4 — Shared controls. Owner: #941. Every selector is prefixed with :root; see 3-components/index.css's header before editing this file.
+/* O4 — Shared controls. Owner: #941. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
 
    The three shapes `components/o4-controls.tsx` puts on a `Control`
    (docs/design/o4-design-system.md §3). Each is layered onto the base
@@ -7,18 +7,18 @@
    The row transport takes its fill and ink from the play and record variants
    it wears, so it sets size alone. */
 @layer components {
-  :root .o4-square {
+  .o4-square {
     width: 56px;
     height: 56px;
     border-radius: var(--p-radius-lg);
     background: var(--s-well);
     color: var(--s-ink);
   }
-  :root .o4-transport {
+  .o4-transport {
     width: 72px;
     height: 72px;
   }
-  :root .o4-pill {
+  .o4-pill {
     display: inline-flex;
     align-items: center;
     gap: 12px;

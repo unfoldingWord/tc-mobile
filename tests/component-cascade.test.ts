@@ -5,12 +5,13 @@ import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
-import { AREA_DIR, readAreaCss } from "./o4-area-css";
+import { AREA_DIR, readAreaCss, type Area } from "./o4-area-css";
 import {
   builtCssRules,
   compareSpecificity,
   normalizeSelector,
   specificity,
+  stripCssComments,
   subjectCompound,
   type BuiltCssRule,
 } from "./support";
@@ -377,6 +378,29 @@ describe("a selector written in both sources (#954)", () => {
   });
 });
 
+/** The area files whose selectors have lost the standalone `:root ` (#954's
+ *  flatten slices add a file here as each one is done). */
+const FLATTENED: readonly Area[] = [
+  "books",
+  "controls",
+  "dialogs",
+  "segments",
+  "sheets",
+];
+
+// Source read, so it runs under `npm test` too. A `:root[dir="rtl"]`
+// compound is not standalone: the `\s` after `:root` is what leaves it out.
+describe("the flattened area files carry no standalone :root (#954)", () => {
+  it.each(FLATTENED)("%s.css has no `:root ` descendant prefix", (area) => {
+    const css = stripCssComments(readAreaCss(area));
+    expect(css.length).toBeGreaterThan(0);
+    const lines = css
+      .split("\n")
+      .filter((line) => /(^|[^\w-]):root\s/.test(line));
+    expect(lines).toEqual([]);
+  });
+});
+
 describe.skipIf(GATE === "skip")(
   "the component layer's cascade (dist/assets/*.css, requires a prior `npm run build`)",
   () => {
@@ -516,29 +540,115 @@ const DOT =
 const NOT_AN_ICON =
   "Only <Icon> sets data-rtl-mirror (icon.tsx), and only on its own <svg>.";
 
+const LANG =
+  "The [lang] element is the autonym <span> inside a language row " +
+  "(language-ask.tsx), which carries no class, so the base rule's class " +
+  "cannot match it.";
+const SHEET_DRAG =
+  "Only menu.tsx writes data-sheet-drag, and only on the menu panel, a " +
+  '<div class="menu-panel"> that is neither a .control nor a .paste-marker.';
+const SHEET_DRAG_RTL = `${SHEET_DRAG} ${NOT_AN_ICON}`;
+const LIST_ITEM =
+  "The area subject is a reorder-state <li> (or its lifted class on that " +
+  `<li>) in books-screen.tsx / segments-screen.tsx; the base rule needs an <svg>. ${NOT_AN_ICON}`;
+const CIRCLE = `The area subject is a <circle> inside the glyph; the base rule needs an <svg>. ${NOT_AN_ICON}`;
+const TEXT_FIELD =
+  "The base rule only matches an input, a textarea or a [contenteditable] " +
+  "element; the area subject is a <li> (books-screen.tsx) or a plain <div> " +
+  "(name-reveal.tsx) with none of those.";
+const GLYPH_SVG =
+  "The area subject is the <svg> inside a confirm button; .control--play " +
+  "and .control--record are classes control.tsx puts on the button itself.";
+const ROW =
+  "Inference from the render sites, not a trace: .row is the segment row's " +
+  "<div> (segment-row.tsx) and the .recorder-toolbar.pair that carries the " +
+  "other half is rendered by recorder-toolbars.tsx in the recorder sheet, " +
+  "which segments-screen.tsx does not nest inside a row. The style diff " +
+  "(#954) is the check that they never meet.";
+
 const REVIEWED: Record<string, string> = {
-  ':root .books-dots > [data-state="finished"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
-    DOT,
-  ':root .books-dots > [data-state="recorded"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
-    DOT,
-  ":root .books-dots > i ⟵ .control--quiet:disabled:hover [background]": DOT,
-  ':root .books-dots > i ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
-    DOT,
-  ":root .books-dots > i ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]":
-    DOT,
-  ":root .books-dots > i ⟵ .recorder-toolbar.pair .control--play [height, width]":
-    DOT,
-  ":root .books-dots > i ⟵ .recorder-toolbar.pair .control--record [height, width]":
-    DOT,
-  ':root .books-dots > i ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
-    DOT,
-  ":root .language-row [lang] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [color]":
-    "The [lang] element is the autonym <span> inside a language row " +
-    "(language-ask.tsx), which carries no class, so .control--play cannot " +
-    "match it.",
   ':root .recorder-cut .cut-anchor ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.cut-anchor is a <div> (cut-anchor.tsx), and the base rule needs an <svg>. ${NOT_AN_ICON}`,
   ':root .share-o4-ring ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.share-o4-ring is an <svg> drawn by share-progress-panel.tsx, not by <Icon>. ${NOT_AN_ICON}`,
-  ':root [data-sheet-drag] ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
-    "Only menu.tsx writes data-sheet-drag, and only on the menu panel, " +
-    `which is a <div>. ${NOT_AN_ICON}`,
+  ".books-card ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
+    TEXT_FIELD,
+  '.books-chapters[data-reordering] > .books-lifted ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.books-chapters[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.books-dots > [data-state="finished"] ⟵ .control--quiet:disabled:hover [background]':
+    DOT,
+  '.books-dots > [data-state="finished"] ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
+    DOT,
+  '.books-dots > [data-state="finished"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
+    DOT,
+  '.books-dots > [data-state="finished"] ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
+    DOT,
+  '.books-dots > [data-state="recorded"] ⟵ .control--quiet:disabled:hover [background]':
+    DOT,
+  '.books-dots > [data-state="recorded"] ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
+    DOT,
+  '.books-dots > [data-state="recorded"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
+    DOT,
+  '.books-dots > [data-state="recorded"] ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
+    DOT,
+  ".books-dots > i ⟵ .control--quiet:disabled:hover [background]": DOT,
+  ".books-dots > i ⟵ .control--quiet:hover [background]": DOT,
+  '.books-dots > i ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
+    DOT,
+  ".books-dots > i ⟵ .name-edit-with-extra > .name-input [flex]": DOT,
+  ".books-dots > i ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]":
+    DOT,
+  ".books-dots > i ⟵ .recorder-toolbar.edit [height]": DOT,
+  ".books-dots > i ⟵ .recorder-toolbar.pair .control--play [height, width]":
+    DOT,
+  ".books-dots > i ⟵ .recorder-toolbar.pair .control--record [height, width]":
+    DOT,
+  ".books-dots > i ⟵ .recorder-toolbar.pair [height]": DOT,
+  ".books-dots > i ⟵ .row .control--mic [height, width]": DOT,
+  ".books-dots > i ⟵ .row .control--record [height, width]": DOT,
+  ".books-dots > i ⟵ .row--finished .control--play [background]": DOT,
+  ".books-dots > i ⟵ .row-open:focus-visible [border-radius]": DOT,
+  ".books-dots > i ⟵ .scrub:focus-visible [border-radius]": DOT,
+  '.books-dots > i ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
+    DOT,
+  '.books-dots > i ⟵ .vu-meter__fill[data-zone="green"] [background]': DOT,
+  '.books-dots > i ⟵ .vu-meter__fill[data-zone="red"] [background]': DOT,
+  '.books-dots > i ⟵ .vu-meter__fill[data-zone="yellow"] [background]': DOT,
+  '.books-list[data-reordering] > .books-card-lifted ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.books-list[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  ".confirm-actions > .control svg ⟵ .recorder-toolbar.pair .control--play [height, width]":
+    GLYPH_SVG,
+  ".confirm-actions > .control svg ⟵ .recorder-toolbar.pair .control--record [height, width]":
+    GLYPH_SVG,
+  '.confirm-panel-record .confirm-glyph circle ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    CIRCLE,
+  ".language-row [lang] ⟵ .control--quiet:disabled:hover [color]": LANG,
+  '.language-row [lang] ⟵ .control--quiet[aria-disabled="true"]:hover [color]':
+    LANG,
+  '.language-row [lang] ⟵ .notice[data-tone="alert"] .notice-glyph [color]':
+    LANG,
+  '.language-row [lang] ⟵ .notice[data-tone="busy"] .notice-glyph [color]':
+    LANG,
+  '.language-row [lang] ⟵ .notice[data-tone="info"] .notice-glyph [color]':
+    LANG,
+  ".language-row [lang] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [color]":
+    LANG,
+  ".name-reveal ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-user-select, user-select]":
+    TEXT_FIELD,
+  ".row .control--play ⟵ .recorder-toolbar.pair .control--play [height, width]":
+    ROW,
+  ".row .control--record ⟵ .recorder-toolbar.pair .control--record [height, width]":
+    ROW,
+  '.segments-list[data-reordering] > .segments-item--lifted ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.segments-list[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  "[data-sheet-drag] ⟵ .control:active [transform]": SHEET_DRAG,
+  "[data-sheet-drag] ⟵ .control:disabled [transform]": SHEET_DRAG,
+  '[data-sheet-drag] ⟵ .control[aria-disabled="true"] [transform]': SHEET_DRAG,
+  "[data-sheet-drag] ⟵ .paste-marker:active [transform]": SHEET_DRAG,
+  '[data-sheet-drag] ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    SHEET_DRAG_RTL,
 };
