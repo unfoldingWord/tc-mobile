@@ -608,7 +608,7 @@ Books shelf. Do not tell a participant on 1.2.2 that they have any of these.
   the waveform. Do not Reset. Whether tapping Record afterwards continues the
   saved audio has not been confirmed, so keep the take as it is and report
   the build stamp (§5). One tester report, 2026-10-02, with the phone and
-  build not given; not reproduced by us. <!-- source: gh issue #1294, open, device sheet not yet run ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); PR #1298 (merged at 38c82e8d: bound the track's mute event; not yet run on a phone, so the on-screen position after an alarm stays unconfirmed); docs/progress_tracker.md 2026-10-02 "Other"; bench George round 3 on PR #1297 -->
+  build not given; not reproduced by us. <!-- source: gh issue #1294, closed 2026-10-23 with a device label; the remaining device rows are on #974 (A1–A4, I5–I8), not yet run per its close comment ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); PR #1298 (merged at 38c82e8d: bound the track's mute event; not yet run on a phone, so the on-screen position after an alarm stays unconfirmed); docs/progress_tracker.md 2026-10-02 "Other"; bench George round 3 on PR #1297 -->
 
 - **Finish recording — tap the square — before switching apps or locking the
   phone.** Once it is tapped, the recording is already saved (§3), so this is
@@ -701,8 +701,8 @@ Books shelf. Do not tell a participant on 1.2.2 that they have any of these.
   English. Names people type can be in any script. <!-- source: GitHub release
   tester-build-v1.2.2 notes, "Also new since 1.1.0" ("drafted by AI and not yet
   read by a speaker of each language ... no language switch inside the app; it
-  follows the phone"); gh issue #169; PR #1270 (typed names set their own text
-  direction) is part of #1267, which stays open, so no further right-to-left
+  follows the phone"); gh issue #169 (closed 2026-10-29); PR #1270 (typed names set their own text
+  direction) is part of #1267 (closed 2026-10-08; not run on a device with an RTL name), so no further right-to-left
   claim is made here -->
 - **Share Book and Share your work in the browser version on Android** can
   fail after the file is built: Share Book says "Could not share this book.
@@ -712,7 +712,7 @@ Books shelf. Do not tell a participant on 1.2.2 that they have any of these.
   accepting for sharing (the project's reading, not re-run on a phone); a
   chapter is a plain MP3 and is not affected, so share chapter by chapter
   there. The installed Android app sends a share by
-  a different route, and this failure has not been reported from it. <!-- source: gh issue #272, open (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); src/hooks/share-target.ts selectShareRoute docblock ("Android Chrome's Web Share allowlist rejects application/zip (#272)" — the project's claim, not re-run here); src/hooks/use-library-share.ts and src/hooks/use-book-share.ts (both "application/zip"); src/hooks/use-chapter-share.ts ("audio/mpeg"); src/lib/strings.ts shareBookFailedWeb (PR #1332), shareAllFailedWeb (PR #1339); GitHub release v1.0.1 body lists #272 among the known limits; George round 1 P2-2 on PR #1297 -->
+  a different route, and this failure has not been reported from it. <!-- source: gh issue #272, closed 2026-10-23 with a device label; the remaining device checks are on #974 (A12, A13, A15) (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); src/hooks/share-target.ts selectShareRoute docblock ("Android Chrome's Web Share allowlist rejects application/zip (#272)" — the project's claim, not re-run here); src/hooks/use-library-share.ts and src/hooks/use-book-share.ts (both "application/zip"); src/hooks/use-chapter-share.ts ("audio/mpeg"); src/lib/strings.ts shareBookFailedWeb (PR #1332), shareAllFailedWeb (PR #1339); GitHub release v1.0.1 body lists #272 among the known limits; George round 1 P2-2 on PR #1297 -->
 - **If playback is silent or too quiet, check the phone's media volume
   first.** If it persists, record the build, the screen used for playback,
   and whether it happened before or after marking the segment Done.
