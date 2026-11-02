@@ -95,11 +95,33 @@ describe("runbook section 5 rollback read", () => {
   it("prints values decoded, not as quoted JSON, with quote and backslash intact", async () => {
     const { code, out } = await run(
       good('a"b\\c', "1.2.3"),
-      good("abc1234", "1.2.3")
+      good('a"b\\c', "1.2.3")
     );
     expect(code).toBe(0);
     expect(out).toContain('sha=a"b\\c version=1.2.3');
     expect(out).not.toContain('sha="');
+  });
+
+  // #1321: two well-formed records that disagree used to print OK twice
+  // and exit 0, while the prose speaks of "the" record to write down.
+  it("two good origins that serve different shas: exit non-zero, record neither", async () => {
+    const { code, out } = await run(
+      good("abc1234", "1.2.3"),
+      good("def5678", "1.2.3")
+    );
+    expect(code).toBe(1);
+    expect(out).toMatch(/FAIL: .*different builds/);
+    expect(out).toContain("abc1234");
+    expect(out).toContain("def5678");
+  });
+
+  it("two good origins that serve the same sha stay green with no mismatch line", async () => {
+    const { code, out } = await run(
+      good("abc1234", "1.2.3"),
+      good("abc1234", "1.2.3")
+    );
+    expect(code).toBe(0);
+    expect(out).not.toContain("different builds");
   });
 
   it("an origin that does not answer: exit non-zero after trying both, and says it did not answer", async () => {
