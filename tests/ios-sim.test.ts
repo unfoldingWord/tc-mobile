@@ -1,10 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:net";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
 
+import { startCdpServer } from "inspect-webkit";
 import { afterAll, describe, expect, it } from "vitest";
+
+import { BRIDGE_HOST, nonLoopbackAddresses } from "../scripts/ios-sim-core.mjs";
 
 import { main, reachableOn, type Deps } from "../scripts/ios-sim.mjs";
 
@@ -205,6 +209,16 @@ describe("eval", () => {
     expect(f.evaluated).toEqual([]);
   });
 
+  it("refuses a --port that is not a port number before starting a bridge", async () => {
+    const f = fakes({
+      withPage: async () => {
+        throw new Error("started a bridge despite a bad --port");
+      },
+    });
+    expect(await main(["eval", "1", "--port", "99999"], f.deps)).toBe(2);
+    expect(f.err.join("\n")).toMatch(/--port wants a port number/);
+  });
+
   it("refuses eval with no expression", async () => {
     const f = fakes();
     expect(await main(["eval"], f.deps)).toBe(2);
@@ -312,6 +326,21 @@ describe("tap, home and describe", () => {
   });
 });
 
+describe("logs", () => {
+  it("asks for the last --seconds of the app's log", async () => {
+    const f = fakes();
+    expect(await main(["logs", "--seconds", "5"], f.deps)).toBe(0);
+    const show = f.calls.find((c) => c.args.includes("show"))!;
+    expect(show.args).toEqual(expect.arrayContaining(["--last", "5s"]));
+  });
+
+  it("refuses a --seconds that is not a positive number", async () => {
+    const f = fakes();
+    expect(await main(["logs", "--seconds", "foo"], f.deps)).toBe(2);
+    expect(f.calls.some((c) => c.args.includes("show"))).toBe(false);
+  });
+});
+
 describe("build", () => {
   it("copies web assets with cap copy, never cap sync (sync rewrites Package.swift)", async () => {
     const f = fakes();
@@ -391,9 +420,75 @@ describe("reachableOn, the check that the bridge is loopback-only", () => {
     }
   });
 
+  it("counts a connection that neither opens nor refuses as reachable", async () => {
+    // Fail closed: a probe that timed out has not shown the port is shut.
+    const stalled = () => {
+      const socket = Object.assign(new EventEmitter(), { destroy() {} });
+      setTimeout(() => socket.emit("timeout"), 0);
+      return socket;
+    };
+    await expect(
+      reachableOn(1, ["10.0.0.9"], { connect: stalled })
+    ).resolves.toBe("10.0.0.9");
+  });
+
   it("returns null once nothing answers", async () => {
     const { server, port } = await listening("127.0.0.1");
     await new Promise((r) => server.close(r));
     await expect(reachableOn(port, ["127.0.0.1"])).resolves.toBeNull();
+  });
+});
+
+describe("the pinned inspect-webkit bridge, on a real socket", () => {
+  // The bind spelling is only worth what the dependency does with it, so this
+  // starts the real server rather than comparing strings. Its sources are
+  // optional: with no device or Simulator it still listens.
+  const external = nonLoopbackAddresses(networkInterfaces());
+  const freePort = async () => {
+    const server = createServer();
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const address = server.address();
+    await new Promise((r) => server.close(r));
+    if (address === null || typeof address === "string")
+      throw new Error("no TCP address");
+    return address.port;
+  };
+  const quietly = async <T>(body: () => Promise<T>) => {
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      return await body();
+    } finally {
+      console.error = quiet;
+    }
+  };
+
+  it("has an external address to probe, or this test would prove nothing", () => {
+    expect(external.length).toBeGreaterThan(0);
+  });
+
+  it("answers on loopback and on no external address when bound to BRIDGE_HOST", async () => {
+    const port = await freePort();
+    const server = await quietly(() =>
+      startCdpServer({ port, host: BRIDGE_HOST })
+    );
+    try {
+      await expect(reachableOn(port, ["127.0.0.1"])).resolves.toBe("127.0.0.1");
+      await expect(reachableOn(port, external)).resolves.toBeNull();
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("answers on an external address when bound to localhost (the state F1 found)", async () => {
+    const port = await freePort();
+    const server = await quietly(() =>
+      startCdpServer({ port, host: "localhost" })
+    );
+    try {
+      await expect(reachableOn(port, external)).resolves.not.toBeNull();
+    } finally {
+      server.stop();
+    }
   });
 });

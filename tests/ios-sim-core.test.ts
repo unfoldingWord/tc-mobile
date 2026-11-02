@@ -11,7 +11,7 @@ import {
   pickTarget,
   pollSlot,
   slotExpression,
-  timeoutMs,
+  numberFlag,
 } from "../scripts/ios-sim-core.mjs";
 
 // The pure half of the iOS Simulator harness (#1840): everything the CLI
@@ -239,13 +239,15 @@ describe("the inspector bridge's bind address", () => {
   });
 });
 
-describe("timeoutMs", () => {
-  it("reads --timeout as milliseconds, with a default when it is absent", () => {
-    expect(timeoutMs(undefined, 30_000)).toBe(30_000);
-    expect(timeoutMs("2500", 30_000)).toBe(2500);
+describe("numberFlag", () => {
+  it("reads a number flag, with a default when it is absent", () => {
+    expect(numberFlag({}, "timeout", 30_000)).toBe(30_000);
+    expect(numberFlag({ timeout: "2500" }, "timeout", 30_000)).toBe(2500);
+    expect(numberFlag({ seconds: "5" }, "seconds", 60)).toBe(5);
+    expect(numberFlag({ port: "9230" }, "port", 9224)).toBe(9230);
   });
 
-  it("refuses a value that is not a positive number, so nothing waits forever", () => {
+  it("refuses a timeout or seconds that is not a positive number, so nothing waits forever", () => {
     for (const bad of [
       "foo",
       "30s",
@@ -254,9 +256,20 @@ describe("timeoutMs", () => {
       "0",
       "-5",
       true,
-    ] as const)
-      expect(() => timeoutMs(bad, 30_000)).toThrow(
+    ] as const) {
+      expect(() => numberFlag({ timeout: bad }, "timeout", 1)).toThrow(
         /--timeout wants a positive number of milliseconds/
+      );
+      expect(() => numberFlag({ seconds: bad }, "seconds", 1)).toThrow(
+        /--seconds wants a positive number of seconds/
+      );
+    }
+  });
+
+  it("refuses a port that is not a whole number from 1 to 65535", () => {
+    for (const bad of ["foo", "0", "65536", "9224.5", true] as const)
+      expect(() => numberFlag({ port: bad }, "port", 9224)).toThrow(
+        /--port wants a port number from 1 to 65535/
       );
   });
 });

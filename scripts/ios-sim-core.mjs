@@ -123,18 +123,28 @@ export async function pollSlot(read, { timeoutMs, intervalMs, now, sleep }) {
   }
 }
 
+/** What each number flag accepts. `--timeout` is milliseconds for eval and tap alike. */
+const NUMBER_FLAGS = {
+  timeout: "a positive number of milliseconds",
+  seconds: "a positive number of seconds",
+  port: "a port number from 1 to 65535",
+};
+
 /**
- * `--timeout` in milliseconds, for eval and tap alike. Anything but a positive
- * finite number is refused: `NaN` never satisfies pollSlot's deadline check.
+ * A number flag's value, or `fallback` when it is absent. Anything else is
+ * refused: `NaN` never satisfies pollSlot's deadline check, for one.
  */
-export function timeoutMs(value, fallback) {
+export function numberFlag(flags, name, fallback) {
+  const value = flags[name];
   if (value === undefined) return fallback;
-  const ms = typeof value === "string" ? Number(value) : NaN;
-  if (!Number.isFinite(ms) || ms <= 0)
-    throw new Error(
-      `--timeout wants a positive number of milliseconds, got ${value}`
-    );
-  return ms;
+  const n = typeof value === "string" ? Number(value) : NaN;
+  const ok =
+    name === "port"
+      ? Number.isInteger(n) && n >= 1 && n <= 65535
+      : Number.isFinite(n) && n > 0;
+  if (!ok)
+    throw new Error(`--${name} wants ${NUMBER_FLAGS[name]}, got ${value}`);
+  return n;
 }
 
 /** What DriveTests.swift handles; tests/ios-harness-project.test.ts keeps the two in step. */

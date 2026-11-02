@@ -75,8 +75,9 @@ export declare function pollSlot(
   }
 ): Promise<unknown>;
 
-export declare function timeoutMs(
-  value: string | true | undefined,
+export declare function numberFlag(
+  flags: Record<string, string | true | undefined>,
+  name: "timeout" | "seconds" | "port",
   fallback: number
 ): number;
 

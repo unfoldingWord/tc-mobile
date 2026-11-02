@@ -39,7 +39,13 @@ export interface Deps {
 export declare function reachableOn(
   port: number,
   addresses: string[],
-  waitMs?: number
+  options?: {
+    waitMs?: number;
+    connect?: (opts: { host: string; port: number; timeout: number }) => {
+      once(event: string, listener: () => void): unknown;
+      destroy(): void;
+    };
+  }
 ): Promise<string | null>;
 
 export declare function main(argv: string[], deps?: Deps): Promise<number>;

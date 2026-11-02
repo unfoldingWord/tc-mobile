@@ -36,7 +36,7 @@ import {
   pickTarget,
   pollSlot,
   slotExpression,
-  timeoutMs,
+  numberFlag,
 } from "./ios-sim-core.mjs";
 
 const USAGE = `usage: npm run ios-sim -- <command>
@@ -117,10 +117,10 @@ function valueOf(reply) {
   return result?.value;
 }
 
-/** `--timeout` in milliseconds, or a usage failure. */
-function timeoutFlag(flags, fallback) {
+/** A number flag's value (see numberFlag), or a usage failure. */
+function flagNumber(flags, name, fallback) {
   try {
-    return timeoutMs(flags.timeout, fallback);
+    return numberFlag(flags, name, fallback);
   } catch (e) {
     throw new Fail(e.message, 2);
   }
@@ -129,7 +129,8 @@ function timeoutFlag(flags, fallback) {
 async function evalCommand(deps, positionals, flags) {
   const [expression] = positionals;
   if (!expression) throw new Fail("eval needs an expression", 2);
-  const waitMs = timeoutFlag(flags, 30_000);
+  const waitMs = flagNumber(flags, "timeout", 30_000);
+  flagNumber(flags, "port", 9224);
   const device = booted(deps, flags);
   const pid = runningPid(deps, device.udid);
   const value = await deps.withPage(
@@ -159,7 +160,7 @@ function harnessCommand(deps, action, positionals, flags) {
   const label = positionals[0];
   if (action === "tap" && !label)
     throw new Fail("tap needs an accessibility label", 2);
-  const timeoutS = timeoutFlag(flags, 10_000) / 1000;
+  const timeoutS = flagNumber(flags, "timeout", 10_000) / 1000;
   const device = booted(deps, flags);
   const xctestrun = (deps.findXctestrun ?? findXctestrun)(deps);
   if (!xctestrun)
@@ -346,7 +347,8 @@ const COMMANDS = {
       "simctl io screenshot"
     );
   },
-  logs: (deps, _p, flags) =>
+  logs: (deps, _p, flags) => {
+    const seconds = flagNumber(flags, "seconds", 60);
     deps.out(
       check(
         deps.run("xcrun", [
@@ -358,13 +360,14 @@ const COMMANDS = {
           "--style",
           "compact",
           "--last",
-          `${Number(flags.seconds ?? 60)}s`,
+          `${seconds}s`,
           "--predicate",
           'process == "App"',
         ]),
         "log show"
       ).stdout
-    ),
+    );
+  },
 };
 
 export async function main(argv, deps = realDeps()) {
@@ -412,18 +415,26 @@ function realDeps() {
   };
 }
 
-/** The first of `addresses` that accepts a TCP connection on `port`, or null. */
-export async function reachableOn(port, addresses, waitMs = 500) {
+/**
+ * The first of `addresses` on `port` that does not refuse a TCP connection, or
+ * null. A connection that times out counts as reachable: it has not shown the
+ * port is shut.
+ */
+export async function reachableOn(
+  port,
+  addresses,
+  { waitMs = 500, connect = net.connect } = {}
+) {
   for (const host of addresses) {
     const open = await new Promise((resolve) => {
-      const socket = net.connect({ host, port, timeout: waitMs });
+      const socket = connect({ host, port, timeout: waitMs });
       const done = (ok) => {
         socket.destroy();
         resolve(ok);
       };
       socket.once("connect", () => done(true));
       socket.once("error", () => done(false));
-      socket.once("timeout", () => done(false));
+      socket.once("timeout", () => done(true));
     });
     if (open) return host;
   }
@@ -448,7 +459,7 @@ async function withPage(pid, body, flags = {}) {
     );
     if (exposed)
       throw new Fail(
-        `the inspector bridge answers on ${exposed}:${port}, not only on loopback; refusing to evaluate`
+        `the inspector bridge did not refuse a connection on ${exposed}:${port}, so it is not loopback-only; refusing to evaluate`
       );
     let target = null;
     for (let i = 0; i < 50 && !target; i++) {
