@@ -28,6 +28,19 @@ describe("parseArgs", () => {
     });
   });
 
+  it("never lets a boolean flag swallow the positional after it", () => {
+    expect(parseArgs(["eval", "--async", "Promise.resolve(1)"])).toEqual({
+      command: "eval",
+      positionals: ["Promise.resolve(1)"],
+      flags: { async: true },
+    });
+    expect(parseArgs(["build", "--harness", "x", "--verbose", "y"])).toEqual({
+      command: "build",
+      positionals: ["x", "y"],
+      flags: { harness: true, verbose: true },
+    });
+  });
+
   it("returns no command for an empty argv", () => {
     expect(parseArgs([]).command).toBeUndefined();
   });

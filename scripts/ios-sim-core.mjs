@@ -7,6 +7,9 @@
 
 export const BUNDLE_ID = "org.unfoldingword.tcmobile";
 
+/** Flags that never take a value, so `eval --async '<js>'` keeps its `<js>`. */
+const BOOLEAN_FLAGS = new Set(["async", "harness", "verbose"]);
+
 /** `ios-sim <command> [positionals] [--flag | --flag=value | --flag value]`. */
 export function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -20,7 +23,11 @@ export function parseArgs(argv) {
     }
     const eq = arg.indexOf("=");
     if (eq !== -1) flags[arg.slice(2, eq)] = arg.slice(eq + 1);
-    else if (rest[i + 1] !== undefined && !rest[i + 1].startsWith("--")) {
+    else if (
+      !BOOLEAN_FLAGS.has(arg.slice(2)) &&
+      rest[i + 1] !== undefined &&
+      !rest[i + 1].startsWith("--")
+    ) {
       flags[arg.slice(2)] = rest[++i];
     } else flags[arg.slice(2)] = true;
   }
