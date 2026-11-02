@@ -414,10 +414,14 @@ if the durable write is what failed.
 
 **The channel being built is not the same as the app being wired into it, and
 this file will not blur the two.** What reaches the funnel today is: uncaught
-errors and unhandled rejections (`app/install-failure-listeners.ts`), render
+errors and unhandled rejections (`app/install-failure-listeners.ts`,
+`"uncaught-error"` and `"unhandled-rejection"`), render
 throws (`components/error-boundary.tsx`), encoder health and recovery
-(`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
-share _prepare_ (`hooks/share-flow.ts`), a share's zip spool that could not
+(`hooks/mp3-codec.ts`, `"encoder-health"` and `"encoder-recover"`), the
+transcode sweep (`hooks/finish-transcode.ts`, `"transcode-sweep"`, the
+per-segment `"transcode-segment"` and the stall accounting
+`"transcode-stall-accounting"`), share _prepare_ (`hooks/share-flow.ts`,
+`"share-prepare"`), a share's zip spool that could not
 be deleted afterwards (`hooks/archive-spool.ts`, `"share-spool-release"`,
 #1003), a book's Scripture Bundle build that failed on a read, write or zip
 error (`hooks/use-book-export.ts`, `"book-export-bundle"`, #1457), the
@@ -538,7 +542,27 @@ chunk that would not load after an update (`hooks/stale-chunk-reload.ts`,
 #1421 O1: `"stale-chunk-reload"` when the page reloads once for it — not a
 failure, so it does not light ≡ — and `"stale-chunk"` when no reload is
 allowed: already reloaded once for this build, or audio held only in memory),
-and the log's own share and clear paths. `SaveFailed` now
+the load and write paths the Books and chapter screens run through
+(`hooks/use-books.ts`: `"books-load"`, `"books-create"`, `"books-add-chapter"`,
+`"books-rename"`; `hooks/use-chapter-segments.ts`: `"chapter-load"`,
+`"chapter-add-segment"`, `"chapter-rename"`, `"chapter-set-finished"`), the
+template library (`hooks/use-template-library.ts`: `"template-load"`,
+`"template-create"`), the recorder screen's segment read
+(`hooks/use-recorder-segment.ts`: `"recorder-segment-load"` and
+`"recorder-segment-reload"`), the launch replay's read of the waiting-take
+store (`hooks/replay-pending-takes.ts`, `"pending-take-read"`), the Android
+Back-button bridge (`hooks/use-nav-stack.ts`: `"native-back-handler"`,
+`"native-back-exit"`, `"native-back-remove"`, `"native-back-listener"`), the
+native shell's service-worker cleanup (`hooks/register-service-worker.ts`:
+`"native-sw-unregister"` and `"native-sw-cache-cleanup"`), a storage-pressure
+listener that threw (`hooks/use-storage-pressure.ts`,
+`"storage-pressure-bump"`), a preference that could not be saved
+(`hooks/use-settings.ts`, `"use-settings: persist"`; `hooks/use-theme.ts`,
+`"use-theme: persist"`), and the log's own share and clear paths
+(`hooks/use-failure-log-share.ts`: `"failure-log-share-prepare"` and
+`"failure-log-share-send"`; `hooks/failure-log.ts`: `"failure-log-clear"`). Each of the contexts added to this paragraph on
+2026-11-02 lights ≡, since none is in `lib/failure-marker.ts`'s lists, and no
+issue is cited for them here. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
