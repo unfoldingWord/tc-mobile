@@ -7,6 +7,23 @@
 
 export const BUNDLE_ID = "org.unfoldingword.tcmobile";
 
+/**
+ * Where the inspector bridge listens. inspect-webkit 0.0.5's listen() turns
+ * localhost, 127.0.0.1 and ::1 into a dual-stack "::", every interface, with no
+ * authentication on the debugger. This spelling of loopback is passed through
+ * unchanged. scripts/ios-sim.mjs still checks after starting it, since a
+ * dependency upgrade could widen this one too.
+ */
+export const BRIDGE_HOST = "::ffff:127.0.0.1";
+
+/** The addresses `os.networkInterfaces()` reports that another machine could reach. */
+export function nonLoopbackAddresses(interfaces) {
+  return Object.values(interfaces)
+    .flat()
+    .filter((a) => a && !a.internal && !a.address.startsWith("fe80:"))
+    .map((a) => a.address);
+}
+
 /** Flags that never take a value, so `eval --async '<js>'` keeps its `<js>`. */
 const BOOLEAN_FLAGS = new Set(["async", "harness", "verbose"]);
 

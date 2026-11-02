@@ -1,11 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { main, type Deps } from "../scripts/ios-sim.mjs";
+import { main, reachableOn, type Deps } from "../scripts/ios-sim.mjs";
 
 // The CLI half of the iOS Simulator harness (#1840). The rules are in
 // tests/ios-sim-core.test.ts; this file pins the guards (each in both
@@ -284,5 +285,32 @@ describe("the real entry path", () => {
     );
     expect(r.status).toBe(2);
     expect(r.stderr).toMatch(/usage:/);
+  });
+});
+
+describe("reachableOn, the check that the bridge is loopback-only", () => {
+  const listening = (host: string) =>
+    new Promise<{ server: Server; port: number }>((resolve) => {
+      const server = createServer().listen(0, host, () => {
+        const address = server.address();
+        if (address === null || typeof address === "string")
+          throw new Error("no TCP address");
+        resolve({ server, port: address.port });
+      });
+    });
+
+  it("names the address a listener answers on", async () => {
+    const { server, port } = await listening("127.0.0.1");
+    try {
+      await expect(reachableOn(port, ["127.0.0.1"])).resolves.toBe("127.0.0.1");
+    } finally {
+      server.close();
+    }
+  });
+
+  it("returns null once nothing answers", async () => {
+    const { server, port } = await listening("127.0.0.1");
+    await new Promise((r) => server.close(r));
+    await expect(reachableOn(port, ["127.0.0.1"])).resolves.toBeNull();
   });
 });

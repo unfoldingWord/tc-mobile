@@ -3,6 +3,17 @@
 // tsconfig.app.json's `include` (the same arrangement as check-deploy.d.mts).
 
 export declare const BUNDLE_ID: string;
+export declare const BRIDGE_HOST: string;
+
+export interface InterfaceAddress {
+  address: string;
+  family: string;
+  internal: boolean;
+}
+
+export declare function nonLoopbackAddresses(
+  interfaces: Record<string, InterfaceAddress[] | undefined>
+): string[];
 
 export interface ParsedArgs {
   command: string | undefined;

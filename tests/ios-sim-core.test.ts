@@ -4,7 +4,9 @@ import {
   appPid,
   asyncExpression,
   bootedDevice,
+  BRIDGE_HOST,
   harnessEnv,
+  nonLoopbackAddresses,
   parseArgs,
   pickTarget,
   pollSlot,
@@ -208,5 +210,30 @@ describe("harnessEnv", () => {
 
   it("refuses a tap with no label", () => {
     expect(() => harnessEnv({ action: "tap" })).toThrow(/needs a label/);
+  });
+});
+
+describe("the inspector bridge's bind address", () => {
+  it("is loopback, spelled so inspect-webkit 0.0.5 does not widen it to ::", () => {
+    // Its listen() maps localhost, 127.0.0.1 and ::1 to a dual-stack "::",
+    // which is every interface. Any other spelling is passed through as is.
+    expect(BRIDGE_HOST).toBe("::ffff:127.0.0.1");
+  });
+
+  it("lists every external address and no loopback or link-local one", () => {
+    expect(
+      nonLoopbackAddresses({
+        lo0: [
+          { address: "127.0.0.1", family: "IPv4", internal: true },
+          { address: "::1", family: "IPv6", internal: true },
+        ],
+        en0: [
+          { address: "fe80::1c2b:3a4d", family: "IPv6", internal: false },
+          { address: "10.250.0.36", family: "IPv4", internal: false },
+          { address: "2001:db8::5", family: "IPv6", internal: false },
+        ],
+        utun3: undefined,
+      })
+    ).toEqual(["10.250.0.36", "2001:db8::5"]);
   });
 });

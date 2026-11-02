@@ -473,7 +473,9 @@ npm run ios-sim -- logs --seconds 60
 - **JS (`eval`):** [inspect-webkit](https://github.com/EvanBacon/inspect-webkit)'s
   CDP bridge is started for one command and stopped after it. The command finds
   the app's WebView by its process id, never by URL. A Debug build is
-  inspectable with no config change.
+  inspectable with no config change. The bridge's debugger has no
+  authentication, so it binds to loopback only, and `eval` refuses to run if
+  the bridge answers on any other address.
 - **Native taps:** they go through `ios/Harness/`, a separate Xcode project with
   one UI test (`DriveTests`). The UI test drives tC Mobile by bundle id; each
   command is one `xcodebuild test-without-building`. `App.xcodeproj` and the

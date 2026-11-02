@@ -19,6 +19,8 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
+import net from "node:net";
+import { networkInterfaces } from "node:os";
 import path from "node:path";
 
 import { isMainEntry } from "./check-commit-messages.mjs";
@@ -26,8 +28,10 @@ import {
   appPid,
   asyncExpression,
   bootedDevice,
+  BRIDGE_HOST,
   BUNDLE_ID,
   harnessEnv,
+  nonLoopbackAddresses,
   parseArgs,
   pickTarget,
   pollSlot,
@@ -384,6 +388,24 @@ function realDeps() {
   };
 }
 
+/** The first of `addresses` that accepts a TCP connection on `port`, or null. */
+export async function reachableOn(port, addresses, timeoutMs = 500) {
+  for (const host of addresses) {
+    const open = await new Promise((resolve) => {
+      const socket = net.connect({ host, port, timeout: timeoutMs });
+      const done = (ok) => {
+        socket.destroy();
+        resolve(ok);
+      };
+      socket.once("connect", () => done(true));
+      socket.once("error", () => done(false));
+      socket.once("timeout", () => done(false));
+    });
+    if (open) return host;
+  }
+  return null;
+}
+
 /** Start the bridge, find the app's page, hand `body` an evaluate(), stop the bridge. */
 async function withPage(pid, body, flags = {}) {
   const port = Number(flags.port ?? 9224);
@@ -392,12 +414,22 @@ async function withPage(pid, body, flags = {}) {
   // The bridge prints a banner and narrates every attach on console.error. Our
   // own failures go through process.stderr, so muting it loses nothing of ours.
   if (!flags.verbose) console.error = () => {};
-  const server = await startCdpServer({ port });
+  const server = await startCdpServer({ port, host: BRIDGE_HOST });
   try {
+    // The debugger has no authentication, so a bridge another machine can
+    // reach is refused before any target is attached (BRIDGE_HOST says why).
+    const exposed = await reachableOn(
+      port,
+      nonLoopbackAddresses(networkInterfaces())
+    );
+    if (exposed)
+      throw new Fail(
+        `the inspector bridge answers on ${exposed}:${port}, not only on loopback; refusing to evaluate`
+      );
     let target = null;
     for (let i = 0; i < 50 && !target; i++) {
       const list = await (
-        await fetch(`http://localhost:${port}/json/list`)
+        await fetch(`http://127.0.0.1:${port}/json/list`)
       ).json();
       target = pickTarget(list, pid);
       if (!target) await new Promise((r) => setTimeout(r, 100));
