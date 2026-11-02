@@ -71,13 +71,17 @@ Run each check and paste its output into the notes.
    `adb install -d`, never uninstall.
    The footer's build stamp on Books must start `v1.2.2` (**HUMAN** reads it).
 
-5. **Throwaway data.** Several rows erase or change data (Record again, Reset,
-   delete, cut, reorder). **HUMAN** confirms which books on the phone were created for this run.
-   **One rule:** if any book on the phone was not created for
-   this run (including books left by the upgrade sheet's Route B), then O2's
-   delete-book, O10's cut, O11's reorder and R5's record-again are
-   `couldn't reach`. They run only inside a book created for this run that
-   holds nothing else.
+5. **Throwaway data. One rule for the whole sheet.** **HUMAN** confirms which
+   books and recordings on the phone were created for this run. If any book or
+   recording on the phone was **not**, including anything left by the upgrade
+   sheet's Route B or already there, then every row that records, cuts,
+   deletes, reorders, exports or shares a book or chapter, or clears the cache,
+   is `couldn't reach`. That covers O2, O3, O10, O11, R1 to R8, R10 to R13, S1 to
+   S4, L1 to L5 and anything like them. The only exception is a step that first
+   names a book created for this run, and the **HUMAN** confirms that this book
+   is the one on screen; the row then runs inside that book only. Rows that
+   touch no book (the Phone check, language, screen and TalkBack settings) are
+   not affected.
 6. **Role.** The report is by role, never name: "developer" or "the DRI".
 
 ## Capturing output
@@ -184,7 +188,13 @@ shows a toggle, record it.
 
 - **R1** Record, speak 10 seconds, Stop (#1294). The timer runs, nothing stops
   by itself, the take plays.
-- **R2** Record, set a 1-minute alarm, let it ring, dismiss it (#1294). Pass:
+- **R2** Alarm (#1294). Set the 1-minute alarm **first**, in the Clock app, then
+  return to the app and start recording; leaving the app seals a take
+  (`onVisibilityChange` in `src/hooks/use-audio-session.ts` calls
+  `sealRecording()` when the page becomes hidden, and nothing restarts on
+  return), so an alarm set after recording starts would end the take during
+  setup. Confirm capture is still active (timer running) just before the alarm
+  fires, let it ring, dismiss it. Pass:
   the timer and wave stop at the alarm and the take ends there. Repeat once
   with the alarm locking the screen and once with a banner. 1.2.x contains
   #1511 (a "recording stopped" state and a `recorder-capture-stalled` row),
@@ -236,7 +246,9 @@ shows a toggle, record it.
   #1333): the phone's own share sheet opens with the file; the file plays or
   unzips on the receiving side (#1397 touched the share plugins). "Share your
   work" appears only on a nearly full phone; otherwise `couldn't reach`.
-- **S2** Share Book on the longest book available, on the smallest phone
+- **S2** Share Book on a book created for this run (name it, and the **HUMAN**
+  confirms it is the one on screen), as long as the run can make it, on the
+  smallest phone
   (#1031): screenshot the progress sheet partway; can you tell which chapter it
   is on? Does the chip wall push anything off-screen?
 - **S3** Share Book with a partly recorded chapter (#115): the missing-segments
@@ -263,8 +275,10 @@ shows a toggle, record it.
 - **L4** Share a book of several hours if one exists, once with the screen on
   and once locking the screen partway.
 - **L5** After sharing a book, Settings > Apps > tC Mobile > Storage: note the
-  cache size. **Clear cache** only (never Clear storage), only on a phone with
-  throwaway recordings, then confirm every recording is still there (#248).
+  cache size. **Clear cache** only (never Clear storage). This row is
+  `couldn't reach` whenever any recording the DRI did not create for this run
+  is on the phone (prerequisite 5). Otherwise press it, then confirm every
+  recording is still there (#248).
 
 **Phone check** (#1009, #1013):
 
@@ -349,9 +363,11 @@ and RAM, build, date, role. One row per item that was run:
   factory reset, or `adb install -d`. Uninstalling deletes the recordings.
   **Clear cache** is allowed only for L5, only on a phone with throwaway
   recordings.
-- **Rows that erase or change data** (O2, O10, O11, R5, delete and Reset) obey
-  prerequisite 5's one rule: inside a book created for this run that holds
-  nothing else, or `couldn't reach`.
+- **Prerequisite 5's one rule applies to every row** that records, cuts,
+  deletes, reorders, exports or shares a book or chapter, or clears the cache:
+  `couldn't reach` whenever any book or recording on the phone was not created
+  for this run, unless the step first names a run-made book and the HUMAN
+  confirms it is the one on screen.
 - Do not fill a phone's storage to reach S5, S6 or the low-space rows; use a
   phone that is already low, or write `couldn't reach`.
 - Do not provoke a crash or a save failure on purpose (O5).

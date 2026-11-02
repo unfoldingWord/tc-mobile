@@ -20,8 +20,8 @@ the reason.
 `tester-build-v1.1.0` was 11. So one open of 1.2.2 on a phone holding 1.1.x data
 runs the v12 (#1462), v13 (#38) and v14 (#1433) steps in a single start-up.
 That is the first time those steps meet a real phone. The migrations were run
-in Node against a simulated database only (`tester-build-v1.2.2` release notes
-say so).
+in automated tests and in a desktop browser, and not on a phone
+(`tester-build-v1.2.2` release notes say so).
 
 The schema only goes up. IndexedDB refuses to open a database at a lower
 version, so after this run the phone **cannot** be put back on 1.1.0 (AGENTS.md,
@@ -146,6 +146,8 @@ date.
    of real recordings, and no cleanup step in this sheet touches it.
    Open each zip on the machine (`unzip -l`) and count the chapter MP3s against
    what the phone's Books screen shows. Names of books stay in local notes only.
+   **A short count means the copy is not confirmed** for that book: do not
+   treat "we counted them" as enough, and go to step 4.
 3. Photograph or screenshot the Books and Segments screens as the "before"
    record (`adb exec-out screencap -p > /tmp/run-1464/before-books.png`). Look at
    each image before keeping it; delete any that shows a person's name or a
@@ -191,12 +193,15 @@ Mark every cell `pass`, `fail`, `cannot-tell` or `n/a` with a note.
 
 ### S0 Starting point
 
-If the phone is not on 1.1.0, install it (`adb install -r /tmp/run-1464/v1.1.0/app-release.apk`)
-only when the app was not installed (fresh phone) or is already 1.1.x. If a
-**newer** app is installed, Android will refuse the older APK (`INSTALL_FAILED_VERSION_DOWNGRADE`); do not
-work around it. Confirm: `adb shell dumpsys package org.unfoldingword.tcmobile | grep versionName`
-must read `1.1.0`. HUMAN: open the app; the build stamp at the foot of Books
-(`v1.1.0 · <sha>`) must start `v1.1.0`.
+If the app is not installed (fresh phone), install 1.1.0
+(`adb install -r /tmp/run-1464/v1.1.0/app-release.apk`). If it is already 1.1.x,
+do not install. If a **newer** 1.1.x build is installed, Android refuses the
+1.1.0 APK (`INSTALL_FAILED_VERSION_DOWNGRADE`): stay on the installed 1.1.x
+build, record its `versionName`, and carry on from it. That is not a failed
+upgrade and "must read 1.1.0" is not a pass condition then. Never `-d`.
+Confirm with `adb shell dumpsys package org.unfoldingword.tcmobile | grep versionName`
+(`1.1.0`, or the 1.1.x you recorded). HUMAN: open the app; the build stamp at
+the foot of Books must start with that `v1.1.x`.
 
 ### S1 to S6 Seed the data on 1.1.0 (Route A, or add to Route B)
 
@@ -281,26 +286,26 @@ HUMAN: Share Chapter once. The Android share sheet must open with a file.
 One table per phone. Header: model, Android release and sdk, WebView version,
 route (A or B), build versions installed in order, date.
 
-| Row | What                                          | pass / fail / cannot-tell | Evidence | Notes        |
-| --- | --------------------------------------------- | ------------------------- | -------- | ------------ |
-| G   | Data safety gate passed (route and evidence)  |                           |          |              |
-| S0  | Phone on 1.1.0, stamp reads `v1.1.0`          |                           |          |              |
-| S6  | "Before" table written                        |                           |          |              |
-| U1  | Install over succeeded, versionName 1.2.2     |                           |          |              |
-| U1  | First open: no error screen                   |                           |          |              |
-| U2  | Books, order, names unchanged                 |                           |          |              |
-| U2  | Cover colours unchanged                       |                           |          |              |
-| U2  | Chapters and the renamed chapter              |                           |          |              |
-| U2  | Segments and the renamed segment              |                           |          |              |
-| U2  | Finished marks unchanged                      |                           |          |              |
-| U2  | Every segment plays (Finished and unfinished) |                           |          |              |
-| U2  | Reopen: nothing changes                       |                           |          |              |
-| U2  | `≡` shows no red mark                         |                           |          |              |
-| U3  | New recording saves and plays                 |                           |          |              |
-| U3  | Delete works                                  |                           |          |              |
-| U3  | New chapter works                             |                           |          |              |
-| U4  | Share Chapter opens the share sheet           |                           |          |              |
-| U5  | iPhone and web two-copy case                  | open                      |          | not run here |
+| Row | What                                              | pass / fail / cannot-tell | Evidence | Notes        |
+| --- | ------------------------------------------------- | ------------------------- | -------- | ------------ |
+| G   | Data safety gate passed (route and evidence)      |                           |          |              |
+| S0  | Phone on 1.1.x, stamp matches (versionName noted) |                           |          |              |
+| S6  | "Before" table written                            |                           |          |              |
+| U1  | Install over succeeded, versionName 1.2.2         |                           |          |              |
+| U1  | First open: no error screen                       |                           |          |              |
+| U2  | Books, order, names unchanged                     |                           |          |              |
+| U2  | Cover colours unchanged                           |                           |          |              |
+| U2  | Chapters and the renamed chapter                  |                           |          |              |
+| U2  | Segments and the renamed segment                  |                           |          |              |
+| U2  | Finished marks unchanged                          |                           |          |              |
+| U2  | Every segment plays (Finished and unfinished)     |                           |          |              |
+| U2  | Reopen: nothing changes                           |                           |          |              |
+| U2  | `≡` shows no red mark                             |                           |          |              |
+| U3  | New recording saves and plays                     |                           |          |              |
+| U3  | Delete works                                      |                           |          |              |
+| U3  | New chapter works                                 |                           |          |              |
+| U4  | Share Chapter opens the share sheet               |                           |          |              |
+| U5  | iPhone and web two-copy case                      | open                      |          | not run here |
 
 ## Safety and stop rules
 
@@ -349,5 +354,6 @@ route (A or B), build versions installed in order, date.
 3. Delete the downloaded APKs and any screenshots from the machine's scratch
    directory once the results are posted. Never delete
    `~/tc-mobile-rescue-copies` before the DRI confirms the recordings are safe
-   elsewhere. Leave the throwaway test books on a
-   Route A phone unless the DRI asks to remove them in the app.
+   elsewhere. The DRI removes, in the app, only
+   the books created in S1 (on a Route B phone, never any other book); on a
+   Route A phone they may stay unless the DRI asks.
