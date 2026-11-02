@@ -20,6 +20,8 @@ import type { BookId } from "@/types/domain";
 const oldId = "book-0000-4000-8000-000000000001" as BookId;
 const newId = "book-0000-4000-8000-000000000002" as BookId;
 const HIDDEN: ShareProgress = { phase: "hidden" };
+/** Re-sets `books` to a fresh array, so the reveal effect runs again. */
+const shelf = vi.hoisted(() => ({ refresh: () => {} }));
 
 vi.mock("@/hooks/use-books", async () => {
   const { useState: useS, useCallback: useCb } = await import("react");
@@ -28,6 +30,7 @@ vi.mock("@/hooks/use-books", async () => {
       const [books, setBooks] = useS<
         Array<{ bookId: BookId; name: string; number: number; chapters: [] }>
       >([{ bookId: oldId, name: "Mark", number: 1, chapters: [] }]);
+      shelf.refresh = () => setBooks((prev) => [...prev]);
       const reload = useCb(() => {
         void Promise.resolve().then(() =>
           setBooks((prev) =>
@@ -93,6 +96,7 @@ vi.mock("@/hooks/mp3-codec", () => ({
 let root: Root;
 const layers = new Map<string, Layer>();
 const scrolled: Element[] = [];
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
 beforeEach(() => {
   layers.clear();
@@ -107,6 +111,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
+  HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
 });
 
 it("scrolls to and focuses the new template book once the shelf holds it", async () => {
@@ -140,4 +145,30 @@ it("scrolls to and focuses the new template book once the shelf holds it", async
   expect(row, "the new book's row is on the shelf").not.toBeNull();
   expect(scrolled.some((el) => row!.contains(el) || el === row)).toBe(true);
   expect(row!.contains(document.activeElement)).toBe(true);
+});
+
+it("reveals the new book once: a later render does not scroll again", async () => {
+  await act(async () => {
+    root.render(
+      createElement(BooksScreen, {
+        audio: idleChapterAudio(),
+        onOpenChapter: vi.fn(),
+        pushLayer: (layer: Layer) => layers.set(layer.id, layer),
+        popLayer: (id: string) => layers.delete(id),
+      })
+    );
+  });
+  await act(async () => {
+    (
+      document.querySelector("[data-testid=fake-create]") as HTMLButtonElement
+    ).click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const afterReveal = scrolled.length;
+  expect(afterReveal, "the reveal scrolled").toBeGreaterThan(0);
+  // A second commit of the shelf re-runs the reveal effect; nothing is armed.
+  await act(async () => shelf.refresh());
+  expect(scrolled).toHaveLength(afterReveal);
 });

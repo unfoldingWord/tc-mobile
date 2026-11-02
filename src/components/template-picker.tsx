@@ -131,7 +131,7 @@ export function TemplatePicker({
 }: {
   open: boolean;
   onClose: () => void;
-  /** The book is written: the shelf re-reads and the panel closes. */
+  /** The book is written. `bookId` is the id just stored; the shelf reveals that row and closes. */
   onCreated: (bookId: BookId) => void;
   /** True while a create is in flight, so system Back can be refused. */
   onBusyChange: (busy: boolean) => void;
