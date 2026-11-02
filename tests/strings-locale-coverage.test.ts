@@ -43,8 +43,8 @@ const complete = (): Partial<Strings> =>
   ) as Partial<Strings>;
 
 describe("the registry", () => {
-  it("has a table and a pending entry for each of the nine other languages", () => {
-    expect(TAGS).toHaveLength(9);
+  it("has a table and a pending entry for each of the ten other languages", () => {
+    expect(TAGS).toHaveLength(10);
     expect(Object.keys(LOCALE_OVERRIDES).sort()).toEqual([...TAGS].sort());
     expect(Object.keys(PENDING).sort()).toEqual([...TAGS].sort());
   });

@@ -7,6 +7,8 @@ its body and empties it.
 
 ## Added
 
+- Vietnamese: a phone set to Vietnamese now opens tC Mobile in Vietnamese, including the iPhone microphone prompt. This first draft is machine-written and no Vietnamese speaker has read it yet.
+
 ## Changed
 
 - A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.

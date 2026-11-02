@@ -210,7 +210,7 @@ describe("the shipped locale reaches the document and the manifest", () => {
  * direction. Arabic is the one right-to-left language among them.
  */
 describe("the locale table", () => {
-  it("holds the ten v2 languages, once each", () => {
+  it("holds the ten v2 languages and the level-3 vi, once each", () => {
     expect(LOCALES.map((l) => l.tag).sort()).toEqual([
       "ar",
       "en",
@@ -221,6 +221,7 @@ describe("the locale table", () => {
       "pt",
       "ru",
       "sw",
+      "vi",
       "zh-Hans",
     ]);
   });

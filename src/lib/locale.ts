@@ -89,6 +89,7 @@ export const LOCALES: readonly Locale[] = [
   { tag: "pt", dir: "ltr" },
   { tag: "ru", dir: "ltr" },
   { tag: "sw", dir: "ltr" },
+  { tag: "vi", dir: "ltr" },
   { tag: "zh-Hans", dir: "ltr" },
 ];
 
