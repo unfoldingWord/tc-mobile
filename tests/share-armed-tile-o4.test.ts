@@ -41,7 +41,7 @@ describe("the Share now tile is armed only while the file is ready (#1087)", () 
     expect(
       render(
         createElement(ShareMenuSection, { ...base, status: "ready" })
-      ).querySelectorAll(".o4-tile--send.is-armed")
+      ).querySelectorAll(".tile--send.is-armed")
     ).toHaveLength(1);
   });
   it.each(["idle", "preparing"] as const)("not while %s", (status) => {
@@ -51,7 +51,7 @@ describe("the Share now tile is armed only while the file is ready (#1087)", () 
 
 describe("the armed loop is slow and colours through a layer-2 role (#1087)", () => {
   it("runs armedPulse on --p-ambient-armed", () => {
-    const rule = areaRule(areaScope("motion"), ".o4-tile--send.is-armed");
+    const rule = areaRule(areaScope("motion"), ".tile--send.is-armed");
     expect(declarationValue(rule, "animation")).toBe(
       "armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite"
     );

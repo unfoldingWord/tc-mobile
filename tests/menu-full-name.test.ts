@@ -219,7 +219,7 @@ describe("the same pattern on the book and segment menus", () => {
   it("declares no nowrap, ellipsis or clip on the three name lines, and wraps them", () => {
     for (const [area, selector] of [
       ["menus", ".o4-sheet-name"],
-      ["menus", ".o4-menu-title"],
+      ["menus", ".menu-title"],
       ["books", ".books-sheet-name"],
     ] as const) {
       const rule = cssRule(areaScope(area), selector);

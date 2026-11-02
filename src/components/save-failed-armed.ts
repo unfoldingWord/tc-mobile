@@ -2,7 +2,7 @@
  * The wide guide button's `className`, for `SaveFailed`'s terminal
  * (`downgrade`) Restart arm (#1088 S9).
  *
- * O4's `.o4-err-wide` fills the button with `--s-guide` (blue) — the wide
+ * O4's `.err-wide` fills the button with `--s-guide` (blue) — the wide
  * guide button's own colour, `docs/design/o4-design-system.md` §3. Arming it
  * used to add the `text-live` Tailwind utility ON TOP of that fill, painting
  * the retry glyph red on blue (S9: "reads red on blue", flagged on #948's
@@ -13,7 +13,7 @@
  * is owned by a different lane this batch.
  *
  * The fix swaps the WHOLE fill to `--s-live`/`--s-live-ink` instead
- * (`.o4-err-wide--armed`, `src/app/styles/3-components/errors.css`) rather than
+ * (`.err-wide--armed`, `src/app/styles/3-components/errors.css`) rather than
  * choosing a different text colour on the still-blue fill: `--s-live` +
  * `--s-live-ink` is the same solid-red-circle pairing `.control--record`
  * already uses for "this is live" (`3-components.css`), so the glyph stays
@@ -31,5 +31,5 @@
  * this fix could live.
  */
 export function restartWideButtonClass(armed: boolean): string {
-  return armed ? "o4-err-wide o4-err-wide--armed" : "o4-err-wide";
+  return armed ? "err-wide err-wide--armed" : "err-wide";
 }

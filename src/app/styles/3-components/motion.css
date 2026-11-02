@@ -69,12 +69,12 @@
      Stops while the menu is inert (the overlay covers it) and while the tile
      has keyboard focus, where globals.css pushes the focus outline out past
      the pulse's ring (autoFocus lands focus here as the tile appears). */
-  .o4-tile--send.is-armed {
+  .tile--send.is-armed {
     animation: armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite;
   }
-  [inert] .o4-tile--send.is-armed,
-  .o4-tile--send.is-armed[inert],
-  .o4-tile--send.is-armed:focus-visible {
+  [inert] .tile--send.is-armed,
+  .tile--send.is-armed[inert],
+  .tile--send.is-armed:focus-visible {
     animation: none;
   }
   @keyframes armedPulse {
@@ -123,7 +123,7 @@
      mount rather than needing a trigger class of its own — the hook posted
      on #950 (2026-09-26). */
   .books-delete-ask > .o4-sheet-head,
-  .o4-err-body[data-refused] {
+  .err-body[data-refused] {
     animation: shake var(--p-ambient-shake, 0.35s) ease-in-out 2;
   }
   @keyframes shake {
@@ -144,11 +144,11 @@
     .control--record.is-guided,
     .control--mic.is-guided,
     .record-guide.is-guided,
-    .o4-tile--send.is-armed,
+    .tile--send.is-armed,
     .recorder-stage[data-o4-look="recording"]::after,
     .recorder-status .rec-dot,
     .books-delete-ask > .o4-sheet-head,
-    .o4-err-body[data-refused] {
+    .err-body[data-refused] {
       animation: none;
     }
   }

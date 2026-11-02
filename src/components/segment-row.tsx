@@ -13,7 +13,7 @@ import { NameEdit } from "./name-edit";
 import { NameReveal } from "./name-reveal";
 import { Notice } from "./notice";
 import { O4SheetHead } from "./o4-crumbs";
-import { MoveTiles, Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { MoveTiles, Tile, TileGrid, TileSpacer } from "./tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
 import { useHoldReveal } from "@/hooks/use-hold-reveal";
@@ -700,17 +700,17 @@ export function SegmentRow({
                 onClick={() => setRenaming(true)}
               />
             </div>
-            <div className="o4-menu-preview" data-state={state}>
+            <div className="menu-preview" data-state={state}>
               <span
-                className="o4-menu-badge"
+                className="menu-badge"
                 data-state={state}
                 aria-hidden="true"
               >
                 {ordinal}
               </span>
-              <span className="o4-menu-preview-mid" aria-hidden="true">
+              <span className="menu-preview-mid" aria-hidden="true">
                 {titled && (
-                  <span className="o4-menu-title" dir="auto">
+                  <span className="menu-title" dir="auto">
                     {row.label}
                   </span>
                 )}
@@ -734,7 +734,7 @@ export function SegmentRow({
                   }
                   variant="play"
                   size={26}
-                  className="o4-menu-play"
+                  className="menu-play"
                   disabled={busy}
                   onClick={() =>
                     onPlay(playOffsetSeconds(fraction, durationMs))
@@ -745,13 +745,13 @@ export function SegmentRow({
             {/* `hasClip` puts FOUR real tiles in this row (Done, Edit,
                 Clear, Delete) — the case that does not fit the pinned 76 ×
                 76 token at 320-360px (#1119 round 5, George Medium 1;
-                `o4-tiles--compact` in `3-components/menus.css` has the arithmetic).
+                `tiles--compact` in `3-components/menus.css` has the arithmetic).
                 Compact there, and drop the spacer: with no room to push
                 Clear/Delete to the far end, the four tiles simply run
                 left-to-right in order. The three-tile case (no stored clip:
                 Done, Edit, then Delete past the spacer) keeps the
                 spacer-pushed layout at full size. */}
-            <TileGrid className={hasClip ? "o4-tiles--compact" : undefined}>
+            <TileGrid className={hasClip ? "tiles--compact" : undefined}>
               <Tile
                 tone={row.finished ? "done" : "doneoff"}
                 icon="check"

@@ -1,6 +1,6 @@
 import { Menu } from "./menu";
 import { O4SheetHead } from "./o4-crumbs";
-import { Tile, TileGrid } from "./o4-tile-menu";
+import { Tile, TileGrid } from "./tile-menu";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
 
@@ -261,7 +261,7 @@ function RecorderMenuTiles({
           icon="check"
           // Fixed label, state on `pressed` (#351).
           // The tile's `is-on` ink loses to the tone's own ink: equal
-          // specificity, and `o4/` is imported after `3-components.css`.
+          // specificity, and `3-components/index.css` loads after `3-components.css`.
           label={strings.markFinished(ordinal ?? 0)}
           pressed={marked}
           caption={strings.tileFinished}

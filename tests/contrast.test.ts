@@ -480,7 +480,7 @@ describe("a Finished segment's green reads on the recorder stage (#926)", () => 
 });
 
 describe("the SaveFailed armed Restart glyph reads on its own fill (#1088 S9)", () => {
-  // The fix for S9 ("reads red on blue"): `.o4-err-wide--armed`
+  // The fix for S9 ("reads red on blue"): `.err-wide--armed`
   // (3-components/errors.css) swaps the wide guide button's fill from `--s-guide` to
   // `--s-live`/`--s-live-ink` while armed, instead of layering red TEXT on
   // top of the still-blue fill. The glyph is a non-text mark (an icon, no

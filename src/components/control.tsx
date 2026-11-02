@@ -92,7 +92,7 @@ interface ControlProps {
   guided?: boolean;
   /**
    * A short word shown with the glyph — the O4 tile and pill shapes (#941,
-   * `o4-tile-menu.tsx`, `o4-controls.tsx`). Shown, never announced: `label`
+   * `tile-menu.tsx`, `o4-controls.tsx`). Shown, never announced: `label`
    * stays the entire accessible name, so a control that gains a caption in
    * the O4 look keeps the name it has in the current one. An omitted caption
    * renders nothing, so no existing call site's markup changes.

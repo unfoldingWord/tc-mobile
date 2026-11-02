@@ -6,7 +6,7 @@ import { seedToRecorder } from "./support/seed";
  * The recorder's microphone-refusal card at a small phone, once per shipped
  * language (#1603), on the shipped `dist/` build. A title that wraps to a
  * second line pushes the refusal sentence below the bottom of
- * `.o4-err-body`, which scrolls inside the room the sheet leaves, so the last
+ * `.err-body`, which scrolls inside the room the sheet leaves, so the last
  * line is cut off with no sign that it can be reached. jsdom computes no
  * boxes, so only a browser can measure it.
  *
@@ -70,9 +70,9 @@ for (const tag of LOCALES) {
       await switchLanguage(page, tag);
       await record!.click();
 
-      const body = page.locator(".o4-err-body");
+      const body = page.locator(".err-body");
       await expect(body).toBeVisible();
-      await expect(page.locator(".o4-err-sub")).not.toHaveText("");
+      await expect(page.locator(".err-sub")).not.toHaveText("");
       const fit = await body.evaluate((el) => ({
         scrollHeight: el.scrollHeight,
         clientHeight: el.clientHeight,

@@ -73,7 +73,7 @@ describe("the recorder menu's sheet head (G3)", () => {
       const panel = el.querySelector('[role="dialog"]');
       expect(panel?.contains(heads[0]!)).toBe(true);
       expect(
-        heads[0]!.compareDocumentPosition(el.querySelector(".o4-tiles")!) &
+        heads[0]!.compareDocumentPosition(el.querySelector(".tiles")!) &
           4 /* DOCUMENT_POSITION_FOLLOWING */
       ).toBeTruthy();
       expect(crumbs(el)).toEqual([

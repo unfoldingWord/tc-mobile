@@ -142,7 +142,7 @@ export function SaveFailed({
       role="alertdialog"
       aria-modal="true"
       aria-label={strings.saveFailedDialog(editOnly)}
-      className="o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+      className="err flex w-full max-w-md flex-col items-center px-[22px] text-center"
     >
       {/* The failed state's mark sits in the error circle (#948); while a
           retry is saving, the muted retry glyph stands in for it. */}
@@ -151,12 +151,12 @@ export function SaveFailed({
           <Icon name="retry" size={56} />
         </span>
       ) : (
-        <span className="o4-err-circle" aria-hidden="true">
+        <span className="err-circle" aria-hidden="true">
           <Icon name="alert" size={58} />
         </span>
       )}
 
-      <p className="o4-err-title text-ink">
+      <p className="err-title text-ink">
         {saving
           ? strings.saveFailedSaving
           : recoveryTitle(kind ?? "unknown", editOnly)}

@@ -52,8 +52,8 @@ describe("CoverTile (#937 D7)", () => {
     const tiles = root.querySelectorAll("button");
     expect(tiles).toHaveLength(1);
     const tile = tiles[0]!;
-    expect(tile.classList).toContain("o4-tile");
-    expect(tile.classList).toContain("o4-tile--cover");
+    expect(tile.classList).toContain("tile");
+    expect(tile.classList).toContain("tile--cover");
     const caption = one(tile, ".control-caption").textContent!;
     expect(caption.length).toBeGreaterThan(0);
     expect(tile.getAttribute("aria-label")!.toLowerCase()).toContain(
@@ -85,7 +85,7 @@ describe("O4CoverPick (#957's picker, mounted in the book sheet)", () => {
 
   it("sits in the tile grid, so the sheet keeps its bottom-sheet shell", () => {
     const root = pick();
-    const grid = one(root, ".o4-tiles");
+    const grid = one(root, ".tiles");
     const row = one(grid, ".books-cover-pick [role='group']");
     expect(row.getAttribute("aria-label")).toBe(strings.coverColourLabel);
   });
@@ -122,7 +122,7 @@ describe("the book menu's rules", () => {
     );
 
   it("fills the cover tile from the book's own colour (books.css, where the cover exception lives)", () => {
-    expect(value("books", ".o4-tile--cover::before", "background")).toBe(
+    expect(value("books", ".tile--cover::before", "background")).toBe(
       "var(--book-cover)"
     );
   });

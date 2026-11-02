@@ -7,7 +7,7 @@ import {
   RecorderMenu,
   type RecorderMenuProps,
 } from "@/components/recorder-menu";
-import { TILE_GLYPH } from "@/components/o4-tile-look";
+import { TILE_GLYPH } from "@/components/tile-look";
 import { strings } from "@/lib/strings";
 
 import { areaScope, declsFor, fileRules } from "./o4-area-css";
@@ -72,7 +72,7 @@ const named = (label: string) =>
   buttons().find((b) => b.getAttribute("aria-label") === label);
 const startingWith = (label: string) =>
   buttons().find((b) => b.getAttribute("aria-label")?.startsWith(label));
-const tiles = () => [...document.querySelectorAll("button.o4-tile")];
+const tiles = () => [...document.querySelectorAll("button.tile")];
 // The theme control names the DESTINATION, which depends on the theme the
 // document starts in; either name is the theme control. It is not in this
 // menu any more (#1575), so every use below asks for its absence.
@@ -96,7 +96,7 @@ afterEach(() => {
 describe("RecorderMenu on the tile grid (#949 G3)", () => {
   it("lays record mode out as Mark, then Erase, with no theme tile (#1575)", () => {
     show();
-    const grid = document.querySelector(".o4-tiles");
+    const grid = document.querySelector(".tiles");
     expect(grid).not.toBeNull();
     expect(labels().slice(0, 2)).toEqual([
       strings.markFinished(3),
@@ -105,8 +105,8 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
     expect(themeTile()).toBeUndefined();
     // Every action is a tile inside the one grid, and no spacer holds a place
     // for the theme tile that moved to Settings.
-    expect(grid?.querySelectorAll("button.o4-tile")).toHaveLength(2);
-    expect(grid?.querySelector(".o4-tiles-gap")).toBeNull();
+    expect(grid?.querySelectorAll("button.tile")).toHaveLength(2);
+    expect(grid?.querySelector(".tiles-gap")).toBeNull();
     // G3 round 4: Edit is on the recorder screen, not in this menu.
     expect(startingWith(strings.enterEdit)).toBeUndefined();
   });
@@ -189,34 +189,32 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
   it("gives the tiles their tones: doneoff Mark, plain Clear (#1119)", () => {
     show();
     expect(named(strings.markFinished(3))?.classList).toContain(
-      "o4-tile--doneoff"
+      "tile--doneoff"
     );
     // Clear removes only the audio, so it takes the neutral well; the red
     // erase tone is kept for Delete, which lives in the chapter view.
-    expect(named(strings.eraseSegment)?.classList).toContain("o4-tile--plain");
-    expect(named(strings.eraseSegment)?.classList).not.toContain(
-      "o4-tile--erase"
-    );
+    expect(named(strings.eraseSegment)?.classList).toContain("tile--plain");
+    expect(named(strings.eraseSegment)?.classList).not.toContain("tile--erase");
   });
 
   it("keeps the Mark tile's label fixed and flips its tone (done / doneoff) and aria-pressed on the same value (#351)", () => {
     show({ finishedState: "finished" });
     const marked = named(strings.markFinished(3));
-    expect(marked?.classList).toContain("o4-tile--done");
-    expect(marked?.classList).not.toContain("o4-tile--doneoff");
+    expect(marked?.classList).toContain("tile--done");
+    expect(marked?.classList).not.toContain("tile--doneoff");
     expect(marked?.getAttribute("aria-pressed")).toBe("true");
     expect(named("Mark segment 3 not done")).toBeUndefined();
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
-    expect(unmarked?.classList).toContain("o4-tile--doneoff");
-    expect(unmarked?.classList).not.toContain("o4-tile--done");
+    expect(unmarked?.classList).toContain("tile--doneoff");
+    expect(unmarked?.classList).not.toContain("tile--done");
     expect(unmarked?.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("keeps paint and label agreeing when the ordinal is missing", () => {
     show({ ordinal: null, finishedState: "finished" });
     expect(startingWith(strings.markFinished(0))?.classList).toContain(
-      "o4-tile--doneoff"
+      "tile--doneoff"
     );
     expect(named("Mark segment 0 not done")).toBeUndefined();
   });
@@ -224,7 +222,7 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
   it("does NOT paint the green fill on a disabled-finished tile", () => {
     show({ finishedState: "disabled", markReason: "no-audio" });
     expect(startingWith(strings.markFinished(3))?.classList).toContain(
-      "o4-tile--doneoff"
+      "tile--doneoff"
     );
   });
 

@@ -130,7 +130,7 @@ test("Export project sits right after Share book and shares the project zip from
   // review record).
   const tiles = page
     .getByRole("dialog", { name: "Book", exact: true })
-    .locator(".o4-tiles .o4-tile");
+    .locator(".tiles .tile");
   for (const scheme of ["dark", "light"] as const) {
     await page.goto("/");
     await expect(page.locator("#launch-intro")).toBeHidden({

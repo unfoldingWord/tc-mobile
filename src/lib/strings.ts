@@ -344,7 +344,7 @@ export const stringsEn = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
-  // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
+  // The O4 menu tiles' visible captions (#949, `tile-menu.tsx`). Shown,
   // never announced: each tile's name is the label its current-look row
   // already had, and every caption is a word that label holds (label-in-name,
   // WCAG 2.5.3). Marking done says the workbench's "Done", and

@@ -15,7 +15,7 @@ import { Menu } from "@/components/menu";
 import { NameEdit } from "@/components/name-edit";
 import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
 import { CoverTile, LicenceTile, O4CoverPick } from "@/components/o4-book-menu";
-import { Tile, TileGrid } from "@/components/o4-tile-menu";
+import { Tile, TileGrid } from "@/components/tile-menu";
 import { PermissionPanel } from "@/components/permission-panel";
 import { RecorderMenu } from "@/components/recorder-menu";
 import { RecorderToolbar } from "@/components/recorder-toolbars";
@@ -591,7 +591,7 @@ const SURFACES: Surface[] = [
     ],
   },
   {
-    name: "O4TileMenu Tile",
+    name: "TileMenu Tile",
     build: () => [
       createElement(
         TileGrid,

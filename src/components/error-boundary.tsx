@@ -150,7 +150,7 @@ function RestartControl() {
         label={restarting ? strings.appReloading : strings.appReload}
         variant="primary"
         size={34}
-        className="o4-err-wide"
+        className="err-wide"
         busy={restarting}
         onClick={() => {
           setHeld(false);
@@ -208,8 +208,8 @@ function focusOnMount(node: HTMLParagraphElement | null): void {
  *     goes to the sink, which is where a maintainer reads it.
  *   - **It is the app's other full-screen recovery surface, and looks like
  *     it.** Same shape as `SaveFailed`: a named `role="alertdialog"`, the
- *     alert mark in its `o4-err-circle`, an `o4-err-title` line, and one wide
- *     `--primary` control (`o4-err-wide`). A translator who cannot read
+ *     alert mark in its `err-circle`, an `err-title` line, and one wide
+ *     `--primary` control (`err-wide`). A translator who cannot read
  *     should recognise "this failed, press the big button" from the shape
  *     alone, and the shape should be one shape.
  *   - **The mark carries the meaning, the sentence only supports it.** Two
@@ -275,9 +275,9 @@ function CrashScreen() {
         aria-modal="true"
         aria-labelledby={TITLE_ID}
         aria-describedby={TEACH_ID}
-        className="o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+        className="err flex w-full max-w-md flex-col items-center px-[22px] text-center"
       >
-        <span className="o4-err-circle o4-err-circle--warn" aria-hidden="true">
+        <span className="err-circle err-circle--warn" aria-hidden="true">
           <Icon name="alert" size={72} />
         </span>
 
@@ -285,7 +285,7 @@ function CrashScreen() {
           id={TITLE_ID}
           ref={focusOnMount}
           tabIndex={-1}
-          className="o4-err-title text-ink"
+          className="err-title text-ink"
         >
           {strings.appFailed}
         </p>

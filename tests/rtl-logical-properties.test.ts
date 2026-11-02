@@ -70,7 +70,7 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: ".o4-menu-preview",
+      selector: ".menu-preview",
       logical: { "padding-inline": "10px 8px" },
       gone: ["padding"],
     },

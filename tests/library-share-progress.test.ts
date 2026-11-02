@@ -30,7 +30,7 @@ import { clearAllStores, testCodec } from "./support";
  * the encoder lane (the Node codec, no Worker), the failure sink, the OS
  * share sheet (`navigator.share`, resolved or rejected per case) — plus the
  * data hooks the shelf itself reads, mocked the way
- * `tests/storage-banner-o4.test.ts` mocks them.
+ * `tests/storage-banner.test.ts` mocks them.
  *
  * What this does NOT cover: layout and the cascade (jsdom has neither), a
  * real share sheet, the native route, or focus under a real `inert`
@@ -211,7 +211,7 @@ const scrim = () => document.body.querySelector<HTMLElement>(".share-scrim");
 const overlayText = () =>
   scrim()?.querySelector(".share-progress-text")?.textContent ?? null;
 const bannerButton = () =>
-  document.querySelector<HTMLButtonElement>("button.o4-storage-share")!;
+  document.querySelector<HTMLButtonElement>("button.storage-share")!;
 
 /** Real timers: the flow's busy and outcome holds are the production ones. */
 async function until(check: () => boolean, what: string): Promise<void> {

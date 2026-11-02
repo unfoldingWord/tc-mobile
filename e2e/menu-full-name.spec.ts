@@ -111,7 +111,7 @@ test("the segment menu shows the whole segment name, wrapped", async ({
     .getByRole("button", { name: "More actions for segment 1" })
     .click();
   const dialog = page.getByRole("dialog", { name: "More" });
-  await expectWholeAndWrapped(dialog.locator(".o4-menu-title"), SEGMENT);
+  await expectWholeAndWrapped(dialog.locator(".menu-title"), SEGMENT);
   await shot(page, "segment-menu");
 });
 

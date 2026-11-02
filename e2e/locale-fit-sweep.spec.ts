@@ -187,7 +187,7 @@ async function measure(
           // A tile's caption is deliberately wider than its 64 or 76 px
           // tile and centred under it; its fit is the caption-collision check
           // below, not this one.
-          const inTile = el.closest(".o4-tile") !== null;
+          const inTile = el.closest(".tile") !== null;
           if (
             !inTile &&
             el.scrollWidth > el.clientWidth + 1 &&
@@ -223,7 +223,7 @@ async function measure(
       // can run into each other or off the screen. Measure the words (a
       // Range), not the caption's grid cell.
       const words = Array.from(
-        root.querySelectorAll<HTMLElement>(".o4-tile > .control-caption")
+        root.querySelectorAll<HTMLElement>(".tile > .control-caption")
       )
         .filter(visible)
         .map((el) => {
@@ -355,7 +355,7 @@ export async function sweep(
       await more.click();
       // The Licence tile (#1455) appears once the book's provenance is read, so
       // the five-tile row is the one measured.
-      await expect(page.locator(".o4-tile--licence")).toBeVisible();
+      await expect(page.locator(".tile--licence")).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }
@@ -487,7 +487,7 @@ test("the sweep reports tile captions that run into each other (mutation guard)"
   // Undo the wrap and make the captions long enough to meet.
   await page.addStyleTag({
     content:
-      ".o4-tile > .control-caption { white-space: nowrap !important; max-width: none !important; hyphens: none !important; overflow-wrap: normal !important; font-size: 22px !important; }",
+      ".tile > .control-caption { white-space: nowrap !important; max-width: none !important; hyphens: none !important; overflow-wrap: normal !important; font-size: 22px !important; }",
   });
   const findings = await measure(page, '[role="dialog"]');
   expect(findings.map((f) => f.what)).toContain(

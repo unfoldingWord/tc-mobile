@@ -91,13 +91,13 @@ export function PermissionPanel({
   // prompt-audio path, no helper action), and a control that does nothing is
   // a stub.
   return (
-    <div className="o4-err o4-err-split flex flex-1 flex-col items-center px-[22px] text-center">
+    <div className="err err-split flex flex-1 flex-col items-center px-[22px] text-center">
       {/* `data-refused` is the shake's hook (#1089, 3-components/motion.css). It is set
           only while the steps show, which is the `refused` phase, and Retry
           takes the steps away (the phase leaves `refused` at the tap), so each
           new refusal adds the attribute afresh and the animation plays again. */}
       <div
-        className="o4-err-body"
+        className="err-body"
         data-refused={settingsPlatform !== null ? "true" : undefined}
       >
         {settingsPlatform !== null ? (
@@ -105,23 +105,20 @@ export function PermissionPanel({
           // to a small icon beside the title, and no refusal sentence. The
           // steps say what to do, and the title alone keeps the alert's
           // meaning, so nothing is held back for screen readers.
-          <div className="o4-err-head">
+          <div className="err-head">
             <span
-              className="o4-err-circle o4-err-circle--denied o4-err-circle--compact"
+              className="err-circle err-circle--denied err-circle--compact"
               aria-hidden="true"
             >
               <Icon name="mic" size={26} />
             </span>
-            <p role="alert" className="o4-err-title text-ink">
+            <p role="alert" className="err-title text-ink">
               {strings.micOffTitle}
             </p>
           </div>
         ) : (
           <>
-            <span
-              className="o4-err-circle o4-err-circle--denied"
-              aria-hidden="true"
-            >
+            <span className="err-circle err-circle--denied" aria-hidden="true">
               <Icon name="mic" size={58} />
             </span>
             {/* D15 (#948): the title is always "Microphone is off", and the
@@ -129,34 +126,32 @@ export function PermissionPanel({
           under it. The sentence sits INSIDE the alert `<p>` because it is
           the part the async permission refine updates in place, so it must
           stay in the live region; the buttons stay outside it (#276). */}
-            <p role="alert" className="o4-err-title text-ink">
+            <p role="alert" className="err-title text-ink">
               {strings.micOffTitle}
-              {message !== null && (
-                <span className="o4-err-sub">{message}</span>
-              )}
+              {message !== null && <span className="err-sub">{message}</span>}
             </p>
           </>
         )}
         {settingsPlatform !== null && (
-          <ol className="o4-err-steps" aria-label={strings.micStepsLabel}>
+          <ol className="err-steps" aria-label={strings.micStepsLabel}>
             {micSettingsSteps(settingsPlatform).map((step) => (
-              <li key={step.text} className="o4-err-step">
-                <span className="o4-err-step-icon" aria-hidden="true">
+              <li key={step.text} className="err-step">
+                <span className="err-step-icon" aria-hidden="true">
                   <Icon name={step.icon} size={30} />
                 </span>
-                <span className="o4-err-step-text">{step.text}</span>
+                <span className="err-step-text">{step.text}</span>
               </li>
             ))}
           </ol>
         )}
       </div>
-      <div className="o4-err-footer">
+      <div className="err-footer">
         <Control
           icon="restart"
           label={strings.micRetry}
           variant="primary"
           size={34}
-          className="o4-err-wide"
+          className="err-wide"
           autoFocus
           onClick={onRetry}
         />

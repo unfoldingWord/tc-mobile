@@ -660,13 +660,12 @@ const REVIEWED: Record<string, string> = {
     TEXT_FIELD,
   ".o4-crumbs-bar ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
     TEXT_FIELD,
-  '.o4-err-body[data-refused] ⟵ .control[aria-busy="true"] svg [animation]':
+  '.err-body[data-refused] ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '.o4-err-body[data-refused] ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+  '.err-body[data-refused] ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '.o4-tile--send.is-armed ⟵ .control[aria-busy="true"] svg [animation]':
-    BUSY_SVG,
-  '.o4-tile--send.is-armed ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+  '.tile--send.is-armed ⟵ .control[aria-busy="true"] svg [animation]': BUSY_SVG,
+  '.tile--send.is-armed ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
   '.record-guide.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
@@ -694,13 +693,13 @@ const REVIEWED: Record<string, string> = {
     BUSY_SVG,
   '@media (prefers-reduced-motion:reduce) » .control--record.is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '@media (prefers-reduced-motion:reduce) » .o4-err-body[data-refused] ⟵ .control[aria-busy="true"] svg [animation]':
+  '@media (prefers-reduced-motion:reduce) » .err-body[data-refused] ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '@media (prefers-reduced-motion:reduce) » .o4-err-body[data-refused] ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+  '@media (prefers-reduced-motion:reduce) » .err-body[data-refused] ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '@media (prefers-reduced-motion:reduce) » .o4-tile--send.is-armed ⟵ .control[aria-busy="true"] svg [animation]':
+  '@media (prefers-reduced-motion:reduce) » .tile--send.is-armed ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '@media (prefers-reduced-motion:reduce) » .o4-tile--send.is-armed ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+  '@media (prefers-reduced-motion:reduce) » .tile--send.is-armed ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
   '@media (prefers-reduced-motion:reduce) » .record-guide.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
