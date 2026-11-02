@@ -956,10 +956,18 @@ export function BooksScreen({
     setTemplatesOpen(false);
     layers.close("books:templates");
   }, [layers]);
-  const onTemplateCreated = useCallback(() => {
-    closeTemplates();
-    reload();
-  }, [closeTemplates, reload]);
+  const onTemplateCreated = useCallback(
+    (bookId: BookId) => {
+      closeTemplates();
+      // Reveal the new book the way New Book does (#246): arm BEFORE the
+      // reload, never after. The row is not on the shelf yet; the load effect
+      // above spends the arm on the commit that brings the reloaded list in.
+      rowReveal.armScroll(bookId);
+      rowReveal.armFocus(bookId);
+      reload();
+    },
+    [closeTemplates, reload, rowReveal]
+  );
   const closeLicenseText = useCallback(() => {
     setAboutViewing(null);
     layers.close("books:about-text");

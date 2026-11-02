@@ -12,6 +12,7 @@ import {
 import type { FailureKey } from "@/hooks/save-failure";
 import { activeLocale } from "@/lib/locale";
 import { strings } from "@/lib/strings";
+import type { BookId } from "@/types/domain";
 import {
   licenceTag,
   previewThumbnail,
@@ -131,7 +132,7 @@ export function TemplatePicker({
   open: boolean;
   onClose: () => void;
   /** The book is written: the shelf re-reads and the panel closes. */
-  onCreated: () => void;
+  onCreated: (bookId: BookId) => void;
   /** True while a create is in flight, so system Back can be refused. */
   onBusyChange: (busy: boolean) => void;
 }) {
