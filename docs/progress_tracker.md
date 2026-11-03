@@ -11,6 +11,40 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-02 (evening) to 2026-11-03 — device session: iOS Simulator harness merged, #1251 not reproduced in the Simulator, #1464 Android upgrade passes on a real phone
+
+The DRI's own device session, the one the 2026-11-02 entry leaves #1840 and the device runs with. It drove the iOS Simulator and a locally attached Android phone (Galaxy A17 5G, Android 16) over adb, and the DRI listened by ear.
+
+### Decisions (DRI)
+
+- **#1854 round-3 lows:** "Defer to an issue" (filed as #1857). **#1854:** "Merge it".
+- **#1251:** "Yes, start #1251", then "Yes, post it" for the Simulator findings.
+- **#1464:** "Yes, download both" (the 1.1.x and 1.2.2 APKs), then "Post it" for the run comment.
+
+### Merged to develop (1)
+
+- #1854, the iOS Simulator harness driven from the shell (#1840 phase 1).
+
+### Device runs
+
+- **#1251 (iOS lock/unlock audio stall):** in the Simulator, the stall did not reproduce on rc.2 or on the current build ([comment](https://github.com/unfoldingWord/tc-mobile/issues/1251#issuecomment-6589271974)). The Simulator cannot settle it. It still needs a real iPhone on a build that has #1261.
+- **#1464 (upgrade over existing data), Android:** 1.1.0 (`e3a4313`, DB_VERSION 11) to 1.2.2 (`24b144d`, DB_VERSION 14) over disposable data.
+  - Every row from S0 to U4 passes: books, chapters, names, the renamed segment, Done marks and all four recordings survive, the last checked by ear.
+  - After the upgrade, recording, delete, Done, add chapter and Share Chapter all work, and logcat shows no app errors.
+  - The run used 1.1.0, not 1.1.1, because no 1.1.1 APK exists.
+  - App data size before and after is cannot-tell.
+  - [Run comment](https://github.com/unfoldingWord/tc-mobile/issues/1464#issuecomment-6611988281).
+
+### Open, and where each stands
+
+- **#1464:** open for the iPhone (TestFlight) row, the web two-copy row, and any start below schema 11.
+- **Accessibility, inferred only:** some menu tiles are missing from the Android accessibility tree in both 1.1.0 and 1.2.2: the recorder's Done tile, and Move up and Move down in the Books chapter menu. This comes from uiautomator alone and has not been checked with TalkBack. No issue is filed yet.
+- **#1857:** the harness follow-ups from #1854's review.
+- **#1472 card spike:** the findings are not posted yet, and its probe patch is uncommitted in its own worktree.
+- **iPhone:** it showed offline to Xcode, so no iPhone run happened this session.
+
+---
+
 ## 2026-11-02 — Sprint 6 day 1: Vietnamese (the first level-3 language), #954 PRs 5–7 and #460 closed, the failure-context gate, device run sheets at round 5, 32 PRs merged
 
 One coordinator session. It ran lanes of 4–7 in waves, as plain background agents in their own worktrees. Every develop merge passed `merge_gate.py`: both bench lenses clean at the exact head SHA and CI green. #1826 is the exception. It merged directly past its cap on the DRI's stop rule. The DRI's own session ran 1.2.2 (`2eb33b3`) on a local Android device and the iOS Simulator; its issues (#1840, PR #1854) and the device-run issues stay with that session.
