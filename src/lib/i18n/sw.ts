@@ -46,6 +46,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Inapakia violezo.",
   settingsChapterNumbers: "Onyesha daima nambari ya sura",
   settingsNormalizeOnFinished: "Sawazisha sauti ikimalizika",
+  settingsCompressOnFinished: "Lainisha sehemu zenye sauti kubwa ikimalizika",
   booksEmpty: "Anza kitabu chako cha kwanza",
   booksEmptyTeach: "Kitabu kina sura unazorekodi.",
   loadingBooks: "Inapakia vitabu vyako.",

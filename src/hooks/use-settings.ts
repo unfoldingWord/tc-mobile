@@ -3,11 +3,14 @@ import { useCallback, useSyncExternalStore } from "react";
 import { reportFailure } from "./report-failure";
 import {
   ALWAYS_CHAPTER_NUMBER_KEY,
+  COMPRESS_ON_FINISHED_KEY,
   NORMALIZE_ON_FINISHED_KEY,
   chapterNameShown,
   readStoredAlwaysChapterNumber,
+  readStoredCompressOnFinished,
   readStoredNormalizeOnFinished,
   storeAlwaysChapterNumber,
+  storeCompressOnFinished,
   storeNormalizeOnFinished,
 } from "@/lib/settings";
 import { headingNumber } from "@/lib/chapter-slot";
@@ -104,50 +107,93 @@ export function useAlwaysChapterNumberSetting(): {
   return { on, toggle };
 }
 
-/**
- * Whether the Finished transcode evens out a segment's loudness (#1433, U6b).
- * Read per segment by the sweep, outside React, so a change applies from the
- * next segment on and never to one already finished.
- */
-export function normalizeOnFinished(): boolean {
+/** A switch the transcode sweep reads from storage itself (#1433, #1873). */
+interface SweepSwitch {
+  readonly key: string;
+  readonly read: (raw: string | null) => boolean;
+  readonly store: (on: boolean) => string;
+}
+
+const NORMALIZE_SWITCH: SweepSwitch = {
+  key: NORMALIZE_ON_FINISHED_KEY,
+  read: readStoredNormalizeOnFinished,
+  store: storeNormalizeOnFinished,
+};
+
+const COMPRESS_SWITCH: SweepSwitch = {
+  key: COMPRESS_ON_FINISHED_KEY,
+  read: readStoredCompressOnFinished,
+  store: storeCompressOnFinished,
+};
+
+function readSweepSwitch({ key, read }: SweepSwitch): boolean {
   try {
-    return readStoredNormalizeOnFinished(
-      window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)
-    );
+    return read(window.localStorage.getItem(key));
   } catch {
     // Not reported, for `readAlwaysChapterNumber`'s reason: storage that
     // cannot be read falls back to the default, nothing to act on.
-    return readStoredNormalizeOnFinished(null);
+    return read(null);
   }
 }
 
 /**
- * The loudness switch and its toggle, for the Settings row (#1433, U6b).
- * Unlike the chapter-number setting there is no live copy: the sweep reads
- * storage itself, so the row reads storage too and can never show a value the
- * sweep will not use. A write that fails leaves the row as it was, and is
- * reported.
+ * A sweep switch and its toggle, for its Settings row. Unlike the
+ * chapter-number setting there is no live copy: the sweep reads storage
+ * itself, so the row reads storage too and can never show a value the sweep
+ * will not use. A write that fails leaves the row as it was, and is reported.
  */
-export function useNormalizeOnFinishedSetting(): {
+function useSweepSwitch(sweepSwitch: SweepSwitch): {
   readonly on: boolean;
   readonly toggle: () => void;
 } {
-  const on = useSyncExternalStore(
-    subscribe,
-    normalizeOnFinished,
-    normalizeOnFinished
+  const current = useCallback(
+    () => readSweepSwitch(sweepSwitch),
+    [sweepSwitch]
   );
+  const on = useSyncExternalStore(subscribe, current, current);
   const toggle = useCallback(() => {
     try {
       window.localStorage.setItem(
-        NORMALIZE_ON_FINISHED_KEY,
-        storeNormalizeOnFinished(!normalizeOnFinished())
+        sweepSwitch.key,
+        sweepSwitch.store(!readSweepSwitch(sweepSwitch))
       );
     } catch (cause) {
       reportFailure(cause, "use-settings: persist");
       return;
     }
     for (const listener of listeners) listener();
-  }, []);
+  }, [sweepSwitch]);
   return { on, toggle };
+}
+
+/**
+ * Whether the Finished transcode evens out a segment's loudness (#1433, U6b).
+ * Read per segment by the sweep, outside React, so a change applies from the
+ * next segment on and never to one already finished.
+ */
+export function normalizeOnFinished(): boolean {
+  return readSweepSwitch(NORMALIZE_SWITCH);
+}
+
+/** The loudness switch and its toggle, for the Settings row (#1433, U6b). */
+export function useNormalizeOnFinishedSetting(): ReturnType<
+  typeof useSweepSwitch
+> {
+  return useSweepSwitch(NORMALIZE_SWITCH);
+}
+
+/**
+ * Whether the loudness chain also runs the speech compressor (#1873). Read
+ * per segment by the sweep, as {@link normalizeOnFinished} is; it has an
+ * effect only while that one is on.
+ */
+export function compressOnFinished(): boolean {
+  return readSweepSwitch(COMPRESS_SWITCH);
+}
+
+/** The compressor switch and its toggle, for its Settings row (#1873). */
+export function useCompressOnFinishedSetting(): ReturnType<
+  typeof useSweepSwitch
+> {
+  return useSweepSwitch(COMPRESS_SWITCH);
 }

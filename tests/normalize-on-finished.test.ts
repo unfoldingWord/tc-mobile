@@ -2,9 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { withEncoder } from "@/hooks/mp3-codec";
+import { reportFailure } from "@/hooks/report-failure";
+import { CompressorRangeError } from "@/lib/audio/compressor";
 import { computePeaks } from "@/lib/audio/peaks";
 import { NORMALIZE_STAGES } from "@/lib/audio/loudness";
-import { NORMALIZE_ON_FINISHED_KEY } from "@/lib/settings";
+import {
+  COMPRESS_ON_FINISHED_KEY,
+  NORMALIZE_ON_FINISHED_KEY,
+} from "@/lib/settings";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
   commitTranscode,
@@ -15,6 +20,7 @@ import type {
   AudioCodec,
   ClipMeta,
   ClipProcessing,
+  NormalizeOptions,
   NormalizedPcm,
 } from "@/types/audio";
 import type { ChapterId, ClipId, SegmentId, TakeId } from "@/types/domain";
@@ -33,6 +39,7 @@ import { ROW_V12_FIELDS } from "./row-fields";
  */
 
 vi.mock("@/hooks/mp3-codec");
+vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
 vi.mock("@/lib/storage/segment-audio");
 vi.mock("@/lib/storage/transcode");
 
@@ -98,7 +105,12 @@ const encodeMp3 = vi.fn(async (samples: Int16Array) => {
 
 /** Doubles every sample, a stand-in chain whose output is easy to predict. */
 const normalizePcm = vi.fn<
-  (samples: Int16Array, sampleRate: number) => Promise<NormalizedPcm>
+  (
+    samples: Int16Array,
+    sampleRate: number,
+    onProgress?: (fraction: number) => void,
+    options?: NormalizeOptions
+  ) => Promise<NormalizedPcm>
 >(async (samples) => {
   const out = Int16Array.from(samples, (v) => v * 2);
   structuredClone(samples.buffer, {
@@ -107,11 +119,15 @@ const normalizePcm = vi.fn<
   return { samples: out, processing: RECORD };
 });
 
-function storePreference(raw: string | null): void {
+function storePreference(raw: string | null, compress: string | null = null) {
   vi.stubGlobal("window", {
     localStorage: {
       getItem: (key: string) =>
-        key === NORMALIZE_ON_FINISHED_KEY ? raw : null,
+        key === NORMALIZE_ON_FINISHED_KEY
+          ? raw
+          : key === COMPRESS_ON_FINISHED_KEY
+            ? compress
+            : null,
     },
   });
 }
@@ -210,5 +226,66 @@ describe("normalize on Finished — the sweep (#1433)", () => {
     expect(normalizePcm).not.toHaveBeenCalled();
     expect(encodeMp3.mock.calls[0]?.[0]).toBe(samples);
     expect(vi.mocked(commitTranscode).mock.calls[0]?.[4]).toEqual(RECORD);
+  });
+});
+
+describe("the compressor switch in the sweep (#1873)", () => {
+  it("unset, asks the chain for no compressor (the switch starts off)", async () => {
+    storePreference("1");
+    loadWith(Int16Array.of(10, 20, 30), null);
+
+    await requestTranscodeSweep();
+
+    expect(normalizePcm.mock.calls[0]?.[3]).toEqual({ compress: false });
+  });
+
+  it("on, with evening out on, asks the chain to compress", async () => {
+    storePreference("1", "1");
+    loadWith(Int16Array.of(10, 20, 30), null);
+
+    await requestTranscodeSweep();
+
+    expect(normalizePcm.mock.calls[0]?.[3]).toEqual({ compress: true });
+  });
+
+  it("on, with evening out off, runs no chain: the compressor is one of its stages", async () => {
+    storePreference("0", "1");
+    const samples = Int16Array.of(10, 20, 30);
+    loadWith(samples, null);
+
+    await requestTranscodeSweep();
+
+    expect(normalizePcm).not.toHaveBeenCalled();
+    expect(encodeMp3.mock.calls[0]?.[0]).toBe(samples);
+  });
+
+  it("a compressor refusal keeps the PCM and is reported under its own context", async () => {
+    storePreference("1", "1");
+    loadWith(Int16Array.of(10, 20, 30), null);
+    const refused = new CompressorRangeError(
+      "compressor: chunk holds a non-finite sample"
+    );
+    normalizePcm.mockRejectedValueOnce(refused);
+
+    await requestTranscodeSweep();
+
+    expect(encodeMp3).not.toHaveBeenCalled();
+    expect(commitTranscode).not.toHaveBeenCalled();
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    const [cause, context] = vi.mocked(reportFailure).mock.calls[0]!;
+    expect(context).toBe("transcode-compressor");
+    expect((cause as Error).cause).toBe(refused);
+  });
+
+  it("any other chain failure keeps its existing context", async () => {
+    storePreference("1", "1");
+    loadWith(Int16Array.of(10, 20, 30), null);
+    normalizePcm.mockRejectedValueOnce(new RangeError("not the compressor"));
+
+    await requestTranscodeSweep();
+
+    expect(vi.mocked(reportFailure).mock.calls[0]?.[1]).toBe(
+      "transcode-segment"
+    );
   });
 });

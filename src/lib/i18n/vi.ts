@@ -40,6 +40,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Đang tải các mẫu.",
   settingsChapterNumbers: "Luôn hiện số chương",
   settingsNormalizeOnFinished: "Cân bằng âm lượng khi xong",
+  settingsCompressOnFinished: "Làm dịu những chỗ quá to khi xong",
   booksEmpty: "Bắt đầu cuốn sách đầu tiên của bạn",
   booksEmptyTeach: "Một cuốn sách gồm các chương mà bạn ghi âm.",
   loadingBooks: "Đang tải sách của bạn.",

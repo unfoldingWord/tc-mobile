@@ -7,6 +7,7 @@ import { BooksScreen } from "@/components/books-screen";
 import { idleChapterAudio } from "./chapter-audio";
 import {
   ALWAYS_CHAPTER_NUMBER_KEY,
+  COMPRESS_ON_FINISHED_KEY,
   NORMALIZE_ON_FINISHED_KEY,
 } from "@/lib/settings";
 import { strings } from "@/lib/strings";
@@ -226,5 +227,52 @@ it("the loudness row reflects a stored on", async () => {
   await click(strings.settingsOpen);
   expect(
     button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
+  ).toBe("true");
+});
+
+// #1873: the compressor is one stage of the loudness chain, so its row is
+// there only while evening out is on, and starts off (the requirements
+// owner's `compressor-off` pick on #1433).
+it("the compressor row appears only while evening out is on, and starts off", async () => {
+  await mount();
+  await click(strings.settingsOpen);
+  expect(buttons(strings.settingsCompressOnFinished)).toHaveLength(0);
+
+  await click(strings.settingsNormalizeOnFinished);
+  expect(
+    button(strings.settingsCompressOnFinished).getAttribute("aria-checked")
+  ).toBe("false");
+  expect(window.localStorage.getItem(COMPRESS_ON_FINISHED_KEY)).toBeNull();
+
+  await click(strings.settingsNormalizeOnFinished);
+  expect(buttons(strings.settingsCompressOnFinished)).toHaveLength(0);
+});
+
+it("the compressor row persists its own switch, apart from evening out", async () => {
+  window.localStorage.setItem(NORMALIZE_ON_FINISHED_KEY, "1");
+  await mount();
+  await click(strings.settingsOpen);
+
+  await click(strings.settingsCompressOnFinished);
+  expect(window.localStorage.getItem(COMPRESS_ON_FINISHED_KEY)).toBe("1");
+  expect(window.localStorage.getItem(NORMALIZE_ON_FINISHED_KEY)).toBe("1");
+  expect(
+    button(strings.settingsCompressOnFinished).getAttribute("aria-checked")
+  ).toBe("true");
+
+  await click(strings.settingsCompressOnFinished);
+  expect(window.localStorage.getItem(COMPRESS_ON_FINISHED_KEY)).toBe("0");
+  expect(
+    button(strings.settingsCompressOnFinished).getAttribute("aria-checked")
+  ).toBe("false");
+});
+
+it("the compressor row reflects a stored on", async () => {
+  window.localStorage.setItem(NORMALIZE_ON_FINISHED_KEY, "1");
+  window.localStorage.setItem(COMPRESS_ON_FINISHED_KEY, "1");
+  await mount();
+  await click(strings.settingsOpen);
+  expect(
+    button(strings.settingsCompressOnFinished).getAttribute("aria-checked")
   ).toBe("true");
 });

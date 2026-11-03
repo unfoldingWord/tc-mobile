@@ -66,6 +66,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "جارٍ تحميل القوالب.",
   settingsChapterNumbers: "إظهار أرقام الفصول دائمًا",
   settingsNormalizeOnFinished: "موازنة مستوى الصوت عند الاكتمال",
+  settingsCompressOnFinished: "تخفيف المقاطع العالية عند الاكتمال",
   booksEmpty: "ابدأ كتابك الأول",
   booksEmptyTeach: "يضم الكتاب الفصول التي تسجّلها.",
   loadingBooks: "جارٍ تحميل كتبك.",

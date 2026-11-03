@@ -1,8 +1,9 @@
 /**
  * A gentle speech compressor, the optional stage of the Finished chain
- * (#1433). Not wired in yet: running it behind the Settings switch, which
- * starts off (the requirements owner's pick on #1433, 2026-11-02), is a
- * later change, and a listening check on a phone comes before it goes live.
+ * (#1433). It runs behind its Settings switch, which starts off (the
+ * requirements owner's pick on #1433, 2026-11-02), after the high-pass and
+ * before the loudness measurement in `normalizePcm` (#1873). A listening
+ * check on a phone comes before it is turned on for testers.
  *
  * Ported from Seth Stoll's DSP research, with the DRI's permission on #1433
  * (2026-11-03). The settings in {@link SPEECH_COMPRESSOR} are that research's
@@ -46,19 +47,30 @@
  *    applied reduction follows that peak with the attack time. Holding the
  *    peak is what lets a sample-peak detector settle on a steady tone instead
  *    of sagging between its crests.
- * 4. Program-dependent release: a second, slower envelope follows the wanted
- *    reduction and only builds up when reduction is sustained; the applied
- *    reduction is the larger of the two. A brief peak recovers at the release
- *    time; after a long loud stretch the slow envelope holds the gain back
- *    and recovery is gentler. The slow envelope's two times are this port's
+ * 4. Program-dependent release: a second, slower envelope follows the held
+ *    reduction from step 3 and only builds up when reduction is sustained;
+ *    the applied reduction is the larger of the two. A brief peak recovers at
+ *    the release time; after a long loud stretch the slow envelope holds the
+ *    gain back and recovery is gentler. It follows the held reduction, not
+ *    the raw sample's, because a raw reading drops to 0 dB at every zero
+ *    crossing and would average a tone's or a voice's reduction down to well
+ *    under its crest (#1873). The slow envelope's two times are this port's
  *    own tuning, not reference values.
+ *
+ * Each envelope is flushed to exactly 0 below {@link FLUSH_DB}, so a long
+ * pause does not leave them decaying through subnormal numbers (#1873).
  *
  * No makeup gain: the static loudness gain after this stage does that job,
  * so this stage only ever turns audio down.
  *
  * The state is four numbers that carry across chunks, and every sample sees
  * the same arithmetic wherever a chunk boundary falls, so any chunking of a
- * take gives identical output. No lookahead, so no latency and no flush.
+ * take gives identical output. No lookahead, so no latency and no flush. One
+ * instance is one take: there is no reset, so a caller builds a fresh one for
+ * every take (and every pass over it).
+ *
+ * Every refusal is a {@link CompressorRangeError}, so a caller can tell the
+ * compressor's refusal from any other failure in the chain.
  *
  * Pure arithmetic: no DOM, Web Audio or Worker globals, and no clock.
  */
@@ -95,14 +107,27 @@ export const SPEECH_COMPRESSOR: CompressorSettings = {
 const SLOW_RISE_SECONDS = 0.3;
 const SLOW_RELEASE_SECONDS = 0.6;
 
+/**
+ * An envelope under this many dB is set to 0: a gain error of about 1e-5
+ * relative, which is inaudible, and it keeps a long pause out of subnormals.
+ */
+const FLUSH_DB = 1e-4;
+
+/** What the compressor throws when it refuses its settings or a chunk. */
+export class CompressorRangeError extends RangeError {
+  override name = "CompressorRangeError";
+}
+
 function requirePositive(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0)
-    throw new RangeError(`compressor: ${name} must be positive and finite`);
+    throw new CompressorRangeError(
+      `compressor: ${name} must be positive and finite`
+    );
 }
 
 function requireFinite(name: string, value: number): void {
   if (!Number.isFinite(value))
-    throw new RangeError(`compressor: ${name} must be finite`);
+    throw new CompressorRangeError(`compressor: ${name} must be finite`);
 }
 
 /** One-pole smoothing coefficient for a time constant at `sampleRate`. */
@@ -136,9 +161,11 @@ export class SpeechCompressor {
     requireFinite("thresholdDb", settings.thresholdDb);
     requireFinite("kneeDb", settings.kneeDb);
     if (!(settings.ratio >= 1) || !Number.isFinite(settings.ratio))
-      throw new RangeError("compressor: ratio must be at least 1 and finite");
+      throw new CompressorRangeError(
+        "compressor: ratio must be at least 1 and finite"
+      );
     if (settings.kneeDb < 0)
-      throw new RangeError("compressor: kneeDb must not be negative");
+      throw new CompressorRangeError("compressor: kneeDb must not be negative");
     requirePositive("attackSeconds", settings.attackSeconds);
     requirePositive("releaseSeconds", settings.releaseSeconds);
     this.threshold = settings.thresholdDb;
@@ -177,10 +204,14 @@ export class SpeechCompressor {
    */
   process(x: Float32Array, n: number): void {
     if (!Number.isInteger(n) || n < 0 || n > x.length)
-      throw new RangeError("compressor: n must be a whole count within x");
+      throw new CompressorRangeError(
+        "compressor: n must be a whole count within x"
+      );
     for (let i = 0; i < n; i++)
       if (!Number.isFinite(x[i]!))
-        throw new RangeError("compressor: chunk holds a non-finite sample");
+        throw new CompressorRangeError(
+          "compressor: chunk holds a non-finite sample"
+        );
     const { attack, release } = this;
     let held = this.held;
     let fast = this.fast;
@@ -193,8 +224,11 @@ export class SpeechCompressor {
       const want = this.reductionDb(20 * Math.log10(a));
       held = Math.max(want, release * held + (1 - release) * want);
       fast = attack * fast + (1 - attack) * held;
-      const ks = want > slow ? this.slowRise : this.slowRelease;
-      slow = ks * slow + (1 - ks) * want;
+      const ks = held > slow ? this.slowRise : this.slowRelease;
+      slow = ks * slow + (1 - ks) * held;
+      if (held < FLUSH_DB) held = 0;
+      if (fast < FLUSH_DB) fast = 0;
+      if (slow < FLUSH_DB) slow = 0;
       const applied = fast > slow ? fast : slow;
       if (applied > deepest) deepest = applied;
       x[i] = v * 10 ** (-applied / 20);

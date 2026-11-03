@@ -49,6 +49,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "正在加载模板。",
   settingsChapterNumbers: "始终显示章序号",
   settingsNormalizeOnFinished: "标记完成时均衡音量",
+  settingsCompressOnFinished: "标记完成时柔化响亮的部分",
   booksEmpty: "开始你的第一本书",
   booksEmptyTeach: "书里存放你录下的各章。",
   loadingBooks: "正在加载你的书。",

@@ -3,6 +3,7 @@ import { SettingRow } from "./setting-row";
 import { ThemeControl } from "./theme-control";
 import {
   useAlwaysChapterNumberSetting,
+  useCompressOnFinishedSetting,
   useNormalizeOnFinishedSetting,
 } from "@/hooks/use-settings";
 import { strings } from "@/lib/strings";
@@ -17,7 +18,8 @@ import { strings } from "@/lib/strings";
  * control is the back chevron, named "Back to books".
  *
  * Rows, in order: the theme (moved here from the ≡ menu, `ThemeControl`'s row
- * form), then S12's chapter-number switch, then the loudness switch (#1433). A later setting is another row.
+ * form), then S12's chapter-number switch, then the loudness switch (#1433)
+ * and, while that is on, the compressor's (#1873). A later setting is another row.
  * Each subscribes in its own leaf, so a toggle re-renders that row and the
  * screens that read the value, not this panel.
  */
@@ -39,7 +41,7 @@ export function SettingsPanel({
       <div className="settings-list">
         <ThemeControl />
         <ChapterNumbersRow />
-        <NormalizeRow />
+        <LoudnessRows />
       </div>
     </Menu>
   );
@@ -57,12 +59,33 @@ function ChapterNumbersRow() {
   );
 }
 
-function NormalizeRow() {
+/**
+ * The loudness switch, and under it the compressor's (#1873). The compressor
+ * is a stage of the loudness chain and runs only while that chain does, so its
+ * row is shown only then: a switch that could do nothing is not drawn. Its
+ * stored choice is kept while the row is hidden.
+ */
+function LoudnessRows() {
   const { on, toggle } = useNormalizeOnFinishedSetting();
   return (
+    <>
+      <SettingRow
+        icon="hear"
+        label={strings.settingsNormalizeOnFinished}
+        on={on}
+        onClick={toggle}
+      />
+      {on ? <CompressRow /> : null}
+    </>
+  );
+}
+
+function CompressRow() {
+  const { on, toggle } = useCompressOnFinishedSetting();
+  return (
     <SettingRow
-      icon="hear"
-      label={strings.settingsNormalizeOnFinished}
+      icon="arrow-down"
+      label={strings.settingsCompressOnFinished}
       on={on}
       onClick={toggle}
     />

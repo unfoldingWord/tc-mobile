@@ -62,3 +62,25 @@ export function readStoredNormalizeOnFinished(raw: string | null): boolean {
 export function storeNormalizeOnFinished(on: boolean): string {
   return on ? "1" : "0";
 }
+
+/**
+ * Where "soften the loud parts of a finished segment" is kept (#1873): the
+ * speech compressor, one stage of the loudness chain, so it runs only while
+ * that chain does. The Settings row writes `"0"` for off and `"1"` for on.
+ */
+export const COMPRESS_ON_FINISHED_KEY = "tc-mobile.compress-on-finished";
+
+/**
+ * The stored choice, OFF unless this app wrote an explicit on: the
+ * requirements owner's pick on #1433 (`compressor-off`, 2026-11-02), "Build
+ * the compressor with a Settings switch that starts off". It stays off for
+ * testers until a listening check on a phone.
+ */
+export function readStoredCompressOnFinished(raw: string | null): boolean {
+  return raw === "1";
+}
+
+/** The value written for the choice; `readStoredCompressOnFinished` reads it back. */
+export function storeCompressOnFinished(on: boolean): string {
+  return on ? "1" : "0";
+}
