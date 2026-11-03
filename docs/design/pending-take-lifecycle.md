@@ -226,14 +226,14 @@ Rules, the same ones v12 holds (v12-schema.md, "Rules the migration holds"):
   has exactly one outcome for each such row, decided by its segment (§3,
   "The replay's own reads"): segment gone, cell **DL-P** (the row is
   deleted and reported once); segment present, cell **RP-P**'s `legacy`
-  classification (the row is marked, kept and reported once).
+  classification (the row is dropped and reported once, #1562 item 2).
 - **A row whose `stored` base clip is already gone before v13** cannot be
   protected after the fact. Inference from the code: none should exist,
   because no caller passes the `source` that makes a base `stored`
   (`src/hooks/use-save-take.ts:64` calls `writePendingTake(take)` with no
   options; #1545 is the change that would). If one does, the replay reads it
-  as `base-missing`: the row is marked refused, kept with its recorded audio,
-  reported once, never installed and never `free` (§3, cell RP-P).
+  as `base-missing`: the row is dropped with its recorded audio, reported
+  once, never installed and never `free` (§3, cell RP-P; #1562 item 2).
 - **Creators write `audioRevision: 0`**: `addSegment` (`books.ts:966-973`) and
   the template writer (`src/lib/storage/template-book.ts:124`). The field is
   required on `Segment`, so TypeScript finds every creator.
@@ -304,7 +304,7 @@ One new store, created by v13 (§2):
 interface TakeDisposition {
   readonly clipId: ClipId;
   readonly segmentId: SegmentId;
-  readonly kind: "given-up" | "discarded" | "saved";
+  readonly kind: "given-up" | "refused" | "discarded" | "saved";
   readonly at: number; // write time; diagnostic only, never a deletion clock
 }
 ```
@@ -313,19 +313,25 @@ interface TakeDisposition {
 - **`discarded`:** a person confirmed Discard of that take, in any copy.
 - **`given-up`:** a quota failure dropped the take's row. The audio may still
   be needed: some copy may hold it in memory.
+- **`refused`** (#1562 item 2): a replay refused the take and dropped its
+  audio (§3, "The replay's own reads"; §4, "Refused, dropped"). Added with no
+  version step, because nothing indexes `kind`.
 
 **Written in the same transaction as the act that ends ownership**, never in a
 second one: the commit writes `saved` with the clip and take; the Discard
 settle writes `discarded` with the row delete; the give-up settle writes
-`given-up` with the row delete. A kill can therefore never leave a row gone
+`given-up` with the row delete; a refusal writes `refused` with the row
+delete. A kill can therefore never leave a row gone
 without the reason, or the reason without the row gone.
 
 **Monotone and idempotent.** A `clipId` is minted once per take
 (`newClipId()`, `src/lib/storage/clips.ts:10-12`), so a record never speaks
-for two takes. A write of the kind already stored is a no-op. The only
-change allowed is `given-up` to `saved` or `discarded`; `saved` and
-`discarded` are final, and a later write of any kind over them is a no-op.
-So a late or repeated settle can never weaken what is recorded.
+for two takes. A write of the kind already stored is a no-op. The changes
+allowed are `given-up` to `refused`, `saved` or `discarded`, and `refused`
+to `saved` or `discarded`; `saved` and `discarded` are final, and a later
+write of any kind over them is a no-op. So a late or repeated settle can
+never weaken what is recorded, and a give-up after a refusal never makes the
+take one a replay may save (`free`).
 
 **Erase writes no record.** An erase removes a take that committed, so that
 take already has `saved`; the revision move is what refuses any later
@@ -364,13 +370,12 @@ checked first, whatever the record says.
 
 The writers this covers, enumerated from the code paths in this note:
 
-| Writer                                                 | On `discarded` (record or request)               | On `saved`                                 | Where specified           |
-| ------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------ | ------------------------- |
-| The hold's put (`writePendingTake`)                    | writes nothing                                   | writes nothing                             | §3, "The hold"            |
-| The ordinary commit (`saveTake`)                       | writes nothing; the slot is freed, logged once   | writes nothing; reported as saved          | §4, "The ordinary commit" |
-| The conditional commit (`saveReplayedTake`)            | `discarded` verdict: writes nothing              | `done` verdict: writes nothing             | §4                        |
-| Park (put a row from the slot)                         | not reached: `discarded` and `done` precede keep | not reached                                | §4, "Keep, exactly"       |
-| Refusal mark, and the inline rewrite of a pre-rule row | writes nothing; deletes the row if present       | writes nothing; deletes the row if present | §4, "Keep, exactly"       |
+| Writer                                                          | On `discarded` (record or request)                         | On `saved`                        | Where specified           |
+| --------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------- | ------------------------- |
+| The hold's put (`writePendingTake`)                             | writes nothing                                             | writes nothing                    | §3, "The hold"            |
+| The ordinary commit (`saveTake`)                                | writes nothing; the slot is freed, logged once             | writes nothing; reported as saved | §4, "The ordinary commit" |
+| The conditional commit (`saveReplayedTake`)                     | `discarded` verdict: writes nothing                        | `done` verdict: writes nothing    | §4                        |
+| The refusal drop (`saveReplayedTake`, `dropRefusedPendingTake`) | not reached in a commit: `discarded` and `done` precede it | not reached in a commit           | §4, "Refused, dropped"    |
 
 Not covered, on purpose: erase, segment and book delete, and transcode. None
 is made on behalf of a pending take: each acts on the segment's current
@@ -500,14 +505,14 @@ readwrite, durability "strict"
 Every step below opens it, and nothing else writes a `pendingTakes` row or a
 disposition except the hold (which writes only the row):
 
-| Step               | Function (rebuild name)           | Reads                                                      | Writes                                                                                |
-| ------------------ | --------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Ordinary commit    | `saveTake`                        | segment, prior take, own row, disposition, Discard request | clip, take, segment (revision + 1), deletes own row, `saved`                          |
-| Conditional commit | `saveReplayedTake`                | segment, active take, row, disposition                     | on `free` as above; otherwise per §4                                                  |
-| Clear (erase)      | `clearSegmentTake`                | segment, prior take                                        | segment (revision + 1 if a take went), take and unreferenced clip                     |
-| Discard            | `settlePendingTake(…, "discard")` | row, takes, disposition                                    | deletes own row, `discarded`; deletes the orphan clip only if no take names it        |
-| Give up (quota)    | `settlePendingTake(…, "give-up")` | row, disposition                                           | deletes own row, `given-up`                                                           |
-| Refuse or park     | `settlePendingTake(…, { keep })`  | row                                                        | puts own row with `refusal` set; or, with no row, puts one from the slot (§4, "keep") |
+| Step               | Function (rebuild name)                                                      | Reads                                                      | Writes                                                                         |
+| ------------------ | ---------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Ordinary commit    | `saveTake`                                                                   | segment, prior take, own row, disposition, Discard request | clip, take, segment (revision + 1), deletes own row, `saved`                   |
+| Conditional commit | `saveReplayedTake`                                                           | segment, active take, row, disposition                     | on `free` as above; otherwise per §4                                           |
+| Clear (erase)      | `clearSegmentTake`                                                           | segment, prior take                                        | segment (revision + 1 if a take went), take and unreferenced clip              |
+| Discard            | `settlePendingTake(…, "discard")`                                            | row, takes, disposition                                    | deletes own row, `discarded`; deletes the orphan clip only if no take names it |
+| Give up (quota)    | `settlePendingTake(…, "give-up")`                                            | row, disposition                                           | deletes own row, `given-up`                                                    |
+| Refuse (drop)      | `dropRefusedPendingTake`, and `saveReplayedTake` on `moved` or `unexplained` | row, segment                                               | deletes own row (and its unused `stored` base clip), `refused`; nothing is put |
 
 `deleteSegment` and `deleteBook` keep their own store lists
 (`books.ts:1117`, `:371`), which already name `segments`. **PR 1 adds
@@ -638,21 +643,30 @@ order, the first match deciding:
 1. **segment missing** (any row, with or without `baseRevision`): `gone`.
    The row is deleted in the owning transaction and reported once (cell
    DL-P);
-2. `refusal` set: skip quietly (it was reported when it was marked);
+2. `refusal` set (a row an earlier build kept, before #1562 item 2): drop
+   it and report once;
 3. **no `baseRevision`** (`legacy`), or `sampleRate` not the current rate:
-   mark the row refused and report once under `"pending-take-refused"`
-   (cell RP-P).
+   drop the row and report once under `"pending-take-refused"` (cell RP-P).
+
+A drop (`dropRefusedPendingTake`) is one owning transaction: it deletes the
+row if it is still this take's, lets the row's `stored` base clip go if
+nothing else uses it, and writes `refused` if the segment is still there.
+It writes nothing for a row that is gone or another clip's, so a re-run is a
+no-op. The report names the refusal, the verdict (`not reached` here) and
+the recorded length in milliseconds and samples. A failed drop leaves the
+row as it was, is reported under `"pending-take-delete"`, and the next
+launch tries again.
 
 Only then does it read the recipe (`loadPendingRecipe`, read-only, now also
 naming `pendingTakes` and `takeDispositions`). A `stored` base whose clip is
 missing, or whose `encoding`, `generation` or `frameCount` no longer matches
 (`pending-takes.ts:337-347`), is `base-missing` or `base-changed`: the row
-is marked refused, kept and reported once, and **the take is never installed
-in the slot, so it never reaches the verdict and can never be `free`**
-(George r1's second question). A read only advises: whatever it saw, the
-commit re-decides inside the owning transaction (§4). This also answers
-George r7's Low on #1546: a kept refused row is no longer copied out of
-`clipData` on every launch.
+is dropped and reported once, and **the take is never installed in the
+slot, so it never reaches the verdict and can never be `free`** (George r1's
+second question). A read only advises: whatever it saw, the commit
+re-decides inside the owning transaction (§4). George r7's Low on #1546 (a
+kept refused row copied out of `clipData` on every launch) no longer
+arises: no refused row is kept.
 
 ## 4. The ownership verdict
 
@@ -704,8 +718,8 @@ What each verdict does in a conditional commit:
 | `free`        | clip, take, revision + 1, delete own row if present, `saved`                                     | freed (`succeedSave`), `onSaved`                                                                         | once, `"pending-take-replayed"` |
 | `done`        | delete own row if present, `saved` (idempotent); no clip, no take                                | freed, `onSaved`                                                                                         | none                            |
 | `discarded`   | nothing: a recorded Discard already deleted the row; a request leaves it for its own settle (I2) | freed                                                                                                    | once, `"pending-take-refused"`  |
-| `moved`       | keep (below)                                                                                     | freed once the audio is on disk; held if not (below)                                                     | once, `"pending-take-refused"`  |
-| `unexplained` | keep (below)                                                                                     | freed once the audio is on disk; held if not (below)                                                     | once, `"pending-take-refused"`  |
+| `moved`       | drop (below): delete own row if present, `refused`                                               | freed; held if another clip's row holds the key (below)                                                  | once, `"pending-take-refused"`  |
+| `unexplained` | drop (below): delete own row if present, `refused`                                               | freed; held if another clip's row holds the key (below)                                                  | once, `"pending-take-refused"`  |
 | `gone`        | delete own row if present                                                                        | first attempt: freed (the coordinator's #38 reading: delete on `segment-gone`). A Retry: failed, `stale` | once, `"pending-take-refused"`  |
 
 **`discarded` writes nothing, the row included.** A recorded Discard has
@@ -723,34 +737,31 @@ the Discard's own settle records it. `done` does not re-check. Its take is
 already active or already recorded `saved`, and aborting there would leave a
 later `discarded` record on an active take (C1).
 
-**Keep, exactly.** Nothing is saved over the segment, and no copy of the
-audio is let go before another is on disk:
+**Refused, dropped** (#1562 item 2). Nothing is saved over the segment,
+and the take's audio is let go. The requirements owner picked
+"Automatically, after a set time or size" (`bound`), and the DRI set the
+bound, verbatim: "Delete it at the refusal, log it (Recommended)"
+(https://github.com/unfoldingWord/tc-mobile/issues/1562#issuecomment-6611039491).
+In the same transaction:
 
-- an own row is present **and every dependency of its recipe is on disk in
-  this transaction** (for a `stored` base: the clip exists, is PCM, and
-  matches the row's `generation` and `frameCount`; §3, "A pending row's base
-  clip is a use"): mark it (`refusal: "superseded"` for `moved`,
-  `"unexplained"` for `unexplained`) and free the slot. If a dependency is
-  missing (a row written before the rule held), the row is rewritten with an
-  `inline` base from the slot's samples, marked, and only then is the slot
-  freed; if that put fails, the take stays held as below;
-- no own row (given up, or removed without a record): **park** it, in the
-  same transaction, by putting a marked row built from the slot's recipe, if
-  the segment's row key is free. Then free the slot. If the key holds another
-  clip's row, or the put fails (quota), the transaction aborts and the take
-  **stays held**, failed with kind `unknown` (the existing recovery screen,
-  Retry and Discard). Retry runs the verdict again; it never falls through to
-  a save while the verdict is `moved` or `unexplained`.
+- if the segment's row key holds **another clip's** row, nothing is
+  written and the take **stays held**, failed with kind `unknown` (the
+  existing recovery screen, Retry and Discard): that row may be another
+  take's only copy. Retry runs the verdict again; it never falls through to
+  a save while the verdict is `moved` or `unexplained`;
+- otherwise the take's own row, marked or not, is deleted if present (with
+  its `stored` base clip, if nothing else uses it), nothing is parked, and
+  `refused` is recorded. The outcome is `dropped`, and the slot is freed.
 
-So George r1's first Low (the `moved` branch with the row already gone) has
-one answer: the slot keeps the audio until it is parked, and nothing is
-saved. When a row is gone because another copy saved the take and the
-segment then moved, the record says `saved`, the verdict is `done`, and the
-slot is freed with nothing written: the person's erase stands.
+The hook logs one `"pending-take-refused"` row naming the refusal
+(`superseded` for `moved`, `unexplained`), the verdict and the recorded
+length. Until #1562 item 2 this branch kept the take as a marked row (an
+own row marked, or the slot's recipe parked as an `inline` row), which no
+screen read and nothing cleared.
 
-PR 4 replaces the held `unknown` state of a `moved` take with its own words
-(§9). Until then, Retry is the honest action: it parks the take as soon as
-there is room.
+When a row is gone because another copy saved the take and the segment then
+moved, the record says `saved`, the verdict is `done`, and the slot is freed
+with nothing written: the person's erase stands.
 
 **The ordinary commit** does not ask §4's verdict (today's contract, #1551:
 it does not check whether the segment moved). It does obey §3's writer rule,
@@ -956,8 +967,8 @@ names where it must be seen red first, and the mutation that must kill it.
   `attempts: 1` and stops the run: the state becomes Retry pending. Test
   (PR 3): "a failed replay shows the recovery screen, keeps the row and stops
   the run". Red: PR 2's head.
-- **RP-X.** A quiet row has no Discard control. A refused row has none until
-  #1562 item 2 is decided. Existing NOSLOT pins; no new test.
+- **RP-X.** A quiet row has no Discard control. No refused row is kept to
+  need one (#1562 item 2). Existing NOSLOT pins; no new test.
 - **RP-L.** Killed mid-replay. The commit is one transaction: either take,
   revision, row delete and `saved` all landed (the next launch finds no row),
   or none did (the row is replayed again). Test (PR 3): "a replay whose
@@ -1166,17 +1177,16 @@ row that replayed over `K`.
   commit. It should follow PR 3, which creates the window.
 - **#1562 item 1 (the screen a lost race shows): partly folded in, one
   decision open.** Most lost races show nothing now: a `moved` or
-  `unexplained` take with a row is marked and kept on disk, and `discarded`
-  honours a Discard. A take whose only copy is in memory and cannot be
-  parked stays on the existing recovery screen, kind `unknown`, until PR 4.
+  `unexplained` take is dropped and logged (item 2, §4 "Refused,
+  dropped"), and `discarded` honours a Discard. A take held because another
+  clip's row holds its segment stays on the existing recovery screen, kind `unknown`, until PR 4.
   The words for that case, and what Try again does there, are the
   requirements owner's (§9).
-- **#1562 item 2 (refused rows keep their audio forever): stays separate.**
-  It decides when refused audio may go, which is the requirements owner's
-  call. This design adds a reason to decide it: a hold never overwrites a
-  row, so a kept row also takes the safety copy away from the next save on
-  that segment (§3, `kept-foreign`). Deleting a segment or a book drops its
-  rows from PR 2, and its records from PR 1 (RP-D).
+- **#1562 item 2 (refused rows keep their audio forever): decided and
+  built.** A refused take is dropped at the refusal and logged (§4,
+  "Refused, dropped"), and the launch replay drops a row an earlier build
+  kept (§3). So no refused row takes the safety copy away from a later save
+  on its segment (§3, `kept-foreign`).
 - **#1551 (should an ordinary Save check its target): stays separate.** It
   changes what a person's own Save does. The revision makes it cheap: the
   recorder would carry the revision it read when it loaded the segment's
@@ -1400,13 +1410,13 @@ fails again until space is freed (inference; not measured).
    decided otherwise: keep it held; Discard deletes it; Try again stores it
    to the side as a kept refused row (park, §4) and never over the newer
    audio. The words for this screen are part of the decision.
-2. **How long a refused row keeps its audio** (#1562 item 2). Unchanged by
-   this note, and more pressing because of `kept-foreign` (§7). George r3's
-   question, answered: yes, until this is decided, a refused row has no
-   control that clears it while its segment exists, and every later save on
-   that segment has no safety copy. That includes a preview phone holding a
-   slice-2 row, which v13 reads as `legacy` (§2). It is accepted as a known
-   hole until the requirements owner decides, not designed away here.
+2. **How long a refused row keeps its audio** (#1562 item 2). Decided: the
+   requirements owner picked "Automatically, after a set time or size"
+   (`bound`), and the DRI set the bound at the refusal, verbatim: "Delete it
+   at the refusal, log it (Recommended)". A refused take is dropped, not
+   kept (§4, "Refused, dropped"), and a row an earlier build kept is dropped
+   by the next launch (§3). The owner's note on the pick, a possible v3
+   feature to retrieve such audio and ask what to do with it, is not built.
 3. **Whether `kept-foreign` shows anything** (George r1's first question).
    Today's design reports it to the failure log only. A kill after that
    loses the take the person just made, because it had no safety copy.
@@ -1415,12 +1425,11 @@ fails again until space is freed (inference; not measured).
    not read to act on a rare internal state. This is a product call, not
    decided here.
 
-None of the three blocks PR 1, 2 or 3 from merging. They do bound what
-those PRs protect: until items 2 and 3 are decided, `kept-foreign` with a
-refused row that nothing clears leaves every later save on that segment
-without kill protection, on PR 1's hold and on PR 3's replay alike. That is
-a durability limit of PR 1 and PR 3, recorded here and in residual 2, not a
-property they guarantee.
+None of the three blocks PR 1, 2 or 3 from merging. Item 3 still bounds
+what those PRs protect: `kept-foreign` with another copy's live row leaves
+that save without kill protection, on PR 1's hold and on PR 3's replay
+alike. That is a durability limit of PR 1 and PR 3, recorded here and in
+residual 2, not a property they guarantee.
 
 ## Residuals
 
@@ -1429,13 +1438,14 @@ Each is inferred from the code and this design. None has been seen.
 1. **A kill before the Discard's own transaction commits**, after the tap,
    brings the discarded take back on the next launch (§7, #1548). One
    transaction, not two.
-2. **`kept-foreign` costs a safety copy.** A save on a segment that holds a
-   kept refused row, or another copy's live row, has no kill protection
-   (§9, item 3).
-3. **A refusal mark or a park rewrites the whole row.** A `put` of a row with
-   a 20-minute take re-serialises its audio. A quota failure there aborts the
-   transaction: a mark is retried on the next launch (a repeated log line,
-   never a lost row); a park leaves the take held.
+2. **`kept-foreign` costs a safety copy.** A save on a segment that holds
+   another copy's live row has no kill protection (§9, item 3).
+3. **A launch drop can end another copy's live row** (#1562 item 2). If the
+   launch replay in one copy refuses a row (for example `base-changed`)
+   while another copy still holds that take in its slot, the row and its
+   kill protection go; that copy's ordinary commit still saves the take,
+   because a `refused` record does not stop it (inference from the code;
+   the store half is pinned in `tests/save-replayed-take.test.ts`).
 4. **Store-level serialization.** Adding `pendingTakes` and
    `takeDispositions` to the owning scope means a commit in one copy can wait
    behind a hold for a different segment in another copy. Holds are one short
@@ -1446,6 +1456,7 @@ Each is inferred from the code and this design. None has been seen.
    of bytes each (inference, not measured), against megabytes of audio per
    take.
 6. **A fresh take's Retry is still unconditional** (#1551).
-7. **A kept row with a `stored` base pins its clip as PCM.** The clip is not
-   deleted or transcoded while the row lives, so a refused row (#1562 item 2)
-   also holds that clip's PCM, about ten times its MP3 size (AGENTS.md, "Known open items" 2: ~660 MB of PCM to ~66 MB of MP3), until the row ends.
+7. **A row with a `stored` base pins its clip as PCM.** The clip is not
+   deleted or transcoded while the row lives, so a pending row holds that
+   clip's PCM, about ten times its MP3 size (AGENTS.md, "Known open items" 2: ~660 MB of PCM to ~66 MB of MP3), until the row ends. A refused row no
+   longer lives on (#1562 item 2).

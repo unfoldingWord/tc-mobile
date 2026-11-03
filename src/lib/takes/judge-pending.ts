@@ -6,11 +6,12 @@
  * transaction, before any write, and does exactly what the verdict says. The
  * order and the reasons are docs/design/pending-take-lifecycle.md, §4.
  *
- * **Absence is never consent.** A missing row frees the slot only when a
- * record says the take was saved (`done`) or discarded (`discarded`), and
- * allows a save only when a record says the row was given up for quota with
- * the take still wanted (`free`). A missing row with no record, or a row that
- * belongs to another clip, is `unexplained`, and `unexplained` keeps.
+ * **Absence is never consent.** A missing row allows a save only when a
+ * record says the row was given up for quota with the take still wanted
+ * (`free`). A missing row with no record, a `refused` record, or a row that
+ * belongs to another clip, is `unexplained`, and `unexplained` never saves:
+ * the take is refused (dropped and recorded `refused`, or held while another
+ * clip's row holds the segment; #1562 item 2).
  */
 
 import type {

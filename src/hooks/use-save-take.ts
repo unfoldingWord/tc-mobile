@@ -26,6 +26,7 @@ import { loadedClipSource } from "./loaded-clip";
 import { withObservedRevision } from "./observed-revision";
 import {
   notSaved,
+  refusedAndDropped,
   replayPendingTakes,
   type ReplayTake,
 } from "./replay-pending-takes";
@@ -285,7 +286,7 @@ function landed(take: PendingTake, effects: SaveEffects): true {
  *
  * Written only after a commit that saved this take's audio: never for a
  * launch with nothing waiting, never for a take another copy already saved,
- * and never from pagehide. A take parked or refused already has its
+ * and never from pagehide. A take refused already has its
  * `"pending-take-refused"` row, so it gets no second one here.
  */
 function reportReplayed(): void {
@@ -303,9 +304,11 @@ function reportReplayed(): void {
  *   - `saved`, `already-saved`: landed, as an ordinary save (#1557: a take
  *     another copy finished frees the slot with nothing written); `saved`
  *     alone logs one informational `"pending-take-replayed"` row;
- *   - `discarded`, `kept`, and `gone` on the first attempt: nothing saved
- *     over the segment, the take is ended or on disk as a marked row, so the
- *     slot lets it go; logged once under `"pending-take-refused"`;
+ *   - `discarded`, `dropped`, and `gone` on the first attempt: nothing saved
+ *     over the segment and the take is ended, so the slot lets it go; logged
+ *     once under `"pending-take-refused"`. `dropped` is a refusal whose audio
+ *     is let go (#1562 item 2), so its row names the refusal, the verdict
+ *     and the recorded length;
  *   - `held`: still only in the slot, failed `unknown` (the recovery screen;
  *     Retry runs the verdict again and never falls through to a save);
  *   - `gone` on a Retry: failed `stale`, as a missing segment is elsewhere.
@@ -343,7 +346,15 @@ async function commitReplayed(
     replayed.delete(take.clipId);
     return landed(take, effects);
   }
-  const cause = notSaved("verdict" in result ? result.verdict : outcome);
+  const cause =
+    outcome === "dropped"
+      ? refusedAndDropped(
+          result.verdict === "moved" ? "superseded" : "unexplained",
+          result.verdict,
+          take.recorded.length,
+          CANONICAL_SAMPLE_RATE
+        )
+      : notSaved("verdict" in result ? result.verdict : outcome);
   console.error("Saving a take was refused", cause);
   reportFailure(cause, "pending-take-refused");
   if (outcome === "held" || (outcome === "gone" && take.attempts > 0)) {
