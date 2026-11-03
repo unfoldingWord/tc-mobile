@@ -37,6 +37,8 @@ import {
   performSaveTake,
 } from "@/hooks/use-save-take";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { lightsFailureMarker } from "@/lib/failure-marker";
+import { describeCause } from "@/lib/failure-text";
 import {
   addChapter,
   addSegment,
@@ -342,7 +344,7 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     expect(await rowOf(segmentId)).toBeUndefined();
   });
 
-  it("a failed drop leaves the row as it was and reports it, and the next launch tries again", async () => {
+  it("a failed drop leaves the row as it was and reports it as ONE row carrying the delete cause, and the next launch tries again", async () => {
     const segmentId = await freshSegment();
     const row = await heldRow(firstTake(segmentId));
     await putRow({ ...row, refusal: "superseded" });
@@ -353,14 +355,43 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     await replayPendingTakes(vi.fn());
 
     expect((await rowOf(segmentId))?.refusal).toBe("superseded");
-    expect(contexts()).toEqual(["pending-take-delete", "pending-take-refused"]);
-    expect(messages()[1]).toContain("audio still present");
-    expect(messages()[1]).not.toContain("audio dropped");
-    expect(messages().join(" ")).not.toContain("audio dropped");
+    // One write, so a kill cannot land between the delete error and the
+    // "audio still present" statement (#1863).
+    expect(contexts()).toEqual(["pending-take-refused"]);
+    expect(messages()[0]).toContain("audio still present");
+    expect(messages()[0]).not.toContain("audio dropped");
+    expect(describeCause(reports[0]!.cause).message).toContain(
+      "injected delete fault"
+    );
+    // Both contexts light the Books marker by default, so one row lights it
+    // exactly as the two did.
+    expect(lightsFailureMarker("pending-take-refused")).toBe(true);
+    expect(lightsFailureMarker("pending-take-delete")).toBe(true);
 
     await replayPendingTakes(vi.fn());
     expect(await rowOf(segmentId)).toBeUndefined();
   });
+
+  it.each(["drop commits", "drop fails"] as const)(
+    "a row stored at rate 0 reports its length as unknown, never Infinity (%s)",
+    async (path) => {
+      const segmentId = await freshSegment();
+      const row = await heldRow(firstTake(segmentId));
+      await putRow({ ...row, sampleRate: 0 });
+      if (path === "drop fails") {
+        vi.spyOn(IDBObjectStore.prototype, "delete").mockImplementationOnce(
+          () => {
+            throw new Error("injected delete fault");
+          }
+        );
+      }
+
+      await replayPendingTakes(vi.fn());
+
+      expect(messages()[0]).toContain("length: unknown (40 samples)");
+      expect(messages()[0]).not.toMatch(/Infinity|NaN/);
+    }
+  );
 
   it.each([
     [
