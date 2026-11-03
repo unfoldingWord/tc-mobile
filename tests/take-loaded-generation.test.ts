@@ -202,8 +202,8 @@ describe("a replay after a transcode under the held row (A-14 interleaving B)", 
   });
 });
 
-describe("a replay that keeps its take instead of saving it", () => {
-  it("rewrites the inline row with the take's baseGeneration", async () => {
+describe("a replay that refuses its take instead of saving it (#1562 item 2)", () => {
+  it("writes no row back, so there is no generation left to carry", async () => {
     const { segmentId, pcm } = await finishedPcmSegment();
     const take = appendOnto(segmentId, pcm);
     expect((await writePendingTake(take)).ok).toBe(true);
@@ -212,8 +212,8 @@ describe("a replay that keeps its take instead of saving it", () => {
     const read = await loadPendingRecipe(row!, RATE);
     if (read.kind !== "recipe")
       throw new Error(`recipe expected: ${read.kind}`);
-    // Removed without a record, so the replay parks it as `unexplained` and
-    // writes the slot's recipe back as an inline row.
+    // Removed without a record, so the replay refuses it as `unexplained`;
+    // before #1562 item 2 it wrote the slot's recipe back as an inline row.
     await db.delete("pendingTakes", segmentId);
 
     expect(
@@ -222,10 +222,8 @@ describe("a replay that keeps its take instead of saving it", () => {
         mergeTake(read.take.existing, read.take.recorded, read.take.offset),
         RATE
       )
-    ).toEqual({ outcome: "kept", verdict: "unexplained" });
-    const kept = await db.get("pendingTakes", segmentId);
-    expect(kept?.base.kind).toBe("inline");
-    expect(kept?.baseGeneration).toBe(0);
+    ).toEqual({ outcome: "dropped", verdict: "unexplained" });
+    expect(await db.get("pendingTakes", segmentId)).toBeUndefined();
   });
 });
 

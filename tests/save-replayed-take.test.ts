@@ -32,13 +32,7 @@ import type {
   StoredPendingTake,
   TakeDisposition,
 } from "@/types/domain";
-import {
-  clearAllStores,
-  forgetDisposition,
-  loseClip,
-  ramp,
-  recordTake,
-} from "./support";
+import { clearAllStores, forgetDisposition, ramp, recordTake } from "./support";
 
 /**
  * The replay's conditional commit at the store (#38 rebuild PR 3, the store
@@ -334,8 +328,8 @@ describe("saveReplayedTake: discarded writes nothing", () => {
   );
 });
 
-describe("saveReplayedTake: moved and unexplained keep, and never save", () => {
-  it("a first-take row is not replayed onto a segment another copy saved and then erased (RP-E)", async () => {
+describe("saveReplayedTake: moved and unexplained drop the take, and never save (#1562 item 2)", () => {
+  it("a first-take row is not replayed onto a segment another copy saved and then erased (RP-E): the row is dropped", async () => {
     const segmentId = await freshSegment();
     const c = await holdAndLoad(firstTake(segmentId));
     await recordTake(segmentId);
@@ -343,93 +337,153 @@ describe("saveReplayedTake: moved and unexplained keep, and never save", () => {
     // `activeTakeId` is null again: only the revision tells.
     expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
 
-    expect(await replay(c)).toEqual({ outcome: "kept", verdict: "moved" });
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
     expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
-    const [row] = await rowsNow();
-    expect(row?.clipId).toBe(c.clipId);
-    expect(row?.refusal).toBe("superseded");
-    expect(await recordOf(c.clipId)).toBeUndefined();
+    expect(await rowsNow()).toEqual([]);
+    expect(await recordOf(c.clipId)).toBe("refused");
+    expect(await getClipMeta(c.clipId)).toBeUndefined();
   });
 
-  it("a newer save between the recipe read and the commit survives (RP-S, Frank r1 on #1546)", async () => {
+  it("a newer save between the recipe read and the commit survives, and the refused row is gone (RP-S, Frank r1 on #1546)", async () => {
     const { segmentId, append } = await keptSegment();
     const c = await holdAndLoad(append);
     const d = await recordTake(segmentId);
+    const before = await counts();
 
-    expect(await replay(c)).toEqual({ outcome: "kept", verdict: "moved" });
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
     expect(await activeClip(segmentId)).toBe(d.clipId);
-    const [row] = await rowsNow();
-    expect(row?.refusal).toBe("superseded");
-    // The marked row still rebuilds the same audio.
-    const read = await loadPendingRecipe(row!, RATE);
-    expect(read.kind === "recipe" && Array.from(read.take.recorded)).toEqual(
-      Array.from(c.recorded)
-    );
+    expect(await rowsNow()).toEqual([]);
+    expect(await counts()).toEqual({ ...before, rows: 0 });
   });
 
-  it("a kept row's stored base survives another copy replacing the take, and its recipe rebuilds (Frank r3 on the note)", async () => {
-    const { segmentId, kept, meta, pcm, append } = await keptSegment();
+  it("a dropped row's stored base clip goes with it when nothing else uses it", async () => {
+    const { segmentId, kept, meta, append } = await keptSegment();
     const c = await holdAndLoad(append, meta);
     expect((await rowsNow())[0]?.base.kind).toBe("stored");
+    // Another take replaces K, so the row's base is K's only use.
     await recordTake(segmentId);
+    expect(await getClipMeta(kept.clipId)).toBeDefined();
 
-    expect(await replay(c)).toEqual({ outcome: "kept", verdict: "moved" });
-    const [row] = await rowsNow();
-    expect(row?.base.kind).toBe("stored");
-    const read = await loadPendingRecipe(row!, RATE);
-    expect(read.kind === "recipe" && Array.from(read.take.existing)).toEqual(
-      Array.from(pcm)
-    );
-    // The pair: the base clip goes when that kept row ends.
-    await deleteSegment(segmentId);
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+    expect(await rowsNow()).toEqual([]);
     expect(await getClipMeta(kept.clipId)).toBeUndefined();
   });
 
-  it("a kept row whose stored base is gone is rewritten inline from the slot before the slot is freed", async () => {
-    const { segmentId, kept, meta, pcm, append } = await keptSegment();
+  it("a dropped row's stored base clip stays while the segment still plays it", async () => {
+    const { segmentId, kept, meta, append } = await keptSegment();
     const c = await holdAndLoad(append, meta);
-    await recordTake(segmentId);
-    // A row from before the base rule held: its base clip is gone.
-    await loseClip(kept.clipId);
+    // The revision moves with K still active. No writer does that on its
+    // own, so it is done raw.
+    const db = await getDb();
+    const segment = (await db.get("segments", segmentId))!;
+    await db.put("segments", {
+      ...segment,
+      audioRevision: segment.audioRevision + 1,
+    });
 
-    expect(await replay(c)).toEqual({ outcome: "kept", verdict: "moved" });
-    const [row] = await rowsNow();
-    expect(row?.base.kind).toBe("inline");
-    expect(row?.refusal).toBe("superseded");
-    const read = await loadPendingRecipe(row!, RATE);
-    expect(read.kind === "recipe" && Array.from(read.take.existing)).toEqual(
-      Array.from(pcm)
-    );
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+    expect(await rowsNow()).toEqual([]);
+    expect(await activeClip(segmentId)).toBe(kept.clipId);
+    expect(await getClipMeta(kept.clipId)).toBeDefined();
   });
 
-  it("parks a take whose row went with no record, as unexplained, and never saves it", async () => {
+  it("a row an earlier build marked refused is dropped by a later commit of the same take", async () => {
+    const { segmentId, append } = await keptSegment();
+    const c = await holdAndLoad(append);
+    await recordTake(segmentId);
+    const [row] = await rowsNow();
+    await (
+      await getDb()
+    ).put("pendingTakes", {
+      ...row!,
+      refusal: "superseded",
+    });
+
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+    expect(await rowsNow()).toEqual([]);
+  });
+
+  it("a take whose row went with no record is unexplained: nothing is parked and nothing saved", async () => {
     const { segmentId, kept, append } = await keptSegment();
     const c = await holdAndLoad(append);
     // Removed without a record: no v13 writer does this, so it is done raw.
     await (await getDb()).delete("pendingTakes", segmentId);
+    const before = await counts();
 
     expect(await replay(c)).toEqual({
-      outcome: "kept",
+      outcome: "dropped",
       verdict: "unexplained",
     });
     expect(await activeClip(segmentId)).toBe(kept.clipId);
-    const [row] = await rowsNow();
-    expect(row?.clipId).toBe(c.clipId);
-    expect(row?.refusal).toBe("unexplained");
-    expect(row?.base.kind).toBe("inline");
-    expect(row?.baseRevision).toBe(c.baseRevision);
+    expect(await rowsNow()).toEqual([]);
+    expect(await counts()).toEqual(before);
+    expect(await recordOf(c.clipId)).toBe("refused");
   });
 
-  it("parks a given-up take whose segment moved since (TP-E at the store, Frank r7 on #1546)", async () => {
+  it("a given-up take whose segment moved since is dropped, not parked (TP-E at the store, Frank r7 on #1546)", async () => {
     const segmentId = await freshSegment();
     const c = await holdAndLoad(firstTake(segmentId));
     await settlePendingTake(segmentId, c.clipId, "give-up");
     await recordTake(segmentId);
     await clearSegmentTake(segmentId);
 
-    expect(await replay(c)).toEqual({ outcome: "kept", verdict: "moved" });
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
     expect((await getSegment(segmentId))?.activeTakeId).toBeNull();
-    expect((await rowsNow())[0]?.refusal).toBe("superseded");
+    expect(await rowsNow()).toEqual([]);
+    // `refused` outranks the give-up, so no later replay reads it as free.
+    expect(await recordOf(c.clipId)).toBe("refused");
+  });
+
+  it("a hold of a refused take writes no row back", async () => {
+    const segmentId = await freshSegment();
+    const t = firstTake(segmentId);
+    const c = await holdAndLoad(t);
+    await recordTake(segmentId);
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+
+    expect(await writePendingTake(t)).toEqual({
+      ok: true,
+      outcome: "refused",
+    });
+    expect(await rowsNow()).toEqual([]);
+  });
+
+  it("a later give-up never weakens a refused record", async () => {
+    const segmentId = await freshSegment();
+    const c = await holdAndLoad(firstTake(segmentId));
+    await recordTake(segmentId);
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+
+    expect(await settlePendingTake(segmentId, c.clipId, "give-up")).toEqual({
+      ok: true,
+    });
+    expect(await recordOf(c.clipId)).toBe("refused");
+  });
+
+  it("a live copy's ordinary commit of a take another copy refused still saves it, and the record becomes saved", async () => {
+    const segmentId = await freshSegment();
+    const c = await holdAndLoad(firstTake(segmentId));
+    await recordTake(segmentId);
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+
+    // The copy still holding C in its slot commits it the ordinary way.
+    expect(
+      (await saveTake(segmentId, c.clipId, c.recorded, RATE)).outcome
+    ).toBe("saved");
+    expect(await activeClip(segmentId)).toBe(c.clipId);
+    expect(await recordOf(c.clipId)).toBe("saved");
+  });
+
+  it("a drop is idempotent: the same refused take replayed again writes nothing more", async () => {
+    const segmentId = await freshSegment();
+    const c = await holdAndLoad(firstTake(segmentId));
+    await recordTake(segmentId);
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+    const after = await counts();
+
+    expect(await replay(c)).toEqual({ outcome: "dropped", verdict: "moved" });
+    expect(await counts()).toEqual(after);
+    expect(await rowsNow()).toEqual([]);
   });
 
   it("a given-up take is not saved while another clip's row holds the segment (George r4)", async () => {

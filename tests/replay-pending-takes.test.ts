@@ -154,6 +154,10 @@ const app = () => {
 let reports: FailureReport[] = [];
 let off: () => void = () => {};
 const contexts = () => reports.map((r) => r.context);
+const messages = () => reports.map((r) => (r.cause as Error).message);
+
+/** `ramp(40)` at the canonical rate: what a refusal row reports as its length. */
+const FORTY_SAMPLES = `length: 1 ms (40 samples)`;
 
 beforeEach(async () => {
   await clearAllStores();
@@ -262,17 +266,67 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     expect(contexts()).toEqual(["pending-take-refused"]);
   });
 
-  it("a marked row is skipped quietly and left as it is", async () => {
+  it("a row an earlier build marked refused is dropped, logged once, and the next launch is quiet (#1562 item 2)", async () => {
     const segmentId = await freshSegment();
     const row = await heldRow(firstTake(segmentId));
     await putRow({ ...row, refusal: "superseded" });
     const resumed = vi.fn();
 
     await replayPendingTakes(resumed);
+    await replayPendingTakes(resumed);
 
     expect(resumed).not.toHaveBeenCalled();
+    expect(await rowOf(segmentId)).toBeUndefined();
+    expect(await recordOf(row.clipId)).toBe("refused");
+    expect(contexts()).toEqual(["pending-take-refused"]);
+    expect(messages()[0]).toContain(
+      "refusal: superseded (kept by an earlier build)"
+    );
+    expect(messages()[0]).toContain("verdict: not reached");
+    expect(messages()[0]).toContain(FORTY_SAMPLES);
+  });
+
+  it("an earlier build's marked row with a stored base lets its base clip go when nothing else uses it", async () => {
+    const segmentId = await freshSegment();
+    const kept = await recordTake(segmentId, { frames: 80 });
+    const meta = (await getClipMeta(kept.clipId)) as ClipMeta;
+    const t: ReplayTake = {
+      ...firstTake(segmentId),
+      existing: new Int16Array(80).fill(1000),
+      offset: 80,
+      baseRevision: 1,
+      baseGeneration: null,
+    };
+    expect(await writePendingTake(t, { source: meta })).toEqual({
+      ok: true,
+      outcome: "written",
+    });
+    await recordTake(segmentId);
+    const row = (await rowOf(segmentId))!;
+    expect(row.base.kind).toBe("stored");
+    await putRow({ ...row, refusal: "superseded" });
+
+    await replayPendingTakes(vi.fn());
+
+    expect(await rowOf(segmentId)).toBeUndefined();
+    expect(await getClipMeta(kept.clipId)).toBeUndefined();
+  });
+
+  it("a failed drop leaves the row as it was and reports it, and the next launch tries again", async () => {
+    const segmentId = await freshSegment();
+    const row = await heldRow(firstTake(segmentId));
+    await putRow({ ...row, refusal: "superseded" });
+    vi.spyOn(IDBObjectStore.prototype, "delete").mockImplementationOnce(() => {
+      throw new Error("injected delete fault");
+    });
+
+    await replayPendingTakes(vi.fn());
+
     expect((await rowOf(segmentId))?.refusal).toBe("superseded");
-    expect(reports).toEqual([]);
+    expect(contexts()).toEqual(["pending-take-refused", "pending-take-delete"]);
+
+    await replayPendingTakes(vi.fn());
+    expect(await rowOf(segmentId)).toBeUndefined();
   });
 
   it.each([
@@ -294,7 +348,7 @@ describe("classification, before any audio is read (§3, The replay's own reads)
       }),
     ],
   ] as const)(
-    "a %s row is marked refused, kept, reported once, and quiet on the next launch",
+    "a %s row is dropped, reported once with its length, and quiet on the next launch",
     async (refusal, shape) => {
       const segmentId = await freshSegment();
       const row = await heldRow(firstTake(segmentId));
@@ -305,15 +359,19 @@ describe("classification, before any audio is read (§3, The replay's own reads)
       await replayPendingTakes(resumed);
 
       expect(resumed).not.toHaveBeenCalled();
-      const kept = await rowOf(segmentId);
-      expect(kept?.clipId).toBe(row.clipId);
-      expect(kept?.recorded.byteLength).toBe(row.recorded.byteLength);
-      expect(kept?.refusal).toBe(refusal);
+      expect(await rowOf(segmentId)).toBeUndefined();
+      expect(await recordOf(row.clipId)).toBe("refused");
       expect(contexts()).toEqual(["pending-take-refused"]);
+      expect(messages()[0]).toContain(`refusal: ${refusal};`);
+      expect(messages()[0]).toContain("verdict: not reached");
+      // A row at another rate reports its length at its own rate.
+      expect(messages()[0]).toContain(
+        refusal === "sample-rate" ? "length: 2 ms (40 samples)" : FORTY_SAMPLES
+      );
     }
   );
 
-  it("a stored base whose clip changed is marked base-changed and never installed", async () => {
+  it("a stored base whose clip changed is dropped as base-changed and never installed", async () => {
     const segmentId = await freshSegment();
     const kept = await recordTake(segmentId, { frames: 80 });
     const meta = (await getClipMeta(kept.clipId)) as ClipMeta;
@@ -335,8 +393,11 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     await replayPendingTakes(resumed);
 
     expect(resumed).not.toHaveBeenCalled();
-    expect((await rowOf(segmentId))?.refusal).toBe("base-changed");
+    expect(await rowOf(segmentId)).toBeUndefined();
+    // The base clip is still the segment's active take, so it stays.
+    expect(await getClipMeta(kept.clipId)).toBeDefined();
     expect(contexts()).toEqual(["pending-take-refused"]);
+    expect(messages()[0]).toContain("refusal: base-changed;");
   });
 
   it("a failed list is reported under pending-take-read, and nothing else runs", async () => {
@@ -355,7 +416,7 @@ describe("classification, before any audio is read (§3, The replay's own reads)
 });
 
 describe("what the conditional commit's outcome does to the slot (§4)", () => {
-  it("moved: the row is marked superseded, nothing saved over the segment, slot freed, reported once", async () => {
+  it("moved: the row is dropped, nothing saved over the segment, slot freed, reported once with refusal, verdict and length", async () => {
     const segmentId = await freshSegment();
     const c = firstTake(segmentId);
     await heldRow(c);
@@ -366,10 +427,14 @@ describe("what the conditional commit's outcome does to the slot (§4)", () => {
     await a.launch();
 
     expect(await activeClip(segmentId)).toBe(d.clipId);
-    expect((await rowOf(segmentId))?.refusal).toBe("superseded");
+    expect(await rowOf(segmentId)).toBeUndefined();
     expect(a.held()).toBeNull();
     expect(a.calls.saved).toBe(0);
     expect(contexts()).toEqual(["pending-take-refused"]);
+    expect(messages()[0]).toContain("refusal: superseded;");
+    expect(messages()[0]).toContain("verdict: moved;");
+    expect(messages()[0]).toContain(FORTY_SAMPLES);
+    expect(messages()[0]).toContain("audio dropped");
   });
 
   it("discarded in this copy while installed: nothing written, slot freed, reported once", async () => {
@@ -417,7 +482,7 @@ describe("what the conditional commit's outcome does to the slot (§4)", () => {
     expect(b.held()?.kind).toBe("stale");
   });
 
-  it("held (another clip's row holds the key, no row of its own): failed unknown, nothing written; a Retry parks it and never saves", async () => {
+  it("held (another clip's row holds the key, no row of its own): failed unknown, nothing written; a Retry drops it and never saves", async () => {
     const segmentId = await freshSegment();
     const c = firstTake(segmentId);
     await heldRow(c);
@@ -437,17 +502,17 @@ describe("what the conditional commit's outcome does to the slot (§4)", () => {
     expect(await activeClip(segmentId)).toBeNull();
     expect(contexts()).toEqual(["pending-take-refused"]);
 
-    // D's row goes; Retry runs the verdict again: unexplained, parked.
+    // D's row goes; Retry runs the verdict again: unexplained, dropped.
     await (await getDb()).delete("pendingTakes", segmentId);
     const next = retrySave(a.held())!;
     a.effects.update(() => next);
     expect(await performSaveTake(next, a.effects)).toBe(true);
 
     expect(await activeClip(segmentId)).toBeNull();
-    const parked = await rowOf(segmentId);
-    expect(parked?.clipId).toBe(c.clipId);
-    expect(parked?.refusal).toBe("unexplained");
+    expect(await rowOf(segmentId)).toBeUndefined();
     expect(a.held()).toBeNull();
+    expect(messages()[1]).toContain("refusal: unexplained;");
+    expect(messages()[1]).toContain("verdict: unexplained;");
   });
 
   it("a quota failure of a replayed commit keeps its row and gives nothing up", async () => {
@@ -468,7 +533,7 @@ describe("what the conditional commit's outcome does to the slot (§4)", () => {
     expect(await recordOf(c.clipId)).toBeUndefined();
   });
 
-  it("a replayed attempt never holds: a row gone with no record stays unexplained and is parked, not saved", async () => {
+  it("a replayed attempt never holds: a row gone with no record stays unexplained and is dropped, not saved", async () => {
     const segmentId = await freshSegment();
     const c = firstTake(segmentId);
     await heldRow(c);
@@ -481,7 +546,7 @@ describe("what the conditional commit's outcome does to the slot (§4)", () => {
     expect(await performResumeTake(null, c, a.effects)).toBe(true);
 
     expect(await activeClip(segmentId)).toBeNull();
-    expect((await rowOf(segmentId))?.refusal).toBe("unexplained");
+    expect(await rowOf(segmentId)).toBeUndefined();
     expect(a.held()).toBeNull();
   });
 
