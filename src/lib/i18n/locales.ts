@@ -70,20 +70,44 @@ export function buildTable(
 }
 
 /**
- * The locales the resolver may pick: English, and each language whose table
- * has every translatable English key, which is every key but the
- * English-only ones (S11, `english-only.ts`: no language file may carry
- * those, so they cannot count against a language) (ADR 0015 (g): a screen is wholly in one language, so
- * an incomplete locale is skipped rather than shown half English).
+ * Languages whose table may be complete but which must not go live yet: the
+ * resolver never picks one, so a phone set to it opens in its next listed
+ * language, or English.
+ *
+ * The DRI's standing rule (2026-10-21) is that an AI-drafted language goes
+ * live in the next tester build once its draft passes the machine gates,
+ * except Arabic, which waits for the right-to-left device pass. The
+ * right-to-left layout (#1552) and the runtime switch that sets `dir` (#1538)
+ * are built, and
+ * neither has been checked on a device. For #1458 the DRI picked, verbatim,
+ * "Draft now, gate go-live" (2026-11-03): the Arabic table is drafted, and
+ * this hold keeps a complete one off until that pass clears it. Removing
+ * `ar` here is the go-live change, and it is the DRI's call.
+ */
+export const GO_LIVE_HELD: ReadonlySet<string> = new Set(["ar"]);
+
+/**
+ * The locales the resolver may pick: English, and each language not on
+ * `GO_LIVE_HELD` whose table has every translatable English key, which is
+ * every key but the English-only ones (S11, `english-only.ts`: no language
+ * file may carry those, so they cannot count against a language) (ADR 0015
+ * (g): a screen is wholly in one language, so an incomplete locale is skipped
+ * rather than shown half English).
  *
  * Read from the tables themselves, not from `pending.ts`: the tables are the
  * fact, and the pending list is the ratchet the coverage test keeps in step
  * with them. Called at each resolution, so it is never a stale snapshot.
+ *
+ * `held` is a parameter so a test can lift the hold; callers pass nothing.
+ * English is never held: it is the fallback.
  */
-export function completeLocales(): Locale[] {
+export function completeLocales(
+  held: ReadonlySet<string> = GO_LIVE_HELD
+): Locale[] {
   const keys = Object.keys(stringsEn).filter((key) => !ENGLISH_ONLY.has(key));
   return LOCALES.filter((locale) => {
     if (locale === SHIPPED_LOCALE) return true;
+    if (held.has(locale.tag)) return false;
     const overrides = LOCALE_OVERRIDES[locale.tag];
     if (overrides === undefined) return false;
     const entries = overrides as Readonly<Record<string, unknown>>;
