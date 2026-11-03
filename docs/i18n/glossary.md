@@ -43,8 +43,9 @@ AI-draft columns for the seven Latin-script ones (below), and the other level-3
 languages are not in this file. Of the seven, Vietnamese (`vi`) is in the app
 as a complete AI-draft locale (#1830), the DRI's pilot pick on #357 ("Yes,
 Vietnamese",
-<https://github.com/unfoldingWord/tc-mobile/issues/357#issuecomment-6580657589>);
-the other six level-3 languages are not in the app.
+<https://github.com/unfoldingWord/tc-mobile/issues/357#issuecomment-6580657589>),
+and so is Malay (`ms`), the DRI's pick on 2026-11-03 ("Indonesian-adjacent:
+ms"); the other five level-3 languages are not in the app.
 
 | Code      | Language              | Script     | Direction     |
 | --------- | --------------------- | ---------- | ------------- |
@@ -75,9 +76,9 @@ Tagalog `tl`, Tok Pisin `tpi`, Turkish `tr`, Vietnamese `vi`). The requirements
 owner's R8-level3 decision (#1458) is "After 2.0.0", with the note "the 16
 level-3 languages are v2-desired (will become v3-required if they miss the v2
 launch)". Because of that, these columns sit under their own level-3 headings
-in section 5. Only `vi` is in the app (the DRI's pilot pick on #357, #1830);
-the other six are not. Their cells
-are AI proposals under Q1 and Q3: no human has reviewed any, and no native
+in section 5. Only `vi` (the DRI's pilot pick on #357, #1830) and `ms` (the
+DRI's pick on #357, 2026-11-03) are in the app; the other five are not. Their
+cells are AI proposals under Q1 and Q3: no human has reviewed any, and no native
 reader has been asked.
 
 The two level-3 tables carry an `English` column beside `#`, copied from the

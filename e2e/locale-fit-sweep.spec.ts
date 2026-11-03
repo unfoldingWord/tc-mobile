@@ -64,6 +64,7 @@ const LOCALES = [
   "fr",
   "hi",
   "id",
+  "ms",
   "pt",
   "ru",
   "sw",

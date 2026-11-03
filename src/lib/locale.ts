@@ -68,7 +68,7 @@ export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
 
 /**
  * The UI languages v2 supports (#1482; decision D6-languages, "The 10 level-4
- * languages in v2", plus Vietnamese, the first level-3 language, #357), each
+ * languages in v2", plus the level-3 Vietnamese and Malay, #357), each
  * stating its own direction for the reason above.
  * `SHIPPED_LOCALE` is the English entry itself, not a copy of it.
  *
@@ -87,6 +87,7 @@ export const LOCALES: readonly Locale[] = [
   { tag: "fr", dir: "ltr" },
   { tag: "hi", dir: "ltr" },
   { tag: "id", dir: "ltr" },
+  { tag: "ms", dir: "ltr" },
   { tag: "pt", dir: "ltr" },
   { tag: "ru", dir: "ltr" },
   { tag: "sw", dir: "ltr" },
