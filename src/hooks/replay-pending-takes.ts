@@ -98,9 +98,11 @@ async function gone(row: StoredPendingTake): Promise<void> {
 }
 
 /**
- * Drop a refused row and say so once, after the drop has committed (#1860).
- * A failed drop leaves the row and its audio as they were, says so, and the
- * next launch reports and tries again.
+ * Drop a refused row and log it, after the drop has committed (#1860). Each
+ * outcome is ONE `report`, so a kill cannot land between two rows. A failed
+ * drop leaves the row and its audio as they were; its single row carries the
+ * delete's cause and says the audio is still present, and the next launch
+ * reports and tries again (#1863).
  */
 async function refuse(
   row: StoredPendingTake,
@@ -108,34 +110,40 @@ async function refuse(
 ): Promise<null> {
   const samples = row.recorded.byteLength / Int16Array.BYTES_PER_ELEMENT;
   const dropped = await dropRefusedPendingTake(row.segmentId, row.clipId);
-  if (dropped.ok) {
-    report(
-      refusedAndDropped(refusal, null, samples, row.sampleRate),
-      "pending-take-refused"
-    );
-  } else {
-    report(dropped.cause, "pending-take-delete");
-    report(
-      refusedNotDropped(refusal, samples, row.sampleRate),
-      "pending-take-refused"
-    );
-  }
+  report(
+    dropped.ok
+      ? refusedAndDropped(refusal, null, samples, row.sampleRate)
+      : refusedNotDropped(refusal, samples, row.sampleRate, dropped.cause),
+    "pending-take-refused"
+  );
   return null;
+}
+
+/** The recorded length as logged; a rate that is not positive has none. */
+function lengthText(samples: number, sampleRate: number): string {
+  const ms =
+    sampleRate > 0
+      ? `${Math.round((samples * 1000) / sampleRate)} ms`
+      : "unknown";
+  return `length: ${ms} (${samples} samples)`;
 }
 
 /**
  * The cause logged when a refused take's drop failed (#1860): the audio is
- * still stored, and the next launch tries the drop again.
+ * still stored, and the next launch tries the drop again. `deleteCause` is
+ * the drop's own failure, carried as this error's `cause` so the one log row
+ * renders both.
  */
-export function refusedNotDropped(
+function refusedNotDropped(
   refusal: string,
   samples: number,
-  sampleRate: number
+  sampleRate: number,
+  deleteCause: unknown
 ): Error {
-  const ms = Math.round((samples * 1000) / sampleRate);
   return new Error(
     `Pending take refused, drop failed, audio still present (refusal: ` +
-      `${refusal}; length: ${ms} ms (${samples} samples))`
+      `${refusal}; ${lengthText(samples, sampleRate)})`,
+    { cause: deleteCause }
   );
 }
 
@@ -156,11 +164,10 @@ export function refusedAndDropped(
   samples: number,
   sampleRate: number
 ): Error {
-  const ms = Math.round((samples * 1000) / sampleRate);
   return new Error(
     `Pending take refused, audio dropped (refusal: ${refusal}; ` +
       `verdict: ${verdict ?? "not reached"}; ` +
-      `length: ${ms} ms (${samples} samples))`
+      `${lengthText(samples, sampleRate)})`
   );
 }
 
