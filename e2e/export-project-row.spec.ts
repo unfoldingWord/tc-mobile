@@ -141,6 +141,7 @@ test("Export project sits right after Share book and shares the project zip from
     } else {
       // The theme is a stored choice, not the OS setting; it lasts across
       // the reloads below.
+      await page.getByRole("button", { name: /^Open menu/ }).click();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page
         .getByRole("dialog", { name: "Settings", exact: true })

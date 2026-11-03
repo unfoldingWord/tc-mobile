@@ -166,6 +166,7 @@ test("the language ask at 360 px, dark and light (#1492)", async ({
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     } else {
       // The theme control lives in Settings (#1575).
+      await page.getByRole("button", { name: /^Open menu/ }).click();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page
         .getByRole("dialog", { name: "Settings", exact: true })

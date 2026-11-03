@@ -8,8 +8,9 @@ import {
 import { strings } from "@/lib/strings";
 
 /**
- * The Settings screen (#1575): the one home for app settings, opened by the
- * gear in the Books header (the DRI, 2026-10-22: "Gear icon on Books header").
+ * The Settings screen (#1575): the one home for app settings, opened from the
+ * Settings tile in the Books ≡ menu (the DRI on #1871, 2026-11-03: "≡ only;
+ * Settings is a tile (Recommended)"; the gear it replaced was #1575's).
  *
  * A `Menu`, like About & licenses beside it, so the focus trap, Escape, the
  * `inert` shelf and the Back layer are the reviewed ones; a `.settings-list`

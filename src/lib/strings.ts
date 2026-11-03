@@ -106,10 +106,11 @@ export const stringsEn = {
   // Every OTHER menu passes its own `title` and still shows it.
   menuTitle: "Menu",
   menuClose: "Close menu",
-  // Settings (#1575): the gear in the Books header, and the screen it opens.
-  // The gear's name is the screen's title, so the heading a screen reader
-  // announces is the word the control carried. The screen's Back reads
-  // `backToBooks`. Theme rows reuse `useLightTheme` and `useDarkTheme`.
+  // Settings (#1575): the Settings tile in the Books ≡ menu (#1871), and the
+  // screen it opens. The tile's name is the screen's title, and its caption
+  // is `settingsTitle` itself, so the heading a screen reader announces is
+  // the word the tile carried. The screen's Back reads `backToBooks`. Theme
+  // rows reuse `useLightTheme` and `useDarkTheme`.
   settingsOpen: "Settings",
   settingsTitle: "Settings",
   templatesOpen: "Templates",

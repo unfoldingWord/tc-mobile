@@ -265,8 +265,9 @@ export function BooksScreen({
   // About closes the menu, and the About panel owns its own Menu.
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutViewing, setAboutViewing] = useState<LicenseText | null>(null);
-  // Settings (#1575), opened by the gear in the header. Its own flag and its
-  // own Back layer, like About's, so the two never share a close path.
+  // Settings (#1575), opened from its tile in the global menu (#1871). Its own
+  // flag and its own Back layer, like About's, so the two never share a close
+  // path.
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The Template Library (#246): its own panel, opened from a ≡ tile.
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -871,11 +872,15 @@ export function BooksScreen({
     setMenuOpen(true);
     layers.open("books:global-menu");
   }, [globalMenuFocusRestore, layers]);
-  // Once the menu is gone and the shelf's `inert` has lifted.
+  // Once the menu is gone and the shelf's `inert` has lifted. The Settings
+  // tile hands the menu off to Settings in one commit (#1871), with the shelf
+  // still `inert` under it, so the restore is HELD (not called) while Settings
+  // is up, and the ≡ that opened the menu gets focus back when Settings
+  // closes: the ≡ is the only way to Settings now.
   useLayoutEffect(() => {
-    if (menuOpen) return;
+    if (menuOpen || settingsOpen) return;
     globalMenuFocusRestore.restore({ suppressed: false, fallback: null });
-  }, [menuOpen, globalMenuFocusRestore]);
+  }, [menuOpen, settingsOpen, globalMenuFocusRestore]);
   const closeGlobalMenu = useCallback(() => {
     closeGlobalMenuState();
     // The Clear confirm lives INSIDE this panel and unmounts with it, so its
@@ -923,24 +928,19 @@ export function BooksScreen({
     },
     [layers]
   );
-  // The gear's ONE open and ONE close. Opened from the tap itself, so the
-  // layer is registered in the gesture, and the ≡ menu is not involved: the
-  // gear is its own opener.
-  const settingsFocusRestore = useFocusRestore();
+  // Settings' ONE open and ONE close, opened from its ≡ tile (#1871). Like
+  // About, it replaces the global menu: the new layer registers BEFORE the
+  // menu's closes, so the stack is never empty between the two. Focus comes
+  // back to the ≡ through the menu's own held restore above.
   const openSettings = useCallback(() => {
-    settingsFocusRestore.capture();
     layers.open("books:settings");
+    closeGlobalMenu();
     setSettingsOpen(true);
-  }, [layers, settingsFocusRestore]);
+  }, [closeGlobalMenu, layers]);
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     layers.close("books:settings");
   }, [layers]);
-  // Once the screen is gone and the shelf's `inert` has lifted.
-  useLayoutEffect(() => {
-    if (settingsOpen) return;
-    settingsFocusRestore.restore({ suppressed: false, fallback: null });
-  }, [settingsOpen, settingsFocusRestore]);
   // The Template Library's ONE open and ONE close, like About: it replaces the
   // global menu, so the menu's layer goes with it.
   const templatesBusy = useRef(false);
@@ -2340,15 +2340,8 @@ export function BooksScreen({
             render. Same two classes, same `aria-hidden` sibling shape, so the
             two marks cannot drift apart visually; the only difference is the
             colour, because this one is a state mark rather than a reason. */}
-        {/* Settings (#1575, the DRI: "Gear icon on Books header"). Its own
-            Control, ahead of the ≡, so the ≡'s hint wrapper below is untouched. */}
-        <Control
-          icon="gear"
-          label={strings.settingsOpen}
-          variant="quiet"
-          className="books-ghost"
-          onClick={openSettings}
-        />
+        {/* One control here (#1871, the DRI: "≡ only; Settings is a tile
+            (Recommended)"): Settings is a tile in the menu this ≡ opens. */}
         <span className="control-hinted">
           <Control
             icon="menu"
@@ -2569,18 +2562,20 @@ export function BooksScreen({
         {chapterPlayLine}
       </span>
 
-      {/* The global menu: the failure-log panel, then About & licenses. The
-          theme toggle left it for the Settings screen (#1575), which the gear
-          in the header opens.
+      {/* The global menu: the failure-log panel, then the tiles Settings,
+          Templates and About, in that order (#1871, the DRI: "≡ only; Settings
+          is a tile (Recommended)"). The theme toggle left this menu for the
+          Settings screen (#1575), and the Books header's gear went when
+          Settings became a tile here.
 
           THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
           focus on its first actionable child on open, and while the log is
           non-empty the ≡ is named "Open menu. N problems recorded." — reaching
           the report is its whole point. So the report is what a switch/AT
-          user must land on, not About or a control that flips the theme
-          (George R1 P2 on #457). The panel is mounted only while the log holds
-          something, so a phone that has never failed opens on About, as the
-          first actionable child.
+          user must land on, not a tile (George R1 P2 on #457). The panel is
+          mounted only while the log holds something, so a phone that has
+          never failed opens on the Settings tile, as the first actionable
+          child.
 
           About & licenses (#36): the reachable-on-the-phone home for the LGPL
           notice and the bundled-component attribution. Opening it closes the
@@ -2611,12 +2606,14 @@ export function BooksScreen({
         {/* The report panel above stays as it is (its Export tile's words are
             a DRI call). */}
         <TileGrid>
+          {/* The caption is the screen's own title, so the tile, its spoken
+              name and the heading it opens say the same word (#1871). */}
           <Tile
             tone="plain"
-            icon="info"
-            label={strings.aboutOpen}
-            caption={strings.tileAbout}
-            onClick={openAbout}
+            icon="gear"
+            label={strings.settingsOpen}
+            caption={strings.settingsTitle}
+            onClick={openSettings}
           />
           <Tile
             tone="plain"
@@ -2624,6 +2621,13 @@ export function BooksScreen({
             label={strings.templatesOpen}
             caption={strings.tileTemplates}
             onClick={openTemplates}
+          />
+          <Tile
+            tone="plain"
+            icon="info"
+            label={strings.aboutOpen}
+            caption={strings.tileAbout}
+            onClick={openAbout}
           />
         </TileGrid>
       </Menu>
