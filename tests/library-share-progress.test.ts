@@ -19,7 +19,7 @@ import type { AudioCodec } from "@/types/audio";
 import { clearAllStores, testCodec } from "./support";
 
 /**
- * #1045: the O4 storage banner's "Share your work" drives the same
+ * #1045: the storage banner's "Share your work" drives the same
  * full-screen share overlay Share Book does, and the Books shelf is inert
  * while that timeline owns the screen (Frank's exit condition on #1038:
  * busy, dismissed, sent and partial, with cancel and dismiss connected).

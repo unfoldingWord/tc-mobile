@@ -292,7 +292,7 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
 
 describe("the O4 roles clear the floors the workbench claimed for them (round 4, G9)", () => {
   // Computed from token values only, like the rest of this file. These are
-  // the O4 pairs that carry an icon, text or a control's boundary; decorative
+  // the pairs that carry an icon, text or a control's boundary; decorative
   // marks (`--s-mark-empty`) are deliberately not gated here. The DRI decided
   // the ring track is decorative (#1469, "Decorative (Recommended)"):
   // https://github.com/unfoldingWord/tc-mobile/issues/1469#issuecomment-6578909918

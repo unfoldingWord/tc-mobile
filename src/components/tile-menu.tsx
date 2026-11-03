@@ -6,23 +6,23 @@ import { strings } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 
 /**
- * The O4 tile-menu primitive (#941, epic #936): every O4 menu is a row of
+ * The tile-menu primitive (#941, epic #936): every menu is a row of
  * large coloured tiles — a 76 × 76 box, radius 20, its caption 14px below
  * with a gap of 8 (`docs/design/o4-design-system.md` §3; workbench `tile()`).
  *
  * A tile IS a `Control` — the same button, name, `busy`, `hint` and `pressed`
  * semantics every current menu row already has — with a visible caption and
- * a tone class. Swapping a menu's `Control` rows for `Tile`s in its O4 branch
+ * a tone class. Swapping a menu's `Control` rows for `Tile`s in its tile branch
  * therefore changes no accessible name and no focus behaviour.
  *
  * THE SHEET IS NOT A SECOND SURFACE. A tile menu is still a `<Menu>`
  * (`menu.tsx`): its focus trap, Escape, scrim tap, `inert` and heading are
  * the reviewed ones. `3-components/menus.css` gives any `.menu-panel` that holds a
- * `TileGrid` the O4 bottom-sheet shell (inset 8, radius 26, a 56 × 5
+ * `TileGrid` the bottom-sheet shell (inset 8, radius 26, a 56 × 5
  * handle) — keyed on the grid's presence, so the name sheets that share
  * `<Menu>` (#943's) are untouched by it.
  *
- * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), in their O4
+ * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), in their tile
  * branches, and by the book, app (≡) and recorder (⋮) menus. The
  * tones, glyph size and classes live in `tile-look.ts`.
  */
@@ -75,7 +75,7 @@ export function TileGrid({
 
 /**
  * Pushes the tiles after it to the far end of the row — where the theme tile
- * sits in every O4 menu (workbench G1, G2, G3). Decorative.
+ * sits in every menu (workbench G1, G2, G3). Decorative.
  */
 export function TileSpacer() {
   return <span className="tiles-gap" aria-hidden="true" />;

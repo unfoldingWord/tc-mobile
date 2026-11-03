@@ -121,7 +121,7 @@ import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
  *
  * `books:library-share` (#1045/#1056) is the one exception that IS a layer.
  * Share your work has no enclosing menu to fold `ownsScreen()`'s busy check
- * into — the O4 storage banner's button sits directly on the shelf, not
+ * into — the storage banner's button sits directly on the shelf, not
  * behind a ⋮ — so there is nothing else to guard Back with while its own
  * `<ShareProgress>` owns the screen (DRI, 2026-09-26: "Refuse, like Book share
  * (Recommended)"). It is opened from the SAME tap that starts `prepare()`/
@@ -473,7 +473,7 @@ export function BooksScreen({
   // time, so it sees the live value, not the one closed over at save.
   const bookMenuSession = useRef(0);
   const bookShare = useBookShare();
-  // Share your work (#987), from the O4 storage banner. Held here, not in the
+  // Share your work (#987), from the storage banner. Held here, not in the
   // banner, so its overlay and the shelf's `inert` follow the timeline in the
   // same render (#1045). Idle unless that banner's button starts it.
   const libraryShare = useLibraryShare();
@@ -841,7 +841,7 @@ export function BooksScreen({
   }, [libraryShareOwnsScreenNow, layers]);
   // The banner never calls `libraryShare.prepare`/`send` directly — this
   // wrapping is the one place both taps are guaranteed to open the layer
-  // before the flow can claim the screen, without duplicating the O4 banner's
+  // before the flow can claim the screen, without duplicating the banner's
   // own click handlers. `libraryShare`'s own identity is a fresh object every
   // render (`useLibraryShare` returns a literal, not a memoized one), so this
   // recomputes every render too; nothing downstream keys an effect on its
@@ -1317,7 +1317,7 @@ export function BooksScreen({
     bookKinds[shareMenuBook.bookId] === false &&
     bookShare.status === "idle";
   // The open book's cover colour: its stored key, or #957's id-derived
-  // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
+  // fallback. The sheet head, the Cover colour tile, the picker's pressed
   // swatch and the delete ask all read this one value.
   const shareMenuCoverKey: CoverColourKey | null = shareMenuBook
     ? resolveCoverKey({
@@ -1419,7 +1419,7 @@ export function BooksScreen({
   const onCloseShareMenu = useCallback(() => {
     if (closeBookMenuState()) layers.close("books:book-menu");
   }, [closeBookMenuState, layers]);
-  // Keep, from the O4 ask's own button. The state half above, plus the ask's
+  // Keep, from the ask's own button. The state half above, plus the ask's
   // layer. A system Back reaches the state half through the layer instead.
   const onKeepDelete = useCallback(() => {
     if (keepDeleteState()) layers.close("books:delete-confirm");
@@ -1514,7 +1514,7 @@ export function BooksScreen({
     setRenamingBook(false);
     setSavingName(false);
   }, [setSavingName]);
-  // ── O4: the Cover colour tile and #957's picker (#949, #937 D7) ─────────
+  // ── The Cover colour tile and #957's picker (#949, #937 D7) ─────────
   //
   // The write is #964's hook, which reports a failure to the funnel itself
   // and queues a second tap while one is in flight. `reload()` after a

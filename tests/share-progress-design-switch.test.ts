@@ -15,7 +15,7 @@ import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress
  * So this mounts the real component with `createRoot` and `act` in a manual
  * jsdom and reads the portalled panel out of the document.
  *
- * (The file name is from when this also proved the O4 design switch picked
+ * (The file name is from when this also proved the old design switch picked
  * the view; #954 deleted the switch.)
  *
  * A named origin, a fresh module per test and the stubbed globals keep each

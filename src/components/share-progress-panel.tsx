@@ -97,7 +97,7 @@ const RING_RADIUS = 84;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
 /**
- * The O4 140-in-176 circle (#947): the filling ring, when there is a count
+ * The 140-in-176 circle (#947): the filling ring, when there is a count
  * to fill it by, around the core that holds the glyph. Its colours, and the
  * outcome rings D14 and D16 draw, are `3-components/share.css`'s, keyed on the scrim's
  * `data-outcome`. The ring is `aria-hidden`. The core is a progress bar

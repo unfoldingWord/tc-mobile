@@ -185,7 +185,7 @@ describe("the recorder's ⋮ drawer header (#621)", () => {
     expect(paintedText(panel)).not.toContain(strings.recorderMenuTitle);
   });
 
-  // The O4 look (the default) closes every sheet on ✕ (#1268, the
+  // The menu closes every sheet on ✕ (#1268, the
   // requirements owner: "Can we use a standard close button (some form of
   // X)?"), so the dismiss no longer repeats the ⋮ that opened it; the opener
   // stays ⋮ (#1243). The current look's ⋮ dismiss is pinned on `Menu` in

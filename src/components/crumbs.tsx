@@ -44,7 +44,7 @@ export interface CrumbsProps {
  * spans, book then chapter then (if given) the segment, the segment's own
  * crumb tinted by its state. Split out of `SheetHead` below so the
  * segments and recorder headers (`segments-screen.tsx`, `recorder.tsx`) can
- * render the exact same markup the O4 menus do, rather than a second
+ * render the exact same markup the menus do, rather than a second
  * hand-written reading of `.crumb`'s chevron clip-path.
  *
  * The chapter crumb shows whatever the caller passes. #1105 made it the
@@ -193,7 +193,7 @@ interface SheetHeadProps {
    * string the same way `books-screen.tsx`'s row and `BookHead` do
    * (`coverColourHex(resolveCoverKey(...))`) -- never a bare
    * `CoverColourKey`, so this component does not need the palette to draw
-   * it. Read only in the O4 look, like every other head field. Left out (no
+   * it. Read only in the sheet-head layout, like every other head field. Left out (no
    * square drawn) when the caller has not threaded it, or has no `book` --
    * a call site that has not (yet) been updated to carry it renders exactly
    * as it did before this prop existed.
@@ -222,7 +222,7 @@ interface SheetHeadProps {
 }
 
 /**
- * The O4 sheet header (#949; design reference §7, "Sheet headers"): the
+ * The sheet header (#949; design reference §7, "Sheet headers"): the
  * breadcrumbs a menu sheet shows so the translator can see what it acts on —
  * book, then chapter, then (on the segment menu) the segment, chevron-clipped
  * crumbs on the well, the segment crumb tinted by its state. A crumb whose

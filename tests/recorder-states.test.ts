@@ -27,7 +27,7 @@ import {
 } from "./support";
 
 /**
- * The O4 Recorder (#945, epic #936): states 08 idle, 09 recording, 10
+ * The Recorder (#945, epic #936): states 08 idle, 09 recording, 10
  * recorded, 11 playing and 12 editing.
  *
  * Three halves, each read the way this repo already reads its kind:
@@ -212,7 +212,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
   it("the edit toggle keeps its size and vertical centre across the mode flip", () => {
     // 3-components.css gives both bars one height so the toggle (the last,
     // key="edit-toggle" control in both) does not move when the mode flips.
-    // O4 keeps that, and keeps the toggle at the pair's 64 in the edit bar.
+    // The design round keeps that, and keeps the toggle at the pair's 64 in the edit bar.
     const height = (selector: string) =>
       declarationValue(cssRule(CSS, selector), "height");
     const pair = height(".recorder-toolbar.pair");
@@ -439,7 +439,7 @@ describe("recorder.tsx wires the stage's look (#945, source pin)", () => {
   });
 
   it("keeps the edit toggle last in the edit bar and hint-wrapped", () => {
-    // The O4 toggle rule targets `> .control-hinted:last-child .control`,
+    // The toggle rule targets `> .control-hinted:last-child .control`,
     // which holds only while the toggle passes `hint` (so Control wraps it)
     // and stays the edit arm's last child.
     const bars = stripComments(read("src/components/recorder-toolbars.tsx"));

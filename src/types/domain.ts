@@ -90,7 +90,7 @@ export interface Book {
   readonly createdAt: number;
   readonly updatedAt: number;
   /**
-   * Optional cover colour the facilitator picked from the O4 palette (#957,
+   * Optional cover colour the facilitator picked from the palette (#957,
    * from #937's D7/D8 — "people choose a colour", "a palette of 8–12"). The
    * chapter-name / segment-label pattern, one field over: `null` is the
    * default — no choice has been made — and `lib/cover-colour.ts`'s

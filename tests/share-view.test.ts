@@ -20,7 +20,7 @@ import type { ChapterRow, SegmentRow } from "@/types/view";
 import { one, render } from "./render";
 
 /**
- * What the O4 share circle draws for each overlay phase (#947, epic #936):
+ * What the share circle draws for each overlay phase (#947, epic #936):
  * which glyph sits in the 140 core, how far the filling ring has gone, what
  * the core's progress bar reads, and one numbered chip per item. A plain
  * function, so the DRI's choices are behaviour a test calls, not JSX a test

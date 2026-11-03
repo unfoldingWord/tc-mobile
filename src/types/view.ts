@@ -63,7 +63,7 @@ export interface BookCard {
   readonly number: number;
   readonly chapters: readonly ChapterRow[];
   /**
-   * `Book.coverColourKey` (#957), carried through unresolved so the O4 cover
+   * `Book.coverColourKey` (#957), carried through unresolved so the cover
    * (#942) reads it through `lib/cover-colour.ts`'s `resolveCoverKey` — the
    * one place a missing or retired key becomes a colour. Both production
    * builders in `hooks/use-books.ts` set it — the load and the optimistic

@@ -13,7 +13,7 @@ import { resolveDistGate } from "./dist-gate";
  * `IPHONEOS_DEPLOYMENT_TARGET`)?
  *
  * **The floor is 15.4, not 15.0** — raised there by the #1052 DRI decision
- * (2026-09-26, "Raise floor to 15.4 (Recommended)"), because the O4 CSS
+ * (2026-09-26, "Raise floor to 15.4 (Recommended)"), because the CSS
  * (`src/app/styles/3-components/{menus,sheets,motion}.css`) uses the `:has()` selector,
  * which needs Safari/iOS 15.4 (caniuse-lite's `data/features/css-has.js`) and
  * has no fallback `build.target`/`build.cssTarget` can provide (there is no
@@ -52,7 +52,7 @@ const CONFIG = path.join(ROOT, "vite.config.ts");
  *  everywhere on Android System WebView being kept up to date), with the
  *  Safari-family entries at the app's actual iOS floor — **15.4, not 15.0**,
  *  since #1052's DRI decision (2026-09-26, "Raise floor to 15.4
- *  (Recommended)"): the O4 CSS's `:has()` usage needs Safari/iOS 15.4, and
+ *  (Recommended)"): the CSS's `:has()` usage needs Safari/iOS 15.4, and
  *  the floor moved up to match it rather than the 13 `:has()` rules being
  *  rewritten. See `docs/native/system-requirements.md` for the resolution. */
 const EXPECTED_TARGET = [

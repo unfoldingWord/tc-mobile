@@ -13,7 +13,7 @@ import {
 import { one, render } from "./render";
 
 /**
- * #941: the O4 tile-menu primitive — a grid of 76 × 76 coloured tiles with a
+ * #941: the tile-menu primitive — a grid of 76 × 76 coloured tiles with a
  * caption below, and the bottom-sheet shell a `<Menu>` takes on while it
  * holds that grid.
  *

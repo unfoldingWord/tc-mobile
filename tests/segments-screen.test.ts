@@ -20,7 +20,7 @@ import {
 import { one, render } from "./render";
 
 /**
- * The O4 Segments screen (#944, epic #936): states 05 (empty chapter), 06
+ * The Segments screen (#944, epic #936): states 05 (empty chapter), 06
  * (chapter with segments) and G10 (adding a segment).
  *
  * What this file does NOT cover: the cascade. It proves the markup the row
@@ -284,7 +284,7 @@ describe("3-components/segments.css (#944)", () => {
     for (const [selector, declared] of geometry)
       for (const [property, v] of Object.entries(declared))
         expect(value(selector, property), `${selector} ${property}`).toBe(v);
-    // The `--s-surface` ground stays layer 3's: an O4 background on `.row`
+    // The `--s-surface` ground stays layer 3's: a background on `.row`
     // would out-specify the finished row's wash (#81) — in the layer or in any
     // block nested in the file, so every `.row` rule is read, not only the
     // layer's own.

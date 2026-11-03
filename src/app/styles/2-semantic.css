@@ -72,8 +72,8 @@
     --s-focus: var(--p-amber-500);
     --s-scrim: rgba(6, 9, 13, 0.92);
 
-    /* --- O4 roles (workbench round 4) -------------------------------------
-       Added for the O4 polish. Values are the ones the workbench's colour
+    /* --- Design-round roles (workbench round 4) -------------------------------------
+       Added for the design round's polish. Values are the ones the workbench's colour
        table put up for approval; docs/design/o4-design-system.md carries
        each role's use, its contrast, and the decisions still open. */
 
@@ -174,7 +174,7 @@
     --s-focus: var(--p-amber-600);
     --s-scrim: rgba(255, 255, 255, 0.94);
 
-    /* --- O4 roles (see the dark block) ---------------------------------- */
+    /* --- Design-round roles (see the dark block) ---------------------------------- */
     --s-well: var(--p-cool-100);
     --s-mark-empty: var(--p-cool-300);
     --s-card-edge: var(--p-cool-200);

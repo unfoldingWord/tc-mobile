@@ -13,7 +13,7 @@ import { strings } from "@/lib/strings";
 import { areaScope, declsFor, fileRules } from "./area-css";
 
 /**
- * The recorder menu on the O4 tile grid (#949 G3, epic #936), including the
+ * The recorder menu on the tile grid (#949 G3, epic #936), including the
  * edit-mode menu the header's ⋮ opens while editing (#1243) — both are this
  * one component.
  *

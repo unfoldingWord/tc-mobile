@@ -18,7 +18,7 @@ interface BookDeleteAskProps {
 }
 
 /**
- * The O4 book sheet asking before it deletes (#980, G6; #949 D16 → B).
+ * The book sheet asking before it deletes (#980, G6; #949 D16 → B).
  *
  * The book ⋮ sheet's own contents while a delete is armed: the book's small
  * cover and name as the header, then 13's two equal-size buttons, Keep and

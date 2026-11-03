@@ -1,4 +1,4 @@
-/* O4 — Shared controls. Owner: #941. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
+/* Shared controls. Owner: #941. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
 
    The three shapes `components/shape-buttons.tsx` puts on a `Control`
    (docs/design/o4-design-system.md §3). Each is layered onto the base

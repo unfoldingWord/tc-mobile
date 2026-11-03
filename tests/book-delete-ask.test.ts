@@ -8,7 +8,7 @@ import { declarationValue } from "./support";
 import { one, render } from "./render";
 
 /**
- * The O4 book sheet's delete ask (#980, G6; #949 D16) as markup: props in,
+ * The book sheet's delete ask (#980, G6; #949 D16) as markup: props in,
  * attributes out, through the #197 render harness. What the ask DOES —
  * focus, Keep, Escape, Back, the outcomes — is
  * `tests/books-delete-in-sheet.test.ts`, which mounts the whole screen.

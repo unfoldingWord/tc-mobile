@@ -2,7 +2,7 @@
  * The wide guide button's `className`, for `SaveFailed`'s terminal
  * (`downgrade`) Restart arm (#1088 S9).
  *
- * O4's `.err-wide` fills the button with `--s-guide` (blue) — the wide
+ * The `.err-wide` fills the button with `--s-guide` (blue) — the wide
  * guide button's own colour, `docs/design/o4-design-system.md` §3. Arming it
  * used to add the `text-live` Tailwind utility ON TOP of that fill, painting
  * the retry glyph red on blue (S9: "reads red on blue", flagged on #948's

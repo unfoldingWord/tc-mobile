@@ -10,12 +10,12 @@ interface SegmentsHeadProps {
 }
 
 /**
- * The O4 chapter header (#944, states 05 and 06): the typed chapter title at
+ * The chapter header (#944, states 05 and 06): the typed chapter title at
  * 22/800, then a progress bar with one mark per segment, coloured by the same
  * three states the rows derive (`segmentRowState`). An empty chapter shows one
  * empty mark, as the workbench's state 05 does.
  *
- * Rendered only in the O4 look, and decoration only: the breadcrumb already
+ * Rendered as the chapter header only, and decoration only: the breadcrumb already
  * names the chapter and each row already names its own state, so the whole
  * block is `aria-hidden` and the screen's reading order is the same in both
  * looks. The spoken-name speaker the design reference puts here is tier 2

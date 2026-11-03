@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The tile fills O4 draws (#941, #949): the three coloured action roles, the
+ * The tile fills the design round draws (#941, #949): the three coloured action roles, the
  * erase tile (live ink on the quiet red, inside a live ring, per the
  * workbench's `del` tile), and the plain well the theme and export tiles use.
  * `done` and `doneoff` are marking done (G8): grey until the segment is done,

@@ -121,7 +121,7 @@ interface ChapterView {
    * `books-screen.tsx`'s row uses — {@link resolveCoverKey} — so a book with
    * no chosen colour gets the same id-derived fallback the shelf shows, not
    * an absent square: there is no "no colour" state to draw, only "no book
-   * to read one from" at all (the `null` case here, which the O4 sheet head
+   * to read one from" at all (the `null` case here, which the sheet head
    * treats as "not threaded").
    */
   readonly bookCoverHex: string | null;

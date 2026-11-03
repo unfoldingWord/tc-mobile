@@ -11,13 +11,13 @@ import {
 } from "./area-css";
 
 /**
- * The O4 share circle's colours and rings (#947, D14 to D16), read from the
+ * The share circle's colours and rings (#947, D14 to D16), read from the
  * SOURCE stylesheet as declaration values per selector, never as a bare
  * token found anywhere in the file (AGENTS.md's share-progress vs
  * touch-policy trap): comments are stripped first, and every assertion names
  * the selector whose declaration it reads.
  *
- * What this cannot prove: the cascade. That the O4 rule wins in a browser is
+ * What this cannot prove: the cascade. That the rule wins in a browser is
  * the build's and the phone's to show (tests/component-cascade.test.ts reads the
  * built bundle; the device check is #974).
  */

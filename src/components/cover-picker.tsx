@@ -25,7 +25,7 @@ export interface CoverPickerProps {
 /**
  * A row of cover-colour swatches (#957, from #937's D7/D8).
  *
- * Mounted in the O4 book menu (#949, `book-menu.tsx`'s `CoverPick`) and
+ * Mounted in the book menu (#949, `book-menu.tsx`'s `CoverPick`) and
  * in the New Book sheet (#1190, `books-screen.tsx`). The sheet passes `null`
  * until a swatch is tapped: a book not yet created has no id to derive a
  * colour from, so no swatch is marked and the create stays on the default.

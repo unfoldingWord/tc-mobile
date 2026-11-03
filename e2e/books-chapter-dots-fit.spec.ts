@@ -5,10 +5,10 @@ import { expect, test, type Page } from "./support/test";
 import { seedToSegments } from "./support/seed";
 
 /**
- * The new-look (O4) Books chapter row with MANY segments, and with every dot
+ * The Books chapter row with MANY segments, and with every dot
  * state, against the shipped `dist/` build (#1229, #1233).
  *
- * Every O4 chapter row draws a title line since #1219, so its dots get the
+ * Every chapter row draws a title line since #1219, so its dots get the
  * room under that line. At the smallest dot step that room holds three rows
  * of dots; a chapter with more segments than that must still show the whole
  * title line and every dot inside the row, so the green share the row shows

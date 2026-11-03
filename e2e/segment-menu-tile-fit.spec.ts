@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { expect, test, type Page } from "./support/test";
 
 /**
- * The segment ≡ menu's O4 tile grid, at phone width, when it holds FOUR real
+ * The segment ≡ menu's tile grid, at phone width, when it holds FOUR real
  * tiles (Done, Edit, Clear, Delete) — the row's `hasClip` state, against the
  * shipped `dist/` build.
  *

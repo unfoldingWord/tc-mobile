@@ -8,7 +8,7 @@ import { declarationValue } from "./support";
 import { render } from "./render";
 
 /**
- * The armed ring on the O4 Share now tile (#1087). The ring is derived from
+ * The armed ring on the Share now tile (#1087). The ring is derived from
  * the share's `status === "ready"`, not from a progress phase: the menu is on
  * screen while the file waits for its second tap. Render-only: no cascade, and
  * nothing here ran on a phone.

@@ -29,7 +29,7 @@ import {
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
- * The O4 Books screen (#942, epic #936): states 01 (empty shelf) and 03 (the
+ * The Books screen (#942, epic #936): states 01 (empty shelf) and 03 (the
  * list), the book covers, the chapter rows and their progress dots.
  *
  * The whole screen is mounted, not a row in isolation, because two of the
@@ -664,7 +664,7 @@ describe("3-components/books.css (#942)", () => {
       expect(decl, decl).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
       expect(decl, decl).not.toMatch(/rgba?\(|hsla?\(/);
     }
-    // `.is-guided` is an inset box-shadow; an O4 rule on a guided control's
+    // `.is-guided` is an inset box-shadow; a rule on a guided control's
     // own selector that sets one would out-specify it and erase the ring —
     // in the layer or in any block nested in the file.
     for (const selector of [

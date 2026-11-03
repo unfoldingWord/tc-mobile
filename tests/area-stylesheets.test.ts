@@ -7,7 +7,7 @@ import { AREA_DIR, readAreaCss } from "./area-css";
 import { stripCssComments } from "./support";
 
 /**
- * The ten per-area O4 stylesheets, pre-created ahead of batch 1 so its five
+ * The ten per-area stylesheets, pre-created ahead of batch 1 so its five
  * parallel lanes (#941-#945, #946-#950) never collide on this one index —
  * two lanes editing `3-components/index.css` in the same batch is the exact defect
  * this pre-creation exists to avoid.
