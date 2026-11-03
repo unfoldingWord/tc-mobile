@@ -186,10 +186,10 @@
     background: var(--s-well);
   }
 
-  .menu-panel:has(.o4-sheet-head) .t-title {
+  .menu-panel:has(.sheet-head) .t-title {
     visibility: hidden;
   }
-  .o4-sheet-head {
+  .sheet-head {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -197,7 +197,7 @@
   }
   /* The chapter's name whole, under the crumbs (#1284, U3): wraps onto as many
      lines as it needs and is never elided. */
-  .o4-sheet-name {
+  .sheet-name {
     margin: 8px 0 0;
     color: var(--s-ink);
     font-size: 20px; /* #939 token */
@@ -205,7 +205,7 @@
     line-height: 1.3;
     overflow-wrap: anywhere;
   }
-  .o4-crumbs {
+  .crumbs {
     display: flex;
     align-items: center;
     min-width: 0;
@@ -220,7 +220,7 @@
      than the default shrink, which cuts both by the same fraction and so
      cuts a short name as soon as the other is long. The segment crumb is a
      short number carrying the state tint, so it never shrinks. */
-  .o4-crumb {
+  .crumb {
     display: flex;
     align-items: center;
     flex: 1 1 0;
@@ -237,7 +237,7 @@
     white-space: nowrap;
     /* The chevron, as a property so a linked crumb's pseudo-element (below,
        #1269) draws the same shape its button would. */
-    --o4-crumb-shape: polygon(
+    --c-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
       100% 50%,
@@ -245,14 +245,14 @@
       0 100%,
       13px 50%
     );
-    clip-path: var(--o4-crumb-shape);
+    clip-path: var(--c-crumb-shape);
   }
-  .o4-crumb:first-child {
+  .crumb:first-child {
     margin-inline-start: 0;
     padding-inline-start: 12px;
     border-start-start-radius: 10px; /* #939 token */
     border-end-start-radius: 10px; /* #939 token */
-    --o4-crumb-shape: polygon(
+    --c-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
       100% 50%,
@@ -262,8 +262,8 @@
   }
   /* Right-to-left (#1552): the chevron's tip points at the END edge, so the
      polygon is the mirror image and the chips nest the other way. */
-  :root[dir="rtl"] .o4-crumb {
-    --o4-crumb-shape: polygon(
+  :root[dir="rtl"] .crumb {
+    --c-crumb-shape: polygon(
       100% 0,
       13px 0,
       0 50%,
@@ -272,14 +272,14 @@
       calc(100% - 13px) 50%
     );
   }
-  :root[dir="rtl"] .o4-crumb:first-child {
-    --o4-crumb-shape: polygon(100% 0, 13px 0, 0 50%, 13px 100%, 100% 100%);
+  :root[dir="rtl"] .crumb:first-child {
+    --c-crumb-shape: polygon(100% 0, 13px 0, 0 50%, 13px 100%, 100% 100%);
   }
-  .o4-crumb > span {
+  .crumb > span {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .o4-crumb[data-state] {
+  .crumb[data-state] {
     flex: none;
   }
   /* A CRUMB THAT NAVIGATES (#1269). A header's crumb for a place above the
@@ -298,7 +298,7 @@
      unclipped rectangle over the last 6px of the one before it, so by that
      geometry (not measured on a phone) a tap on the book crumb's chevron
      tip runs the chapter crumb's one-level Back instead. */
-  button.o4-crumb {
+  button.crumb {
     position: relative;
     isolation: isolate;
     height: var(--c-control-md);
@@ -314,27 +314,27 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  button.o4-crumb::before {
+  button.crumb::before {
     content: "";
     position: absolute;
     inset: 2px 0;
     z-index: -1;
     border-radius: inherit;
     background: var(--s-well);
-    clip-path: var(--o4-crumb-shape);
+    clip-path: var(--c-crumb-shape);
   }
-  button.o4-crumb:focus-visible {
+  button.crumb:focus-visible {
     outline: var(--c-focus-ring);
     outline-offset: var(--c-focus-offset);
   }
   /* Disabled with the header's Back, and dimmed the way Back is. */
-  button.o4-crumb:disabled {
+  button.crumb:disabled {
     cursor: default;
     opacity: 0.4;
   }
   /* The chapter screen's crumb row, in the place and at the size of the
      `.breadcrumb` button it replaced (#1269). */
-  .o4-crumbs-bar {
+  .crumbs-bar {
     display: flex;
     flex: 1 1 auto;
     align-items: center;
@@ -345,11 +345,11 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  .o4-crumb[data-state="recorded"] {
+  .crumb[data-state="recorded"] {
     background: var(--s-voice-quiet);
     color: var(--s-voice-text);
   }
-  .o4-crumb[data-state="finished"] {
+  .crumb[data-state="finished"] {
     background: var(--s-done-quiet); /* D19: the pale wash */
     color: var(--s-done-text);
   }
@@ -405,14 +405,14 @@
      pencil in the head, after the crumbs (workbench `penbtn`); Play sits at
      the end of the preview row (`tp play`, done fill on a finished segment);
      a refused tile on a never-recorded segment is greyed (`tile.off`). */
-  .o4-sheet-bar {
+  .sheet-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     min-width: 0;
   }
-  .o4-head-pen {
+  .head-pen {
     flex: none;
     width: 52px;
     height: 52px;

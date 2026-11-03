@@ -21,7 +21,7 @@ import { cssRule, declarationValue } from "./support";
  */
 const SELECTOR = ".err-body[data-refused]";
 /** The delete ask's head shakes on the same rule (#1089 reused it). */
-const DELETE_HEAD = ".books-delete-ask > .o4-sheet-head";
+const DELETE_HEAD = ".books-delete-ask > .sheet-head";
 const REDUCED = "@media (prefers-reduced-motion: reduce)";
 
 const panel = (settingsPlatform: "android-app" | "ios-app" | null) =>

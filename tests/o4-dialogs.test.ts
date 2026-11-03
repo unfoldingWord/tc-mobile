@@ -21,7 +21,7 @@ import { declarationValue } from "./support";
  *
  * 13 and G5 are the one `EraseConfirm`: the segment Erase and the recorder's
  * Erase-and-record-again path each render it with their own copy. G6 asks
- * inside the book sheet instead (`o4-book-delete-ask.tsx`, #980), reusing
+ * inside the book sheet instead (`book-delete-ask.tsx`, #980), reusing
  * this file's button rules. The look is CSS, in
  * `src/app/styles/3-components/dialogs.css`. The last describe below pins focus landing
  * and the Tab trap; focus return belongs to each caller, not to this

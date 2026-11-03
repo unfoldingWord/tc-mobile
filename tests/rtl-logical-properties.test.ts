@@ -50,7 +50,7 @@ describe("converted rules read logically", () => {
   }> = [
     {
       file: MENUS,
-      selector: ".o4-crumb",
+      selector: ".crumb",
       logical: {
         "margin-inline-start": "-6px",
         "padding-inline": "24px 20px",
@@ -59,7 +59,7 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: ".o4-crumb:first-child",
+      selector: ".crumb:first-child",
       logical: {
         "margin-inline-start": "0",
         "padding-inline-start": "12px",
@@ -169,12 +169,12 @@ describe("converted rules read logically", () => {
 
   it("mirrors the crumb chevron under dir=rtl", () => {
     const css = read(MENUS);
-    const base = cssRule(css, ':root[dir="rtl"] .o4-crumb');
-    const first = cssRule(css, ':root[dir="rtl"] .o4-crumb:first-child');
+    const base = cssRule(css, ':root[dir="rtl"] .crumb');
+    const first = cssRule(css, ':root[dir="rtl"] .crumb:first-child');
     // The tip points at the end edge in both directions: at rtl the polygon's
     // tip is on the left (x = 0).
-    expect(declarationValue(base, "--o4-crumb-shape")).toMatch(/0 50%/);
-    expect(declarationValue(first, "--o4-crumb-shape")).toMatch(/0 50%/);
+    expect(declarationValue(base, "--c-crumb-shape")).toMatch(/0 50%/);
+    expect(declarationValue(first, "--c-crumb-shape")).toMatch(/0 50%/);
   });
 
   it("flips a direction-bearing glyph only at rtl", () => {

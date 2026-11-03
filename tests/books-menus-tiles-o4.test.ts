@@ -224,9 +224,9 @@ describe("O4: the book menu on the tile grid (04)", () => {
     expect(button(strings.deleteBook).classList).toContain("tile--erase");
     // Rename is the head's pencil, beside the book's small cover and name.
     const pen = button(strings.renameBook);
-    expect(pen.classList).toContain("o4-head-pen");
+    expect(pen.classList).toContain("head-pen");
     expect(pen.closest(".tiles")).toBeNull();
-    const bar = pen.closest(".o4-sheet-bar");
+    const bar = pen.closest(".sheet-bar");
     expect(bar?.querySelector(".books-sheet-name")?.textContent).toBe("Mark");
   });
 

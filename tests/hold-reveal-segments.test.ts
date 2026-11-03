@@ -270,8 +270,8 @@ describe("the header crumbs (S14, #1284)", () => {
   /** The text span inside the header's `n`th crumb: book, then chapter. */
   const crumbText = (n: number) =>
     document
-      .querySelector(".o4-crumbs-bar")!
-      .querySelectorAll<HTMLElement>(".o4-crumb > span")[n]!;
+      .querySelector(".crumbs-bar")!
+      .querySelectorAll<HTMLElement>(".crumb > span")[n]!;
 
   it("a cut-off chapter crumb held 450 ms shows the whole name", async () => {
     await mount();

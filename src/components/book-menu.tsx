@@ -29,11 +29,11 @@ import { strings } from "@/lib/strings";
 /**
  * 04's sheet head: the book's small cover and name, then `children` (the
  * Rename pencil) at the end of the row, as the workbench draws it. The cover
- * and name are decoration (`aria-hidden`), as `O4SheetHead` is on the other
+ * and name are decoration (`aria-hidden`), as `SheetHead` is on the other
  * menus: the dialog is named by `<Menu>`, and every action names what it
  * does. The children sit outside the hidden part.
  */
-export function O4BookHead({
+export function BookHead({
   name,
   coverHex,
   children,
@@ -43,8 +43,8 @@ export function O4BookHead({
   children?: ReactNode;
 }) {
   return (
-    <div className="o4-sheet-bar">
-      <div className="o4-sheet-head books-menu-head" aria-hidden="true">
+    <div className="sheet-bar">
+      <div className="sheet-head books-menu-head" aria-hidden="true">
         <span
           className="books-cover is-sm"
           style={{ "--book-cover": coverHex } as CSSProperties}
@@ -124,7 +124,7 @@ export const LicenceTile = forwardRef<
  * queues a second tap for the same book instead, coalescing to the last one
  * (`useBookCoverColour`'s `"queued"`; #1046 item 4, DRI: "Last tap wins").
  */
-export function O4CoverPick({
+export function CoverPick({
   selected,
   onSelect,
   error,

@@ -34,7 +34,7 @@ test.use({
  * name (typed, or the default "Chapter N"), elided with "…" when it is too
  * long for the chip. jsdom computes no boxes, so this is the layout half of
  * `tests/o4-header-crumbs.test.ts` (which name each header passes) and
- * `tests/o4-crumbs-chapter-name.test.ts` (the declarations). At each phone
+ * `tests/crumbs-chapter-name.test.ts` (the declarations). At each phone
  * width it checks that the crumbs stay inside the header and push no control
  * off the screen, that a long name elides instead of wrapping or overflowing,
  * and the sharing rule `3-components/menus.css` states: the book and chapter crumbs get
@@ -86,9 +86,9 @@ interface Measured {
 
 async function measure(head: Locator): Promise<Measured> {
   return head.evaluate((el) => {
-    const row = el.querySelector(".o4-crumbs")!;
+    const row = el.querySelector(".crumbs")!;
     const rowBox = row.getBoundingClientRect();
-    const chips = [...row.querySelectorAll(".o4-crumb")];
+    const chips = [...row.querySelectorAll(".crumb")];
     // The header's other controls: not the crumbs, which are buttons
     // themselves where they navigate (#1269).
     const buttons = [...el.querySelectorAll("button")].filter(
@@ -167,10 +167,10 @@ interface MenuHead {
 async function menuHead(page: Page, opener: string): Promise<MenuHead> {
   await page.getByRole("button", { name: opener, exact: true }).click();
   const panel = page.locator(".menu-panel");
-  await expect(panel.locator(".o4-sheet-head")).toBeVisible();
+  await expect(panel.locator(".sheet-head")).toBeVisible();
   const head = await panel.evaluate((el) => {
     const box = el.getBoundingClientRect();
-    const chips = [...el.querySelectorAll(".o4-sheet-head .o4-crumb")];
+    const chips = [...el.querySelectorAll(".sheet-head .crumb")];
     return {
       crumbs: chips.map((crumb) => {
         const text = crumb.querySelector("span")!;
@@ -179,7 +179,7 @@ async function menuHead(page: Page, opener: string): Promise<MenuHead> {
           elided: text.scrollWidth > text.clientWidth,
         };
       }),
-      place: el.querySelector(".o4-sheet-place")?.textContent ?? "",
+      place: el.querySelector(".sheet-place")?.textContent ?? "",
       fits:
         chips.every(
           (c) => c.getBoundingClientRect().right <= box.right + 0.5
@@ -415,8 +415,8 @@ test("O4 headers at 360px: tapping a crumb above the current screen lands there 
   // above the current one is now a button (#1275), so this is the header
   // with a plain chip to compare against.
   const drawn = await segmentsHead.evaluate((el) => {
-    const link = el.querySelector("button.o4-crumb")!;
-    const plain = el.querySelector("span.o4-crumb:not([data-state])")!;
+    const link = el.querySelector("button.crumb")!;
+    const plain = el.querySelector("span.crumb:not([data-state])")!;
     const chip = getComputedStyle(link, "::before");
     return {
       height: chip.height,

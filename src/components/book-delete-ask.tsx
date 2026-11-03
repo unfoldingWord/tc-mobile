@@ -4,7 +4,7 @@ import { Control } from "./control";
 import { Icon } from "./icon";
 import { strings } from "@/lib/strings";
 
-interface O4BookDeleteAskProps {
+interface BookDeleteAskProps {
   /** The book the ask names. */
   name: string;
   /** The book's cover colour, already resolved (`lib/cover-colour.ts`). */
@@ -29,20 +29,20 @@ interface O4BookDeleteAskProps {
  *
  * The two buttons reuse `EraseConfirm`'s `confirm-actions` / `confirm-cancel`
  * markup on purpose, so `3-components/dialogs.css` gives them 13's shape rather than a
- * second copy of it here. The header reuses the menu sheets' `o4-sheet-head`
+ * second copy of it here. The header reuses the menu sheets' `sheet-head`
  * row (`3-components/menus.css`); the cover and name rules are the Books area's
  * (`3-components/books.css`).
  *
  * Presentational: every outcome arrives by prop.
  */
-export function O4BookDeleteAsk({
+export function BookDeleteAsk({
   name,
   coverHex,
   busy,
   keepRef,
   onKeep,
   onDelete,
-}: O4BookDeleteAskProps) {
+}: BookDeleteAskProps) {
   const questionId = useId();
   return (
     <div
@@ -59,7 +59,7 @@ export function O4BookDeleteAsk({
       <p id={questionId} className="sr-only">
         {strings.deleteBookConfirmTitle(name)}
       </p>
-      <div className="o4-sheet-head">
+      <div className="sheet-head">
         <span
           className="books-cover is-sm"
           aria-hidden="true"

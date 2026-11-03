@@ -140,7 +140,7 @@ describe("every O4 loop (#950)", () => {
     ],
     [
       "shake",
-      [".books-delete-ask > .o4-sheet-head", ".err-body[data-refused]"],
+      [".books-delete-ask > .sheet-head", ".err-body[data-refused]"],
       "shake var(--p-ambient-shake, 0.35s) ease-in-out 2",
     ],
   ])("pins %s to its target and its #967 duration", (name, sels, value) => {

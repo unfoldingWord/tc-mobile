@@ -10,7 +10,7 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * Extends #559's selection opt-out (#563, the DRI's "Extend it with the same
  * CSS" pick, 2026-09-28): the same three declarations #559 put on
  * `.recorder-sheet`, `.menu-panel` and `.confirm-panel` now also sit on the
- * Segments rows (`.row`), the Segments header's crumb row (`.o4-crumbs-bar`,
+ * Segments rows (`.row`), the Segments header's crumb row (`.crumbs-bar`,
  * which replaced the `.breadcrumb` button in #1269 and carries the same
  * three declarations), the
  * Books rows (`.books-card`, which reaches its chapter rows by inheritance —
@@ -46,7 +46,7 @@ const COMPONENTS_PATH = path.resolve(
 const componentsCss = readFileSync(COMPONENTS_PATH, "utf8");
 const booksO4Css = areaScope("books");
 const menusO4Css = areaScope("menus");
-const CRUMBS_BAR = ".o4-crumbs-bar";
+const CRUMBS_BAR = ".crumbs-bar";
 const BOOKS_CARD = ".books-card";
 
 /**
@@ -101,7 +101,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
     expectOptOut(componentsCss, ".row");
   });
 
-  it("opts the Segments header's crumb row out (.o4-crumbs-bar, 3-components/menus.css)", () => {
+  it("opts the Segments header's crumb row out (.crumbs-bar, 3-components/menus.css)", () => {
     expectOptOut(menusO4Css, CRUMBS_BAR);
   });
 

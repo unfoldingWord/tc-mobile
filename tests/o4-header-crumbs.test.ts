@@ -4,7 +4,7 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { O4Crumbs } from "@/components/o4-crumbs";
+import { Crumbs } from "@/components/crumbs";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SegmentsScreen } from "@/components/segments-screen";
 import { strings } from "@/lib/strings";
@@ -20,7 +20,7 @@ import { cssRule, declarationValue, restingErase } from "./support";
 /**
  * #1105: the top breadcrumb in the segments header and the recorder header
  * render the same chevron-chip markup the O4 menus already show
- * (`o4-crumbs.tsx`'s `O4SheetHead`).
+ * (`crumbs.tsx`'s `SheetHead`).
  *
  * #1230: the header's CHAPTER chip shows the chapter's name — the typed one,
  * or the default "Chapter N" — resolved through `strings.chapterHeading`. The
@@ -148,10 +148,10 @@ async function tap(scope: ParentNode, label: string) {
   await act(async () => el.click());
 }
 
-/** Every `.o4-crumb`'s text and (if the crumb carries one) its `data-state`,
+/** Every `.crumb`'s text and (if the crumb carries one) its `data-state`,
  * in order — the one shape both the header and the menu head must match. */
 function crumbs(scope: ParentNode): { text: string; state: string | null }[] {
-  return [...scope.querySelectorAll(".o4-crumb")].map((el) => ({
+  return [...scope.querySelectorAll(".crumb")].map((el) => ({
     text: el.textContent ?? "",
     state: el.getAttribute("data-state"),
   }));
@@ -164,7 +164,7 @@ function crumbs(scope: ParentNode): { text: string; state: string | null }[] {
  * not exactly one.
  */
 function spokenPlace(panel: Element): string {
-  const lines = panel.querySelectorAll(".o4-sheet-place");
+  const lines = panel.querySelectorAll(".sheet-place");
   expect(lines, "one spoken place line in the menu").toHaveLength(1);
   expect(lines[0]!.closest('[aria-hidden="true"]')).toBeNull();
   return lines[0]!.textContent ?? "";
@@ -255,7 +255,7 @@ describe("the recorder header (#1105)", () => {
 
   it("makes the book and chapter crumbs buttons to their places and the segment crumb the current place (#1269, #1275)", async () => {
     await mount();
-    const chips = [...header().querySelectorAll(".o4-crumb")];
+    const chips = [...header().querySelectorAll(".crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "BUTTON", "SPAN"]);
     // Spelled out, so a change to either entry cannot pass by agreeing
     // with itself: "Go to book {name}", and "Go to {heading}" (DRI pick on
@@ -280,7 +280,7 @@ describe("the recorder header (#1105)", () => {
 
   it("leaves the book crumb a plain chip when no two-level Back is handed in (#1275)", async () => {
     await mount({ withBooks: false });
-    const chips = [...header().querySelectorAll(".o4-crumb")];
+    const chips = [...header().querySelectorAll(".crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
     expect(chips[0]!.getAttribute("aria-current")).toBeNull();
   });
@@ -289,7 +289,7 @@ describe("the recorder header (#1105)", () => {
     recorderView.chapterName = null;
     await mount();
     // The second linked crumb: the first is the book's (#1275).
-    const crumb = header().querySelectorAll("button.o4-crumb")[1]!;
+    const crumb = header().querySelectorAll("button.crumb")[1]!;
     expect(crumb.getAttribute("aria-label")).toBe("Go to Chapter 1");
     expect(crumb.textContent).toBe(strings.chapterName(1));
   });
@@ -376,7 +376,7 @@ describe("the recorder header (#1105)", () => {
       { text: "Book Mine", state: null },
       { text: "2:1-4", state: null }, // the name, not the number 1
       // Recorded but not marked finished (`view.finished: false`, audio
-      // present): the same "recorded" tint `RecorderMenu`'s own O4SheetHead
+      // present): the same "recorded" tint `RecorderMenu`'s own SheetHead
       // derives for this state (recorder-menu.tsx).
       { text: "1", state: "recorded" },
     ]);
@@ -403,11 +403,11 @@ describe("the recorder header (#1105)", () => {
 
   it("exposes the chips to assistive tech: the only thing in the header naming the place", async () => {
     await mount();
-    const row = header().querySelector(".o4-crumbs")!;
+    const row = header().querySelector(".crumbs")!;
     // Not hidden: `closeRecorder` names the action, not the take, so hiding
     // the chips would drop book/chapter/segment from the tree (George R2).
     expect(row.closest('[aria-hidden="true"]')).toBeNull();
-    expect(header().querySelectorAll(".o4-crumbs")).toHaveLength(1);
+    expect(header().querySelectorAll(".crumbs")).toHaveLength(1);
     // So the chapter's name is what is spoken, as it is what is shown.
     expect(row.textContent).toContain("2:1-4");
     // The Back control is untouched by this fix: still there, still named.
@@ -442,7 +442,7 @@ describe("the recorder header (#1105)", () => {
     await tap(document, strings.recorderMenuOpen);
     const panel = document.querySelector(".menu-panel")!;
     expect(crumbs(panel)).toEqual(crumbs(header()));
-    expect(panel.querySelector(".o4-sheet-name")?.textContent).toBe(
+    expect(panel.querySelector(".sheet-name")?.textContent).toBe(
       strings.chapterName(7)
     );
   });
@@ -451,14 +451,14 @@ describe("the recorder header (#1105)", () => {
     recorderView.chapterName = "שלום.";
     await mount();
     const dirs = (scope: ParentNode) =>
-      [...scope.querySelectorAll(".o4-crumb > span")].map((el) =>
+      [...scope.querySelectorAll(".crumb > span")].map((el) =>
         el.getAttribute("dir")
       );
     expect(dirs(header())).toEqual(["auto", "auto", null]);
     await tap(document, strings.recorderMenuOpen);
     const panel = document.querySelector(".menu-panel")!;
     expect(dirs(panel)).toEqual(["auto", "auto", null]);
-    expect(panel.querySelector(".o4-sheet-place")?.getAttribute("dir")).toBe(
+    expect(panel.querySelector(".sheet-place")?.getAttribute("dir")).toBe(
       "auto"
     );
   });
@@ -534,7 +534,7 @@ describe("the segments header (#1105)", () => {
 
   it("makes the book crumb a button to Books and the chapter crumb the current place (#1269)", async () => {
     await mount();
-    const chips = [...header().querySelectorAll(".o4-crumb")];
+    const chips = [...header().querySelectorAll(".crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "SPAN"]);
     // Named for where it goes, and holding the text it shows (WCAG 2.5.3).
     // Not `strings.backToBooks`: two controls with that name on one screen
@@ -547,11 +547,9 @@ describe("the segments header (#1105)", () => {
     expect(chips[1]!.closest("button")).toBeNull();
     // The chips are exposed now, since the chapter chip is what names this
     // screen's chapter to assistive tech; the old look's Back button is gone.
+    expect(header().querySelector('.crumbs [aria-hidden="true"]')).toBeNull();
     expect(
-      header().querySelector('.o4-crumbs [aria-hidden="true"]')
-    ).toBeNull();
-    expect(
-      header().querySelector(".o4-crumbs")!.closest('[aria-hidden="true"]')
+      header().querySelector(".crumbs")!.closest('[aria-hidden="true"]')
     ).toBeNull();
     expect(header().querySelector("button.breadcrumb")).toBeNull();
   });
@@ -632,7 +630,7 @@ describe("the segments header (#1105)", () => {
   it("sets the direction of the name chips (#1267)", async () => {
     await mount();
     expect(
-      [...header().querySelectorAll(".o4-crumb > span")].map((el) =>
+      [...header().querySelectorAll(".crumb > span")].map((el) =>
         el.getAttribute("dir")
       )
     ).toEqual(["auto", "auto"]);
@@ -645,7 +643,7 @@ describe("a linked crumb, the #1274 Lows (#1278)", () => {
   it("keeps aria-current on a crumb that is both current and linked", async () => {
     await act(async () =>
       root.render(
-        createElement(O4Crumbs, {
+        createElement(Crumbs, {
           book: "Book Mine",
           chapter: "2:1-4",
           links: { chapter: { label: "Go to 2:1-4", onClick: vi.fn() } },
@@ -662,7 +660,7 @@ describe("a linked crumb, the #1274 Lows (#1278)", () => {
   // the transparent background and no border do not reset `appearance`.
   // This reads the rule; a WKWebView on a phone is what would show it.
   it("drops the native button look on a linked crumb, WebKit prefix included", () => {
-    const rule = cssRule(areaScope("menus"), "button.o4-crumb");
+    const rule = cssRule(areaScope("menus"), "button.crumb");
     expect(declarationValue(rule, "appearance")).toBe("none");
     expect(declarationValue(rule, "-webkit-appearance")).toBe("none");
   });

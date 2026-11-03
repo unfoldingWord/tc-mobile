@@ -25,21 +25,16 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { NameReveal } from "./name-reveal";
-import { O4BookDeleteAsk } from "./o4-book-delete-ask";
-import { O4SheetHead } from "./o4-crumbs";
+import { BookDeleteAsk } from "./book-delete-ask";
+import { SheetHead } from "./crumbs";
 import { CoverPicker } from "./cover-picker";
 import { LanguageAsk } from "./language-ask";
 import { LicenceAsk } from "./licence-ask";
-import {
-  CoverTile,
-  LicenceTile,
-  O4BookHead,
-  O4CoverPick,
-} from "./o4-book-menu";
+import { CoverTile, LicenceTile, BookHead, CoverPick } from "./book-menu";
 import { MoveTiles, Tile, TileGrid, TileSpacer } from "./tile-menu";
 import { Notice } from "./notice";
 import { isNativeShell } from "@/hooks/share-target";
-import { SquareButton } from "./o4-controls";
+import { SquareButton } from "./shape-buttons";
 import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
@@ -675,7 +670,7 @@ export function BooksScreen({
   // ── Delete asks inside the book sheet (#980, G6; #949 D16) ──────────────
   //
   // Delete does NOT close the book sheet: the sheet stays up and swaps its
-  // actions for Keep and Delete (`O4BookDeleteAsk`). `deleteTargetId` names
+  // actions for Keep and Delete (`BookDeleteAsk`). `deleteTargetId` names
   // the armed book and `"books:delete-confirm"` is the layer over the
   // sheet's own, so Back, `busy()` and the vanish effect below see it. Keep
   // goes back to the SAME open sheet (the workbench's `bmDelNo`), and focus
@@ -2766,7 +2761,7 @@ export function BooksScreen({
             while it is up; rename cannot be open at the same time, because
             Delete is only reachable from the action list. */}
         {deleteArmed && shareMenuBook && (
-          <O4BookDeleteAsk
+          <BookDeleteAsk
             name={shareMenuBookName}
             coverHex={shareMenuCoverHex}
             busy={deleting}
@@ -2827,7 +2822,7 @@ export function BooksScreen({
           // tiles for #957's picker in the same sheet; a choice writes and
           // comes back here.
           <>
-            <O4BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
+            <BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
               {!pickingCover &&
                 askingLanguageFor === null &&
                 askingLicenceFor === null && (
@@ -2835,11 +2830,11 @@ export function BooksScreen({
                     icon="pencil"
                     label={strings.renameBook}
                     size={24}
-                    className="o4-head-pen"
+                    className="head-pen"
                     onClick={() => setRenamingBook(true)}
                   />
                 )}
-            </O4BookHead>
+            </BookHead>
             {askingLanguageFor !== null ? (
               <LanguageAsk
                 state={languageList.state}
@@ -2865,7 +2860,7 @@ export function BooksScreen({
                 error={licenceFailed ? strings[licenceFailed] : null}
               />
             ) : pickingCover ? (
-              <O4CoverPick
+              <CoverPick
                 selected={shareMenuCoverKey}
                 onSelect={onChooseCover}
                 error={coverFailed ? strings[coverFailed] : null}
@@ -3365,7 +3360,7 @@ function ChapterMenuHead({
     chapter.templateNumber
   );
   return (
-    <O4SheetHead
+    <SheetHead
       book={strings.bookHeading(book.name, book.number)}
       bookCoverHex={coverColourHex(
         resolveCoverKey({

@@ -553,8 +553,8 @@ describe("O4 Books header and empty shelf, state 01 (#942)", () => {
       },
     ]);
     const add = button(strings.newBook);
-    // The shared 56 × 56 r14 well from `o4-controls.tsx`, not a local copy.
-    expect(add.classList.contains("o4-square")).toBe(true);
+    // The shared 56 × 56 r14 well from `shape-buttons.tsx`, not a local copy.
+    expect(add.classList.contains("square")).toBe(true);
     expect(add.className).not.toMatch(/\bbooks-add\b/);
   });
 });

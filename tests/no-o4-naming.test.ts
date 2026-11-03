@@ -26,14 +26,27 @@ const BANNED: ReadonlyArray<readonly [label: string, pattern: RegExp]> = [
   ["o4-tile* class", /\bo4-tiles?\b|\bo4-tiles?-/],
   ["o4-menu-* class", /\bo4-menu-/],
   ["o4-tile-look / o4-tile-menu module", /o4-tile-(look|menu)/],
+  ["--o4-crumb-shape property", /--o4-crumb-shape/],
+  ["o4-crumb* class", /\bo4-crumbs?\b|\bo4-crumbs?-/],
+  ["o4-sheet-* class", /\bo4-sheet-/],
+  [
+    "o4-head-pen / o4-square / o4-transport / o4-pill class",
+    /\bo4-(head-pen|square|transport|pill)\b/,
+  ],
+  [
+    "O4 crumb, sheet-head and book-menu components",
+    /\bO4(Crumbs|CrumbLink|SheetHead|BookHead|CoverPick|BookDeleteAsk)/,
+  ],
+  [
+    "o4-book-menu / o4-book-delete-ask / o4-controls module",
+    /o4-(book-menu|book-delete-ask|controls)\b/,
+  ],
 ];
 
-/** Forms a later slice renames (PRs 8 and 9 of #954). Banned from nowhere yet. */
+/** Forms a later slice renames (PR 9 of #954). Banned from nowhere yet. */
 const NOT_YET: readonly string[] = [
-  "o4-crumb*, o4-sheet-*, o4-head-pen, o4-square, o4-transport, o4-pill",
-  "O4Crumbs, O4CrumbLink, O4SheetHead, O4BookHead, O4CoverPick, O4BookDeleteAsk",
   "share-o4-*, ShareO4View, data-o4-look, O4Circle, O4Chips, O4ChapterFace",
-  "--o4-* custom properties, recorder-o4, share-o4-view, o4-controls files",
+  "the other --o4-* custom properties, recorder-o4, share-o4-view files",
 ];
 
 const SKIP = new Set(["node_modules", ".git", "dist", "dist-e2e"]);

@@ -19,7 +19,7 @@ import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
-import { O4Crumbs } from "./o4-crumbs";
+import { Crumbs } from "./crumbs";
 import { PermissionPanel } from "./permission-panel";
 import { RecorderMenu } from "./recorder-menu";
 import { PlayheadOverlay } from "./playhead-overlay";
@@ -3631,7 +3631,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             {view ? (
               // #1105: the same chips the O4 menus show, not a restyled
               // reading of the text trail below. NOT `aria-hidden`: unlike the
-              // menu, where `O4SheetHead`'s chips sit under a dialog title, no
+              // menu, where `SheetHead`'s chips sit under a dialog title, no
               // other element here names the place — the Back control's
               // `closeRecorder` names the action — so the chip text is the one
               // place book, chapter and segment reach assistive tech, as the
@@ -3666,7 +3666,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // sheet has gone. Disabled by the same expression as the
               // other two, and inert with them under an overlay.
               <div className="min-w-0 flex-1">
-                <O4Crumbs
+                <Crumbs
                   className="min-w-0"
                   book={view.bookName}
                   chapter={chapterHeading}

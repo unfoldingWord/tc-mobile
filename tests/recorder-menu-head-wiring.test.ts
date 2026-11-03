@@ -144,7 +144,7 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
   it("crumbs the view's book, chapter and segment, the segment tinted done", async () => {
     const panel = await openMenu();
     expect(
-      [...panel.querySelectorAll(".o4-sheet-head .o4-crumb")].map((c) => [
+      [...panel.querySelectorAll(".sheet-head .crumb")].map((c) => [
         c.textContent,
         c.getAttribute("data-state"),
       ])
@@ -158,7 +158,7 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
   it("carries the view's cover colour to the head's square (#949, #957)", async () => {
     const panel = await openMenu();
     const cover = panel.querySelector(
-      ".o4-sheet-head .books-cover.is-sm"
+      ".sheet-head .books-cover.is-sm"
     ) as HTMLElement | null;
     expect(cover).not.toBeNull();
     expect(cover!.style.getPropertyValue("--book-cover")).toBe("#11796d");
@@ -169,7 +169,7 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
     view.chapterName = NAME;
     try {
       const panel = await openMenu();
-      expect(panel.querySelector(".o4-sheet-name")?.textContent).toBe(NAME);
+      expect(panel.querySelector(".sheet-name")?.textContent).toBe(NAME);
     } finally {
       view.chapterName = null;
     }

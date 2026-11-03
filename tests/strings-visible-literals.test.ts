@@ -132,7 +132,7 @@ const NON_UI_PROPS: ReadonlyMap<string, string> = new Map([
 /**
  * This app's component enums: an icon name, a tone, a variant or a state
  * token that a component maps to a glyph or a class, never to words. `name`
- * is one only on `<Icon>`: `O4BookHead` and `O4BookDeleteAsk` render their
+ * is one only on `<Icon>`: `BookHead` and `BookDeleteAsk` render their
  * `name` as text. A value with a space in it is still flagged, because
  * `book-open` is a token and `Close menu` is not.
  */
@@ -447,8 +447,8 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
     expect(probe(`<p>{x || "Saving"}</p>`)).toEqual(["child: Saving"]);
     // Deny by default: a visible prop with a name no list knows still fails.
     expect(probe(`<Toast message="Hello" />`)).toEqual(["message: Hello"]);
-    // `name` is an enum on `<Icon>` only; `O4BookHead` renders it as text.
-    expect(probe(`<O4BookHead name="Untitled" />`)).toEqual(["name: Untitled"]);
+    // `name` is an enum on `<Icon>` only; `BookHead` renders it as text.
+    expect(probe(`<BookHead name="Untitled" />`)).toEqual(["name: Untitled"]);
     // A component enum with a space in it is words, not a token.
     expect(probe(`<Control icon="Close menu" />`)).toEqual([
       "icon: Close menu",

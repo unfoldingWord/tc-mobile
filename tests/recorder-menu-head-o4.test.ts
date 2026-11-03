@@ -55,7 +55,7 @@ function show(over: Partial<RecorderMenuProps> = {}) {
 }
 
 const crumbs = (el: Element) =>
-  [...el.querySelectorAll(".o4-sheet-head .o4-crumb")].map((c) => ({
+  [...el.querySelectorAll(".sheet-head .crumb")].map((c) => ({
     text: c.textContent,
     state: c.getAttribute("data-state"),
   }));
@@ -65,7 +65,7 @@ describe("the recorder menu's sheet head (G3)", () => {
     "heads the %s-mode sheet with the book, chapter and segment crumbs, decoration only",
     (mode) => {
       const el = show({ mode });
-      const heads = el.querySelectorAll(".o4-sheet-head");
+      const heads = el.querySelectorAll(".sheet-head");
       expect(heads).toHaveLength(1);
       expect(heads[0]!.getAttribute("aria-hidden")).toBe("true");
       expect(heads[0]!.querySelector("button")).toBeNull();
@@ -104,7 +104,7 @@ describe("the recorder menu's sheet head (G3)", () => {
       { text: "Ruth", state: null },
       { text: "2", state: null },
     ]);
-    expect(el.querySelector('.o4-crumb[data-state="finished"]')).toBeNull();
+    expect(el.querySelector('.crumb[data-state="finished"]')).toBeNull();
   });
 
   it("leaves the book and chapter crumbs out when the caller has neither", () => {
@@ -114,12 +114,12 @@ describe("the recorder menu's sheet head (G3)", () => {
 
   it("draws the book's cover-colour square before the crumbs (#949, #957)", () => {
     const el = show({});
-    const head = el.querySelector(".o4-sheet-head")!;
+    const head = el.querySelector(".sheet-head")!;
     const cover = head.querySelector(".books-cover.is-sm") as HTMLElement;
     expect(cover).not.toBeNull();
     expect(cover.style.getPropertyValue("--book-cover")).toBe("#7a3570");
     expect(
-      cover.compareDocumentPosition(head.querySelector(".o4-crumbs")!) &
+      cover.compareDocumentPosition(head.querySelector(".crumbs")!) &
         4 /* DOCUMENT_POSITION_FOLLOWING */
     ).toBeTruthy();
   });
@@ -127,7 +127,7 @@ describe("the recorder menu's sheet head (G3)", () => {
   it("leaves the square out when the caller has no colour to give", () => {
     const el = show({ bookCoverHex: undefined });
     expect(
-      el.querySelector(".o4-sheet-head")!.querySelector(".books-cover")
+      el.querySelector(".sheet-head")!.querySelector(".books-cover")
     ).toBeNull();
     // The book and chapter crumbs are unaffected.
     expect(crumbs(el).slice(0, 2)).toEqual([
@@ -147,31 +147,31 @@ describe("the recorder menu shows the full chapter name at its top (#1284, U3)",
 
   it("draws a 60-letter name whole as the wrapping heading, and no heading without the prop", () => {
     const el = show({ chapterName: NAME60, chapterHeading: "Chapter 2" });
-    const heading = el.querySelector(".o4-sheet-name");
+    const heading = el.querySelector(".sheet-name");
     expect(heading?.textContent).toBe(NAME60);
     expect(heading?.textContent).toHaveLength(60);
-    expect(show().querySelector(".o4-sheet-name")).toBeNull();
+    expect(show().querySelector(".sheet-name")).toBeNull();
   });
 
   it("with the number-only setting on, the name is still exposed to a screen reader", () => {
     const el = show({ chapterName: NAME60, chapterHeading: "Chapter 2" });
-    const heading = el.querySelector(".o4-sheet-name")!;
+    const heading = el.querySelector(".sheet-name")!;
     expect(heading.getAttribute("aria-hidden")).toBeNull();
-    expect(el.querySelector(".o4-sheet-place")?.textContent).toContain(
+    expect(el.querySelector(".sheet-place")?.textContent).toContain(
       "Chapter 2"
     );
   });
 
   it("with the setting off, the place line carries the name and the heading is hidden", () => {
     const el = show({ chapterName: NAME60, chapterHeading: NAME60 });
-    expect(el.querySelector(".o4-sheet-place")?.textContent).toContain(NAME60);
-    expect(
-      el.querySelector(".o4-sheet-name")?.getAttribute("aria-hidden")
-    ).toBe("true");
+    expect(el.querySelector(".sheet-place")?.textContent).toContain(NAME60);
+    expect(el.querySelector(".sheet-name")?.getAttribute("aria-hidden")).toBe(
+      "true"
+    );
   });
 
   it("an unnamed chapter's heading is the default name", () => {
     const el = show({ chapterName: null, chapterHeading: "Chapter 2" });
-    expect(el.querySelector(".o4-sheet-name")?.textContent).toBe("Chapter 2");
+    expect(el.querySelector(".sheet-name")?.textContent).toBe("Chapter 2");
   });
 });

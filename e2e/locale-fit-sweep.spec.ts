@@ -94,7 +94,7 @@ const NAME_NODES = [
   ".segments-title",
   ".row-title",
   ".menu-panel:has(.name-edit) .t-title",
-  ".o4-crumb > span",
+  ".crumb > span",
   ".books-name",
   ".books-chapter-title",
 ].join(", ");

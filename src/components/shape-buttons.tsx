@@ -31,7 +31,7 @@ export const SquareButton = forwardRef<
       ref={ref}
       {...rest}
       size={size}
-      className={cn("o4-square", className)}
+      className={cn("square", className)}
     />
   );
 });
@@ -51,7 +51,7 @@ export const TransportButton = forwardRef<
       {...rest}
       variant={kind}
       size={size}
-      className={cn("o4-transport", className)}
+      className={cn("transport", className)}
     />
   );
 });
@@ -69,7 +69,7 @@ export const PillButton = forwardRef<
       ref={ref}
       {...rest}
       size={size}
-      className={cn("o4-pill", className)}
+      className={cn("pill", className)}
     />
   );
 });
