@@ -27,6 +27,8 @@ const CHAPTER: Noun = ["فصل", "فصول", "فصلًا"];
 const SEGMENT: Noun = ["مقطع", "مقاطع", "مقطعًا"];
 const LANGUAGE: Noun = ["لغة", "لغات", "لغةً"];
 const PROBLEM: Noun = ["مشكلة", "مشاكل", "مشكلةً"];
+const MINUTE: Noun = ["دقيقة", "دقائق", "دقيقةً"];
+const SECOND: Noun = ["ثانية", "ثوانٍ", "ثانيةً"];
 
 /**
  * The ar table: Arabic (Modern Standard Arabic), drafted by AI under the
@@ -34,9 +36,9 @@ const PROBLEM: Noun = ["مشكلة", "مشاكل", "مشكلةً"];
  * and following `docs/i18n/glossary.md`. AI DRAFT, AWAITING NATIVE-SPEAKER
  * REVIEW: no Arabic reader has checked the meaning.
  *
- * HELD: complete or not, Arabic stays off while it is on `GO_LIVE_HELD`
- * (`locales.ts`); any key not drafted yet reads English and is named in
- * `pending.ts`. Nothing here has been checked right to left on a device.
+ * HELD: every translatable key is drafted (#1458 part 3), and Arabic still
+ * stays off while it is on `GO_LIVE_HELD` (`locales.ts`). Nothing here has
+ * been checked right to left on a device.
  *
  * Register: buttons and captions are the verbal noun ("تشغيل", "حذف"), but
  * Record and Stop recording take the glossary's imperative (rows 5, 6). The
@@ -71,23 +73,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
     plural(
       chapters,
-      expanded
-        ? {
-            zero: "{name}، {n} فصل، مفتوح",
-            one: "{name}، {n} فصل، مفتوح",
-            two: "{name}، {n} فصل، مفتوح",
-            few: "{name}، {n} فصول، مفتوح",
-            many: "{name}، {n} فصلًا، مفتوح",
-            other: "{name}، {n} فصل، مفتوح",
-          }
-        : {
-            zero: "{name}، {n} فصل، مغلق",
-            one: "{name}، {n} فصل، مغلق",
-            two: "{name}، {n} فصل، مغلق",
-            few: "{name}، {n} فصول، مغلق",
-            many: "{name}، {n} فصلًا، مغلق",
-            other: "{name}، {n} فصل، مغلق",
-          }
+      counted(
+        CHAPTER,
+        (x) => `{name}، {n} ${x}، ${expanded ? "مفتوح" : "مغلق"}`
+      )
     ).replace("{name}", () => name),
   addChapter: (bookName: string): string => `إضافة فصل إلى ${bookName}`,
   openChapter: (heading: string): string => `فتح ${heading}`,
@@ -189,14 +178,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   finishedWriteFailed: "تعذّر حفظ علامة الاكتمال.",
   recorderSaving: "جارٍ الحفظ…",
   takeCapWarning: (n: number): string =>
-    plural(n, {
-      zero: "متبقٍ {n} دقيقة",
-      one: "متبقٍ {n} دقيقة",
-      two: "متبقٍ {n} دقيقة",
-      few: "متبقٍ {n} دقائق",
-      many: "متبقٍ {n} دقيقةً",
-      other: "متبقٍ {n} دقيقة",
-    }),
+    plural(
+      n,
+      counted(MINUTE, (x) => `متبقٍ {n} ${x}`)
+    ),
   loadFailedTitle: "تعذّر فتح هذا التسجيل",
   loadFailedBody:
     "تسجيلك في أمان. حاول مرة أخرى، أو ارجع لإعادة تعيينه من القائمة.",
@@ -245,14 +230,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   selectionStartHandle: "بداية التحديد",
   selectionEndHandle: "نهاية التحديد",
   selectionHandleTime: (n: number): string =>
-    plural(n, {
-      zero: "{n} ثانية",
-      one: "{n} ثانية",
-      two: "{n} ثانية",
-      few: "{n} ثوانٍ",
-      many: "{n} ثانيةً",
-      other: "{n} ثانية",
-    }),
+    plural(
+      n,
+      counted(SECOND, (x) => `{n} ${x}`)
+    ),
   editFailed: "تعذّر تطبيق هذا التعديل. جرّب تحديدًا أقصر.",
   clearFailed: "تعذّرت إعادة تعيين الصوت. حاول مرة أخرى.",
   captureSilence: "لم يُسجَّل أي صوت. حاول مرة أخرى.",
@@ -417,7 +398,10 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     partialChapters: number
   ): string {
     // "In N of the included chapters": a partitive, so the chapter count
-    // takes no counted noun and needs no plural forms of its own.
+    // takes no counted noun and needs no plural forms of its own. Called only
+    // with `segments` > 0 (`shareGapText`), and the book export counts a
+    // chapter for each gap (`lib/export/book.ts`), so 0 is only the `?? 0`
+    // fallback; the clamp reads it as one chapter, as English does.
     const scope = Math.max(partialChapters, 1);
     const where =
       scope === 1 ? "في فصل مُدرَج" : `في ${scope} من الفصول المُدرَجة`;
@@ -436,6 +420,99 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     return stringsEn.shareBookFilename.apply(this, args);
   },
   shareNameFallback: "كتاب",
+
+  // The save that failed, the crash screen, the encoder
+  saveFailedDialog: (editOnly: boolean): string =>
+    editOnly ? "تغييراتك غير محفوظة" : "هذا التسجيل غير محفوظ",
+  saveFailedSaving: "جارٍ الحفظ",
+  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string =>
+    editOnly
+      ? ordinal === null
+        ? "تسجيلك المعدَّل ما زال هنا."
+        : `تسجيلك المعدَّل للمقطع ${ordinal} ما زال هنا.`
+      : ordinal === null
+        ? "تسجيلك ما زال هنا."
+        : `تسجيلك للمقطع ${ordinal} ما زال هنا.`,
+  saveFailedRetry: "حاول الحفظ مرة أخرى",
+  saveFailedDiscard(editOnly: boolean, armed: boolean): string {
+    return armed
+      ? editOnly
+        ? "اضغط مرة أخرى للتخلص من هذه التغييرات"
+        : this.takeRecoverDiscardArmed
+      : editOnly
+        ? "التخلص من هذه التغييرات"
+        : this.takeRecoverDiscard;
+  },
+  saveFailedDiscardHint(editOnly: boolean): string {
+    return editOnly
+      ? "اضغط مرة أخرى للتخلص منها."
+      : this.takeRecoverDiscardHint;
+  },
+  saveFailedNeedsUpdate: (editOnly: boolean): string =>
+    editOnly
+      ? "تغييراتك تحتاج إلى الإصدار الجديد من التطبيق."
+      : "هذا التسجيل يحتاج إلى الإصدار الجديد من التطبيق.",
+  saveFailedBookGone: (editOnly: boolean): string =>
+    editOnly
+      ? "هذا الكتاب لم يعد موجودًا. لا يمكن حفظ تغييراتك."
+      : "هذا الكتاب لم يعد موجودًا. لا يمكن حفظ هذا التسجيل.",
+  saveFailedUnknown: (editOnly: boolean): string =>
+    editOnly ? "تعذّر حفظ تغييراتك." : "تعذّر حفظ هذا التسجيل.",
+  saveFailedUpdateLoses: (editOnly: boolean): string =>
+    editOnly
+      ? "هذه النسخة من التطبيق لا تستطيع حفظها. إعادة التشغيل تُضيّعها، لكنها الطريقة الوحيدة للحصول على الإصدار الجديد."
+      : "هذه النسخة من التطبيق لا تستطيع حفظه. إعادة التشغيل تُضيّعه، لكنها الطريقة الوحيدة للحصول على الإصدار الجديد.",
+  saveFailedBookDeleted: (editOnly: boolean): string =>
+    editOnly
+      ? "حُذف هذا الكتاب في نسخة أخرى من التطبيق. التخلص من التغييرات هو المخرج الوحيد."
+      : "حُذف هذا الكتاب في نسخة أخرى من التطبيق. احذف هذا التسجيل للخروج.",
+  saveFailedOnlyCopy: (editOnly: boolean): string =>
+    editOnly
+      ? "هذه الشاشة تحمل النسخة الوحيدة من تغييراتك. لا تغلق التطبيق."
+      : "هذه الشاشة تحمل النسخة الوحيدة من عملك غير المحفوظ. لا تغلق التطبيق.",
+  // A label and a figure, as in English: no counted noun, so no plural forms.
+  saveFailedAttempts: (attempts: number): string => `المحاولات: ${attempts}`,
+  appFailed: "حدث خطأ ما.",
+  appReload: "إعادة تشغيل التطبيق",
+  appReloadTeach: "سيبدأ التطبيق من جديد.",
+  restartArmed: (
+    subject: Parameters<typeof stringsEn.restartArmed>[0],
+    alsoCutAudio: boolean
+  ): string => {
+    switch (subject) {
+      case "recording":
+        return alsoCutAudio
+          ? "اضغط مرة أخرى لإعادة التشغيل وفقدان هذا التسجيل والصوت الذي قصصته"
+          : "اضغط مرة أخرى لإعادة التشغيل وفقدان هذا التسجيل";
+      case "changes":
+        return alsoCutAudio
+          ? "اضغط مرة أخرى لإعادة التشغيل وفقدان هذه التغييرات والصوت الذي قصصته"
+          : "اضغط مرة أخرى لإعادة التشغيل وفقدان هذه التغييرات";
+      case "cutAudio":
+        return "اضغط مرة أخرى لإعادة التشغيل وفقدان الصوت الذي قصصته";
+    }
+  },
+  restartGone: (
+    subject: Parameters<typeof stringsEn.restartGone>[0],
+    alsoCutAudio: boolean
+  ): string => {
+    switch (subject) {
+      case "recording":
+        return alsoCutAudio
+          ? "اضغط مرة أخرى فيزول هذا التسجيل والصوت الذي قصصته."
+          : "اضغط مرة أخرى فيزول هذا التسجيل.";
+      case "changes":
+        return alsoCutAudio
+          ? "اضغط مرة أخرى فتزول هذه التغييرات والصوت الذي قصصته."
+          : "اضغط مرة أخرى فتزول هذه التغييرات.";
+      case "cutAudio":
+        return "اضغط مرة أخرى فيزول الصوت الذي قصصته.";
+    }
+  },
+  appReloading: "جارٍ إعادة التشغيل…",
+  appReloadHeld: "تعذّر حفظ هذه المشكلة بعد. أرسلها، أو حاول مرة أخرى.",
+  encoderFailing:
+    "تعذّر على هذا الهاتف تصغير التسجيلات. لم يُفقد شيء، وقد تساعد إعادة تشغيل التطبيق.",
 
   // Storage and sharing everything
   storageNotPersisted:

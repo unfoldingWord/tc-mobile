@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { ENGLISH_ONLY } from "@/lib/i18n/english-only";
 import {
@@ -16,13 +16,14 @@ import { stringsEn } from "@/lib/strings";
  * right-to-left device pass clears it (DRI, 2026-11-03: "Draft now, gate
  * go-live").
  *
- * The real `ar` table is not complete yet, so each case below swaps in a
- * stub that is: every translatable key, own and defined (the English value
- * stands in; only completeness is under test here, and the draft gates read
- * the real table, not this one).
+ * Most cases swap in a stub that is complete: every translatable key, own and
+ * defined (the English value stands in; only completeness is under test, and
+ * the draft gates read the real table, not this one). That keeps them about
+ * the hold whatever state the real table is in. One case reads the real
+ * table, which part 3 of #1458 completed.
  */
 
-const tags = (held?: ReadonlySet<string>): string[] =>
+const tags = (held?: readonly string[]): string[] =>
   completeLocales(held).map((locale) => locale.tag);
 
 function completeStub(): Record<string, unknown> {
@@ -61,19 +62,25 @@ describe("the go-live hold", () => {
 
   it("lets the same table go live once Arabic is off the hold", () => {
     withCompleteAr(() => {
-      expect(tags(new Set())).toContain("ar");
-      expect(resolveLocale(["ar-EG"], completeLocales(new Set())).tag).toBe(
-        "ar"
-      );
+      expect(tags([])).toContain("ar");
+      expect(resolveLocale(["ar-EG"], completeLocales([])).tag).toBe("ar");
     });
+  });
+
+  it("keeps the real, complete Arabic table off (#1458 part 3)", () => {
+    // Premise: the real table is complete, so only the hold keeps it off.
+    // Lifting the hold is what makes it go live; that change is the DRI's.
+    expect(tags([])).toContain("ar");
+    expect(tags()).not.toContain("ar");
+    expect(resolveLocale(["ar-EG"], completeLocales()).tag).toBe("en");
   });
 
   it("changes no other locale", () => {
     // Premise: there are other complete locales for the hold to leave alone.
     expect(tags().length).toBeGreaterThan(2);
-    expect(tags()).toEqual(tags(new Set()).filter((tag) => tag !== "ar"));
+    expect(tags()).toEqual(tags([]).filter((tag) => tag !== "ar"));
     withCompleteAr(() =>
-      expect(tags()).toEqual(tags(new Set()).filter((tag) => tag !== "ar"))
+      expect(tags()).toEqual(tags([]).filter((tag) => tag !== "ar"))
     );
   });
 
@@ -102,13 +109,28 @@ describe("the go-live hold", () => {
       expect(refused).toHaveLength(attempts.length);
       expect(Object.isFrozen(GO_LIVE_HELD)).toBe(true);
     } finally {
-      // Undo a mutation that got through, so a red run here does not hold
-      // Spanish for the cases after it.
-      if (GO_LIVE_HELD instanceof Set) GO_LIVE_HELD.delete("es");
+      // Undo a push that got through, so a red run here does not hold Spanish
+      // for the cases after it. The hold is an array; only an unfrozen one
+      // can have taken the push, and only an unfrozen one can be spliced.
+      if (!Object.isFrozen(GO_LIVE_HELD)) {
+        const held = GO_LIVE_HELD as string[];
+        for (let at = held.indexOf("es"); at !== -1; at = held.indexOf("es"))
+          held.splice(at, 1);
+      }
     }
   });
 
   it("never holds English, the fallback", () => {
-    expect(tags(new Set(["en"]))).toContain("en");
+    expect(tags(["en"])).toContain("en");
+  });
+
+  it("takes the hold as a list, never a bare string (#1874, George r1 Low 1)", () => {
+    // A string is iterable, so a parameter typed `Iterable<string>` took "ar"
+    // and held "a" and "r". `npm run typecheck` reads these two pins; at run
+    // time they do nothing.
+    expectTypeOf(completeLocales)
+      .parameter(0)
+      .toEqualTypeOf<readonly string[] | undefined>();
+    expectTypeOf<"ar">().not.toExtend<readonly string[] | undefined>();
   });
 });

@@ -42,8 +42,8 @@ vi.mock("@/lib/i18n/locales", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/i18n/locales")>();
   return {
     ...original,
-    completeLocales: (held?: ReadonlySet<string>) =>
-      original.completeLocales(held ?? (hold.lifted ? new Set() : undefined)),
+    completeLocales: (held?: readonly string[]) =>
+      original.completeLocales(held ?? (hold.lifted ? [] : undefined)),
   };
 });
 
