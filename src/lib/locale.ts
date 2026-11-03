@@ -78,7 +78,8 @@ export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
  *
  * An entry here is a language the resolver can pick, not a translation that
  * exists: a locale whose table is incomplete is skipped at runtime
- * (`completeLocales` in `lib/i18n/locales.ts`, ADR 0015 (g)).
+ * (`completeLocales` in `lib/i18n/locales.ts`, ADR 0015 (g)), and so is one
+ * on that file's go-live hold (`GO_LIVE_HELD`), whatever its table holds.
  */
 export const LOCALES: readonly Locale[] = [
   { tag: "ar", dir: "rtl" },
