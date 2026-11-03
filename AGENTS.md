@@ -641,16 +641,18 @@ is stored as `@pivot` — which would silently ignore _any_ future export tagged
    An orphaned custom property or component token is invisible to both; only
    the tests that read the stylesheets (see "Architecture — onion layers")
    can catch one, and only for what they pin.
-3. **A module imported as a whole namespace has no checkable exports.** An
-   `import * as ns` or an `await import()` kept as a value, in `src/` as well
-   as in tests, makes knip treat every export of that module as used, so a
-   dead export there passes. `tests/pending-interleave.test.ts` was the
-   incident that found it (#1863): an export used only inside its own file went
-   unreported. Prefer named imports for a module whose exports knip should
-   check. Where the caller needs the module value itself, keep the namespace
-   object and treat that module's exports as unchecked: a green knip says
-   nothing about them. Named imports do not close blind spot 1 either; the
-   module still looks used.
+3. **A module whose namespace object is used as a whole has no checkable
+   exports.** A namespace object passed as a value, spread, or kept from an
+   `await import()`, in `src/` as well as in tests, makes knip treat every
+   export of that module as used, so a dead export there passes. Property
+   access (`ns.name`) does not: knip still reports the unused export.
+   `tests/pending-interleave.test.ts` was the incident that found it (#1863):
+   an export used only inside its own file went unreported. Prefer named
+   imports, or property access, for a module whose exports knip should check.
+   Where the caller needs the module value itself, keep the namespace object
+   and treat that module's exports as unchecked: a green knip says nothing
+   about them. Named imports do not close blind spot 1 either; the module
+   still looks used.
 
 What it does catch, on its first run: an unused `zustand`, an unused
 `lucide-react` that this document itself claimed was the icon library, and three
