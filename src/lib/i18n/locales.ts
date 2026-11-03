@@ -102,11 +102,13 @@ export const GO_LIVE_HELD: readonly string[] = Object.freeze(["ar"]);
  * with them. Called at each resolution, so it is never a stale snapshot.
  *
  * `held` is a parameter so a test can lift the hold; callers pass nothing.
- * It is copied on the way in, so a later change to it changes nothing here.
- * English is never held: it is the fallback.
+ * It is a list, not any iterable: a string is iterable, and "ar" would hold
+ * "a" and "r" (#1874, George r1 Low 1). It is copied on the way in, so a
+ * later change to it changes nothing here. English is never held: it is the
+ * fallback.
  */
 export function completeLocales(
-  held: Iterable<string> = GO_LIVE_HELD
+  held: readonly string[] = GO_LIVE_HELD
 ): Locale[] {
   const gate = new Set(held);
   const keys = Object.keys(stringsEn).filter((key) => !ENGLISH_ONLY.has(key));

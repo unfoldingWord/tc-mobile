@@ -47,9 +47,9 @@ Vietnamese",
 and so is Malay (`ms`), the DRI's pick on 2026-11-03 ("Indonesian-adjacent:
 ms"); the other five level-3 languages are not in the app.
 
-Arabic (`ar`) is an AI draft in progress, awaiting native-speaker review:
-parts 1 and 2 of its table are in, and the save-and-recovery keys are still on
-the pending list (part 3). It is held off even once complete (`GO_LIVE_HELD` in
+Arabic (`ar`) is an AI draft, awaiting native-speaker review: its table is
+complete (parts 1 to 3 of #1458), and nothing of it is on the pending list. It
+is held off anyway (`GO_LIVE_HELD` in
 `src/lib/i18n/locales.ts`) until the right-to-left device pass clears it, the
 DRI's pick on #1458 of 2026-11-03: "Draft now, gate go-live". Its count
 wording follows one plural model (`counted` in `src/lib/i18n/ar.ts`), and a
