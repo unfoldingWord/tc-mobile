@@ -471,9 +471,13 @@ describe("saveReplayedTake: moved and unexplained drop the take, and never save 
     } as unknown as TakeDisposition;
     await (await getDb()).put("takeDispositions", unknownKind);
     const kindNow = async () =>
-      ((await (await getDb()).get("takeDispositions", c.clipId)) as unknown as {
-        kind: string;
-      }).kind;
+      (
+        (await (
+          await getDb()
+        ).get("takeDispositions", c.clipId)) as unknown as {
+          kind: string;
+        }
+      ).kind;
 
     await settlePendingTake(segmentId, c.clipId, "give-up");
     expect(await kindNow()).toBe("toString");
