@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { GO_LIVE_HELD } from "@/lib/i18n/locales";
 import { PENDING } from "@/lib/i18n/pending";
 
 import { stripComments } from "./support";
@@ -12,8 +13,8 @@ import { stripComments } from "./support";
  * held that sentence: `zh-Hans` became complete (#1667) and was never added.
  * This reads the sweep's `LOCALES` list from the spec's text, comments
  * stripped, and compares it with `en` plus every language whose pending list
- * is empty in `src/lib/i18n/pending.ts`, so the next language cannot be
- * skipped the same way.
+ * is empty in `src/lib/i18n/pending.ts` and that is not on the go-live hold
+ * (`GO_LIVE_HELD`), so the next language cannot be skipped the same way.
  *
  * It reads source; it does not run the sweep, and says nothing about whether
  * any screen fits.
@@ -30,15 +31,21 @@ function sweptLocales(specText: string): string[] {
   return tags;
 }
 
-/** `en` plus every language that has no key still pending. */
+/**
+ * `en` plus every language that has no key still pending and is not on the
+ * go-live hold. A held language with an empty list is complete but not live:
+ * the app never shows it, so the sweep has no screen of it to visit (#1458).
+ */
 function completeLocales(
-  pending: Readonly<Record<string, readonly string[] | "all">>
+  pending: Readonly<Record<string, readonly string[] | "all">>,
+  held: readonly string[] = GO_LIVE_HELD
 ): string[] {
   return [
     "en",
     ...Object.entries(pending)
       .filter(([, keys]) => Array.isArray(keys) && keys.length === 0)
-      .map(([tag]) => tag),
+      .map(([tag]) => tag)
+      .filter((tag) => !held.includes(tag)),
   ];
 }
 
@@ -75,6 +82,15 @@ describe("the locale-fit sweep's language list", () => {
   it("does not count a language that is still pending", () => {
     expect(completeLocales(PENDING)).not.toContain("ar");
     expect(completeLocales({ ar: "all", de: ["k"] })).toEqual(["en"]);
+  });
+
+  it("does not count a held language whose pending list is empty", () => {
+    expect(GO_LIVE_HELD).toContain("ar");
+    expect(completeLocales({ ar: [], es: [] })).toEqual(["en", "es"]);
+  });
+
+  it("counts the same language once the hold is lifted", () => {
+    expect(completeLocales({ ar: [], es: [] }, [])).toEqual(["en", "ar", "es"]);
   });
 
   it("ignores a tag that only a comment names", () => {

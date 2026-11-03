@@ -77,6 +77,37 @@ describe("the go-live hold", () => {
     );
   });
 
+  it("cannot be added to by a caller (#1870, George r1 Low 1)", () => {
+    // Every way a caller could reach for: the Set and Array methods, called
+    // on the value and through the prototypes. A frozen hold refuses each
+    // one with a TypeError; a live Set would take the first and hold Spanish
+    // for every caller of the default argument.
+    const attempts: ReadonlyArray<() => unknown> = [
+      () => (GO_LIVE_HELD as unknown as Set<string>).add("es"),
+      () => Set.prototype.add.call(GO_LIVE_HELD, "es"),
+      () => (GO_LIVE_HELD as unknown as string[]).push("es"),
+      () => Array.prototype.push.call(GO_LIVE_HELD, "es"),
+    ];
+    const refused = attempts.filter((attempt) => {
+      try {
+        attempt();
+        return false;
+      } catch (cause) {
+        return cause instanceof TypeError;
+      }
+    });
+    try {
+      expect([...GO_LIVE_HELD]).toEqual(["ar"]);
+      expect(tags()).toContain("es");
+      expect(refused).toHaveLength(attempts.length);
+      expect(Object.isFrozen(GO_LIVE_HELD)).toBe(true);
+    } finally {
+      // Undo a mutation that got through, so a red run here does not hold
+      // Spanish for the cases after it.
+      if (GO_LIVE_HELD instanceof Set) GO_LIVE_HELD.delete("es");
+    }
+  });
+
   it("never holds English, the fallback", () => {
     expect(tags(new Set(["en"]))).toContain("en");
   });

@@ -1,5 +1,32 @@
 import { plural } from "@/lib/plural";
-import type { Strings } from "@/lib/strings";
+import { stringsEn, type Strings } from "@/lib/strings";
+import { filenameSafe } from "@/lib/utils";
+
+/** A counted noun's three forms after a figure: singular, few, many. */
+type Noun = readonly [singular: string, few: string, many: string];
+
+/**
+ * The one plural model (#1870, George r1 Low 2). After a figure the noun is
+ * plural for few (3 to 10) and the singular with the written accusative for
+ * many (11 to 99). It is the bare singular otherwise: after 100 and 1000 it
+ * is genitive, which is not written, and after 0, 1 and 2 it is a compromise.
+ * An AI reading of the grammar: a native-speaker review of it is a condition
+ * of lifting the hold. `tests/ar-plural-model.test.ts` holds every count to it.
+ */
+const counted = (noun: Noun, frame: (word: string) => string) => ({
+  zero: frame(noun[0]),
+  one: frame(noun[0]),
+  two: frame(noun[0]),
+  few: frame(noun[1]),
+  many: frame(noun[2]),
+  other: frame(noun[0]),
+});
+
+const BOOK: Noun = ["كتاب", "كتب", "كتابًا"];
+const CHAPTER: Noun = ["فصل", "فصول", "فصلًا"];
+const SEGMENT: Noun = ["مقطع", "مقاطع", "مقطعًا"];
+const LANGUAGE: Noun = ["لغة", "لغات", "لغةً"];
+const PROBLEM: Noun = ["مشكلة", "مشاكل", "مشكلةً"];
 
 /**
  * The ar table: Arabic (Modern Standard Arabic), drafted by AI under the
@@ -7,10 +34,9 @@ import type { Strings } from "@/lib/strings";
  * and following `docs/i18n/glossary.md`. AI DRAFT, AWAITING NATIVE-SPEAKER
  * REVIEW: no Arabic reader has checked the meaning.
  *
- * PART 1 OF 2, AND HELD: the Books, naming, Segments and recorder-sheet keys;
- * the rest read English and are named in `pending.ts`. Complete or not,
- * Arabic stays off while it is on `GO_LIVE_HELD` (`locales.ts`). Nothing here
- * has been checked right to left on a device.
+ * HELD: complete or not, Arabic stays off while it is on `GO_LIVE_HELD`
+ * (`locales.ts`); any key not drafted yet reads English and is named in
+ * `pending.ts`. Nothing here has been checked right to left on a device.
  *
  * Register: buttons and captions are the verbal noun ("تشغيل", "حذف"), but
  * Record and Stop recording take the glossary's imperative (rows 5, 6). The
@@ -18,9 +44,8 @@ import type { Strings } from "@/lib/strings";
  * adjective it is "مكتمل", since "تم" is a verb. The captions Reset and About
  * shrink to "إعادة تعيين" and "حول" (rows 11, 27; section 5). Digits are 0 to
  * 9 (R19). Every count entry carries Arabic's six plural categories, each
- * with `{n}`; with a figure the noun is plural for few (3 to 10) and singular
- * otherwise, a question for a reader. `trail` keeps the English `>`; how it
- * reads right to left is the layout's question (glossary section 6).
+ * with `{n}`, on the model `counted` states. `trail` keeps the English `>`;
+ * how it reads right to left is the layout's question (glossary section 6).
  */
 export const table: Partial<Strings> & ThisType<Strings> = {
   trail: (...parts: readonly string[]): string => parts.join(" > "),
@@ -169,7 +194,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
       one: "متبقٍ {n} دقيقة",
       two: "متبقٍ {n} دقيقة",
       few: "متبقٍ {n} دقائق",
-      many: "متبقٍ {n} دقيقة",
+      many: "متبقٍ {n} دقيقةً",
       other: "متبقٍ {n} دقيقة",
     }),
   loadFailedTitle: "تعذّر فتح هذا التسجيل",
@@ -225,7 +250,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
       one: "{n} ثانية",
       two: "{n} ثانية",
       few: "{n} ثوانٍ",
-      many: "{n} ثانية",
+      many: "{n} ثانيةً",
       other: "{n} ثانية",
     }),
   editFailed: "تعذّر تطبيق هذا التعديل. جرّب تحديدًا أقصر.",
@@ -283,4 +308,248 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   deleteSegmentFailed: "تعذّر حذف هذا المقطع. حاول مرة أخرى.",
   chapterMenuOpen: "إجراءات أخرى لهذا الفصل",
   chapterMenuTitle: "الفصل",
+
+  // Sharing
+  shareChapter: "مشاركة الفصل",
+  shareChapterUnconfirmed:
+    "مشاركة الفصل. لم تُؤكَّد المحاولة الأخيرة: اضغط للمحاولة مرة أخرى.",
+  shareSend: "المشاركة الآن",
+  sharePreparing: "جارٍ تجهيز الفصل للمشاركة.",
+  shareHandingOver: "جارٍ فتح قائمة المشاركة في الهاتف.",
+  sharePreparingLabel: "جارٍ التجهيز للمشاركة",
+  // No counted noun, and a verb that comes first does not agree in number.
+  shareItemsGoOut: (out: number, all: number): string =>
+    plural(
+      out,
+      counted(["", "", ""], () => `يُرسَل {n} من ${all}`)
+    ),
+  shareSent: "سُلِّم إلى قائمة المشاركة في الهاتف.",
+  shareDismissed: "أُغلقت قائمة المشاركة قبل إرسال أي شيء.",
+  shareUnproven:
+    "أُغلقت قائمة المشاركة. لا يستطيع هذا الهاتف التأكد من أنها أُرسلت.",
+  shareNothing: "سجّل مقطعًا قبل مشاركة هذا الفصل.",
+  shareFailed: "تعذّرت مشاركة هذا الفصل. حاول مرة أخرى.",
+  shareMissing: (n: number): string =>
+    plural(
+      n,
+      counted(SEGMENT, (x) => `تعذّر تضمين {n} ${x}.`)
+    ),
+  shareFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.shareFilename>
+  ): string {
+    return stringsEn.shareFilename.apply(this, args);
+  },
+  bookMenuOpen: (book: string): string => `إجراءات أخرى لكتاب ${book}`,
+  bookMenuTitle: "الكتاب",
+  shareBook: "مشاركة الكتاب",
+  shareBookUnconfirmed:
+    "مشاركة الكتاب. لم تُؤكَّد المحاولة الأخيرة: اضغط للمحاولة مرة أخرى.",
+  shareBookPreparing: "جارٍ تجهيز الكتاب للمشاركة.",
+  exportProject: "تصدير المشروع",
+  tileExport: "تصدير",
+  exportProjectPreparing: "جارٍ تجهيز المشروع للتصدير.",
+  exportProjectWebPointer:
+    "التصدير يعمل في التطبيق المثبَّت. افتح التطبيق لتصدير هذا المشروع.",
+  languageAskTitle: "لغة هذا الكتاب",
+  languageAskLead:
+    "بأي لغة هذه التسجيلات؟ تختارها مرة واحدة، ويستخدمها كل تصدير لهذا الكتاب.",
+  languageSearch: "البحث في اللغات",
+  languageSearchHint: "الاسم أو الرمز",
+  languageLoading: "جارٍ تحميل اللغات.",
+  languageLoadFailed: "تعذّر تحميل اللغات.",
+  languageNoMatch: "لا توجد لغة مطابقة. جرّب اسمًا أو رمزًا آخر.",
+  languageNarrow: "اكتب المزيد لرؤية لغات أخرى.",
+  languageCount: (n: number): string =>
+    plural(
+      n,
+      counted(LANGUAGE, (x) => `تطابق {n} ${x}.`)
+    ),
+  languageCountMore: (n: number, shown: number): string =>
+    plural(
+      n,
+      counted(
+        LANGUAGE,
+        (x) =>
+          `تطابق {n} ${x}. يظهر أول ${shown} منها. اكتب المزيد لتضييق البحث.`
+      )
+    ),
+  languageSaving: "جارٍ حفظ اللغة.",
+  languageAskCancel: "إلغاء",
+  licenceAskTitle: "ترخيص هذا الكتاب",
+  licenceAskLead: "من يمكنه مشاركة هذه التسجيلات؟ تختار مرة واحدة لهذا الكتاب.",
+  licenceAllRightsReserved: "جميع الحقوق محفوظة",
+  licenceSaving: "جارٍ حفظ الترخيص.",
+  licenceAskContinue: "مشاركة",
+  licenceAskCancel: "إلغاء",
+  licenceTileLabel: "تغيير الترخيص",
+  tileLicence: "الترخيص",
+  tileTemplates: "القوالب",
+  licenceAskSave: "حفظ",
+  licenceAskSaveLead: "من يمكنه مشاركة هذه التسجيلات؟ يمكنك تغيير هذا لاحقًا.",
+  licenceNameCcBySa: "المشاع الإبداعي: نسب المصنَّف - الترخيص بالمثل 4.0",
+  licenceNameCcBy: "المشاع الإبداعي: نسب المصنَّف 4.0",
+  licenceNameCc0: "المشاع الإبداعي صفر 1.0، ملكية عامة",
+  licenceChoiceName: (name: string, label: string): string =>
+    `${name} (${label})`,
+  exportProjectSuffix: "مشروع",
+  exportProjectFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.exportProjectFilename>
+  ): string {
+    return stringsEn.exportProjectFilename.apply(this, args);
+  },
+  shareBookNothing: "سجّل مقطعًا قبل مشاركة هذا الكتاب.",
+  shareBookFailed: "تعذّرت مشاركة هذا الكتاب. حاول مرة أخرى.",
+  shareBookFailedWeb:
+    "تعذّرت مشاركة هذا الكتاب. مشاركة الكتاب تعمل في تطبيق tC Mobile.",
+  shareBookMissing: (n: number): string =>
+    plural(
+      n,
+      counted(CHAPTER, (x) => `تعذّر تضمين {n} ${x}.`)
+    ),
+  shareBookPartial(n: number): string {
+    return this.shareMissing(n);
+  },
+  shareBookMissingAndPartial(
+    chapters: number,
+    segments: number,
+    partialChapters: number
+  ): string {
+    // "In N of the included chapters": a partitive, so the chapter count
+    // takes no counted noun and needs no plural forms of its own.
+    const scope = Math.max(partialChapters, 1);
+    const where =
+      scope === 1 ? "في فصل مُدرَج" : `في ${scope} من الفصول المُدرَجة`;
+    const partial = plural(
+      segments,
+      counted(SEGMENT, (x) => `تعذّر تضمين {n} ${x} ${where}.`)
+    );
+    return this.sentences(this.shareBookMissing(chapters), partial);
+  },
+  shareEncoderStopped:
+    "تعذّر تجهيز هذا للمشاركة. حاول مرة أخرى، وإن تكرر ذلك فأعد تشغيل التطبيق.",
+  shareBookFilename(
+    this: Strings,
+    ...args: Parameters<typeof stringsEn.shareBookFilename>
+  ): string {
+    return stringsEn.shareBookFilename.apply(this, args);
+  },
+  shareNameFallback: "كتاب",
+
+  // Storage and sharing everything
+  storageNotPersisted:
+    "قد يحذف هذا الهاتف ما تسجّله هنا إذا قلّت المساحة. شارك عملك حين تستطيع.",
+  storageLow:
+    "المساحة في هذا الهاتف قليلة. حدّد المقاطع كمكتملة لتوفير مساحة، أو شارك عملك ثم احذفه.",
+  storageCritical:
+    "المساحة في هذا الهاتف توشك أن تنفد، وقد لا تُحفظ التسجيلات الجديدة. حدّد المقاطع المكتملة، أو شارك عملك ثم احذفه.",
+  storageShareSoon: "شارك عملك قريبًا",
+  shareAll: "مشاركة عملك",
+  shareAllUnconfirmed:
+    "مشاركة عملك. لم تُؤكَّد المحاولة الأخيرة: اضغط للمحاولة مرة أخرى.",
+  shareAllPreparing: "جارٍ تجهيز عملك للمشاركة.",
+  shareAllNothing: "سجّل مقطعًا قبل مشاركة عملك.",
+  shareAllFailed: "تعذّرت مشاركة عملك. حاول مرة أخرى.",
+  shareAllFailedWeb: "تعذّرت مشاركة عملك. استخدم تطبيق tC Mobile لمشاركته.",
+  shareAllStorage:
+    "لا توجد في هذا الهاتف مساحة لتجهيز عملك. حدّد المقاطع المكتملة، ثم حاول مرة أخرى.",
+  shareAllMissing: (n: number): string =>
+    plural(
+      n,
+      counted(BOOK, (x) => `تعذّر تضمين {n} ${x}.`)
+    ),
+  shareAllIncomplete: (n: number): string =>
+    plural(
+      n,
+      counted(CHAPTER, (x) => `تعذّر تضمين {n} ${x} بالكامل.`)
+    ),
+  shareAllFilename: "عملي.zip",
+  shareAllFolder(book: string): string {
+    return filenameSafe(book) || this.shareNameFallback;
+  },
+  dbBlocked: "هناك نسخة أخرى من هذا التطبيق مفتوحة.",
+  dbBlockedTeach: "أغلق النسخة الأخرى للمتابعة.",
+  dbOutOfDate: "هذه النسخة قديمة.",
+  dbOutOfDateTeach: "أعد التشغيل لاستخدام الإصدار الجديد.",
+
+  // About and licences
+  aboutOpen: "حول التطبيق والتراخيص",
+  aboutTitle: "حول التطبيق والتراخيص",
+  aboutBlurb: "تطبيق مجاني ومفتوح المصدر. كل ما تسجّله يبقى على هذا الهاتف.",
+  aboutAppLicense: "هذا التطبيق متاح بموجب ترخيص MIT.",
+  aboutSourceOffer: "الشيفرة المصدرية لهذا التطبيق عامة. مصدر هذا الإصدار:",
+  aboutVisitAppSource: "فتح مصدر هذا الإصدار على GitHub",
+  aboutPrivacy: "كيف يتعامل هذا التطبيق مع بياناتك:",
+  aboutPrivacyLink: "سياسة الخصوصية",
+  aboutVisitPrivacy: "فتح سياسة الخصوصية",
+  aboutThirdParty: "مكوّنات مفتوحة المصدر",
+  aboutTexts: "نصوص التراخيص",
+  aboutQrCaption: "امسح الرمز للحصول على التطبيق",
+  aboutContent: "المحتوى المرفق",
+  aboutLanguageCodes: "رموز اللغات: ISO 639-3، من iso639-3.sil.org.",
+  aboutReadText: (name: string): string => `قراءة ${name}`,
+  aboutBack: "رجوع إلى القائمة",
+  aboutTextLoading: "جارٍ تحميل نص الترخيص.",
+  aboutTextFailed: "تعذّر تحميل نص الترخيص.",
+  aboutVisitSource: (name: string): string => `فتح صفحة مشروع ${name}`,
+  aboutVisitKeptSource: (name: string): string =>
+    `فتح مصدر ${name} المحفوظ مع هذا الإصدار`,
+  aboutVisitLicense: (name: string): string => `فتح ترخيص ${name}`,
+
+  // Problem report
+  failuresMarker: (n: number): string =>
+    plural(
+      n,
+      counted(PROBLEM, (x) => `سُجّلت {n} ${x}`)
+    ),
+  menuOpenWithFailures: (n: number): string =>
+    plural(
+      n,
+      counted(PROBLEM, (x) => `فتح القائمة. سُجّلت {n} ${x}.`)
+    ),
+  failuresTeach: "أرسل هذا إلى مساعدك إذا كان هناك شيء لا يعمل.",
+  shareFailureLog: "إرسال تقرير المشاكل",
+  shareFailureLogUnconfirmed:
+    "إرسال تقرير المشاكل. لم تُؤكَّد المحاولة الأخيرة: اضغط للمحاولة مرة أخرى.",
+  shareFailureLogPreparing: "جارٍ تجهيز تقرير المشاكل.",
+  shareFailureLogNothing: "لا يوجد ما يُرسَل الآن.",
+  shareFailureLogFailed: "تعذّر إرسال تقرير المشاكل. حاول مرة أخرى.",
+  shareFailureLogRestart:
+    "لم يعد ممكنًا استخدام هذه النسخة. أعد تشغيل التطبيق لاستخدام الإصدار الجديد.",
+  clearFailureLog: "مسح تقرير المشاكل",
+  clearFailureLogConfirmTitle: "مسح تقرير المشاكل؟",
+  clearFailureLogConfirm: "مسح",
+  loadFailed: "تعذّر التحميل. حاول مرة أخرى.",
+  saveFailed: "تعذّر الحفظ. حاول مرة أخرى.",
+  noRoom: "لم تبقَ مساحة في هذا الهاتف.",
+  bookNameTaken: "يوجد كتاب آخر بهذا الاسم. اكتب اسمًا مختلفًا.",
+  stopToEdit: "أوقف التسجيل للتعديل.",
+  stopToErase: "أوقف التسجيل لإعادة التعيين.",
+
+  // Cover colours and chapter playback
+  coverColourLabel: "لون الغلاف",
+  coverColourAmber: "كهرماني",
+  coverColourTeal: "أزرق مخضر",
+  coverColourPlum: "برقوقي",
+  coverColourForest: "أخضر غامق",
+  coverColourBrick: "طوبي",
+  coverColourSlate: "أردوازي",
+  coverColourRose: "وردي",
+  coverColourOlive: "زيتوني",
+  coverColourRust: "صدئي",
+  coverColourCocoa: "كاكاو",
+  coverSwatchLabel: (name: string, selected: boolean): string =>
+    selected ? `${name}، محدَّد` : name,
+  playChapter: (heading: string): string => `تشغيل ${heading}`,
+  pauseChapter: (heading: string): string => `إيقاف ${heading} مؤقتًا`,
+  resumeChapter: (heading: string, percent: number): string =>
+    `استئناف ${heading}، متوقف مؤقتًا عند ${percent} بالمئة`,
+  chapterPlayFailed: (heading: string): string =>
+    `لم يُشغَّل ${heading}. اضغط للمحاولة مرة أخرى`,
+  chapterNothingToPlay: (heading: string): string =>
+    `لا يوجد في ${heading} تسجيل لتشغيله`,
+  chapterPlayStarted: (heading: string): string => `جارٍ تشغيل ${heading}`,
+  chapterPlayPaused: (heading: string): string => `${heading} متوقف مؤقتًا`,
+  chapterPlayFinished: (heading: string): string => `انتهى ${heading}`,
 };
