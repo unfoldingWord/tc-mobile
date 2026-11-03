@@ -10,7 +10,7 @@ import { strings } from "@/lib/strings";
 import { one, render } from "./render";
 
 /**
- * The O4 share circle as the panel actually emits it (#947, states 15/G7):
+ * The share circle as the panel actually emits it (#947, states 15/G7):
  * the numbered chips (D21), the 140 core inside the 176 frame, the filling
  * ring, and the core's progress bar (D22). `shareView`
  * (tests/share-view.test.ts) decides WHAT to draw; this proves the panel

@@ -18,7 +18,7 @@ import { one, render } from "./render";
 import { declarationValue } from "./support";
 
 /**
- * #941: the O4 shared control wrappers (square 56 r14, row
+ * #941: the shared control wrappers (square 56 r14, row
  * transport 72, pill 60 r30), and the one addition to `Control` they need —
  * a visible caption.
  *

@@ -17,7 +17,7 @@ import { restingErase } from "./support";
 
 /**
  * #949's first slice: the chapter menu (G2), the segment menu (07) and
- * marking done (G8) on the O4 tile grid.
+ * marking done (G8) on the tile grid.
  *
  * Mounted through the whole `SegmentsScreen`, so the row menu gets the
  * breadcrumb parts the screen hands it, and both menus are opened the way a

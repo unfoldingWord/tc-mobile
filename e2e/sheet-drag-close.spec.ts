@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "./support/test";
 
 /**
- * Drag down to close, and the one ✕, on a new-look (O4) half-screen sheet at
+ * Drag down to close, and the one ✕, on a half-screen sheet at
  * phone width, against the shipped `dist/` build (#1268).
  *
  * The requirements owner's decision on #1268: "1. Yes, it should work as

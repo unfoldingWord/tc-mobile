@@ -16,8 +16,8 @@ import { strings } from "@/lib/strings";
 import { one, render } from "./render";
 
 /**
- * The library scope's words and O4 look (#1045): what Share your work says
- * under the share overlay's glyph, phase by phase, and what the O4 circle
+ * The library scope's words and look (#1045): what Share your work says
+ * under the share overlay's glyph, phase by phase, and what the circle
  * draws for it. Pure functions, plus one props-to-markup render of the panel
  * through `tests/render.ts`. The overlay's wiring into the Books screen is
  * `tests/library-share-progress.test.ts`'s.
@@ -176,7 +176,7 @@ describe("libraryShareErrorText", () => {
   });
 });
 
-/** A library prepare as the O4 view receives it: busy, with no count. */
+/** A library prepare as the view receives it: busy, with no count. */
 const PACKING: ShareProgress = {
   phase: "busy",
   work: "prepare",

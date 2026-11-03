@@ -45,11 +45,11 @@ import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 /**
  * #1044: the export names the items it counted (`keys`), and that list rides
  * from the export's step reports through the progress machine and the carry
- * to the O4 chips. An export leaves some items out BEFORE it fixes its count
+ * to the chips. An export leaves some items out BEFORE it fixes its count
  * (a segment with no resolvable audio, a dangling chapter id), so the chips
  * cannot map count positions onto the screen's items by position; these
  * cases run the real export, the real reporter and the real reducer, and read
- * the chips the O4 view draws from the result.
+ * the chips the view draws from the result.
  */
 
 beforeEach(clearAllStores);

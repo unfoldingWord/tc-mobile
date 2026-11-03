@@ -5,7 +5,7 @@ import { expect, test, type Page } from "./support/test";
 import { seedToRecorder } from "./support/seed";
 
 /**
- * The O4 recorder menu stays under half the screen, so the waveform above it
+ * The recorder menu stays under half the screen, so the waveform above it
  * stays in view (#927, the requirements owner's ask; the cap is
  * `3-components/menus.css`'s `.menu-panel:has(.recorder-menu-tile)` rule from #994).
  *

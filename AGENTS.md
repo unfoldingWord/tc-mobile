@@ -94,6 +94,10 @@ Styling is layered separately, in `src/app/styles/`:
 3-components.css   component tokens and parts    (colour via layer 2 roles; structural primitives direct)
 ```
 
+The component layer also has a per-area folder, `src/app/styles/3-components/`
+(one stylesheet per screen area, wired in by its `index.css`), beside
+`3-components.css`, which stays where it is.
+
 `@layer primitives, semantic, components, utilities` fixes the cascade order
 once, so Tailwind utilities always win and a one-off utility stays a safe
 escape hatch rather than a specificity fight. Using a _colour_ primitive

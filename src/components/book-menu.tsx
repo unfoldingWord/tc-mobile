@@ -14,8 +14,8 @@ import type { CoverColourKey } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
 
 /**
- * The O4 book menu's own pieces (#949: state 04; #937 D7), mounted by
- * `books-screen.tsx` in its O4 branch. The sheet itself is still that
+ * The book menu's own pieces (#949: state 04; #937 D7), mounted by
+ * `books-screen.tsx`. The sheet itself is still that
  * screen's `<Menu>`, so the focus trap, Escape, scrim and Back are the ones
  * already reviewed; these are presentational and every outcome arrives by
  * prop.

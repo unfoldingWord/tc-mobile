@@ -1,4 +1,4 @@
-/* O4 — Segments (05, 06, G10). Owner: #944. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
+/* Segments (05, 06, G10). Owner: #944. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
 
    Values are the design reference's (docs/design/o4-design-system.md, §2 and
    §3). Type sizes and radii are literal px until #939 lands its primitives;
@@ -134,7 +134,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Play keeps `--s-voice` and record `--s-live` from layer 3; O4 only makes
+  /* Play keeps `--s-voice` and record `--s-live` from layer 3; the design round only makes
      them 72 circles. */
   .row .control--play,
   .row .control--record,

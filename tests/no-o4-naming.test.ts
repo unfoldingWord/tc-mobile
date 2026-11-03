@@ -7,12 +7,16 @@ import { stripCodeComments } from "./strip-code-comments";
 import { stripCssComments } from "./support";
 
 /**
- * The `o4` naming is retired (#954, R8): O4 is the only look, so a class,
- * a file or a component that still carries the prefix names a variant that no
- * longer exists. This reads `src/`, `tests/` and `e2e/` with comments
- * stripped (a comment that cites the O4 design record is allowed; a name
- * that code or a selector uses is not) and lists every occurrence of a
- * banned form.
+ * The `o4` naming is retired (#954, R8): O4 is the only look, so a name that
+ * still carries the prefix names a variant that no longer exists. This reads
+ * every file under `src/`, `tests/` and `e2e/` and checks two things. No
+ * file's base name contains `o4` (any case). And no code line matches one of
+ * the case-sensitive patterns in `BANNED` below: the class, module, component
+ * and custom-property forms already renamed, an `o4` prop or local, and any
+ * `o4-` followed by a letter. `.ts`, `.tsx`, `.mts` and `.css` files are read
+ * with comments stripped, so a comment may cite the O4 design record; any
+ * other file type is read whole. A bare `O4` word, in code or in a string, is
+ * not matched by any pattern here.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 

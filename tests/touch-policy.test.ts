@@ -93,7 +93,7 @@ describe("the rename field keeps its 16px floor (#164 R-11)", () => {
 describe("the chapter screen's crumb row is a control-sized target (#164 R-10)", () => {
   // The `.breadcrumb` button this gate was written for went with the old
   // look (#954); the row that took its place in the Segments header is
-  // `.crumbs-bar` (#1269), in the O4 menus stylesheet.
+  // `.crumbs-bar` (#1269), in the menus stylesheet.
   const body = cssRule(menusCss, ".crumbs-bar");
 
   // Reads the TOKEN, not a raw pixel value: the 44px floor is stated once in

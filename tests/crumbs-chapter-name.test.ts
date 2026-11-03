@@ -8,7 +8,7 @@ import { render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
 /**
- * #1230: the O4 chapter-screen and recorder headers show the chapter's NAME
+ * #1230: the chapter-screen and recorder headers show the chapter's NAME
  * in the chapter chip, elided with "…" when it is too long for the chip.
  * `tests/header-crumbs.test.ts` proves the two headers pass the resolved
  * name; this file proves the chip renders whatever text it is given, and pins

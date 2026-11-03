@@ -131,7 +131,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
         /name-input/
       );
     }
-    // The two O4 roots: every rule for the selector in the whole area file,
+    // The two roots: every rule for the selector in the whole area file,
     // every nested block included, not only the layer's own.
     for (const [area, selector] of [
       ["menus", CRUMBS_BAR],

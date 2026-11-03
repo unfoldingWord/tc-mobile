@@ -27,7 +27,7 @@ test.use({
 });
 
 /**
- * The new-look (O4) chapter-screen and recorder headers with the chapter's
+ * The chapter-screen and recorder headers with the chapter's
  * NAME in the chapter crumb, against the shipped `dist/` build (#1230).
  *
  * The requirements owner's decision on #1230: the headers show the chapter's

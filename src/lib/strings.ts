@@ -312,7 +312,7 @@ export const stringsEn = {
     return `Open segment ${this.segmentHeading(n, label)}`;
   },
   scrubSegment: (n: number): string => `Position in segment ${n}`,
-  // "done", not "finished" (D17, #949): the O4 tile's caption is the
+  // "done", not "finished" (D17, #949): the tile's caption is the
   // workbench's "Done", and the label must hold the caption (label-in-name).
   // One string for both menus (segment row and recorder). It
   // does not flip to "not done": `aria-pressed` carries the state (#351).
@@ -350,7 +350,7 @@ export const stringsEn = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
-  // The O4 menu tiles' visible captions (#949, `tile-menu.tsx`). Shown,
+  // The menu tiles' visible captions (#949, `tile-menu.tsx`). Shown,
   // never announced: each tile's name is the label its current-look row
   // already had, and every caption is a word that label holds (label-in-name,
   // WCAG 2.5.3). Marking done says the workbench's "Done", and
@@ -867,7 +867,7 @@ export const stringsEn = {
   // Back after the activity stopped (`resolveProvesDelivery`). So never
   // "sent", "delivered", "shared to", or an app's name; a test pins that.
   shareHandingOver: "Opening the phone's share sheet.",
-  // The O4 share circle (#947). D22: the core is a progress bar with this
+  // The share circle (#947). D22: the core is a progress bar with this
   // label, chapter and book alike. D21: the numbered chips above it are one
   // image with this label — how many of the items go out, of all of them.
   // The verb agrees with `out`, so the choice goes through `plural` rather
@@ -1390,13 +1390,13 @@ export const stringsEn = {
     "This phone is running low on space. Mark segments finished to free up room, or share your work and then remove it.",
   storageCritical:
     "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
-  // The O4 storage banner's own line (state 17, #983), word for word from
+  // The storage banner's own line (state 17, #983), word for word from
   // the workbench. It leads; the band's line above follows it, because the
   // workbench speaks that reason through a speaker button this app does not
   // have yet (#952).
   storageShareSoon: "Share your work soon",
 
-  // ── Share your work (#987, the O4 storage banner's button, #948 D14) ──────
+  // ── Share your work (#987, the storage banner's button, #948 D14) ──────
   // Every book on the phone as one zip, one folder per book. The labels
   // follow Share Book's; the gap lines speak in the library's own units
   // (`LibraryShareGap`): whole books left out, and chapters inside included

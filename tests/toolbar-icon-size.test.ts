@@ -5,7 +5,7 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
  * #1259: the glyphs inside the round bottom-bar buttons are drawn 25% larger
- * (O4), and the circles keep their size. `Icon` writes width/height as
+ * (the design round), and the circles keep their size. `Icon` writes width/height as
  * SVG attributes (22 by default, 24 for the edit bar's quiet controls); a CSS
  * declaration beats an attribute, so the size is a rule in
  * `3-components/recorder.css` and a declared-value read is what can pin it here

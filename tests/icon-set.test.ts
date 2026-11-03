@@ -7,17 +7,15 @@ import { Icon, type IconName } from "@/components/icon";
 import { one, render } from "./render";
 
 /**
- * The O4 icon batch (#940, part of #936): draw only the 13 icons the O4
+ * The icon batch (#940, part of #936): draw only the 13 icons the
  * workbench screens use, redrawn from the 24-unit, stroke-2.2 reference
  * sprite (docs/design/o4/o4-icons.svg, landing with #935) onto this app's
  * 22-unit grid. D9 (#937) answered the list; this is that list, and nothing
  * more — `forward`, `flag`, `tag`, `earlier`, `later` and `mic-off` are
  * deliberately not drawn.
  *
- * No screen wires any of these yet (that is a later O4 batch under #936), so
- * this file's own render assertions are today's only consumer — the same
- * "a module a test imports looks used" shape AGENTS.md names for the knip
- * blind spot, made deliberate here rather than accidental.
+ * Screens adopt these as their batches land (#936); this file's render
+ * assertions cover the drawing itself.
  */
 const O4_ICONS: readonly IconName[] = [
   "hear",

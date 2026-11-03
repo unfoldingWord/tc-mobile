@@ -9,7 +9,7 @@ import { one, render } from "./render";
 import { declarationValue } from "./support";
 
 /**
- * The O4 book menu's own pieces (#949: 04 and #937 D7) as markup: props in,
+ * The book menu's own pieces (#949: 04 and #937 D7) as markup: props in,
  * attributes out, through the #197 render harness. What the sheet DOES
  * (opening the picker, the write, focus) is
  * `tests/books-menus-tiles.test.ts`, which mounts the whole screen.

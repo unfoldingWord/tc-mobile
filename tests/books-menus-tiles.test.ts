@@ -13,7 +13,7 @@ import type { BookId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
 /**
- * The Books screen's two menus on the O4 tile grid (#949): the book menu
+ * The Books screen's two menus on the tile grid (#949): the book menu
  * (state 04) with #937 D7's Cover colour tile, and the app ≡ menu (the
  * workbench's G1). The whole screen is mounted with react-dom + `act()` in
  * jsdom, with the data hooks mocked the way

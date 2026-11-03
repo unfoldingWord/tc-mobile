@@ -19,7 +19,7 @@ import { cssRule, declarationValue, restingErase } from "./support";
 
 /**
  * #1105: the top breadcrumb in the segments header and the recorder header
- * render the same chevron-chip markup the O4 menus already show
+ * render the same chevron-chip markup the menus already show
  * (`crumbs.tsx`'s `SheetHead`).
  *
  * #1230: the header's CHAPTER chip shows the chapter's name — the typed one,

@@ -451,7 +451,7 @@ describe("3-components/books.css, the banner rules", () => {
   });
 
   // #1046 item 1: George on #1037 found this describe block checked a rule
-  // count, O4 scoping and colour, but nothing required `.storage-why`,
+  // count, scoping and colour, but nothing required `.storage-why`,
   // `.storage-row` or `.storage-words` to exist, and nothing pinned the
   // 72/84/19/15 px sizes the PR claims (icon box, share button, title and
   // why-line type). Both gaps are closed here, the same slice-the-rule-block

@@ -14,7 +14,7 @@ import {
 import { closeDb, getDb } from "@/lib/storage/db";
 
 /**
- * The last named build gap on #949: the O4 chapter/segment/recorder menus'
+ * The last named build gap on #949: the chapter/segment/recorder menus'
  * book crumb draws no cover-colour square, because neither view that feeds
  * `SheetHead` carried the book's colour (`crumbs.tsx`'s own docblock,
  * before this PR). This is the data half — `loadChapterView` (the chapter

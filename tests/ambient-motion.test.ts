@@ -5,7 +5,7 @@ import { readAreaCss } from "./area-css";
 import { stripCssComments } from "./support";
 
 /**
- * O4 ambient motion (#950, epic #936): `src/app/styles/3-components/motion.css`.
+ * Ambient motion (#950, epic #936): `src/app/styles/3-components/motion.css`.
  *
  * Read as a tree of blocks (PostCSS) rather than as a raw string, with block
  * comments stripped first, so prose that names a selector or a keyframe cannot

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "./support/test";
 
 /**
- * A SHORT book name on the new-look (O4) Books shelf sits at the edge its own
+ * A SHORT book name on the Books shelf sits at the edge its own
  * direction starts from, against the shipped `dist/` build (#1267, #1278 from
  * PR #1270's review). The fix is two rules that only the cascade and layout
  * can show together: `.books-name` grows to fill the row (`3-components/books.css`),

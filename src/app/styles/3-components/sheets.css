@@ -1,4 +1,4 @@
-/* O4 — Bottom sheets and the name sheet (02, G4). Owner: #943. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file. */
+/* Bottom sheets and the name sheet (02, G4). Owner: #943. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file. */
 
 /* WHAT A "NAME SHEET" IS HERE. Every naming surface in the app (New book, Add
    chapter, and the book, chapter and segment renames, #264/#314/#609) is the
@@ -12,7 +12,7 @@
    panel keeps 3-components.css's no-select/no-callout and the field keeps its
    own selectable text. tests/name-sheet.test.ts pins that. */
 @layer components {
-  /* The backdrop: O4's dim role, and the sheet docked to the bottom edge. */
+  /* The backdrop: the dim role, and the sheet docked to the bottom edge. */
   .menu-scrim:has(.name-edit) {
     background: var(--s-dim);
     align-items: flex-end;

@@ -1,4 +1,4 @@
-/* O4 — Books (01, 03), covers and progress dots. Owner: #942. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
+/* Books (01, 03), covers and progress dots. Owner: #942. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
 
    Values are the design reference's (docs/design/o4-design-system.md, §2 and
    §3). Type sizes, weights and radii read #967's structural primitives where
@@ -13,7 +13,7 @@
 
    The guide ring (#604, #834) is layer 3's inset box-shadow on is-guided.
    Nothing below sets a box-shadow on a control that can carry it, or the
-   more specific O4 rule would erase the ring. */
+   more specific rule would erase the ring. */
 @layer components {
   /* --- the header (01, 03) ----------------------------------------------- */
   .books-header {

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "./support/test";
 
 /**
- * The O4 name sheet's Confirm commits under Apple WebKit's focus rule (#1099).
+ * The name sheet's Confirm commits under Apple WebKit's focus rule (#1099).
  *
  * THE RULE. In Safari and in the iOS WebView a `<button>` is not
  * mouse-focusable: a press on one does not move focus to it, it clears focus,

@@ -16,7 +16,7 @@ import {
 import { declarationValue } from "./support";
 
 /**
- * The O4 confirm dialog (#946: states 13 Erase confirm, G5 Record again asks
+ * The confirm dialog (#946: states 13 Erase confirm, G5 Record again asks
  * first, G6 Delete book asks first).
  *
  * 13 and G5 are the one `EraseConfirm`: the segment Erase and the recorder's
@@ -34,7 +34,7 @@ import { declarationValue } from "./support";
  *      comments stripped first, so a comment that names a selector cannot
  *      capture the test — AGENTS.md);
  *   2. every selector in that stylesheet matches real EraseConfirm markup —
- *      a renamed class in the component would otherwise leave the O4 rules
+ *      a renamed class in the component would otherwise leave the rules
  *      matching nothing while half 1 stayed green.
  */
 

@@ -3629,7 +3629,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               onClick={onRequestBack}
             />
             {view ? (
-              // #1105: the same chips the O4 menus show, not a restyled
+              // #1105: the same chips the menus show, not a restyled
               // reading of the text trail below. NOT `aria-hidden`: unlike the
               // menu, where `SheetHead`'s chips sit under a dialog title, no
               // other element here names the place — the Back control's
@@ -4140,7 +4140,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 )}
                 {mode === "edit" ? (
                   // The edit-mode marker (D2, #1243): plain text in the
-                  // waveform's top right, where O4's stamp sits otherwise.
+                  // waveform's top right, where the stamp sits otherwise.
                   // Not a control — leaving edit mode is the toolbar's ✕
                   // (#557, #1252) — so it carries no
                   // role, name or tab stop, and a screen reader reads the word

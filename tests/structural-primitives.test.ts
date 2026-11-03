@@ -6,10 +6,10 @@ import { describe, expect, it } from "vitest";
 import { stripCssComments } from "./support";
 
 /**
- * The structural primitives O4 adds to layer 1 (#939; decisions D4, D5 and D6
+ * The structural primitives the design round adds to layer 1 (#939; decisions D4, D5 and D6
  * on #937): type sizes and weights, radii, and the ambient-motion group.
  *
- * No component reads these yet; the O4 screen lanes swap their literal px
+ * No component reads these yet; the screen lanes swap their literal px
  * values onto them. What this pins is that the decided values exist under the
  * names those lanes will read, and that the ambient group is off under
  * `prefers-reduced-motion` for every member, including one added later.
@@ -44,7 +44,7 @@ const base = declarations(reduceAt === -1 ? source : source.slice(0, reduceAt));
 const reduced = declarations(reduceAt === -1 ? "" : source.slice(reduceAt));
 
 describe("O4 type primitives (#939, D4)", () => {
-  // 12 and 21 are already `--p-text-sm` and `--p-text-lg`; O4 reads those
+  // 12 and 21 are already `--p-text-sm` and `--p-text-lg`; the design round reads those
   // rather than a second name for the same value.
   it("keeps the two existing sizes O4 reuses", () => {
     expect(base.get("--p-text-sm")).toBe("12px");

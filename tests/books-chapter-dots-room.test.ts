@@ -4,7 +4,7 @@ import { areaScope, selectorDeclarations } from "./area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
- * The new-look (O4) chapter row with more dots than the room under its title
+ * The chapter row with more dots than the room under its title
  * holds (#1229). Every row draws the title line since #1219, so the dots get
  * 19px, which holds three rows at the smallest step (`dotFit` in
  * `books-screen.tsx`). With a fixed-height row and a shrinkable title, a

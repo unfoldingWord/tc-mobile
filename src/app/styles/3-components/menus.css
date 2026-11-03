@@ -1,4 +1,4 @@
-/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
+/* Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
 
    #941's half: the tile primitive (`components/tile-menu.tsx`) and the
    bottom-sheet shell a menu takes on while it holds a tile grid. #949
@@ -436,7 +436,7 @@
 
   /* === #949: the recorder menu (G3)
      ======================================================================
-     recorder-menu.tsx's O4 branch. Marking done (G8) and the theme tile are
+     recorder-menu.tsx's tile grid. Marking done (G8) and the theme tile are
      the shared tones and ThemeControl tile above; this section holds only
      what the recorder sheet has and no other menu does.
 
