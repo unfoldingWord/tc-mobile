@@ -124,6 +124,11 @@ export const stringsEn = {
   // #1433 (U6b): the switch for the loudness chain the Done transcode runs.
   // Off when nothing is stored (PR #1746). The word is "done", as `markFinished` says (D17).
   settingsNormalizeOnFinished: "Even out the volume when done",
+  // #1873: the speech compressor's switch, shown under the one above while it
+  // is on (the compressor is a stage of that chain). Off when nothing is
+  // stored: the requirements owner's `compressor-off` pick on #1433. English
+  // is a proposal for the requirements owner; the other languages are AI drafts.
+  settingsCompressOnFinished: "Soften loud parts when done",
   booksEmpty: "Start your first book",
   // #406 item 3 (George round 2 residual, then George round 1 on #423 P2):
   // an earlier fix hedged this line with "unless space runs low" instead of

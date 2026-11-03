@@ -34,6 +34,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Cargando las plantillas.",
   settingsChapterNumbers: "Mostrar siempre el número de capítulo",
   settingsNormalizeOnFinished: "Igualar el volumen al marcar como hecho",
+  settingsCompressOnFinished:
+    "Suavizar las partes fuertes al marcar como hecho",
   booksEmpty: "Empieza tu primer libro",
   booksEmptyTeach: "Un libro contiene los capítulos que grabas.",
   loadingBooks: "Cargando tus libros.",

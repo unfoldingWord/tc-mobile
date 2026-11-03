@@ -36,6 +36,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Chargement des modèles.",
   settingsChapterNumbers: "Toujours afficher le numéro de chapitre",
   settingsNormalizeOnFinished: "Égaliser le volume une fois terminé",
+  settingsCompressOnFinished: "Adoucir les passages forts une fois terminé",
   booksEmpty: "Commencez votre premier livre",
   booksEmptyTeach: "Un livre contient les chapitres que vous enregistrez.",
   loadingBooks: "Chargement de vos livres.",

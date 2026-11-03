@@ -10,6 +10,7 @@ its body and empties it.
 - Malay: a phone set to Malay now opens tC Mobile in Malay, including the iPhone microphone prompt. This first draft is machine-written and no Malay speaker has read it yet.
 - Vietnamese: a phone set to Vietnamese now opens tC Mobile in Vietnamese, including the iPhone microphone prompt. This first draft is machine-written and no Vietnamese speaker has read it yet.
 - In a web browser, Export project now says that export works in the installed app, instead of trying to run (#1457).
+- Settings has a new switch, "Soften loud parts when done", under "Even out the volume when done" and shown only while that one is on. It starts off; please leave it off until it has been listened to on a phone (#1873).
 
 ## Changed
 

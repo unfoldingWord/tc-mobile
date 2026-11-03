@@ -419,7 +419,10 @@ errors and unhandled rejections (`app/install-failure-listeners.ts`,
 throws (`components/error-boundary.tsx`), encoder health and recovery
 (`hooks/mp3-codec.ts`, `"encoder-health"` and `"encoder-recover"`), the
 transcode sweep (`hooks/finish-transcode.ts`, `"transcode-sweep"`, the
-per-segment `"transcode-segment"` and the stall accounting
+per-segment `"transcode-segment"`, a segment the speech compressor refused
+`"transcode-compressor"` (#1873, which lights ≡ by the default: the segment
+stays unfinished as PCM and is refused again on every sweep, and only a defect
+can cause it), and the stall accounting
 `"transcode-stall-accounting"`), share _prepare_ (`hooks/share-flow.ts`,
 `"share-prepare"`), a share's zip spool that could not
 be deleted afterwards (`hooks/archive-spool.ts`, `"share-spool-release"`,

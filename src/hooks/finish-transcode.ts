@@ -42,7 +42,7 @@
  */
 
 import { reportFailure } from "./report-failure";
-import { normalizeOnFinished } from "./use-settings";
+import { compressOnFinished, normalizeOnFinished } from "./use-settings";
 import { isQuotaExceeded } from "./save-failure";
 import {
   readStorageEstimate,
@@ -58,6 +58,7 @@ import {
   DEFAULT_BITRATE_KBPS,
   expectedMp3ByteLength,
 } from "@/lib/audio/mp3-size";
+import { CompressorRangeError } from "@/lib/audio/compressor";
 import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 import { computePeaks } from "@/lib/audio/peaks";
 import { freeByteCount } from "@/lib/storage/pressure";
@@ -81,7 +82,8 @@ import type { SegmentId } from "@/types/domain";
  * names stages is not run twice. Off, the stored samples go to the encoder
  * untouched, as before v14.
  * A codec with no chain (a test fake; the browser codec always has one)
- * encodes untouched too.
+ * encodes untouched too. The speech compressor is one stage of the chain
+ * (#1873), so its switch is read only when the chain runs.
  */
 async function samplesToEncode(
   codec: AudioCodec,
@@ -91,7 +93,9 @@ async function samplesToEncode(
   if (meta.processing) return { samples, processing: meta.processing };
   if (!normalizeOnFinished() || !codec.normalizePcm)
     return { samples, processing: NO_STAGES_RUN };
-  return codec.normalizePcm(samples, meta.sampleRate);
+  return codec.normalizePcm(samples, meta.sampleRate, undefined, {
+    compress: compressOnFinished(),
+  });
 }
 
 let running: Promise<void> | null = null;
@@ -614,12 +618,16 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       const alreadyLogged =
         outOfRoom && failedSegments.get(segmentId)?.clipId === clipId;
       if (!alreadyLogged) {
+        // A compressor refusal (#1873) has its own context, so a defect in
+        // that stage is told apart from the rest of the transcode.
         reportFailure(
           new Error(
             `Transcoding finished segment ${segmentId} failed; its PCM is kept`,
             { cause }
           ),
-          "transcode-segment"
+          cause instanceof CompressorRangeError
+            ? "transcode-compressor"
+            : "transcode-segment"
         );
       }
       if (outOfRoom) {

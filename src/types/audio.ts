@@ -84,7 +84,7 @@ export interface ClipMeta {
 
 /** One stage of the Finished chain, as a clip records it (#1433). */
 export interface ProcessingStage {
-  readonly id: "hpf" | "loudness" | "limiter";
+  readonly id: "hpf" | "compressor" | "loudness" | "limiter";
   /** Bumped whenever the stage's output changes. */
   readonly version: number;
 }
@@ -99,6 +99,12 @@ export interface ClipProcessing {
   readonly measuredTruePeakDbtp: number | null;
   /** The static gain applied, in dB; 0 when no stage ran. */
   readonly appliedGainDb: number;
+}
+
+/** What the Finished chain is asked to add to its fixed stages (#1873). */
+export interface NormalizeOptions {
+  /** Run the speech compressor; its Settings switch starts off. */
+  readonly compress?: boolean;
 }
 
 /** PCM after the chain, and the record of what ran (#1433). */
@@ -181,11 +187,14 @@ export interface AudioCodec {
    * hand back the processed PCM with its record. CONSUMES `samples`
    * (transferred), as `encodeMp3` does. Optional, so existing fakes are
    * untouched; the transcode sweep records `stages: []` for a codec without it.
+   * A refusal by the compressor rejects with the codec's
+   * `CompressorFailedError` (#1873), not as the encoder failing.
    */
   readonly normalizePcm?: (
     samples: Int16Array,
     sampleRate: number,
-    onProgress?: (fraction: number) => void
+    onProgress?: (fraction: number) => void,
+    options?: NormalizeOptions
   ) => Promise<NormalizedPcm>;
 }
 

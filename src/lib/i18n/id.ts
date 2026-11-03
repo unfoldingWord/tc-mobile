@@ -38,6 +38,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Memuat templat.",
   settingsChapterNumbers: "Selalu tampilkan nomor pasal",
   settingsNormalizeOnFinished: "Ratakan volume saat selesai",
+  settingsCompressOnFinished: "Lembutkan bagian yang keras saat selesai",
   booksEmpty: "Mulai buku pertamamu",
   booksEmptyTeach: "Satu buku berisi pasal-pasal yang kamu rekam.",
   loadingBooks: "Memuat bukumu.",

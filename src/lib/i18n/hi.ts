@@ -48,6 +48,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "टेम्पलेट लोड हो रहे हैं।",
   settingsChapterNumbers: "अध्याय संख्या हमेशा दिखाएँ",
   settingsNormalizeOnFinished: "पूर्ण होने पर आवाज़ बराबर करें",
+  settingsCompressOnFinished: "पूर्ण होने पर तेज़ हिस्सों को नरम करें",
   booksEmpty: "अपनी पहली पुस्तक शुरू करें",
   booksEmptyTeach: "पुस्तक में वे अध्याय होते हैं जो आप रिकॉर्ड करते हैं।",
   loadingBooks: "आपकी पुस्तकें लोड हो रही हैं।",

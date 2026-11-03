@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { SPEECH_COMPRESSOR, SpeechCompressor } from "@/lib/audio/compressor";
+import {
+  CompressorRangeError,
+  SPEECH_COMPRESSOR,
+  SpeechCompressor,
+} from "@/lib/audio/compressor";
 import { speechLikePcm } from "@/lib/phone-check/speech";
 
 /**
@@ -142,10 +146,14 @@ describe("SpeechCompressor envelopes", () => {
   });
 
   it("recovers more slowly after a long loud stretch (program-dependent release)", () => {
-    // 3 s at -10 dBFS: every envelope reaches 10 dB. 120 ms later the fast
-    // path is at ≈ 4.01 dB (as above), but the slow envelope, falling straight
-    // from 10 dB with τ = 600 ms, is at 10e^(-120/600) ≈ 8.19 dB and holds
-    // the gain back.
+    // 3 s at -10 dBFS: every envelope reaches 10 dB. After the drop the held
+    // peak falls as h(t) = 10 e^(-t/τR) (τR = 120 ms), and the slow envelope
+    // follows the held peak down through its own τS = 600 ms pole (#1873: it
+    // follows the held reduction, not the raw sample). From s(0) = 10:
+    //   s(t) = 10 τR/(τR - τS) e^(-t/τR) + (10 - 10 τR/(τR - τS)) e^(-t/τS)
+    //        = -2.5 e^(-t/τR) + 12.5 e^(-t/τS)
+    // so at t = 120 ms, 12.5 e^-0.2 - 2.5 e^-1 ≈ 9.314 dB, which holds the
+    // gain back; the fast path alone is ≈ 4.01 dB there.
     const long = 3 * RATE;
     const after = Math.round(0.12 * RATE);
     const input = steps([
@@ -153,11 +161,122 @@ describe("SpeechCompressor envelopes", () => {
       [0.3, -35],
     ]);
     const output = run(input);
-    const want = 10 * Math.exp(-after / (0.6 * RATE));
-    expect(want).toBeCloseTo(8.187, 2);
+    const want = slowAfterLongStretch(0.12);
+    expect(want).toBeCloseTo(9.314, 3);
     expect(reductionAt(input, output, long + after - 1)).toBeCloseTo(want, 2);
   });
+
+  // George's #1872 finding 1: the DC case above cannot tell whether the slow
+  // envelope sees a signal that crosses zero. On a tone every zero crossing
+  // reads as -Infinity dB, so a slow envelope fed the raw sample averages a
+  // spiky curve and settles well under the crest's 10 dB; fed the held
+  // reduction, it sits at the crest. The expected values are the DC
+  // derivation: the held peak on a 1 kHz tone at 44.1 kHz ripples by under
+  // 0.1 dB between crests (one 1 ms period against the 120 ms release), and
+  // the sampled crest is within 0.03 dB of the true one. The 300 ms / 600 ms
+  // pair is this port's own tuning, not a reference value.
+  describe("program-dependent release on a tone: burst, pause, burst", () => {
+    const tone = (parts: ReadonlyArray<readonly [number, number]>) => {
+      const total = parts.reduce((n, [s]) => n + Math.round(s * RATE), 0);
+      const out = new Float32Array(total);
+      let i = 0;
+      for (const [seconds, db] of parts) {
+        const end = i + Math.round(seconds * RATE);
+        for (; i < end; i++)
+          out[i] = dbToAmp(db) * Math.sin((2 * Math.PI * 1000 * i) / RATE);
+      }
+      return out;
+    };
+    const input = tone([
+      [3, -10],
+      [0.3, -35],
+      [0.2, -10],
+    ]);
+    const output = run(input);
+    /** The reduction at the loudest input sample within ±0.5 ms of `at`. */
+    const crestReduction = (
+      x: Float32Array,
+      y: Float32Array,
+      at: number
+    ): number => {
+      let best = at;
+      for (let i = at - 22; i <= at + 22; i++)
+        if (Math.abs(x[i]!) > Math.abs(x[best]!)) best = i;
+      return reductionAt(x, y, best);
+    };
+
+    it("after a long burst, the pause is held back as on DC (≈ 9.31 dB at 120 ms)", () => {
+      const at = 3 * RATE + Math.round(0.12 * RATE);
+      const got = crestReduction(input, output, at);
+      expect(Math.abs(got - slowAfterLongStretch(0.12))).toBeLessThan(0.1);
+    });
+
+    it("after a brief burst, the pause recovers on the fast path (≈ 4.01 dB at 120 ms)", () => {
+      const brief = tone([
+        [0.05, -10],
+        [0.3, -35],
+      ]);
+      const at = Math.round(0.05 * RATE) + Math.round(0.12 * RATE);
+      const got = crestReduction(brief, run(brief), at);
+      expect(Math.abs(got - 10 * (120 / 110) * Math.exp(-1))).toBeLessThan(0.1);
+    });
+
+    it("the second burst starts already held back (≈ 7.38 dB)", () => {
+      // At the end of the 300 ms pause the slow envelope is
+      // 12.5 e^-0.5 - 2.5 e^-2.5 ≈ 7.376 dB and the fast one under 1 dB; the
+      // second burst's first crest, a quarter period in, adds under 0.01 dB
+      // through the 300 ms rise.
+      const crest = Math.round(3.3 * RATE) + Math.round(0.00025 * RATE);
+      const got = crestReduction(input, output, crest);
+      expect(Math.abs(got - slowAfterLongStretch(0.3))).toBeLessThan(0.1);
+    });
+  });
+
+  // George's #1872 finding 2: on a long pause the envelopes decay toward 0
+  // and, unflushed, reach subnormal doubles after about 85 s (the 120 ms held
+  // peak needs about 711 time constants to fall under 1e-308). Each is
+  // flushed to exactly 0 under 1e-4 dB, a gain error of about 1e-5 relative.
+  describe("envelope flush on a long pause", () => {
+    type Envelopes = { held: number; fast: number; slow: number };
+    // The three envelopes are private state, read here rather than exported.
+    const envelopes = (c: SpeechCompressor): Envelopes =>
+      c as unknown as Envelopes;
+
+    it("every envelope is exactly 0 after a pause, not a decaying tail", () => {
+      // After 10 s the slowest (600 ms) would still be about
+      // 12.5 e^(-10/0.6) ≈ 7e-7 dB unflushed: positive, so this fails
+      // without the flush.
+      const c = new SpeechCompressor(RATE);
+      const loud = steps([[0.5, -3]]);
+      c.process(loud, loud.length);
+      const pause = new Float32Array(10 * RATE);
+      c.process(pause, pause.length);
+      const { held, fast, slow } = envelopes(c);
+      expect([held, fast, slow]).toEqual([0, 0, 0]);
+    });
+
+    it("an audible tail is not flushed early (≈ 3e-3 dB at 5 s)", () => {
+      // 5 s after a 3 s stretch the slow envelope is 12.5 e^(-5/0.6)
+      // ≈ 3.0e-3 dB, thirty times the flush level: still applied.
+      const input = steps([
+        [3, -10],
+        [5.1, -35],
+      ]);
+      const output = run(input);
+      const at = 3 * RATE + 5 * RATE - 1;
+      expect(slowAfterLongStretch(5)).toBeGreaterThan(2e-3);
+      expect(reductionAt(input, output, at)).toBeCloseTo(
+        slowAfterLongStretch(5),
+        4
+      );
+    });
+  });
 });
+
+/** The slow envelope `t` s after a long stretch at 10 dB (derived above). */
+function slowAfterLongStretch(t: number): number {
+  return -2.5 * Math.exp(-t / 0.12) + 12.5 * Math.exp(-t / 0.6);
+}
 
 describe("SpeechCompressor streaming", () => {
   const speech = Float32Array.from(speechLikePcm(4, RATE), (v) => v / 32768);
@@ -236,6 +355,9 @@ describe("SpeechCompressor edge input", () => {
     (bad) => {
       const c = new SpeechCompressor(RATE);
       const x = Float32Array.of(0.9, 0.9, bad);
+      // Its own type, so the worker can name the compressor as what refused
+      // (#1873), and still a RangeError.
+      expect(() => c.process(x, 3)).toThrow(CompressorRangeError);
       expect(() => c.process(x, 3)).toThrow(RangeError);
       expect(x[0]).toBeCloseTo(0.9, 6);
       expect(c.maxReductionDb).toBe(0);
@@ -261,6 +383,6 @@ describe("SpeechCompressor edge input", () => {
   ] as const)("refuses a bad %s", (_name, rate, override) => {
     expect(
       () => new SpeechCompressor(rate, { ...SPEECH_COMPRESSOR, ...override })
-    ).toThrow(RangeError);
+    ).toThrow(CompressorRangeError);
   });
 });

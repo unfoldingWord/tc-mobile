@@ -51,6 +51,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Загружаются шаблоны.",
   settingsChapterNumbers: "Всегда показывать номера глав",
   settingsNormalizeOnFinished: "Выравнивать громкость при отметке «Готово»",
+  settingsCompressOnFinished: "Смягчать громкие места при отметке «Готово»",
   booksEmpty: "Начните свою первую книгу",
   booksEmptyTeach: "В книге хранятся главы, которые вы записываете.",
   loadingBooks: "Загружаются ваши книги.",

@@ -330,6 +330,7 @@ const CLASSES: Readonly<Record<string, Class>> = {
   "storage-pressure-bump": "lights",
   "template-create": "lights",
   "template-load": "lights",
+  "transcode-compressor": "lights",
   "transcode-segment": "lights",
   "transcode-stall-accounting": "lights",
   "transcode-sweep": "lights",
