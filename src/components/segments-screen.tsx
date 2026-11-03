@@ -24,7 +24,7 @@ import { SegmentsHead } from "./segments-head";
 import { segmentsListInert } from "./segments-inert";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
-import { chapterShareItems } from "./share-o4-view";
+import { chapterShareItems } from "./share-view";
 import { ShareProgress } from "./share-progress";
 import { strings } from "@/lib/strings";
 import { useChapterHeading } from "@/hooks/use-settings";

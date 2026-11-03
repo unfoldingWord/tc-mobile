@@ -1246,7 +1246,7 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   it("the stylesheet paints the scrim and panel with layer-2 roles only", () => {
     // The per-outcome glyph inks moved out of this file with the old look
     // (#954): the O4 core and glyph ink for busy and every settled outcome
-    // are pinned value for value by `tests/share-o4-circle-css.test.ts`
+    // are pinned value for value by `tests/share-circle-css.test.ts`
     // ("every outcome's core and glyph ink follow D16's table").
     //
     // Comments stripped first (#533): a header comment naming the selector

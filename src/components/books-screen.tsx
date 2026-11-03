@@ -38,7 +38,7 @@ import { SquareButton } from "./shape-buttons";
 import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
-import { bookShareItems } from "./share-o4-view";
+import { bookShareItems } from "./share-view";
 import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
@@ -3286,7 +3286,7 @@ function ChapterItem({
         // what keeps it out of the scroll container's clip (3-components.css).
         className={cn("books-chapter", guided && "is-guided")}
       >
-        <O4ChapterFace chapter={chapter} />
+        <ChapterFace chapter={chapter} />
       </button>
       {/* A sibling of the row button, never inside it: a button in a button is
           invalid, and a tap or a hold here must not reach the row's open and
@@ -3391,7 +3391,7 @@ function ChapterMenuHead({
  * reorder changes (#1272, Q1 (b)). The badge is always the slot. A title that was only spoken is
  * tier 2 (after the training) and is not drawn here.
  */
-function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
+function ChapterFace({ chapter }: { chapter: ChapterRow }) {
   const heading = useChapterHeading(
     chapter.name,
     chapter.number,
@@ -3491,7 +3491,7 @@ function dotStates(chapter: ChapterRow): SegmentRowState[] {
  * − 44 (`.books-chapter-num`) − 2 × 14 (the row's two gaps)
  * − 72 (`.books-chapter-go`, the slot the play control and the row's ⋮
  * share, #1469 and #1730) = 110. It was 154 while a 28px chevron held that
- * slot, and 138 while play alone did. `tests/books-o4.test.ts` re-derives it
+ * slot, and 138 while play alone did. `tests/books-screen.test.ts` re-derives it
  * from the stylesheets.
  */
 const DOT_COLUMN = 110;

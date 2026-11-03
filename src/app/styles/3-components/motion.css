@@ -26,7 +26,7 @@
  * same specificity, later in the same layer, so it wins. The app has no
  * Remove-animations setting of its own; the existing animations in
  * 3-components.css honour prefers-reduced-motion only, and this file does
- * the same. tests/o4-motion.test.ts holds the pairing.
+ * the same. tests/ambient-motion.test.ts holds the pairing.
  *
  * An animation outranks every normal declaration, so the base ring's own
  * exceptions have to be restated here as stops: the inert rule (a mark
@@ -90,7 +90,7 @@
 
   /* --- liveEdge: the recorder stage edge while recording ---------------- */
   /* On recorder.css's edge layer, which draws above the canvas. */
-  .recorder-stage[data-o4-look="recording"]::after {
+  .recorder-stage[data-look="recording"]::after {
     animation: liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite;
   }
   @keyframes liveEdge {
@@ -145,7 +145,7 @@
     .control--mic.is-guided,
     .record-guide.is-guided,
     .tile--send.is-armed,
-    .recorder-stage[data-o4-look="recording"]::after,
+    .recorder-stage[data-look="recording"]::after,
     .recorder-status .rec-dot,
     .books-delete-ask > .sheet-head,
     .err-body[data-refused] {

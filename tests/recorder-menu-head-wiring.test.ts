@@ -13,7 +13,7 @@ import { restingErase } from "./support";
 /**
  * The recorder screen hands its view's book name and the chapter's resolved
  * name (`strings.chapterHeading`, #1230; this view has no typed name, so the
- * default "Chapter 4") to the ⋮ menu's sheet head (#949 G3). `tests/recorder-menu-head-o4.test.ts`
+ * default "Chapter 4") to the ⋮ menu's sheet head (#949 G3). `tests/recorder-menu-head.test.ts`
  * covers the head given those props; this file covers the one link it cannot
  * see, the `recorder.tsx` call site, by opening the menu on the real sheet.
  *

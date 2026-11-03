@@ -21,8 +21,8 @@ import { closeDb, getDb } from "@/lib/storage/db";
  * menu and, through `segments-screen.tsx`, the segment-row menu) and
  * `loadRecorderSegmentView` (the recorder menu, once `recorder.tsx` — owned
  * by the concurrent #1074/#590 PR2 lane, out of scope here — threads it
- * through). `tests/o4-menus-chapter-segment.test.ts` and
- * `tests/recorder-menu-head-o4.test.ts` cover the component half: that
+ * through). `tests/menus-chapter-segment.test.ts` and
+ * `tests/recorder-menu-head.test.ts` cover the component half: that
  * `SheetHead` actually draws the square from this value.
  *
  * `resolveCoverKey` (#957) never returns "no colour" for a real book: an

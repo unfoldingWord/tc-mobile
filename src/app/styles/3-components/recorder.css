@@ -1,7 +1,7 @@
 /* O4 — Recorder (08-12). Owner: #945. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file. */
 
 /*
- * The five workbench states are read off one attribute, data-o4-look, which
+ * The five workbench states are read off one attribute, data-look, which
  * recorder.tsx sets on the stage (recorder-look.ts's recorderLook): idle, recording, recorded, playing, editing.
  *
  * Static states only. The live edge's pulse and the recording dot's blink are
@@ -33,7 +33,7 @@
     pointer-events: none;
     box-shadow: inset 0 0 0 1px var(--s-card-edge);
   }
-  .recorder-stage[data-o4-look="recording"]::after {
+  .recorder-stage[data-look="recording"]::after {
     box-shadow: inset 0 0 0 2px var(--s-live);
   }
 
@@ -80,7 +80,7 @@
      with the bg-live utility; a components-layer background cannot beat a
      utility, so the playhead colour is painted over it. The in-place
      audition's line takes bg-playhead from recorder.tsx instead. */
-  .recorder-stage[data-o4-look="playing"]
+  .recorder-stage[data-look="playing"]
     [data-testid="centerline-overlay"]::after {
     content: "";
     position: absolute;
@@ -120,7 +120,7 @@
      wide as the button — so it drifted off-center under the selection as
      the span moved or changed length. `CutAnchor` (`cut-anchor.tsx`) computes
      the selection's midpoint as a percentage of the canvas viewport and
-     writes it inline as `--o4-cut-left`; this rule positions the wrapper there
+     writes it inline as `--c-cut-left`; this rule positions the wrapper there
      instead. `width: 100%` gives the row the same coordinate space
      `.recorder-canvas` has — both are siblings inside the same centered
      `.recorder-stage` column (3-components.css) — so the percentage lines up
@@ -139,7 +139,7 @@
     position: absolute;
     left: clamp(
       calc(var(--c-control-sm) / 2),
-      var(--o4-cut-left, 50%),
+      var(--c-cut-left, 50%),
       calc(100% - var(--c-control-sm) / 2)
     );
     transform: translateX(-50%);
@@ -154,7 +154,7 @@
      against the wrong box. */
   .recorder-toolbar.pair {
     container-type: inline-size;
-    --o4-big: max(
+    --c-big: max(
       44px,
       min(80px, calc((100cqi - 128px - 3 * var(--c-gap-parts)) / 2))
     );
@@ -162,12 +162,12 @@
     height: calc(80px + var(--p-space-3));
   }
   .recorder-toolbar.pair .control--record {
-    width: var(--o4-big);
-    height: var(--o4-big);
+    width: var(--c-big);
+    height: var(--c-big);
   }
   .recorder-toolbar.pair .control--play {
-    width: var(--o4-big);
-    height: var(--o4-big);
+    width: var(--c-big);
+    height: var(--c-big);
   }
   /* Erase and the edit toggle: the 64 secondary circle on the well. No ink
      here or on the edit bar: the zoom toggle's green ink (is-on) and the
@@ -184,7 +184,7 @@
      (3-components.css holds the same rule). */
   .recorder-toolbar.edit {
     container-type: inline-size;
-    --o4-secondary: max(
+    --c-secondary: max(
       44px,
       min(64px, calc((100cqi - 64px - 4 * var(--p-space-1)) / 4))
     );
@@ -193,8 +193,8 @@
   }
   .recorder-toolbar.edit .control {
     justify-self: center;
-    width: var(--o4-secondary);
-    height: var(--o4-secondary);
+    width: var(--c-secondary);
+    height: var(--c-secondary);
     border-radius: 50%;
     background: var(--s-well);
   }
@@ -220,16 +220,16 @@
      44px touch floor (the edit bar at 320px), so the 30px glyph leaves 7px on
      each side; the 64 and 80 circles leave more. Colour is untouched. */
   .recorder-toolbar {
-    --o4-toolbar-icon: calc(22px * 1.25); /* #939 token */
-    --o4-toolbar-icon-quiet: calc(24px * 1.25); /* #939 token */
+    --c-toolbar-icon: calc(22px * 1.25); /* #939 token */
+    --c-toolbar-icon-quiet: calc(24px * 1.25); /* #939 token */
   }
   .recorder-toolbar .control svg {
-    width: var(--o4-toolbar-icon);
-    height: var(--o4-toolbar-icon);
+    width: var(--c-toolbar-icon);
+    height: var(--c-toolbar-icon);
   }
   .recorder-toolbar.edit .control--quiet svg {
-    width: var(--o4-toolbar-icon-quiet);
-    height: var(--o4-toolbar-icon-quiet);
+    width: var(--c-toolbar-icon-quiet);
+    height: var(--c-toolbar-icon-quiet);
   }
 
   /* --- the edit-mode marker (12) ---------------------------------------- */

@@ -13,7 +13,7 @@ import { seedToSegments } from "./support/seed";
  * of dots; a chapter with more segments than that must still show the whole
  * title line and every dot inside the row, so the green share the row shows
  * is the chapter's real share. jsdom computes no boxes, so this is the layout
- * half of `tests/books-o4.test.ts`'s arithmetic and of
+ * half of `tests/books-screen.test.ts`'s arithmetic and of
  * `tests/books-chapter-dots-room.test.ts`'s declared values.
  *
  * The fake media device is for the dot-state case only: a recorded or

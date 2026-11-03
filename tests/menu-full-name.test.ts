@@ -12,7 +12,7 @@ import { strings } from "@/lib/strings";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
-import { areaScope, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./area-css";
 import { render } from "./render";
 import { cssRule, declarationValue, restingErase } from "./support";
 

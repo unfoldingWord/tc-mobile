@@ -5,7 +5,7 @@ import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
-import { AREA_DIR, readAreaCss, type Area } from "./o4-area-css";
+import { AREA_DIR, readAreaCss, type Area } from "./area-css";
 import {
   builtCssRules,
   compareSpecificity,
@@ -20,7 +20,7 @@ import {
  * The component layer's cascade, read from the shipped `dist/assets/*.css`
  * (#954). It replaces the per-file "every selector starts with `:root`"
  * checks the area-stylesheet suites carried, and the dist half of
- * `tests/o4-cascade.test.ts`.
+ * `tests/area-stylesheets.test.ts`.
  *
  * Two stylesheets write into the one `@layer components`: the base,
  * `src/app/styles/3-components.css`, and the area files under
@@ -680,7 +680,7 @@ const REVIEWED: Record<string, string> = {
     LIST_ITEM,
   '.segments-list[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
     LIST_ITEM,
-  '.share-o4-ring ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.share-o4-ring is an <svg> drawn by share-progress-panel.tsx, not by <Icon>. ${NOT_AN_ICON}`,
+  '.share-ring ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.share-ring is an <svg> drawn by share-progress-panel.tsx, not by <Icon>. ${NOT_AN_ICON}`,
   '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .sheet-head ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
   '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .sheet-head ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':

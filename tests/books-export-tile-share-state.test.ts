@@ -20,7 +20,7 @@ import type { BookCard } from "@/types/view";
  * file already prepared.
  *
  * The whole screen is mounted with react-dom + `act()` in jsdom, with the
- * data hooks mocked the way `tests/books-menus-tiles-o4.test.ts` mocks them.
+ * data hooks mocked the way `tests/books-menus-tiles.test.ts` mocks them.
  * What this cannot show: the cascade, layout, or a real tap on a phone.
  */
 

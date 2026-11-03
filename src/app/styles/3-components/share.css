@@ -3,7 +3,7 @@
  * THE SHARE CIRCLE, ITS FILLING RING AND ITS CHIPS (#947, D13 to D16, D21).
  * The share overlay's panel (share-progress-panel.tsx) draws the
  * workbench's 140 core inside a 176 frame, with the filling ring while a prepare reports a count, and the
- * numbered chips above it, one per item in order (share-o4-view.ts decides
+ * numbered chips above it, one per item in order (share-view.ts decides
  * what is drawn; this file only colours and sizes it).
  *
  * Values are the workbench's (states 15 and G7, vShare with its bigshare and
@@ -19,7 +19,7 @@
  */
 @layer components {
   /* --- the circle (D12 geometry, D14, D15) ------------------------------ */
-  .share-o4-frame {
+  .share-frame {
     position: relative;
     width: 176px;
     height: 176px;
@@ -29,7 +29,7 @@
     justify-content: center;
     border-radius: 50%;
   }
-  .share-o4-core {
+  .share-core {
     width: 140px;
     height: 140px;
     border-radius: 50%;
@@ -38,12 +38,12 @@
     justify-content: center;
     background: var(--s-send);
   }
-  .share-o4-glyph {
+  .share-glyph {
     color: var(--s-tile-ink);
   }
 
   /* --- the filling ring (D13, D15) ------------------------------------- */
-  .share-o4-ring {
+  .share-ring {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -51,12 +51,12 @@
     transform: rotate(-90deg);
     pointer-events: none;
   }
-  .share-o4-track {
+  .share-track {
     fill: none;
     stroke: var(--s-well);
     stroke-width: 7;
   }
-  .share-o4-fill {
+  .share-fill {
     fill: none;
     stroke: var(--s-send-ring);
     stroke-width: 7;
@@ -64,7 +64,7 @@
   }
   /* The joined-chapter read (#1078): a thin arc on the track, so it never
      reads as the count's own fill. */
-  .share-o4-read {
+  .share-read {
     fill: none;
     stroke: var(--s-send-ring);
     stroke-width: 3;
@@ -72,28 +72,28 @@
   }
 
   /* --- outcomes (D14, D16) --------------------------------------------- */
-  .share-scrim[data-outcome="sent"] .share-o4-frame {
+  .share-scrim[data-outcome="sent"] .share-frame {
     box-shadow: inset 0 0 0 7px var(--s-send-ring);
   }
-  .share-scrim[data-outcome="partial"] .share-o4-frame {
+  .share-scrim[data-outcome="partial"] .share-frame {
     box-shadow: inset 0 0 0 3px var(--s-warn);
   }
-  .share-scrim[data-outcome="nothing"] .share-o4-core,
-  .share-scrim[data-outcome="failed"] .share-o4-core,
-  .share-scrim[data-outcome="encoder"] .share-o4-core {
+  .share-scrim[data-outcome="nothing"] .share-core,
+  .share-scrim[data-outcome="failed"] .share-core,
+  .share-scrim[data-outcome="encoder"] .share-core {
     background: var(--s-live);
   }
-  .share-scrim[data-outcome="nothing"] .share-o4-glyph,
-  .share-scrim[data-outcome="failed"] .share-o4-glyph,
-  .share-scrim[data-outcome="encoder"] .share-o4-glyph {
+  .share-scrim[data-outcome="nothing"] .share-glyph,
+  .share-scrim[data-outcome="failed"] .share-glyph,
+  .share-scrim[data-outcome="encoder"] .share-glyph {
     color: var(--s-live-ink);
   }
-  .share-scrim[data-outcome="dismissed"] .share-o4-core,
-  .share-scrim[data-outcome="unproven"] .share-o4-core {
+  .share-scrim[data-outcome="dismissed"] .share-core,
+  .share-scrim[data-outcome="unproven"] .share-core {
     background: var(--s-well);
   }
-  .share-scrim[data-outcome="dismissed"] .share-o4-glyph,
-  .share-scrim[data-outcome="unproven"] .share-o4-glyph {
+  .share-scrim[data-outcome="dismissed"] .share-glyph,
+  .share-scrim[data-outcome="unproven"] .share-glyph {
     color: var(--s-ink-muted);
   }
 
@@ -113,7 +113,7 @@
   .share-progress-text {
     flex: none;
   }
-  .share-o4-chips {
+  .share-chips {
     position: relative;
     display: flex;
     flex-wrap: wrap;
@@ -128,13 +128,13 @@
   /* Keeping the current chip in view glides only when motion is welcome;
      under reduced motion the row jumps. */
   @media (prefers-reduced-motion: no-preference) {
-    .share-o4-chips {
+    .share-chips {
       scroll-behavior: smooth;
     }
   }
   /* The resting chip: an item that does not go out, or, while packing, one
      that goes out and is still waiting. Grey, its number (vShare). */
-  .share-o4-chip {
+  .share-chip {
     width: 38px;
     height: 38px;
     border-radius: 50%;
@@ -146,11 +146,11 @@
     background: var(--s-well);
     color: var(--s-ink-faint);
   }
-  .share-o4-chip[data-chip="finished"] {
+  .share-chip[data-chip="finished"] {
     background: var(--s-send);
     color: var(--s-tile-ink);
   }
-  .share-o4-chip[data-chip="current"] {
+  .share-chip[data-chip="current"] {
     background: var(--s-voice);
     color: var(--s-voice-ink);
   }

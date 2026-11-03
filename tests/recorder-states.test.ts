@@ -7,7 +7,7 @@ import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { recorderLook, type RecorderLook } from "@/components/recorder-look";
-import { RecorderStamp } from "@/components/recorder-o4";
+import { RecorderStamp } from "@/components/recorder-stamp";
 import { PlayheadOverlay } from "@/components/playhead-overlay";
 import {
   areaScope,
@@ -15,7 +15,7 @@ import {
   scopeDeclarations,
   scopeRules,
   selectorDeclarations,
-} from "./o4-area-css";
+} from "./area-css";
 import { render } from "./render";
 import {
   cssRule,
@@ -78,7 +78,7 @@ describe("3-components/recorder.css stays on the colour roles (#945)", () => {
       expect(v, v).not.toMatch(/\b(rgb|rgba|hsl|hsla|oklch)\(/i);
       for (const [, name] of v.matchAll(/var\((--[\w-]+)/g))
         expect(name, v).toMatch(
-          /^--(s-|c-|o4-|p-(space|radius|text|weight|dur|ease))/
+          /^--(s-|c-|p-(space|radius|text|weight|dur|ease))/
         );
     }
   });
@@ -92,15 +92,12 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
   });
 
   it("09 recording: the stage wears a live edge — static; the loop is #950's", () => {
-    const edge = cssRule(
-      CSS,
-      '.recorder-stage[data-o4-look="recording"]::after'
-    );
+    const edge = cssRule(CSS, '.recorder-stage[data-look="recording"]::after');
     expect(edge).toMatch(/box-shadow:\s*inset 0 0 0 2px var\(--s-live\)/);
     // No loop on the edge in any block of this file.
     const properties = selectorDeclarations(
       "recorder",
-      '.recorder-stage[data-o4-look="recording"]::after'
+      '.recorder-stage[data-look="recording"]::after'
     ).map(([property]) => property);
     for (const property of properties)
       expect(property).not.toMatch(/animation/);
@@ -128,7 +125,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     // components-layer rule cannot beat it.
     const line = cssRule(
       CSS,
-      '.recorder-stage[data-o4-look="playing"] [data-testid="centerline-overlay"]::after'
+      '.recorder-stage[data-look="playing"] [data-testid="centerline-overlay"]::after'
     );
     expect(line).toMatch(/background:\s*var\(--s-playhead\)/);
   });
@@ -177,22 +174,22 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     // scissors — is sized by) on either side, so the button's whole 40px box
     // stays inside the canvas even when the selection runs to an edge.
     expect(anchor).toMatch(
-      /left:\s*clamp\(\s*calc\(var\(--c-control-sm\)\s*\/\s*2\),\s*var\(--o4-cut-left,\s*50%\),\s*calc\(100%\s*-\s*var\(--c-control-sm\)\s*\/\s*2\)\s*\)/
+      /left:\s*clamp\(\s*calc\(var\(--c-control-sm\)\s*\/\s*2\),\s*var\(--c-cut-left,\s*50%\),\s*calc\(100%\s*-\s*var\(--c-control-sm\)\s*\/\s*2\)\s*\)/
     );
     // Falls back to dead centre when nothing overrides it (the bin, #862,
-    // which never sets --o4-cut-left).
-    expect(anchor).toMatch(/var\(--o4-cut-left,\s*50%\)/);
+    // which never sets --c-cut-left).
+    expect(anchor).toMatch(/var\(--c-cut-left,\s*50%\)/);
     expect(anchor).toMatch(/transform:\s*translateX\(-50%\)/);
   });
 
   it("the big transport buttons are 80 × 80, shrinking no lower than the 44 floor", () => {
     const pair = cssRule(CSS, ".recorder-toolbar.pair");
     expect(pair).toMatch(/container-type:\s*inline-size/);
-    expect(pair).toMatch(/--o4-big:\s*max\(\s*44px,\s*min\(80px,/);
+    expect(pair).toMatch(/--c-big:\s*max\(\s*44px,\s*min\(80px,/);
     for (const variant of ["control--record", "control--play"]) {
       const big = cssRule(CSS, `.recorder-toolbar.pair .${variant}`);
-      expect(big, variant).toMatch(/width:\s*var\(--o4-big\)/);
-      expect(big, variant).toMatch(/height:\s*var\(--o4-big\)/);
+      expect(big, variant).toMatch(/width:\s*var\(--c-big\)/);
+      expect(big, variant).toMatch(/height:\s*var\(--c-big\)/);
     }
   });
 
@@ -205,10 +202,10 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(pair).toMatch(/height:\s*64px/);
     expect(pair).toMatch(/background:\s*var\(--s-well\)/);
     const bar = cssRule(CSS, ".recorder-toolbar.edit");
-    expect(bar).toMatch(/--o4-secondary:\s*max\(\s*44px,\s*min\(64px,/);
+    expect(bar).toMatch(/--c-secondary:\s*max\(\s*44px,\s*min\(64px,/);
     const edit = cssRule(CSS, ".recorder-toolbar.edit .control");
-    expect(edit).toMatch(/width:\s*var\(--o4-secondary\)/);
-    expect(edit).toMatch(/height:\s*var\(--o4-secondary\)/);
+    expect(edit).toMatch(/width:\s*var\(--c-secondary\)/);
+    expect(edit).toMatch(/height:\s*var\(--c-secondary\)/);
     expect(edit).toMatch(/background:\s*var\(--s-well\)/);
   });
 
@@ -420,7 +417,7 @@ describe("recorder.tsx wires the stage's look (#945, source pin)", () => {
 
   it("marks the stage with its look", () => {
     expect(src).toMatch(
-      /className="recorder-stage flex-1"\s+data-o4-look=\{look\}/
+      /className="recorder-stage flex-1"\s+data-look=\{look\}/
     );
   });
 

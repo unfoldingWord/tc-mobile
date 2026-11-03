@@ -14,7 +14,7 @@ import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import { one, render } from "./render";
-import { areaScope } from "./o4-area-css";
+import { areaScope } from "./area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -25,8 +25,8 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  *
  * This file renders the pieces that can be rendered alone. The three screens
  * (Books, the chapter screen, the recorder) are asserted where they are
- * already mounted: `tests/books-o4.test.ts`, `tests/o4-header-crumbs.test.ts`
- * and `tests/o4-menus-chapter-segment.test.ts`.
+ * already mounted: `tests/books-screen.test.ts`, `tests/header-crumbs.test.ts`
+ * and `tests/menus-chapter-segment.test.ts`.
  *
  * What it does not cover: bidi layout. jsdom computes no boxes and no bidi
  * resolution, so that `auto` resolves an Arabic or Hebrew name to rtl, puts

@@ -11,7 +11,7 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
-import { areaScope, declsFor } from "./o4-area-css";
+import { areaScope, declsFor } from "./area-css";
 import { render } from "./render";
 import { restingErase } from "./support";
 

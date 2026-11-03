@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import { Crumbs, SheetHead } from "@/components/crumbs";
 import { strings } from "@/lib/strings";
-import { areaScope } from "./o4-area-css";
+import { areaScope } from "./area-css";
 import { render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
 /**
  * #1230: the O4 chapter-screen and recorder headers show the chapter's NAME
  * in the chapter chip, elided with "…" when it is too long for the chip.
- * `tests/o4-header-crumbs.test.ts` proves the two headers pass the resolved
+ * `tests/header-crumbs.test.ts` proves the two headers pass the resolved
  * name; this file proves the chip renders whatever text it is given, and pins
  * the declarations that make a long name elide and share the row with the
  * book chip. Whether those declarations produce the intended boxes is a

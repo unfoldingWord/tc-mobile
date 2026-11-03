@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { areaScope, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**

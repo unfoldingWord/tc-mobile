@@ -31,7 +31,7 @@ import type { Book, BookId } from "@/types/domain";
  * What is asserted is the DOM: no row, no ⋮ opener for the deleted book.
  *
  * Only the data hooks this screen needs a browser for are mocked, the way
- * `tests/books-delete-in-sheet-o4.test.ts` mocks them; `useBooks` is not.
+ * `tests/books-delete-in-sheet.test.ts` mocks them; `useBooks` is not.
  *
  * What this cannot show: layout, the cascade, or real `inert` hit-testing,
  * none of which jsdom does. It drives React through `act`, not a real frame.

@@ -12,7 +12,7 @@ import { restingErase } from "./support";
 
 /**
  * The ⋮ menu's Stop tile on the real recorder screen (#369, the DRI's
- * 2026-10-19 pick). `tests/recorder-menu-o4.test.ts` covers the tile given its
+ * 2026-10-19 pick). `tests/recorder-menu-tiles.test.ts` covers the tile given its
  * props; this file covers the one link it cannot see, the `recorder.tsx` call
  * site: mid-take, a tap on the tile closes the menu and ends the take through
  * the same handler the transport's own Stop runs, so `stopRecording` is

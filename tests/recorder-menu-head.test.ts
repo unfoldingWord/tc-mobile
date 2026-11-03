@@ -12,7 +12,7 @@ import { render } from "./render";
  * The recorder menu's O4 sheet head (#949 G3; workbench G3's `shead`, design
  * reference §7): the book, chapter and segment crumbs above the tiles, as on
  * the chapter and segment menus. The tiles themselves are
- * `tests/recorder-menu-o4.test.ts`'s; this file asks only about the head.
+ * `tests/recorder-menu-tiles.test.ts`'s; this file asks only about the head.
  *
  * Rendered through `tests/render.ts`. `Menu` portals to `<body>`, which the
  * static renderer refuses, so `createPortal` is replaced here by one that
@@ -22,7 +22,7 @@ import { render } from "./render";
  * where the panel mounts.
  *
  * What this file does NOT cover: the cascade (the crumbs' paint is `3-components/menus.css`'s, asserted as
- * declarations in `tests/o4-menus-chapter-segment.test.ts`), and the
+ * declarations in `tests/menus-chapter-segment.test.ts`), and the
  * recorder screen passing its view's book and chapter in, which
  * `tests/recorder-menu-head-wiring.test.ts` renders through the real sheet.
  */

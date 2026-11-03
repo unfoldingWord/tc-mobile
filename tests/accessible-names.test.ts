@@ -509,7 +509,7 @@ const SURFACES: Surface[] = [
       createElement(ShareProgressPanel, {
         role: "status",
         text: "Preparing the chapter to share",
-        o4: {
+        view: {
           icon: "share",
           ring: 0.5,
           meter: { now: 50 },

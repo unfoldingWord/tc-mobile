@@ -70,7 +70,7 @@ const WIDTHS = [320, 360];
 // The four tiles this row draws once it has a clip, left to right, in the
 // DRI's 2026-09-28 order (Done, Edit, Clear, Delete) — this spec does not
 // re-check the order (the render tests in
-// `tests/o4-menus-chapter-segment.test.ts` pin it), only that each one's
+// `tests/menus-chapter-segment.test.ts` pin it), only that each one's
 // centre lands inside the viewport it was rendered at.
 const TILE_LABELS = [
   "Mark segment 1 done",

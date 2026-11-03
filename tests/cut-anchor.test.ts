@@ -9,7 +9,7 @@ import { one, render } from "./render";
 
 /**
  * #1102: the Cut affordance's wrapper carries the selection's midpoint as
- * `--o4-cut-left`, the same table `tests/recorder-stage.test.ts`'s
+ * `--c-cut-left`, the same table `tests/recorder-stage.test.ts`'s
  * `cutAnchorPercent` describe block pins at the pure-function level. This
  * file pins it at the component's actual rendered attribute — the same split
  * `tests/selection-overlay-hit.test.ts` and `tests/centerline-overlay.test.ts`
@@ -50,12 +50,12 @@ const cutLeft = (el: Element) =>
   // jsdom's CSSOM does not parse `clamp()` with `var()`, and there is none to
   // parse here anyway — the wrapper only ever carries the one custom
   // property, not the stylesheet's clamp.
-  /(?:^|;)\s*--o4-cut-left:\s*([^;]+)/
+  /(?:^|;)\s*--c-cut-left:\s*([^;]+)/
     .exec(el.getAttribute("style") ?? "")?.[1]
     ?.trim();
 
 describe("CutAnchor — the Cut wrapper follows the selection midpoint (#1102)", () => {
-  it("carries the selection's midpoint as --o4-cut-left", () => {
+  it("carries the selection's midpoint as --c-cut-left", () => {
     // 800..900 inside 750..1000: midpoint 850, (850-750)/250 = 40%.
     const root = anchor({ start: 800, end: 900 });
     expect(cutLeft(one(root, ".cut-anchor"))).toBe("40%");
@@ -77,7 +77,7 @@ describe("CutAnchor — the Cut wrapper follows the selection midpoint (#1102)",
   });
 
   it("renders the child unwrapped, at no fixed position, with no selection (the bin, #862)", () => {
-    // Not just "no --o4-cut-left" — no `.cut-anchor` element at all, so the
+    // Not just "no --c-cut-left" — no `.cut-anchor` element at all, so the
     // bin keeps `.recorder-cut`'s own `justify-content: center` rather than
     // being wrapped in a positioned box that happens to carry no property
     // (the same "swap the gated content for an empty fragment" trap

@@ -117,7 +117,7 @@ let codec: ReturnType<typeof testCodec>;
 let share: ReturnType<typeof vi.fn>;
 let estimate: ReturnType<typeof vi.fn>;
 // The layer stack, standing in for `useNavStack` the way
-// `tests/books-delete-in-sheet-o4.test.ts` does — module-scoped so a test can
+// `tests/books-delete-in-sheet.test.ts` does — module-scoped so a test can
 // inspect it after mounting, not just hand it to `pushLayer`/`popLayer`.
 const layers = new Map<string, Layer>();
 
@@ -190,7 +190,7 @@ async function mountBooks(): Promise<HTMLElement> {
 
 /**
  * A system Back, run the way `use-nav-stack.ts`'s adapter runs one (the same
- * helper `tests/books-delete-in-sheet-o4.test.ts` uses): refuse when the top
+ * helper `tests/books-delete-in-sheet.test.ts` uses): refuse when the top
  * layer is busy, otherwise `dismiss()` it and pop it.
  */
 async function systemBack(): Promise<string> {

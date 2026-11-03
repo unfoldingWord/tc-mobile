@@ -16,7 +16,7 @@
    marked, for #939 to swap in. Colour comes only through layer-2 roles; the
    shadow is the design reference's own literal, marked the same way.
 
-   tests/o4-dialogs.test.ts reads this file: it strips comments first, and it
+   tests/confirm-dialog.test.ts reads this file: it strips comments first, and it
    requires every selector below to match real EraseConfirm markup. */
 @layer components {
   /* Inset 18 from the screen edge on every side; the panel fills the rest of

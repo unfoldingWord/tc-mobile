@@ -10,14 +10,14 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
-import { areaScope, declsFor } from "./o4-area-css";
+import { areaScope, declsFor } from "./area-css";
 import { render } from "./render";
 import { restingErase } from "./support";
 
 /**
  * Press-and-hold reorder on the Segments list (#953 PR2a), wired: the real
  * `SegmentsScreen` and `SegmentRow`, with `useChapterSegments` replaced at
- * its boundary (the `segments-erase-preview-o4` pattern), so these cases are
+ * its boundary (the `segments-erase-preview` pattern), so these cases are
  * about the call sites — that the hold starts only on the badge and title,
  * and that the one
  * `moveSegment` call happens on the drop and nowhere else.
@@ -495,13 +495,13 @@ describe("the row's hold area", () => {
       onRename: () => Promise.resolve(true),
       onHoldStart: () => {},
     };
-    const o4 = render(createElement(SegmentRow, props));
+    const row = render(createElement(SegmentRow, props));
     expect(
-      [...o4.querySelectorAll("[data-reorder-handle]")].map(
+      [...row.querySelectorAll("[data-reorder-handle]")].map(
         (el) => el.className
       )
     ).toEqual(["row-open", "row-title"]);
-    expect(o4.querySelector(".scrub[data-reorder-handle]")).toBeNull();
+    expect(row.querySelector(".scrub[data-reorder-handle]")).toBeNull();
 
     // The row gains the gesture only from the screen's handler.
     const bare = render(

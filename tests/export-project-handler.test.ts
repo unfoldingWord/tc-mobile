@@ -15,7 +15,7 @@ import { stripComments } from "./support";
  * the card has a language, and from the ask only once the pick is stored.
  *
  * Read from source with comments stripped, because a screen this size cannot
- * be rendered in one pass here; `books-menus-tiles-o4.test.ts` renders the
+ * be rendered in one pass here; `books-menus-tiles.test.ts` renders the
  * tile row, and `use-book-share-project.test.ts` runs the flow itself.
  */
 const source = stripComments(

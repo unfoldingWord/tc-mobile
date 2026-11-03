@@ -6,11 +6,11 @@ import { shareOverlayGlyph } from "@/components/share-overlay-glyph";
 import {
   bookShareItems,
   chapterShareItems,
-  shareO4View,
+  shareView,
   type ShareChip,
   type ShareItem,
-  type ShareO4View,
-} from "@/components/share-o4-view";
+  type ShareView,
+} from "@/components/share-view";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
 import { SHARE_SETTLED, type ShareProgress } from "@/hooks/share-progress";
 import { ENCODE_STEPS } from "@/lib/export/chapter";
@@ -58,15 +58,15 @@ function items(pattern: string): ShareItem[] {
 }
 
 /** The chip row's accessible label, as the panel actually emits it. */
-function goOutLabel(view: ShareO4View): string | null {
+function goOutLabel(view: ShareView): string | null {
   const container = render(
     createElement(ShareProgressPanel, {
       role: "status",
       text: "status",
-      o4: view,
+      view,
     })
   );
-  return one(container, ".share-o4-chips").getAttribute("aria-label");
+  return one(container, ".share-chips").getAttribute("aria-label");
 }
 
 /** A chip row as a compact string: `-` stays, `o` waiting, `v` finished, `*` current. */
@@ -75,14 +75,14 @@ function row(chips: readonly ShareChip[]): string {
   return chips.map((c) => mark[c.state]).join("");
 }
 
-describe("shareO4View: the glyph in the core", () => {
+describe("shareView: the glyph in the core", () => {
   it("busy wears the plain share glyph (D15)", () => {
-    expect(shareO4View(busy(), "chapter").icon).toBe("share");
-    expect(shareO4View(busy(undefined, "send"), "book").icon).toBe("share");
+    expect(shareView(busy(), "chapter").icon).toBe("share");
+    expect(shareView(busy(undefined, "send"), "book").icon).toBe("share");
   });
 
   it("handed over wears the plain check (D14), not share-sent", () => {
-    const view = shareO4View(
+    const view = shareView(
       { phase: "outcome", settled: "sent", since: 0 },
       "chapter"
     );
@@ -93,59 +93,57 @@ describe("shareO4View: the glyph in the core", () => {
     for (const settled of SHARE_SETTLED) {
       if (settled === "sent") continue;
       const progress = { phase: "outcome", settled, since: 0 } as const;
-      expect(shareO4View(progress, "book").icon).toBe(
+      expect(shareView(progress, "book").icon).toBe(
         shareOverlayGlyph(progress).icon
       );
     }
   });
 });
 
-describe("shareO4View: the filling ring", () => {
+describe("shareView: the filling ring", () => {
   it("draws no ring and no chips before a real count exists (D15: no interim look)", () => {
     for (const progress of [busy(), busy(undefined, "send")]) {
-      const view = shareO4View(progress, "chapter", items("xx"));
+      const view = shareView(progress, "chapter", items("xx"));
       expect(view.ring).toBeNull();
     }
-    expect(shareO4View(busy(), "chapter", items("xx")).chips).toEqual([]);
+    expect(shareView(busy(), "chapter", items("xx")).chips).toEqual([]);
   });
 
   it("fills by done over total, the whole count including the encode (#996)", () => {
-    expect(shareO4View(busy({ done: 0, total: 4 }), "book").ring).toBe(0);
-    expect(shareO4View(busy({ done: 1, total: 4 }), "book").ring).toBe(0.25);
-    expect(shareO4View(busy({ done: 4, total: 4 }), "book").ring).toBe(1);
+    expect(shareView(busy({ done: 0, total: 4 }), "book").ring).toBe(0);
+    expect(shareView(busy({ done: 1, total: 4 }), "book").ring).toBe(0.25);
+    expect(shareView(busy({ done: 4, total: 4 }), "book").ring).toBe(1);
     const total = 3 + ENCODE_STEPS;
-    expect(shareO4View(busy({ done: 3, total }), "chapter").ring).toBe(
-      3 / total
-    );
+    expect(shareView(busy({ done: 3, total }), "chapter").ring).toBe(3 / total);
   });
 
   it("an outcome carries no progress ring — its rings are the outcome's own look", () => {
     for (const settled of SHARE_SETTLED) {
-      const view = shareO4View({ phase: "outcome", settled, since: 0 }, "book");
+      const view = shareView({ phase: "outcome", settled, since: 0 }, "book");
       expect(view.ring).toBeNull();
     }
   });
 });
 
-describe("shareO4View: a zero total is guarded, not left to divide into NaN", () => {
+describe("shareView: a zero total is guarded, not left to divide into NaN", () => {
   it("draws the same 'no count yet' look (D15) as steps === undefined, not a NaN ring or meter", () => {
-    const view = shareO4View(busy({ done: 0, total: 0 }), "chapter");
+    const view = shareView(busy({ done: 0, total: 0 }), "chapter");
     expect(view.ring).toBeNull();
     expect(view.meter).toEqual({ now: null });
     expect(view.chips).toEqual([]);
   });
 
   it("never lets aria-valuenow read NaN through the panel", () => {
-    const view = shareO4View(busy({ done: 0, total: 0 }), "book");
+    const view = shareView(busy({ done: 0, total: 0 }), "book");
     const container = render(
       createElement(ShareProgressPanel, {
         role: "status",
         text: "status",
-        o4: view,
+        view,
       })
     );
     // The same "no count yet" bar the `steps === undefined` case draws
-    // (share-progress-o4-render.test.ts, "carries no value before the first
+    // (share-progress-render.test.ts, "carries no value before the first
     // count"): the core is still a progress bar, just with no
     // `aria-valuenow` — never the `NaN` an unguarded `steps.total === 0`
     // would have produced.
@@ -154,50 +152,50 @@ describe("shareO4View: a zero total is guarded, not left to divide into NaN", ()
   });
 });
 
-describe("shareO4View: the core's progress bar (D22)", () => {
+describe("shareView: the core's progress bar (D22)", () => {
   it("reads done over total as a whole percent while a prepare counts", () => {
-    expect(shareO4View(busy({ done: 1, total: 3 }), "book").meter).toEqual({
+    expect(shareView(busy({ done: 1, total: 3 }), "book").meter).toEqual({
       now: 33,
     });
-    expect(shareO4View(busy({ done: 2, total: 3 }), "book").meter).toEqual({
+    expect(shareView(busy({ done: 2, total: 3 }), "book").meter).toEqual({
       now: 67,
     });
-    expect(shareO4View(busy({ done: 0, total: 4 }), "book").meter).toEqual({
+    expect(shareView(busy({ done: 0, total: 4 }), "book").meter).toEqual({
       now: 0,
     });
     const total = 3 + ENCODE_STEPS;
     expect(
-      shareO4View(busy({ done: total, total, items: 3 }), "chapter").meter
+      shareView(busy({ done: total, total, items: 3 }), "chapter").meter
     ).toEqual({ now: 100 });
   });
 
   it("is a progress bar with no value before the first count", () => {
-    expect(shareO4View(busy(), "chapter").meter).toEqual({ now: null });
+    expect(shareView(busy(), "chapter").meter).toEqual({ now: null });
   });
 
   it("reads full while the file is being handed over", () => {
-    expect(shareO4View(busy(undefined, "send"), "book").meter).toEqual({
+    expect(shareView(busy(undefined, "send"), "book").meter).toEqual({
       now: 100,
     });
   });
 
   it("stays a full progress bar once handed over, as the workbench's system phase does", () => {
     expect(
-      shareO4View({ phase: "outcome", settled: "sent", since: 0 }, "book").meter
+      shareView({ phase: "outcome", settled: "sent", since: 0 }, "book").meter
     ).toEqual({ now: 100 });
   });
 
   it("is named by the visible status line at 100 on send and sent, and by the preparing label while counting (DRI pick (c))", () => {
-    expect(shareO4View(busy(undefined, "send"), "book").meterFromStatus).toBe(
+    expect(shareView(busy(undefined, "send"), "book").meterFromStatus).toBe(
       true
     );
     expect(
-      shareO4View({ phase: "outcome", settled: "sent", since: 0 }, "book")
+      shareView({ phase: "outcome", settled: "sent", since: 0 }, "book")
         .meterFromStatus
     ).toBe(true);
-    expect(shareO4View(busy(), "chapter").meterFromStatus).toBeFalsy();
+    expect(shareView(busy(), "chapter").meterFromStatus).toBeFalsy();
     expect(
-      shareO4View(busy({ done: 4, total: 4 }), "book").meterFromStatus
+      shareView(busy({ done: 4, total: 4 }), "book").meterFromStatus
     ).toBeFalsy();
   });
 
@@ -205,14 +203,14 @@ describe("shareO4View: the core's progress bar (D22)", () => {
     for (const settled of SHARE_SETTLED)
       if (settled !== "sent")
         expect(
-          shareO4View({ phase: "outcome", settled, since: 0 }, "book").meter
+          shareView({ phase: "outcome", settled, since: 0 }, "book").meter
         ).toBeNull();
   });
 });
 
-describe("shareO4View: one numbered chip per item, in order (D21)", () => {
+describe("shareView: one numbered chip per item, in order (D21)", () => {
   it("keeps every item's own number and order, including the ones that stay", () => {
-    const chips = shareO4View(
+    const chips = shareView(
       busy({ done: 0, total: 2 + ENCODE_STEPS, items: 2 }),
       "chapter",
       items(".x.x")
@@ -225,7 +223,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     const total = 3 + ENCODE_STEPS;
     const view = (done: number) =>
       row(
-        shareO4View(busy({ done, total, items: 3 }), "chapter", items("x.xx."))
+        shareView(busy({ done, total, items: 3 }), "chapter", items("x.xx."))
           .chips
       );
     expect(view(0)).toBe("*-oo-");
@@ -239,7 +237,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
 
   it("a book counts every chapter: an empty chapter passes as a grey step", () => {
     const view = (done: number) =>
-      row(shareO4View(busy({ done, total: 4 }), "book", items("x.xx")).chips);
+      row(shareView(busy({ done, total: 4 }), "book", items("x.xx")).chips);
     expect(view(0)).toBe("*-oo");
     // Chapter 1 done; chapter 2 has no audio and its step is running, so no
     // chip is current until chapter 3's step is (DRI pick (b) on #1023, "No
@@ -252,7 +250,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
 
   it("two empty chapters in a row: no chip is current until the cursor reaches a recorded one (DRI pick (b))", () => {
     const view = (done: number) =>
-      row(shareO4View(busy({ done, total: 4 }), "book", items("x..x")).chips);
+      row(shareView(busy({ done, total: 4 }), "book", items("x..x")).chips);
     expect(view(0)).toBe("*--o");
     expect(view(1)).toBe("v--o");
     expect(view(2)).toBe("v--o");
@@ -262,11 +260,11 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
 
   it("everything that goes out shows a check at hand-over (busy send and sent)", () => {
     expect(
-      row(shareO4View(busy(undefined, "send"), "book", items("x.x")).chips)
+      row(shareView(busy(undefined, "send"), "book", items("x.x")).chips)
     ).toBe("v-v");
     expect(
       row(
-        shareO4View(
+        shareView(
           { phase: "outcome", settled: "sent", since: 0 },
           "chapter",
           items("x.x")
@@ -279,7 +277,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     for (const settled of SHARE_SETTLED)
       if (settled !== "sent")
         expect(
-          shareO4View(
+          shareView(
             { phase: "outcome", settled, since: 0 },
             "book",
             items("xx")
@@ -288,8 +286,8 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
   });
 
   it("draws no chips without the screen's items", () => {
-    expect(shareO4View(busy({ done: 1, total: 4 }), "book").chips).toEqual([]);
-    expect(shareO4View(busy({ done: 1, total: 4 }), "book", []).chips).toEqual(
+    expect(shareView(busy({ done: 1, total: 4 }), "book").chips).toEqual([]);
+    expect(shareView(busy({ done: 1, total: 4 }), "book", []).chips).toEqual(
       []
     );
   });
@@ -300,7 +298,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     // stretch nothing is being packed, so the third is not amber.
     expect(
       row(
-        shareO4View(
+        shareView(
           busy({
             done: 2 + ENCODE_STEPS / 2,
             total: 2 + ENCODE_STEPS,
@@ -318,7 +316,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     // no audio, so the count reports it skipped at position 1.
     expect(
       row(
-        shareO4View(
+        shareView(
           busy({ done: 2, total: 3, skipped: 1, hollow: [1] }),
           "book",
           items("xxx")
@@ -329,7 +327,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     // Its position is among the count's items, which skip the "." segment.
     expect(
       row(
-        shareO4View(
+        shareView(
           busy({
             done: 3,
             total: 3 + ENCODE_STEPS,
@@ -354,10 +352,10 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
       pending: null,
       carried: { hollow: [1] },
     };
-    expect(row(shareO4View(send, "book", items("xxx")).chips)).toBe("v-v");
+    expect(row(shareView(send, "book", items("xxx")).chips)).toBe("v-v");
     expect(
       row(
-        shareO4View(
+        shareView(
           {
             phase: "outcome",
             settled: "sent",
@@ -373,7 +371,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     // "." segment is skipped over when placing hollow position 1.
     expect(
       row(
-        shareO4View(
+        shareView(
           { ...send, carried: { items: 3, hollow: [1] } },
           "chapter",
           items("x.xx")
@@ -385,7 +383,7 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
   it("a count longer than the items the screen holds never runs past them", () => {
     expect(
       row(
-        shareO4View(
+        shareView(
           busy({ done: 3, total: 3 + ENCODE_STEPS, items: 3 }),
           "chapter",
           items("xx")
@@ -407,7 +405,7 @@ describe("an item the exporter omitted BEFORE its count (#1044)", () => {
   it("Share Chapter, while the prepare counts", () => {
     const total = 2 + ENCODE_STEPS;
     const view = (done: number) =>
-      shareO4View(busy({ done, total, items: 2, keys }), "chapter", screen);
+      shareView(busy({ done, total, items: 2, keys }), "chapter", screen);
     expect(row(view(0).chips)).toBe("*-o");
     expect(row(view(1).chips)).toBe("v-*");
     expect(row(view(2).chips)).toBe("v-v");
@@ -417,10 +415,10 @@ describe("an item the exporter omitted BEFORE its count (#1044)", () => {
   it("Share Chapter, through the hand-off and once handed over", () => {
     const carried = { items: 2, hollow: [], keys };
     const send: Busy = { ...busy(undefined, "send"), carried };
-    const sendView = shareO4View(send, "chapter", screen);
+    const sendView = shareView(send, "chapter", screen);
     expect(row(sendView.chips)).toBe("v-v");
     expect(goOutLabel(sendView)).toBe("2 of 3 go out");
-    const sent = shareO4View(
+    const sent = shareView(
       { phase: "outcome", settled: "sent", since: 0, carried },
       "chapter",
       screen
@@ -431,7 +429,7 @@ describe("an item the exporter omitted BEFORE its count (#1044)", () => {
 
   it("Share Book, while the prepare counts", () => {
     const view = (done: number) =>
-      shareO4View(busy({ done, total: 2, keys }), "book", screen);
+      shareView(busy({ done, total: 2, keys }), "book", screen);
     expect(row(view(0).chips)).toBe("*-o");
     expect(row(view(1).chips)).toBe("v-*");
     expect(row(view(2).chips)).toBe("v-v");
@@ -441,10 +439,10 @@ describe("an item the exporter omitted BEFORE its count (#1044)", () => {
   it("Share Book, through the hand-off and once handed over", () => {
     const carried = { hollow: [], keys };
     const send: Busy = { ...busy(undefined, "send"), carried };
-    const sendView = shareO4View(send, "book", screen);
+    const sendView = shareView(send, "book", screen);
     expect(row(sendView.chips)).toBe("v-v");
     expect(goOutLabel(sendView)).toBe("2 of 3 go out");
-    const sent = shareO4View(
+    const sent = shareView(
       { phase: "outcome", settled: "sent", since: 0, carried },
       "book",
       screen
@@ -458,12 +456,12 @@ describe("an item the exporter omitted BEFORE its count (#1044)", () => {
     // finished with no audio: only item 1 went out.
     const carried = { items: 2, hollow: [1], keys };
     const send: Busy = { ...busy(undefined, "send"), carried };
-    const view = shareO4View(send, "chapter", screen);
+    const view = shareView(send, "chapter", screen);
     expect(row(view.chips)).toBe("v--");
     expect(goOutLabel(view)).toBe("1 of 3 goes out");
     expect(
       row(
-        shareO4View(
+        shareView(
           busy({ done: 2, total: 2, skipped: 1, hollow: [1], keys }),
           "book",
           screen
@@ -477,7 +475,7 @@ describe("an item the exporter omitted BEFORE its count (#1044)", () => {
     // the count is on it, and no screen item is checked for it.
     const view = (done: number) =>
       row(
-        shareO4View(
+        shareView(
           busy({ done, total: 2, keys: ["k1", "zz"] }),
           "book",
           items("xx")

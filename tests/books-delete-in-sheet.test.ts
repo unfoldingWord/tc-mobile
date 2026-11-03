@@ -18,7 +18,7 @@ import type { BookCard } from "@/types/view";
  *
  * The whole screen is mounted with react-dom + `act()` in jsdom — the step up
  * `tests/render.ts` names for effects, focus and events — and the data hooks
- * are mocked the way `tests/books-o4.test.ts` mocks them. The layer stack is a
+ * are mocked the way `tests/books-screen.test.ts` mocks them. The layer stack is a
  * Map standing in for `useNavStack`, and a system Back is simulated the way
  * the adapter runs one (`use-nav-stack.ts`): refuse when the top layer is
  * busy, otherwise `dismiss()` and then pop that layer.

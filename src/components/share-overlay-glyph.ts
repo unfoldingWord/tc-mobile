@@ -36,7 +36,7 @@ export function shareOverlayGlyph(
 ): ShareOutcomeGlyph {
   switch (progress.phase) {
     // The wait wears the plain share glyph (D15, #947) — the mark
-    // `shareO4View` draws in the circle's core while a prepare or a send is
+    // `shareView` draws in the circle's core while a prepare or a send is
     // in flight — not `Notice`'s shared `busy` retry arc. Its `busy` tone is
     // what sets the overlay's role.
     case "busy":

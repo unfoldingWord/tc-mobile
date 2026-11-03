@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { AREA_DIR, readAreaCss } from "./o4-area-css";
+import { AREA_DIR, readAreaCss } from "./area-css";
 import { stripCssComments } from "./support";
 
 /**

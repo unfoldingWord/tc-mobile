@@ -13,7 +13,7 @@ import { restingErase } from "./support";
 /**
  * Hold-to-reveal on the Segments screen (S14, #1284), wired: the real
  * `SegmentsScreen` with `useChapterSegments` replaced at its boundary (the
- * `segments-reorder-o4` pattern). The one rule under test: a press on a name
+ * `segments-reorder` pattern). The one rule under test: a press on a name
  * is claimed only when that name is cut off, so a title that fits still lifts
  * its row for the reorder (#953) exactly as before.
  *

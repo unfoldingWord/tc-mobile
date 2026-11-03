@@ -9,7 +9,7 @@ import {
 } from "@/lib/audio/mic-retry";
 import { strings } from "@/lib/strings";
 
-import { areaRule, areaScope } from "./o4-area-css";
+import { areaRule, areaScope } from "./area-css";
 import { one, render } from "./render";
 import { cssRule, declarationValue } from "./support";
 

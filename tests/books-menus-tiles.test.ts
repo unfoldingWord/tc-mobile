@@ -17,7 +17,7 @@ import type { BookCard } from "@/types/view";
  * (state 04) with #937 D7's Cover colour tile, and the app ≡ menu (the
  * workbench's G1). The whole screen is mounted with react-dom + `act()` in
  * jsdom, with the data hooks mocked the way
- * `tests/books-delete-in-sheet-o4.test.ts` mocks them.
+ * `tests/books-delete-in-sheet.test.ts` mocks them.
  *
  * The cover write is #964's hook, mocked here: this file checks the screen
  * calls it with the book and the chosen key, and what the sheet does with

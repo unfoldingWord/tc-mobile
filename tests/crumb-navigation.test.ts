@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { Crumbs, SheetHead } from "@/components/crumbs";
 import { strings } from "@/lib/strings";
-import { areaScope, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./area-css";
 import { render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -16,7 +16,7 @@ import { cssRule, declarationValue } from "./support";
  *
  * This file is the props-to-markup half, through the static render harness.
  * Which handler each header hands a crumb, and that a tap runs the header's
- * own Back path, is `tests/o4-header-crumbs.test.ts`; the tap landing on the
+ * own Back path, is `tests/header-crumbs.test.ts`; the tap landing on the
  * right screen in the shipped build is `e2e/header-crumbs-fit.spec.ts`.
  */
 

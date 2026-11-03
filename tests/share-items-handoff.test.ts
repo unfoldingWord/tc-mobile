@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BooksScreen } from "@/components/books-screen";
 import { idleChapterAudio } from "./chapter-audio";
 import { SegmentsScreen } from "@/components/segments-screen";
-import { bookShareItems, chapterShareItems } from "@/components/share-o4-view";
+import { bookShareItems, chapterShareItems } from "@/components/share-view";
 import { strings } from "@/lib/strings";
 import type { ShareProgress } from "@/hooks/share-progress";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -19,20 +19,20 @@ import { restingErase } from "./support";
 /**
  * #1031 item 3: "the screens' `items` hand-off into ShareProgress isn't
  * covered by a test." `bookShareItems`/`chapterShareItems` themselves are
- * covered directly (`tests/share-o4-view.test.ts`, `tests/share-carry-keys.test.ts`),
- * and `shareO4View`'s chip logic given a manufactured `items` array is
- * covered too (`tests/share-progress-o4-render.test.ts`). What none of those
+ * covered directly (`tests/share-view.test.ts`, `tests/share-carry-keys.test.ts`),
+ * and `shareView`'s chip logic given a manufactured `items` array is
+ * covered too (`tests/share-progress-render.test.ts`). What none of those
  * cover is the WIRING at the two call sites — `books-screen.tsx`'s
  * `items={shareMenuBook ? bookShareItems(shareMenuBook.chapters) : []}` and
  * `segments-screen.tsx`'s `items={chapterShareItems(rows)}` — that the real
  * screen hands the ACTUAL book's chapters, or the ACTUAL chapter's rows, in
  * order, into the chips a translator sees. This file mounts each real screen
  * (the `tests/books-share-overlay-delete-guard.test.ts` /
- * `tests/o4-menus-chapter-segment.test.ts` pattern), forces an "outcome:
- * sent" progress so `shareO4View`'s hand-off branch draws every chip with no
- * carried snapshot (share-o4-view.ts's `handedOver`), and reads the chips
- * straight out of the DOM (`.share-o4-chip`, `share-progress-panel.tsx`'s
- * `O4Chips`) rather than calling any helper directly — so a screen that wired
+ * `tests/menus-chapter-segment.test.ts` pattern), forces an "outcome:
+ * sent" progress so `shareView`'s hand-off branch draws every chip with no
+ * carried snapshot (share-view.ts's `handedOver`), and reads the chips
+ * straight out of the DOM (`.share-chip`, `share-progress-panel.tsx`'s
+ * `ShareChips`) rather than calling any helper directly — so a screen that wired
  * the wrong book, the wrong rows, or dropped `items` back to `[]` fails here
  * even though every other suite in the tree stays green.
  *
@@ -182,7 +182,7 @@ function chipShape(state: string, label: string | number) {
 }
 
 function readChips(): { state: string | null; label: string }[] {
-  return [...document.querySelectorAll<HTMLElement>(".share-o4-chip")].map(
+  return [...document.querySelectorAll<HTMLElement>(".share-chip")].map(
     (el) => ({
       state: el.getAttribute("data-chip"),
       label: el.textContent ?? "",
@@ -246,7 +246,7 @@ describe("Books screen's Share Book items hand-off into ShareProgress (O4, #1031
     // carries its label, chapter 2's.
     expect(chips[1]!.label).toBe("2");
     expect(
-      document.querySelector(".share-o4-chips")?.getAttribute("aria-label")
+      document.querySelector(".share-chips")?.getAttribute("aria-label")
     ).toBe(strings.shareItemsGoOut(2, 3));
   });
 });
@@ -305,7 +305,7 @@ describe("Segments screen's Share Chapter items hand-off into ShareProgress (O4,
     expect(chips.map((c) => c.state)).toEqual(expected.map((c) => c.state));
     expect(chips[1]!.label).toBe("2");
     expect(
-      document.querySelector(".share-o4-chips")?.getAttribute("aria-label")
+      document.querySelector(".share-chips")?.getAttribute("aria-label")
     ).toBe(strings.shareItemsGoOut(2, 3));
   });
 });

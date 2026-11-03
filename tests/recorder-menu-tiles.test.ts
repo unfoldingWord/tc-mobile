@@ -10,7 +10,7 @@ import {
 import { TILE_GLYPH } from "@/components/tile-look";
 import { strings } from "@/lib/strings";
 
-import { areaScope, declsFor, fileRules } from "./o4-area-css";
+import { areaScope, declsFor, fileRules } from "./area-css";
 
 /**
  * The recorder menu on the O4 tile grid (#949 G3, epic #936), including the
@@ -25,7 +25,7 @@ import { areaScope, declsFor, fileRules } from "./o4-area-css";
  * Delete segment (#590) lived here too, from #1080 until #1104 (the
  * requirements owner's 2026-09-26 decision) pulled it back out of this menu
  * entirely — it belongs to the chapter view's own segment menu now
- * (`tests/segments-o4.test.ts` and `tests/segment-row-*.test.ts` cover that
+ * (`tests/segments-screen.test.ts` and `tests/segment-row-*.test.ts` cover that
  * one). The negative case near the end of this file pins the removal.
  *
  * Marking done (G8) is #995's shared `done` / `doneoff` tile tone, the same
