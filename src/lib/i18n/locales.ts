@@ -83,8 +83,11 @@ export function buildTable(
  * "Draft now, gate go-live" (2026-11-03): the Arabic table is drafted, and
  * this hold keeps a complete one off until that pass clears it. Removing
  * `ar` here is the go-live change, and it is the DRI's call.
+ *
+ * A frozen array, not a `Set`: `ReadonlySet` is a type only, and a live `Set`
+ * would let any caller's `.add` hold a language for every later resolution.
  */
-export const GO_LIVE_HELD: ReadonlySet<string> = new Set(["ar"]);
+export const GO_LIVE_HELD: readonly string[] = Object.freeze(["ar"]);
 
 /**
  * The locales the resolver may pick: English, and each language not on
@@ -99,15 +102,17 @@ export const GO_LIVE_HELD: ReadonlySet<string> = new Set(["ar"]);
  * with them. Called at each resolution, so it is never a stale snapshot.
  *
  * `held` is a parameter so a test can lift the hold; callers pass nothing.
+ * It is copied on the way in, so a later change to it changes nothing here.
  * English is never held: it is the fallback.
  */
 export function completeLocales(
-  held: ReadonlySet<string> = GO_LIVE_HELD
+  held: Iterable<string> = GO_LIVE_HELD
 ): Locale[] {
+  const gate = new Set(held);
   const keys = Object.keys(stringsEn).filter((key) => !ENGLISH_ONLY.has(key));
   return LOCALES.filter((locale) => {
     if (locale === SHIPPED_LOCALE) return true;
-    if (held.has(locale.tag)) return false;
+    if (gate.has(locale.tag)) return false;
     const overrides = LOCALE_OVERRIDES[locale.tag];
     if (overrides === undefined) return false;
     const entries = overrides as Readonly<Record<string, unknown>>;
