@@ -355,7 +355,7 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
 });
 
 describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
-  it("holds About and Templates as its tiles, and the theme tile has moved to Settings (#1575)", async () => {
+  it("holds Settings, Templates and About as its tiles, in that order (#1871)", async () => {
     await mount();
     await openFrom(strings.menuOpen);
     const menu = appMenu();
@@ -363,17 +363,26 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     const grid = menu!.querySelector(".tiles");
     expect(grid).not.toBeNull();
     const tiles = tilesIn(menu!);
-    expect(tiles).toHaveLength(2);
-    const [about, templates] = tiles as [HTMLButtonElement, HTMLButtonElement];
-    // The Template Library tile (#246), after About.
-    expect(templates.getAttribute("aria-label")).toBe(strings.templatesOpen);
-    expect(about.getAttribute("aria-label")).toBe(strings.aboutOpen);
-    expect(about.classList).toContain("tile--plain");
-    const caption = about.querySelector(".control-caption")?.textContent;
-    expect(caption).toBeTruthy();
-    expect(about.getAttribute("aria-label")!.toLowerCase()).toContain(
-      caption!.toLowerCase()
-    );
+    // The DRI on #1871 (verbatim): "≡ only; Settings is a tile
+    // (Recommended)". Pinned whole, so a dropped or reordered tile fails.
+    expect(tiles.map((t) => t.getAttribute("aria-label"))).toEqual([
+      strings.settingsOpen,
+      strings.templatesOpen,
+      strings.aboutOpen,
+    ]);
+    const [settings, , about] = tiles as [
+      HTMLButtonElement,
+      HTMLButtonElement,
+      HTMLButtonElement,
+    ];
+    for (const tile of [settings, about]) {
+      expect(tile.classList).toContain("tile--plain");
+      const caption = tile.querySelector(".control-caption")?.textContent;
+      expect(caption).toBeTruthy();
+      expect(tile.getAttribute("aria-label")!.toLowerCase()).toContain(
+        caption!.toLowerCase()
+      );
+    }
     // The toggle is not here any more: the move is the behaviour, so neither
     // destination's name may be found in this menu.
     for (const name of [strings.useLightTheme, strings.useDarkTheme])
@@ -382,10 +391,38 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
           (b) => b.getAttribute("aria-label") === name
         )
       ).toBe(false);
-    // About is the first thing focus lands on when the menu opens, per the
-    // DRI ruling: focus follows the first tile.
-    expect(document.activeElement).toBe(about);
+    // Focus lands on the first tile when the menu opens (the DRI ruling:
+    // focus follows the first tile), which is now Settings.
+    expect(document.activeElement).toBe(settings);
     await key("Escape");
+    expect(document.activeElement).toBe(button(strings.menuOpen));
+  });
+
+  it("puts one ≡ in the header and no gear (#1871)", async () => {
+    await mount();
+    const header = document.querySelector<HTMLElement>(".books-header");
+    expect(header).not.toBeNull();
+    const names = [...header!.querySelectorAll("button")].map((b) =>
+      b.getAttribute("aria-label")
+    );
+    // New Book and the ≡, nothing else: a gear (or any other control) coming
+    // back fails here.
+    expect(names).toEqual([strings.newBook, strings.menuOpen]);
+    // Settings is reachable only through the ≡.
+    expect(buttons(strings.settingsOpen)).toHaveLength(0);
+  });
+
+  it("the Settings tile hands off like About: the menu closes, Settings opens, and its close returns focus to the ≡ (#1871)", async () => {
+    await mount();
+    await openFrom(strings.menuOpen);
+    await click(strings.settingsOpen);
+    expect(appMenu(), "the ≡ menu closed").toBeNull();
+    expect(dialog(strings.settingsTitle), "Settings open").not.toBeNull();
+    expect(layers.has("books:settings")).toBe(true);
+    expect(layers.has("books:global-menu")).toBe(false);
+    await click(strings.backToBooks);
+    expect(dialog(strings.settingsTitle)).toBeNull();
+    expect(layers.has("books:settings")).toBe(false);
     expect(document.activeElement).toBe(button(strings.menuOpen));
   });
 
@@ -395,9 +432,10 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     await openFrom(strings.menuOpenWithFailures(2));
     const menu = appMenu()!;
     const report = button(strings.shareFailureLog);
-    const about = tilesIn(menu).at(-1)!;
+    const firstTile = tilesIn(menu)[0]!;
     expect(
-      report.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING
+      report.compareDocumentPosition(firstTile) &
+        Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(document.activeElement).toBe(report);
   });

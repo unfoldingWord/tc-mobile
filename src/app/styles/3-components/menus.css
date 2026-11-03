@@ -478,7 +478,7 @@
   }
 
   /* === #1575: the Settings screen ==========================================
-     A full-width panel (the gear's destination is a screen, not the About
+     A full-width panel (Settings is a screen, not the About
      drawer's 320px side sheet), keyed on the list it holds, like the tile
      sheets above. Its header is the Menu's own: the back chevron and title.
 

@@ -16,7 +16,8 @@ import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
 /**
- * The Settings screen (#1575), opened by the gear in the Books header: it
+ * The Settings screen (#1575), opened from its tile in the Books ≡ menu
+ * (#1871; the tile's order and hand-off are `books-menus-tiles.test.ts`'s): it
  * opens, holds the theme row and the chapter-number row, closes through its
  * Back and through system Back, and the theme left the ≡ menu for it.
  * The cascade and the persistence across a reload are
@@ -133,16 +134,21 @@ function button(label: string): HTMLButtonElement {
 async function click(label: string) {
   await act(async () => button(label).click());
 }
+/** Settings is a tile in the ≡ menu (#1871): open the menu, then the tile. */
+async function openSettings() {
+  await click(strings.menuOpen);
+  await click(strings.settingsOpen);
+}
 const dialogTitle = () =>
   document.querySelector('[role="dialog"]')?.getAttribute("aria-label") ?? null;
 /** The chapter row's visible title, the text the setting changes. */
 const chapterTitle = () =>
   document.querySelector(".books-chapter-title")?.textContent ?? null;
 
-it("the gear opens Settings, and Back to Books closes it", async () => {
+it("the ≡ menu's Settings tile opens Settings, and Back to Books closes it", async () => {
   await mount();
   expect(dialogTitle()).toBeNull();
-  await click(strings.settingsOpen);
+  await openSettings();
   expect(dialogTitle()).toBe(strings.settingsTitle);
   expect(layers.has("books:settings")).toBe(true);
 
@@ -153,7 +159,7 @@ it("the gear opens Settings, and Back to Books closes it", async () => {
 
 it("system Back dismisses Settings", async () => {
   await mount();
-  await click(strings.settingsOpen);
+  await openSettings();
   const layer = layers.get("books:settings");
   expect(layer).toBeDefined();
   await act(async () => {
@@ -170,7 +176,7 @@ it("the theme control moved: Settings holds it and the ≡ menu does not", async
   expect(buttons(strings.useDarkTheme)).toHaveLength(0);
   await click(strings.menuClose);
 
-  await click(strings.settingsOpen);
+  await openSettings();
   // Dark is the default, so the row names its destination, light.
   expect(buttons(strings.useLightTheme)).toHaveLength(1);
   await click(strings.useLightTheme);
@@ -184,7 +190,7 @@ it("the chapter-number row shows its state, persists, and changes the shelf's la
   // Off by default: the chapter's name when it has one.
   expect(chapterTitle()).toBe("Mark 6");
 
-  await click(strings.settingsOpen);
+  await openSettings();
   const row = button(strings.settingsChapterNumbers);
   expect(row.getAttribute("aria-checked")).toBe("false");
 
@@ -202,7 +208,7 @@ it("the chapter-number row shows its state, persists, and changes the shelf's la
 
 it("the loudness row shows OFF with nothing stored, and a tap writes on", async () => {
   await mount();
-  await click(strings.settingsOpen);
+  await openSettings();
   expect(
     button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("false");
@@ -224,7 +230,7 @@ it("the loudness row shows OFF with nothing stored, and a tap writes on", async 
 it("the loudness row reflects a stored on", async () => {
   window.localStorage.setItem(NORMALIZE_ON_FINISHED_KEY, "1");
   await mount();
-  await click(strings.settingsOpen);
+  await openSettings();
   expect(
     button(strings.settingsNormalizeOnFinished).getAttribute("aria-checked")
   ).toBe("true");

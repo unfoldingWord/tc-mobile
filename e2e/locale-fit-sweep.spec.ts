@@ -11,7 +11,7 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  * against the shipped `dist/` build: for the screens a translator meets first
  * (the Books shelf with a book, the book's ⋮ menu, the Segments screen, the
  * recorder's controls, the recorder's ≡ menu tiles over a recorded take,
- * Settings, the Templates picker, the licence ask at Share
+ * the Books ≡ menu's tiles, Settings, the Templates picker, the licence ask at Share
  * Book and the Export project language ask), in English and every language
  * whose table is complete (`tests/locale-fit-sweep-list.test.ts` fails when
  * `LOCALES` and the complete languages differ), no control's label spills out of its own box, no control is
@@ -78,6 +78,7 @@ const SCREENS = [
   "segments",
   "recorder",
   "recorder-menu",
+  "app-menu",
   "settings",
   "templates",
   "licence-ask",
@@ -383,11 +384,32 @@ export async function sweep(
       await settled(page, RECORDER_MENU);
       return measure(page, RECORDER_MENU);
     }
-    case "settings": {
+    case "app-menu": {
+      // The Books ≡ menu's tiles: Settings, Templates, About (#1871).
       await page.goto("/");
-      const gear = await handle(page, "button", "Settings", true);
+      await expect(page.locator("#launch-intro")).toBeHidden({
+        timeout: 10_000,
+      });
+      const open = await handle(page, "button", /^Open menu/);
       await switchLanguage(page, tag);
-      await gear.click();
+      await open.click();
+      await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
+        3
+      );
+      await settled(page, '[role="dialog"]');
+      return measure(page, '[role="dialog"]');
+    }
+    case "settings": {
+      // Settings is a tile in the ≡ menu (#1871).
+      await page.goto("/");
+      await expect(page.locator("#launch-intro")).toBeHidden({
+        timeout: 10_000,
+      });
+      await page.getByRole("button", { name: /^Open menu/ }).click();
+      await settled(page, '[role="dialog"]');
+      const tile = await handle(page, "button", "Settings", true);
+      await switchLanguage(page, tag);
+      await tile.click();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }
@@ -500,6 +522,7 @@ test("the sweep still reports a translated label cut with an ellipsis, and exemp
   page,
 }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /^Open menu/ }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(dialog).toBeVisible();
