@@ -453,7 +453,10 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
 delete of the held take's pending row, or a hold that found another take's
 row and so kept no safety copy (same file, `"pending-take-write"`,
 `"pending-take-delete"`, #38), a save refused because the take was already
-discarded (same file, `"pending-take-refused"`, #38), a waiting take the
+discarded, or a replayed take refused and its audio dropped, the row naming
+the refusal, the verdict and the recorded length (same file and
+`hooks/replay-pending-takes.ts`, `"pending-take-refused"`, #38, #1562),
+a waiting take the
 launch replay saved (same file, `"pending-take-replayed"`, #38) — not a
 failure, but the one durable record that a waiting take existed and was
 saved, written only when the replay's commit saved its audio, so like the

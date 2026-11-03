@@ -32,10 +32,12 @@ export type ReplayTake = NewTake & { readonly baseRevision: number };
  * is dropped and reported once, and never installed, so it can never reach
  * the verdict. A drop deletes the row and its audio in one transaction (the
  * DRI's pick on #1562, verbatim: "Delete it at the refusal, log it
- * (Recommended)"); the report names the refusal and the take's length. A recipe goes to `resume`, which installs it in the
- * slot and runs the conditional commit (`performResumeTake`); the commit,
- * not this read, decides whether it is saved, already saved, discarded or
- * kept. `resume` answers whether the slot is free again: a held slot stops
+ * (Recommended)"); the report names the refusal and the take's length.
+ *
+ * A recipe goes to `resume`, which installs it in the slot and runs the
+ * conditional commit (`performResumeTake`); the commit, not this read,
+ * decides whether it is saved, already saved, discarded or dropped as
+ * refused. `resume` answers whether the slot is free again: a held slot stops
  * the run, and the remaining rows wait for the next launch.
  *
  * Never rejects: it runs from a mount effect with nobody to catch it.
