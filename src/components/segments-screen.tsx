@@ -15,7 +15,7 @@ import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { LicenceAsk } from "./licence-ask";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
-import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
+import { Crumbs, SheetHead } from "./crumbs";
 import { Tile } from "./tile-menu";
 import { Notice } from "./notice";
 import { NOTHING_FAILED_TONE } from "./notice-tone";
@@ -1363,8 +1363,8 @@ export const SegmentsScreen = forwardRef<
              exposed, which is what names the chapter to assistive tech.
              The chapter menu's and each row menu's sheet heads keep the
              same chip text (#1230) and stay decoration. */}
-        <div className="o4-crumbs-bar">
-          <O4Crumbs
+        <div className="crumbs-bar">
+          <Crumbs
             className="min-w-0"
             book={bookName}
             chapter={chapterHeading}
@@ -1645,7 +1645,7 @@ export const SegmentsScreen = forwardRef<
           // workbench's header pencil because a header control ahead of the
           // grid would be a second first-focus candidate.
           <>
-            <O4SheetHead
+            <SheetHead
               book={bookName}
               bookCoverHex={bookCoverHex ?? undefined}
               chapter={chapterHeading}

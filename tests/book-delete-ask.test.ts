@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
+import { BookDeleteAsk } from "@/components/book-delete-ask";
 import { strings } from "@/lib/strings";
 import { areaRule, areaScope, fileRules } from "./o4-area-css";
 import { declarationValue } from "./support";
@@ -20,7 +20,7 @@ import { one, render } from "./render";
 
 function ask(busy = false): Element {
   return render(
-    createElement(O4BookDeleteAsk, {
+    createElement(BookDeleteAsk, {
       name: "Mark",
       coverHex: "#2a9d8f",
       busy,
@@ -35,7 +35,7 @@ function buttonNamed(root: Element, label: string): Element {
   return one(root, `button[aria-label="${label}"]`);
 }
 
-describe("O4BookDeleteAsk markup (#980)", () => {
+describe("BookDeleteAsk markup (#980)", () => {
   it("names the question on the group, and draws the book's small cover and name", () => {
     const root = ask();
     const group = one(root, ".books-delete-ask");
@@ -43,11 +43,11 @@ describe("O4BookDeleteAsk markup (#980)", () => {
     expect(group.getAttribute("aria-label")).toBe(
       strings.deleteBookConfirmTitle("Mark")
     );
-    const cover = one(group, ".o4-sheet-head > .books-cover.is-sm");
+    const cover = one(group, ".sheet-head > .books-cover.is-sm");
     expect(cover.getAttribute("aria-hidden")).toBe("true");
     expect(cover.getAttribute("style")).toContain("--book-cover:#2a9d8f");
     expect(one(cover, "svg")).toBeTruthy();
-    expect(one(group, ".o4-sheet-head > .books-sheet-name").textContent).toBe(
+    expect(one(group, ".sheet-head > .books-sheet-name").textContent).toBe(
       "Mark"
     );
   });
@@ -118,7 +118,7 @@ describe("3-components/books.css: the delete ask's rules match its markup (#980)
   });
 
   it("adds no second copy of the menu sheets' head rules (#980)", () => {
-    // The head is 3-components/menus.css's `o4-sheet-head`, which also hides the
+    // The head is 3-components/menus.css's `sheet-head`, which also hides the
     // sheet's own title while it is in the panel. books.css must not restate
     // either rule under a Books-only name, in any block of the file.
     const rules = fileRules("books");
@@ -134,12 +134,12 @@ describe("3-components/books.css: the delete ask's rules match its markup (#980)
 
   it("uses 3-components/menus.css's sheet head, which hides the title and lays out the row", () => {
     const menus = areaScope("menus");
-    expect(value(menus, ".o4-sheet-head", "display")).toBe("flex");
+    expect(value(menus, ".sheet-head", "display")).toBe("flex");
     expect(
-      value(menus, ".menu-panel:has(.o4-sheet-head) .t-title", "visibility")
+      value(menus, ".menu-panel:has(.sheet-head) .t-title", "visibility")
     ).toBe("hidden");
     expect(
-      ask().querySelector(".books-delete-ask > .o4-sheet-head")
+      ask().querySelector(".books-delete-ask > .sheet-head")
     ).not.toBeNull();
   });
 });

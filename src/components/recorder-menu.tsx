@@ -1,5 +1,5 @@
 import { Menu } from "./menu";
-import { O4SheetHead } from "./o4-crumbs";
+import { SheetHead } from "./crumbs";
 import { Tile, TileGrid } from "./tile-menu";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
@@ -83,7 +83,7 @@ export interface RecorderMenuProps {
   bookName?: string;
   /**
    * The book's resolved cover colour (#949, #957), already a hex string —
-   * see `O4SheetHead`'s own docblock for how it is resolved and why absent
+   * see `SheetHead`'s own docblock for how it is resolved and why absent
    * means "no square", not "no colour". `recorder.tsx` passes
    * `view?.bookCoverHex ?? undefined`.
    */
@@ -162,7 +162,7 @@ export function RecorderMenu({
           mark that will stick is "finished", audio that will exist on close
           is "recorded", anything else is "empty". The workbench's "hear
           this" speaker is not drawn (spoken titles, #952). */}
-      <O4SheetHead
+      <SheetHead
         book={bookName}
         bookCoverHex={bookCoverHex}
         chapter={chapterHeading ?? chapterNumber}

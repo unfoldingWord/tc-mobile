@@ -6,7 +6,7 @@ import { useHoldReveal } from "@/hooks/use-hold-reveal";
 import { strings } from "@/lib/strings";
 import type { SegmentRowState } from "@/types/view";
 
-export interface O4CrumbsProps {
+export interface CrumbsProps {
   /** The book's name, the first crumb. */
   book?: string;
   /**
@@ -22,7 +22,7 @@ export interface O4CrumbsProps {
    * destination. Only a screen header passes these; a menu's sheet head
    * never does, so its crumbs stay decoration.
    */
-  links?: { book?: O4CrumbLink; chapter?: O4CrumbLink };
+  links?: { book?: CrumbLink; chapter?: CrumbLink };
   /**
    * Disables every linked crumb, for a header whose Back control is disabled
    * in the same state (the recorder's held take and close window).
@@ -31,7 +31,7 @@ export interface O4CrumbsProps {
   /** The crumb for the screen being shown, marked `aria-current="page"`. */
   current?: "chapter" | "segment";
   /**
-   * Extra classes for the row itself (`.o4-crumbs` is always applied) — a
+   * Extra classes for the row itself (`.crumbs` is always applied) — a
    * header threads its own flex-shrink utilities (`min-w-0 flex-1`) here so
    * the chips truncate the same way the menu's own row does, without this
    * component needing to know it sits in a header rather than a sheet head.
@@ -40,12 +40,12 @@ export interface O4CrumbsProps {
 }
 
 /**
- * The breadcrumb CHIPS on their own (#1105): chevron-clipped `.o4-crumb`
+ * The breadcrumb CHIPS on their own (#1105): chevron-clipped `.crumb`
  * spans, book then chapter then (if given) the segment, the segment's own
- * crumb tinted by its state. Split out of `O4SheetHead` below so the
+ * crumb tinted by its state. Split out of `SheetHead` below so the
  * segments and recorder headers (`segments-screen.tsx`, `recorder.tsx`) can
  * render the exact same markup the O4 menus do, rather than a second
- * hand-written reading of `.o4-crumb`'s chevron clip-path.
+ * hand-written reading of `.crumb`'s chevron clip-path.
  *
  * The chapter crumb shows whatever the caller passes. #1105 made it the
  * number everywhere; the requirements owner's decision on #1230 supersedes
@@ -65,8 +65,8 @@ export interface O4CrumbsProps {
  * segment chip is a bare number and carries none.
  *
  * Without `links` it is decoration (no own `aria-hidden`, no own `role`) —
- * a caller in a menu wraps it in `O4SheetHead`'s `aria-hidden` div, and
- * `O4SheetHead` passes no links, so a menu's crumbs stay decoration.
+ * a caller in a menu wraps it in `SheetHead`'s `aria-hidden` div, and
+ * `SheetHead` passes no links, so a menu's crumbs stay decoration.
  *
  * With `links` (#1269, the requirements owner: "Yes, make the header crumbs
  * tappable for navigation"), a screen header turns each crumb that names a
@@ -75,7 +75,7 @@ export interface O4CrumbsProps {
  * a plain span unless a caller also links it; then its button carries the
  * marker (#1278). The header hands each link its own Back handler, so a
  * crumb never leaves by a path Back does not take. A linked crumb is a 44px
- * target drawn as the same 40px chip (`3-components/menus.css`, `button.o4-crumb`).
+ * target drawn as the same 40px chip (`3-components/menus.css`, `button.crumb`).
  *
  * In a screen header (the same `links` signal) a cut-off book or chapter
  * crumb can be held to read it whole (S14, #1284): the same
@@ -88,7 +88,7 @@ export interface O4CrumbsProps {
  * hold: its menu draws the full name already (#1617), and its head is where
  * drag-to-close starts.
  */
-export function O4Crumbs({
+export function Crumbs({
   book,
   chapter,
   segment,
@@ -96,10 +96,10 @@ export function O4Crumbs({
   disabled,
   current,
   className,
-}: O4CrumbsProps) {
+}: CrumbsProps) {
   const Name = links ? HeldName : PlainName;
   return (
-    <div className={className ? `o4-crumbs ${className}` : "o4-crumbs"}>
+    <div className={className ? `crumbs ${className}` : "crumbs"}>
       {book !== undefined && (
         <Crumb link={links?.book} disabled={disabled}>
           <Name text={book} />
@@ -142,7 +142,7 @@ function HeldName({ text }: { text: string }) {
 }
 
 /** A crumb that navigates: its spoken name, and the header's own handler. */
-interface O4CrumbLink {
+interface CrumbLink {
   label: string;
   onClick: () => void;
 }
@@ -154,7 +154,7 @@ function Crumb({
   state,
   children,
 }: {
-  link?: O4CrumbLink;
+  link?: CrumbLink;
   disabled?: boolean;
   current?: boolean;
   state?: SegmentRowState;
@@ -164,7 +164,7 @@ function Crumb({
     return (
       <button
         type="button"
-        className="o4-crumb"
+        className="crumb"
         aria-label={link.label}
         aria-current={current ? "page" : undefined}
         disabled={disabled}
@@ -176,7 +176,7 @@ function Crumb({
   }
   return (
     <span
-      className="o4-crumb"
+      className="crumb"
       data-state={state}
       aria-current={current ? "page" : undefined}
     >
@@ -185,12 +185,12 @@ function Crumb({
   );
 }
 
-interface O4SheetHeadProps {
+interface SheetHeadProps {
   /** The book's name, the first crumb. */
   book?: string;
   /**
    * The book's resolved cover colour (#957), already turned into a hex
-   * string the same way `books-screen.tsx`'s row and `O4BookHead` do
+   * string the same way `books-screen.tsx`'s row and `BookHead` do
    * (`coverColourHex(resolveCoverKey(...))`) -- never a bare
    * `CoverColourKey`, so this component does not need the palette to draw
    * it. Read only in the O4 look, like every other head field. Left out (no
@@ -232,7 +232,7 @@ interface O4SheetHeadProps {
  * named by `<Menu>`'s title, and every action in it names what it does
  * ("Edit segment 3", "Share chapter"). Neither of those names the chapter,
  * though, so beside the hidden head sits one screen-reader-only line
- * (`.o4-sheet-place`) with the same place in words — the book, the chapter's
+ * (`.sheet-place`) with the same place in words — the book, the chapter's
  * name and the segment, the trail `strings.chapterBreadcrumb` /
  * `strings.recorderBreadcrumb` spell (#1230). It is drawn only when both the
  * book and the chapter are given, as every call site in `src/` gives them.
@@ -242,7 +242,7 @@ interface O4SheetHeadProps {
  * Used by the chapter, segment and recorder menus.
  *
  * The book's cover-colour square (#949, #957) sits before the crumb row,
- * reusing `O4BookHead`'s own unit unchanged -- the same `.books-cover.is-sm`
+ * reusing `BookHead`'s own unit unchanged -- the same `.books-cover.is-sm`
  * class, the same `--book-cover` custom-property boundary
  * (`lib/cover-colour.ts`'s docblock on why a cover colour is not a layer-2
  * role), the same 24px book glyph -- rather than a second, crumb-scaled size
@@ -256,13 +256,13 @@ interface O4SheetHeadProps {
  * Not drawn: the "hear this" speaker (spoken titles, #952, are after the
  * training).
  */
-export function O4SheetHead({
+export function SheetHead({
   book,
   bookCoverHex,
   chapter,
   segment,
   fullName,
-}: O4SheetHeadProps) {
+}: SheetHeadProps) {
   const place =
     book === undefined || chapter === undefined
       ? null
@@ -276,7 +276,7 @@ export function O4SheetHead({
         : strings.chapterBreadcrumb(book, String(chapter));
   return (
     <>
-      <div className="o4-sheet-head" aria-hidden="true">
+      <div className="sheet-head" aria-hidden="true">
         {book !== undefined && bookCoverHex !== undefined && (
           <span
             className="books-cover is-sm"
@@ -285,7 +285,7 @@ export function O4SheetHead({
             <Icon name="book" size={24} />
           </span>
         )}
-        <O4Crumbs book={book} chapter={chapter} segment={segment} />
+        <Crumbs book={book} chapter={chapter} segment={segment} />
       </div>
       {fullName !== undefined && fullName !== "" && (
         // Hidden only when the screen-reader line below already speaks this
@@ -293,7 +293,7 @@ export function O4SheetHead({
         // crumbs stand for the chapter by its number, this is the one place
         // the name reaches assistive technology.
         <p
-          className="o4-sheet-name"
+          className="sheet-name"
           dir="auto"
           aria-hidden={fullName === String(chapter) ? "true" : undefined}
         >
@@ -301,7 +301,7 @@ export function O4SheetHead({
         </p>
       )}
       {place !== null && (
-        <p className="o4-sheet-place sr-only" dir="auto">
+        <p className="sheet-place sr-only" dir="auto">
           {place}
         </p>
       )}

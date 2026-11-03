@@ -3,7 +3,7 @@
 /* The one confirm dialog, EraseConfirm (components/erase-confirm.tsx), serves
    the segment Erase (13) and the recorder's Erase-and-record-again path (G5).
    The Books delete-book ask (G6) is not this dialog: it asks inside the book
-   sheet (components/o4-book-delete-ask.tsx, #980), reusing this file's
+   sheet (components/book-delete-ask.tsx, #980), reusing this file's
    confirm-actions / confirm-cancel rules for its two buttons.
 
    The "Play what will be lost" row (#979 remainder after #1022) is rendered

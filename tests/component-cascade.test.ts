@@ -574,13 +574,13 @@ const TEXT_FIELD =
   "The base rule only matches an input, a textarea or a [contenteditable] " +
   "element; the area subject is a <li> (books-screen.tsx), a plain <div> " +
   "(name-reveal.tsx, segments-screen.tsx's crumbs bar) or a <button> " +
-  "(o4-crumbs.tsx) with none of those.";
+  "(crumbs.tsx) with none of those.";
 const BUSY_SVG =
   "The base rule needs an <svg> inside a busy .control; the area subject is " +
   "never an <svg>: a <button> (control.tsx, books-screen.tsx's card toggle " +
   "and chapter row, the share tile), a <span> (recorder-toolbars.tsx's " +
   "record guide, recorder.tsx's recording dot) or a <div> " +
-  "(o4-book-delete-ask.tsx's sheet head, permission-panel.tsx's body).";
+  "(book-delete-ask.tsx's sheet head, permission-panel.tsx's body).";
 
 const REVIEWED: Record<string, string> = {
   ".books-card ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
@@ -589,9 +589,9 @@ const REVIEWED: Record<string, string> = {
     LIST_ITEM,
   '.books-chapters[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
     LIST_ITEM,
-  '.books-delete-ask > .o4-sheet-head ⟵ .control[aria-busy="true"] svg [animation]':
+  '.books-delete-ask > .sheet-head ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '.books-delete-ask > .o4-sheet-head ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+  '.books-delete-ask > .sheet-head ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
   '.books-dots > [data-state="finished"] ⟵ .control--quiet:disabled:hover [background]':
     DOT,
@@ -658,7 +658,7 @@ const REVIEWED: Record<string, string> = {
     LANG,
   ".name-reveal ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-user-select, user-select]":
     TEXT_FIELD,
-  ".o4-crumbs-bar ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
+  ".crumbs-bar ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
     TEXT_FIELD,
   '.err-body[data-refused] ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
@@ -681,9 +681,9 @@ const REVIEWED: Record<string, string> = {
   '.segments-list[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
     LIST_ITEM,
   '.share-o4-ring ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.share-o4-ring is an <svg> drawn by share-progress-panel.tsx, not by <Icon>. ${NOT_AN_ICON}`,
-  '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .o4-sheet-head ⟵ .control[aria-busy="true"] svg [animation]':
+  '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .sheet-head ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .o4-sheet-head ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+  '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .sheet-head ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
   '@media (prefers-reduced-motion:reduce) » .control--mic.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
@@ -718,6 +718,6 @@ const REVIEWED: Record<string, string> = {
   '[inert] .is-guided ⟵ .control[aria-busy="true"] svg [animation]': BUSY_SVG,
   '[inert] .is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
     BUSY_SVG,
-  "button.o4-crumb ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
+  "button.crumb ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
     TEXT_FIELD,
 };

@@ -93,8 +93,8 @@ describe("the rename field keeps its 16px floor (#164 R-11)", () => {
 describe("the chapter screen's crumb row is a control-sized target (#164 R-10)", () => {
   // The `.breadcrumb` button this gate was written for went with the old
   // look (#954); the row that took its place in the Segments header is
-  // `.o4-crumbs-bar` (#1269), in the O4 menus stylesheet.
-  const body = cssRule(menusCss, ".o4-crumbs-bar");
+  // `.crumbs-bar` (#1269), in the O4 menus stylesheet.
+  const body = cssRule(menusCss, ".crumbs-bar");
 
   // Reads the TOKEN, not a raw pixel value: the 44px floor is stated once in
   // 3-components.css's token block, and a rule that hard-codes 44 drifts
@@ -107,7 +107,7 @@ describe("the chapter screen's crumb row is a control-sized target (#164 R-10)",
     // In any block of the file, not only the layer's own rule.
     for (const [property, value] of selectorDeclarations(
       "menus",
-      ".o4-crumbs-bar"
+      ".crumbs-bar"
     ))
       expect(`${property}: ${value}`).not.toMatch(/--c-control-sm/);
   });
@@ -130,7 +130,7 @@ describe("the chapter screen's crumb row is a control-sized target (#164 R-10)",
         "utf8"
       )
     );
-    expect(screen).toMatch(/className="o4-crumbs-bar"/);
+    expect(screen).toMatch(/className="crumbs-bar"/);
     expect(screen, "the p-0 hit area is back").not.toMatch(
       /truncate border-0 bg-transparent p-0/
     );

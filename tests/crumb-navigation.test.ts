@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
+import { Crumbs, SheetHead } from "@/components/crumbs";
 import { strings } from "@/lib/strings";
 import { areaScope, selectorDeclarations } from "./o4-area-css";
 import { render } from "./render";
@@ -12,7 +12,7 @@ import { cssRule, declarationValue } from "./support";
  * tappable for navigation". A crumb that names a place above the current
  * screen is a button named for where it goes; the crumb for the current
  * place is not a button and carries `aria-current`. The menu sheet heads
- * (`O4SheetHead`) stay decoration.
+ * (`SheetHead`) stay decoration.
  *
  * This file is the props-to-markup half, through the static render harness.
  * Which handler each header hands a crumb, and that a tap runs the header's
@@ -22,17 +22,17 @@ import { cssRule, declarationValue } from "./support";
 
 const noop = () => {};
 
-describe("O4Crumbs with links (#1269)", () => {
+describe("Crumbs with links (#1269)", () => {
   it("renders a linked book crumb as a button named for its destination", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: "Ruth",
         chapter: "Naomi returns",
         links: { book: { label: strings.goToBook("Ruth"), onClick: noop } },
         current: "chapter",
       })
     );
-    const chips = [...root.querySelectorAll(".o4-crumb")];
+    const chips = [...root.querySelectorAll(".crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "SPAN"]);
     const book = chips[0]!;
     expect(book.getAttribute("type")).toBe("button");
@@ -48,14 +48,14 @@ describe("O4Crumbs with links (#1269)", () => {
 
   it("marks the current crumb with aria-current and does not make it a button", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: "Ruth",
         chapter: "Naomi returns",
         links: { book: { label: strings.goToBook("Ruth"), onClick: noop } },
         current: "chapter",
       })
     );
-    const chapter = root.querySelectorAll(".o4-crumb")[1]!;
+    const chapter = root.querySelectorAll(".crumb")[1]!;
     expect(chapter.tagName).toBe("SPAN");
     expect(chapter.getAttribute("aria-current")).toBe("page");
     expect(chapter.closest("button")).toBeNull();
@@ -64,7 +64,7 @@ describe("O4Crumbs with links (#1269)", () => {
 
   it("links the chapter crumb and marks the segment crumb current, as the recorder does", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: "Ruth",
         chapter: "Chapter 2",
         segment: { ordinal: 3, state: "recorded" },
@@ -77,7 +77,7 @@ describe("O4Crumbs with links (#1269)", () => {
         current: "segment",
       })
     );
-    const chips = [...root.querySelectorAll(".o4-crumb")];
+    const chips = [...root.querySelectorAll(".crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
     // "Go to {heading}" (DRI pick on #1274): the chip's own heading, with
     // no second "chapter" in front of a default "Chapter N".
@@ -88,7 +88,7 @@ describe("O4Crumbs with links (#1269)", () => {
 
   it("links both the book and the chapter crumb and keeps aria-current on the segment alone, as the recorder does (#1275)", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: "Ruth",
         chapter: "Chapter 2",
         segment: { ordinal: 3, state: "recorded" },
@@ -99,7 +99,7 @@ describe("O4Crumbs with links (#1269)", () => {
         current: "segment",
       })
     );
-    const chips = [...root.querySelectorAll(".o4-crumb")];
+    const chips = [...root.querySelectorAll(".crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "BUTTON", "SPAN"]);
     expect(chips[0]!.getAttribute("aria-label")).toBe("Go to book Ruth");
     expect(chips[1]!.getAttribute("aria-label")).toBe("Go to Chapter 2");
@@ -116,7 +116,7 @@ describe("O4Crumbs with links (#1269)", () => {
 
   it("disables every linked crumb when the header's Back is disabled", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: "Ruth",
         chapter: "Chapter 2",
         links: {
@@ -126,14 +126,14 @@ describe("O4Crumbs with links (#1269)", () => {
         disabled: true,
       })
     );
-    const buttons = [...root.querySelectorAll("button.o4-crumb")];
+    const buttons = [...root.querySelectorAll("button.crumb")];
     expect(buttons).toHaveLength(2);
     for (const b of buttons) expect(b.hasAttribute("disabled")).toBe(true);
   });
 
   it("renders no button and no aria-current without links, as before", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: "Ruth",
         chapter: "Chapter 2",
         segment: { ordinal: 1, state: "empty" },
@@ -144,10 +144,10 @@ describe("O4Crumbs with links (#1269)", () => {
   });
 });
 
-describe("O4SheetHead stays decoration (#1269)", () => {
+describe("SheetHead stays decoration (#1269)", () => {
   it("has no button and no aria-current in a menu's sheet head", () => {
     const root = render(
-      createElement(O4SheetHead, {
+      createElement(SheetHead, {
         book: "Ruth",
         chapter: "Chapter 2",
         segment: { ordinal: 1, state: "finished" },
@@ -164,28 +164,26 @@ describe("3-components/menus.css, a linked crumb's hit area (#1269)", () => {
   it("is a control-sized 44px target while the chip is still drawn 40px tall", () => {
     // The chip shape moves to a pseudo-element inset by 2px top and bottom,
     // because a clip-path on the button itself would clip its hit area too.
-    const button = cssRule(css, "button.o4-crumb");
+    const button = cssRule(css, "button.crumb");
     expect(declarationValue(button, "height")).toBe("var(--c-control-md)");
     expect(declarationValue(button, "clip-path")).toBe("none");
     expect(declarationValue(button, "background")).toBe("transparent");
-    const chip = cssRule(css, "button.o4-crumb::before");
+    const chip = cssRule(css, "button.crumb::before");
     expect(declarationValue(chip, "inset")).toBe("2px 0");
     expect(declarationValue(chip, "background")).toBe("var(--s-well)");
     // The same chevron the plain chip draws: both read one shape property,
     // which the first chip overrides for its flat left end, so the
     // pseudo-element inherits whichever shape its button has.
-    const shape = "var(--o4-crumb-shape)";
+    const shape = "var(--c-crumb-shape)";
     expect(declarationValue(chip, "clip-path")).toBe(shape);
-    expect(declarationValue(cssRule(css, ".o4-crumb"), "clip-path")).toBe(
-      shape
-    );
-    const first = cssRule(css, ".o4-crumb:first-child");
-    expect(declarationValue(first, "--o4-crumb-shape")).toMatch(/^polygon\(/);
+    expect(declarationValue(cssRule(css, ".crumb"), "clip-path")).toBe(shape);
+    const first = cssRule(css, ".crumb:first-child");
+    expect(declarationValue(first, "--c-crumb-shape")).toMatch(/^polygon\(/);
     // The first chip takes its shape only through the property, in any block
     // of the file.
     const firstProperties = selectorDeclarations(
       "menus",
-      ".o4-crumb:first-child"
+      ".crumb:first-child"
     ).map(([property]) => property);
     expect(firstProperties).not.toContain("clip-path");
   });

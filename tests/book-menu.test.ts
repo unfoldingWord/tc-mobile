@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { CoverTile, O4BookHead, O4CoverPick } from "@/components/o4-book-menu";
+import { CoverTile, BookHead, CoverPick } from "@/components/book-menu";
 import { COVER_COLOUR_KEYS } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
 import { areaRule, areaScope } from "./o4-area-css";
@@ -18,19 +18,19 @@ import { declarationValue } from "./support";
  * so a comment naming a selector cannot stand in for the rule.
  */
 
-describe("O4BookHead (04's sheet head)", () => {
+describe("BookHead (04's sheet head)", () => {
   it("draws the book's small cover and name as decoration, then its children", () => {
     const root = render(
       createElement(
-        O4BookHead,
+        BookHead,
         { name: "Mark", coverHex: "#11796d" },
         createElement("button", { type: "button", "aria-label": "Pen" })
       )
     );
-    const bar = one(root, ".o4-sheet-bar");
-    const head = one(bar, ".o4-sheet-head.books-menu-head");
+    const bar = one(root, ".sheet-bar");
+    const head = one(bar, ".sheet-head.books-menu-head");
     // The dialog is named by `<Menu>`, and every action names what it does,
-    // so the head is decoration, as `O4SheetHead` is on the other menus.
+    // so the head is decoration, as `SheetHead` is on the other menus.
     expect(head.getAttribute("aria-hidden")).toBe("true");
     const cover = one(head, ".books-cover.is-sm");
     expect(cover.getAttribute("style")).toContain("--book-cover:#11796d");
@@ -72,10 +72,10 @@ describe("CoverTile (#937 D7)", () => {
   });
 });
 
-describe("O4CoverPick (#957's picker, mounted in the book sheet)", () => {
+describe("CoverPick (#957's picker, mounted in the book sheet)", () => {
   function pick(error: string | null = null): Element {
     return render(
-      createElement(O4CoverPick, {
+      createElement(CoverPick, {
         selected: "teal",
         onSelect: () => {},
         error,

@@ -119,10 +119,10 @@
 
   /* --- shake: the book delete ask's head, on a refused/asked action ------ */
   /* #1030 (merged) renders the head inside `.books-delete-ask` only while
-     the ask is up (components/o4-book-delete-ask.tsx), so this rule fires on
+     the ask is up (components/book-delete-ask.tsx), so this rule fires on
      mount rather than needing a trigger class of its own — the hook posted
      on #950 (2026-09-26). */
-  .books-delete-ask > .o4-sheet-head,
+  .books-delete-ask > .sheet-head,
   .err-body[data-refused] {
     animation: shake var(--p-ambient-shake, 0.35s) ease-in-out 2;
   }
@@ -147,7 +147,7 @@
     .tile--send.is-armed,
     .recorder-stage[data-o4-look="recording"]::after,
     .recorder-status .rec-dot,
-    .books-delete-ask > .o4-sheet-head,
+    .books-delete-ask > .sheet-head,
     .err-body[data-refused] {
       animation: none;
     }

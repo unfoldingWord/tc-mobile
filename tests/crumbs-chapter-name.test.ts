@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
+import { Crumbs, SheetHead } from "@/components/crumbs";
 import { strings } from "@/lib/strings";
 import { areaScope } from "./o4-area-css";
 import { render } from "./render";
@@ -18,32 +18,32 @@ import { cssRule, declarationValue } from "./support";
  * `e2e/header-crumbs-fit.spec.ts` measures it against the shipped build.
  */
 
-describe("O4Crumbs' chapter chip (#1230)", () => {
+describe("Crumbs' chapter chip (#1230)", () => {
   it("renders a chapter name as the chip's text", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: "Book Mine",
         chapter: "The sower and the seed",
       })
     );
-    const chips = [...root.querySelectorAll(".o4-crumb > span")].map(
+    const chips = [...root.querySelectorAll(".crumb > span")].map(
       (el) => el.textContent
     );
     expect(chips).toEqual(["Book Mine", "The sower and the seed"]);
   });
 
   it("still renders a bare number as the chip's text", () => {
-    const root = render(createElement(O4Crumbs, { book: "B", chapter: 3 }));
-    const chips = [...root.querySelectorAll(".o4-crumb > span")].map(
+    const root = render(createElement(Crumbs, { book: "B", chapter: 3 }));
+    const chips = [...root.querySelectorAll(".crumb > span")].map(
       (el) => el.textContent
     );
     expect(chips).toEqual(["B", "3"]);
   });
 });
 
-describe("O4SheetHead's spoken place (#1230, the DRI's 'Names in menus too')", () => {
+describe("SheetHead's spoken place (#1230, the DRI's 'Names in menus too')", () => {
   const places = (root: Element) =>
-    [...root.querySelectorAll(".o4-sheet-place")].map((el) => ({
+    [...root.querySelectorAll(".sheet-place")].map((el) => ({
       text: el.textContent,
       hidden: el.closest('[aria-hidden="true"]') !== null,
       srOnly: el.classList.contains("sr-only"),
@@ -51,11 +51,11 @@ describe("O4SheetHead's spoken place (#1230, the DRI's 'Names in menus too')", (
 
   it("names the book and the chapter's name for a chapter menu, outside the hidden chips", () => {
     const root = render(
-      createElement(O4SheetHead, { book: "Ruth", chapter: "Naomi returns" })
+      createElement(SheetHead, { book: "Ruth", chapter: "Naomi returns" })
     );
-    expect(
-      root.querySelector(".o4-sheet-head")!.getAttribute("aria-hidden")
-    ).toBe("true");
+    expect(root.querySelector(".sheet-head")!.getAttribute("aria-hidden")).toBe(
+      "true"
+    );
     expect(places(root)).toEqual([
       {
         text: strings.chapterBreadcrumb("Ruth", "Naomi returns"),
@@ -67,7 +67,7 @@ describe("O4SheetHead's spoken place (#1230, the DRI's 'Names in menus too')", (
 
   it("adds the segment for a segment or recorder menu", () => {
     const root = render(
-      createElement(O4SheetHead, {
+      createElement(SheetHead, {
         book: "Ruth",
         chapter: "Chapter 2",
         segment: { ordinal: 3, state: "recorded" },
@@ -80,11 +80,11 @@ describe("O4SheetHead's spoken place (#1230, the DRI's 'Names in menus too')", (
 
   it("draws no place line when the book or the chapter is missing", () => {
     expect(
-      places(render(createElement(O4SheetHead, { chapter: "Chapter 2" })))
+      places(render(createElement(SheetHead, { chapter: "Chapter 2" })))
     ).toEqual([]);
-    expect(
-      places(render(createElement(O4SheetHead, { book: "Ruth" })))
-    ).toEqual([]);
+    expect(places(render(createElement(SheetHead, { book: "Ruth" })))).toEqual(
+      []
+    );
   });
 });
 
@@ -92,10 +92,10 @@ describe("3-components/menus.css, how the crumbs elide and share the row (#1230)
   const css = areaScope("menus");
 
   it("elides each crumb's own text with an ellipsis, on one line", () => {
-    const crumb = cssRule(css, ".o4-crumb");
+    const crumb = cssRule(css, ".crumb");
     expect(declarationValue(crumb, "white-space")).toBe("nowrap");
     expect(declarationValue(crumb, "min-width")).toBe("0");
-    const text = cssRule(css, ".o4-crumb > span");
+    const text = cssRule(css, ".crumb > span");
     expect(declarationValue(text, "overflow")).toBe("hidden");
     expect(declarationValue(text, "text-overflow")).toBe("ellipsis");
   });
@@ -105,13 +105,13 @@ describe("3-components/menus.css, how the crumbs elide and share the row (#1230)
     // takes an equal share of the room left. The max-content cap freezes a
     // crumb whose text already fits, handing the rest of its share to the
     // others, so a short "Chapter 2" stays whole beside a long book name.
-    const crumb = cssRule(css, ".o4-crumb");
+    const crumb = cssRule(css, ".crumb");
     expect(declarationValue(crumb, "flex")).toBe("1 1 0");
     expect(declarationValue(crumb, "max-width")).toBe("max-content");
   });
 
   it("never shrinks the segment crumb, a short number carrying the state tint", () => {
-    const segment = cssRule(css, ".o4-crumb[data-state]");
+    const segment = cssRule(css, ".crumb[data-state]");
     expect(declarationValue(segment, "flex")).toBe("none");
   });
 });

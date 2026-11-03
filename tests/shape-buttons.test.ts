@@ -6,7 +6,7 @@ import {
   PillButton,
   SquareButton,
   TransportButton,
-} from "@/components/o4-controls";
+} from "@/components/shape-buttons";
 
 import {
   areaRule,
@@ -54,7 +54,7 @@ describe("the O4 control wrappers (#941)", () => {
       createElement(SquareButton, { icon: "plus", label: "New book" })
     );
     expect(el.classList.contains("control")).toBe(true);
-    expect(el.classList.contains("o4-square")).toBe(true);
+    expect(el.classList.contains("square")).toBe(true);
     expect(el.getAttribute("aria-label")).toBe("New book");
   });
 
@@ -66,7 +66,7 @@ describe("the O4 control wrappers (#941)", () => {
         label: "Play",
       })
     );
-    expect(play.classList.contains("o4-transport")).toBe(true);
+    expect(play.classList.contains("transport")).toBe(true);
     expect(play.classList.contains("control--play")).toBe(true);
     const rec = button(
       createElement(TransportButton, {
@@ -75,7 +75,7 @@ describe("the O4 control wrappers (#941)", () => {
         label: "Record",
       })
     );
-    expect(rec.classList.contains("o4-transport")).toBe(true);
+    expect(rec.classList.contains("transport")).toBe(true);
     expect(rec.classList.contains("control--record")).toBe(true);
   });
 
@@ -87,7 +87,7 @@ describe("the O4 control wrappers (#941)", () => {
         caption: "Send report",
       })
     );
-    expect(el.classList.contains("o4-pill")).toBe(true);
+    expect(el.classList.contains("pill")).toBe(true);
     expect(one(el, ".control-caption").textContent).toBe("Send report");
     expect(el.getAttribute("aria-label")).toBe("Send report");
   });
@@ -128,7 +128,7 @@ describe("3-components/controls.css (#941)", () => {
   });
 
   it("sizes the square 56 with radius 14, on the well", () => {
-    const d = rule(".o4-square");
+    const d = rule(".square");
     expect(d.get("width")).toBe("56px");
     expect(d.get("height")).toBe("56px");
     expect(d.get("border-radius")).toBe("var(--p-radius-lg)");
@@ -136,13 +136,13 @@ describe("3-components/controls.css (#941)", () => {
   });
 
   it("sizes the row transport 72", () => {
-    const d = rule(".o4-transport");
+    const d = rule(".transport");
     expect(d.get("width")).toBe("72px");
     expect(d.get("height")).toBe("72px");
   });
 
   it("sizes the pill 60 tall with radius 30, 17/700, on the well", () => {
-    const d = rule(".o4-pill");
+    const d = rule(".pill");
     expect(d.get("height")).toBe("60px");
     expect(d.get("border-radius")).toBe("30px");
     expect(d.get("font-size")).toBe("17px");

@@ -100,7 +100,7 @@ export interface UseBookCoverColour {
    *  coalesced follow-up writes queued for the same book — a picker could
    *  disable its swatches on this, the same shape `useEraseSegment`'s
    *  `erasing` disables its Erase button, though the O4 picker
-   *  (`o4-book-menu.tsx`'s `O4CoverPick`) deliberately does not: see that
+   *  (`book-menu.tsx`'s `CoverPick`) deliberately does not: see that
    *  component's own docblock for why it relies on the `"queued"` result
    *  instead. */
   settingCoverColour: boolean;

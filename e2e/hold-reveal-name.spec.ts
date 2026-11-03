@@ -235,7 +235,7 @@ test.describe("Segments at 360px", () => {
 
   /** The header's `n`th crumb's text: book, chapter, then the segment. */
   const crumbText = (header: Locator, n: number) =>
-    header.locator(".o4-crumb > span").nth(n);
+    header.locator(".crumb > span").nth(n);
 
   test("a cut-off chapter crumb in the header holds to a bubble with the whole name", async ({
     page,

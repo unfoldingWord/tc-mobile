@@ -70,7 +70,7 @@ default, the text there says to keep using it.
    tappable book and chapter names. A phone whose stamp still shows 1.0.1 or
    older may show **‹**, **≡** or **⋮** there instead; update it over the top
    as above — do not reinstall to change the look, because that deletes every
-   recording. <!-- source: gh PR #1363 (deleted the earlier look and the design switch, first in tester-build-v1.1.0); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`) and its drag to close (#1268); src/components/o4-crumbs.tsx; not device-verified -->
+   recording. <!-- source: gh PR #1363 (deleted the earlier look and the design switch, first in tester-build-v1.1.0); src/components/menu.tsx dismissGlyph (`back ? "back" : "close"`) and its drag to close (#1268); src/components/crumbs.tsx; not device-verified -->
 
 ## 2. Setting up a participant's phone
 

@@ -289,11 +289,9 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(tone(tile(strings.eraseSegment))).toBe("plain");
     expect(tone(tile(strings.deleteSegment))).toBe("erase");
     const pen = button(strings.renameSegment);
-    expect(pen.closest(".o4-sheet-bar"), "Rename sits in the head").not.toBe(
-      null
-    );
+    expect(pen.closest(".sheet-bar"), "Rename sits in the head").not.toBe(null);
     expect(pen.closest(".tiles"), "Rename is not a tile").toBeNull();
-    expect(pen.classList.contains("o4-head-pen")).toBe(true);
+    expect(pen.classList.contains("head-pen")).toBe(true);
     expectCaptionInName();
   });
 
@@ -467,10 +465,10 @@ describe("the segment menu (07) on the tile grid", () => {
   it("heads the sheet with the book, chapter and segment crumbs (§7), decoration only", async () => {
     await mount(finished);
     await openRow();
-    const head = dialog().querySelector(".o4-sheet-head");
+    const head = dialog().querySelector(".sheet-head");
     expect(head).not.toBeNull();
     expect(head!.getAttribute("aria-hidden")).toBe("true");
-    const crumbs = [...head!.querySelectorAll(".o4-crumb")];
+    const crumbs = [...head!.querySelectorAll(".crumb")];
     expect(crumbs.map((c) => c.textContent)).toEqual([
       "Mark",
       "Chapter 4",
@@ -482,15 +480,15 @@ describe("the segment menu (07) on the tile grid", () => {
   it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
     await mount(recorded);
     await openRow();
-    const head = dialog().querySelector(".o4-sheet-head");
+    const head = dialog().querySelector(".sheet-head");
     const cover = head!.querySelector(".books-cover.is-sm");
     expect(cover).not.toBeNull();
     expect((cover as HTMLElement).style.getPropertyValue("--book-cover")).toBe(
       "#11796d"
     );
-    // Before the crumb row, same as `O4BookHead`'s own cover-then-name order.
+    // Before the crumb row, same as `BookHead`'s own cover-then-name order.
     expect(
-      cover!.compareDocumentPosition(head!.querySelector(".o4-crumbs")!) &
+      cover!.compareDocumentPosition(head!.querySelector(".crumbs")!) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
@@ -499,11 +497,11 @@ describe("the segment menu (07) on the tile grid", () => {
     mocks.bookCoverHex = null;
     await mount(recorded);
     await openRow();
-    const head = dialog().querySelector(".o4-sheet-head");
+    const head = dialog().querySelector(".sheet-head");
     expect(head!.querySelector(".books-cover")).toBeNull();
     // The crumbs themselves are unaffected — only the square is left out.
     expect(
-      [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
+      [...head!.querySelectorAll(".crumb")].map((c) => c.textContent)
     ).toEqual(["Mark", "Chapter 4", "3"]);
   });
 
@@ -526,7 +524,7 @@ describe("the segment menu (07) on the tile grid", () => {
     );
     expect(preview!.querySelector("canvas")).not.toBeNull();
     // Not in the header any more.
-    expect(dialog().querySelector(".o4-sheet-head")?.textContent).not.toMatch(
+    expect(dialog().querySelector(".sheet-head")?.textContent).not.toMatch(
       /the sower/
     );
   });
@@ -582,17 +580,17 @@ describe("the chapter menu (G2) on the tile grid", () => {
   it("heads the sheet with the book and chapter crumbs, decoration only", async () => {
     await mount();
     await openChapter();
-    const head = dialog().querySelector(".o4-sheet-head");
+    const head = dialog().querySelector(".sheet-head");
     expect(head?.getAttribute("aria-hidden")).toBe("true");
     expect(
-      [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
+      [...head!.querySelectorAll(".crumb")].map((c) => c.textContent)
     ).toEqual(["Mark", "Chapter 4"]);
   });
 
   it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
     await mount();
     await openChapter();
-    const head = dialog().querySelector(".o4-sheet-head");
+    const head = dialog().querySelector(".sheet-head");
     const cover = head!.querySelector(".books-cover.is-sm");
     expect(cover).not.toBeNull();
     expect((cover as HTMLElement).style.getPropertyValue("--book-cover")).toBe(
@@ -604,7 +602,7 @@ describe("the chapter menu (G2) on the tile grid", () => {
     mocks.bookCoverHex = null;
     await mount();
     await openChapter();
-    const head = dialog().querySelector(".o4-sheet-head");
+    const head = dialog().querySelector(".sheet-head");
     expect(head!.querySelector(".books-cover")).toBeNull();
   });
 
@@ -650,23 +648,23 @@ describe("3-components/menus.css, #949's chapter and segment menu section", () =
   });
 
   it("draws the crumbs 40 tall on the well, chevron-clipped, a finished segment on the done wash (D19)", () => {
-    const crumb = declsFor(menus, ".o4-crumb");
+    const crumb = declsFor(menus, ".crumb");
     expect(crumb.get("height")).toBe("40px");
     expect(crumb.get("background")).toBe("var(--s-well)");
     // The chevron is one property (#1269), so a linked crumb's
     // pseudo-element draws the same shape; the clip reads it.
-    expect(crumb.get("--o4-crumb-shape")).toMatch(/13px/);
-    expect(crumb.get("clip-path")).toBe("var(--o4-crumb-shape)");
-    const finished = declsFor(menus, '.o4-crumb[data-state="finished"]');
+    expect(crumb.get("--c-crumb-shape")).toMatch(/13px/);
+    expect(crumb.get("clip-path")).toBe("var(--c-crumb-shape)");
+    const finished = declsFor(menus, '.crumb[data-state="finished"]');
     expect(finished.get("background")).toBe("var(--s-done-quiet)");
     expect(finished.get("color")).toBe("var(--s-done-text)");
     expect(
-      declsFor(menus, '.o4-crumb[data-state="recorded"]').get("background")
+      declsFor(menus, '.crumb[data-state="recorded"]').get("background")
     ).toBe("var(--s-voice-quiet)");
   });
 
   it("draws the head's Rename pencil as a 52 circle on the name role, and greys a refused tile (D20)", () => {
-    const pen = declsFor(menus, ".o4-head-pen");
+    const pen = declsFor(menus, ".head-pen");
     expect(pen.get("width")).toBe("52px");
     expect(pen.get("height")).toBe("52px");
     expect(pen.get("background")).toBe("var(--s-name)");

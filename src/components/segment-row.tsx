@@ -12,7 +12,7 @@ import { rowHint } from "./menu-row-state";
 import { NameEdit } from "./name-edit";
 import { NameReveal } from "./name-reveal";
 import { Notice } from "./notice";
-import { O4SheetHead } from "./o4-crumbs";
+import { SheetHead } from "./crumbs";
 import { MoveTiles, Tile, TileGrid, TileSpacer } from "./tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
@@ -120,7 +120,7 @@ interface SegmentRowProps {
    * `segments-screen.tsx` resolves it once, the same way `books-screen.tsx`
    * resolves the shelf's own covers, and passes it to every row so no row
    * repeats that lookup. Absent, the head's cover square is left out (see
-   * `O4SheetHead`'s own docblock).
+   * `SheetHead`'s own docblock).
    */
   bookCoverHex?: string;
   /**
@@ -684,8 +684,8 @@ export function SegmentRow({
           // segment, recorded or not), not #997's narrower empty-only one,
           // which remains a separate, deferred, unbuilt action.
           <>
-            <div className="o4-sheet-bar">
-              <O4SheetHead
+            <div className="sheet-bar">
+              <SheetHead
                 book={bookName}
                 bookCoverHex={bookCoverHex}
                 chapter={chapterHeading}
@@ -696,7 +696,7 @@ export function SegmentRow({
                 icon="pencil"
                 label={strings.renameSegment}
                 size={24}
-                className="o4-head-pen"
+                className="head-pen"
                 onClick={() => setRenaming(true)}
               />
             </div>
