@@ -11,6 +11,56 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-03 (day) — Sprint 6 day 2: Malay and Arabic drafts, refused takes dropped at refusal, compressor behind a switch, Settings moves into ≡, #954 closed, 17 PRs merged
+
+The orchestrator session: the start-of-day INAs, then waves of lanes on the review bench.
+
+### Decisions (DRI)
+
+- **#1836:** "Unpark and merge whole (Recommended)". **Stale branches:** "Delete all four (Recommended)".
+- **#1562, a refused take's audio:** the DRI asked whether a refused recording should simply be deleted, so small phones don't fill up. Pick: "Delete it at the refusal, log it (Recommended)".
+- **#357, the next language:** "Indonesian-adjacent: ms". **#1321:** "Defer to Backlog (Recommended)".
+- **Compressor:** "Yes, port it from the note (Recommended)". **Arabic:** "Draft now, gate go-live". **Picker O9:** "Yes, build the prototype (Recommended)".
+- **Books header:** "≡ only; Settings is a tile (Recommended)". The DRI raised it: a gear and a ≡ on the same header is one control too many.
+
+### Merged to develop (17)
+
+- **Storage (refused takes, #1562):**
+  - #1859: a refused replayed take is dropped instead of kept.
+  - #1862: the drop is logged only after it commits.
+  - #1865: one failure row when the drop itself fails, plus the sample-rate guard.
+- **Languages:**
+  - #1858: Malay (ms), an AI draft. It goes live when complete, by the standing rule.
+  - #1870, #1874, #1875: Arabic (ar), parts 1–3, complete and held by `GO_LIVE_HELD` until the RTL device pass (#1538) and a native review.
+- **Audio:**
+  - #1872: the speech compressor kernel.
+  - #1877: the compressor runs on Finished behind a Settings switch that starts off. Testers get it only after a listening check on a phone (device-pass row 6.4).
+- **Books:** #1878 removes the header gear; Settings is now the first ≡ tile (#1871).
+- **#954 O4 cleanup, finished:** #1864 (PR 8), #1876 (PR 9) and #1882 (PR 10, the prose pass and the AGENTS.md line for `src/app/styles/3-components/`).
+- **Docs:** #1836 (Android run sheets for #1464, #1486, #974), and #1866 and #1869 (the knip namespace-import blind spot in AGENTS.md).
+- **#1881:** repaired develop. #1877 and #1878 were each green on their own base, but together they left three Settings tests clicking the removed gear.
+
+Closed: #954, #1562, #1871, #1873, #1860, #1863, #1868, #246.
+
+### Artifacts
+
+- **Template Library prototype** (picker O9): https://claude.ai/artifact/LoRDaiZVqu4rzmF5CPSxVD
+- **v2 Workbench, Round 1:** a copy of the O4 workbench, kept separate from the Template prototype, and shared with the requirements owner today. https://claude.ai/artifact/9eDVBQepJSBZBLELy1w7Zm
+
+### Open, and where each stands
+
+- **Follow-ups from today's reviews, all non-blocking:**
+  - #1879: the compressor error-name comment, the per-clip refusal dedupe, and the error class out of the DSP module.
+  - #1880: Settings e2e hygiene.
+  - #1883: a one-word comment in `tile-menu.tsx`.
+- **Arabic go-live:** the hold-lift checklist is on #1458.
+- **Compressor:** the switch stays off for testers until the phone listening check.
+- **Zulip:** the Template prototype note to "tC Mobile v2" is not posted. The posting key gave "Invalid API key", and the claude.ai Zulip connector needs a login.
+- **Device runs before the v1.2 promotion and the v1.3.0 tester cut (11-15):** #1464 (iPhone row), #974 and #1486.
+- **CI flake, observed once:** on #1882, Code Quality failed on a 5 s timeout in `tests/ios-workflow-gates.test.ts:254`. That PR does not touch the file, and the next head passed. No issue is filed.
+
+---
+
 ## 2026-11-02 (evening) to 2026-11-03 — device session: iOS Simulator harness merged, #1251 not reproduced in the Simulator, #1464 Android upgrade passes on a real phone
 
 The DRI's own device session, the one the 2026-11-02 entry leaves #1840 and the device runs with. It drove the iOS Simulator and a locally attached Android phone (Galaxy A17 5G, Android 16) over adb, and the DRI listened by ear.
