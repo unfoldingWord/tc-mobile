@@ -244,7 +244,9 @@ const DISPOSITION_RANK: Readonly<Record<TakeDisposition["kind"], number>> = {
 /**
  * Record why a take stopped being pending. Monotone: a record is replaced
  * only by one of higher rank, so a late or repeated settle never weakens what
- * is stored, and `saved` and `discarded` are never replaced.
+ * is stored, and `saved` and `discarded` are never replaced. A stored kind
+ * this build does not know (a newer build's, or a corrupt value) is never
+ * replaced either: it fails closed, as the pre-rank rule did.
  */
 async function recordDisposition(
   tx: TakeTx,
@@ -254,7 +256,10 @@ async function recordDisposition(
 ): Promise<void> {
   const store = tx.objectStore("takeDispositions");
   const held = await store.get(clipId);
-  if (held && DISPOSITION_RANK[held.kind] >= DISPOSITION_RANK[kind]) return;
+  if (held) {
+    if (!Object.hasOwn(DISPOSITION_RANK, held.kind)) return;
+    if (DISPOSITION_RANK[held.kind] >= DISPOSITION_RANK[kind]) return;
+  }
   await store.put({ clipId, segmentId, kind, at: Date.now() });
 }
 

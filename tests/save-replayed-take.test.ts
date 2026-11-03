@@ -460,6 +460,32 @@ describe("saveReplayedTake: moved and unexplained drop the take, and never save 
     expect(await recordOf(c.clipId)).toBe("refused");
   });
 
+  it("a stored kind this build does not know is never replaced by a give-up, a refusal or a save (George r1 on #1859)", async () => {
+    const segmentId = await freshSegment();
+    const c = await holdAndLoad(firstTake(segmentId));
+    const unknownKind = {
+      clipId: c.clipId,
+      segmentId,
+      kind: "toString",
+      at: 0,
+    } as unknown as TakeDisposition;
+    await (await getDb()).put("takeDispositions", unknownKind);
+    const kindNow = async () =>
+      ((await (await getDb()).get("takeDispositions", c.clipId)) as unknown as {
+        kind: string;
+      }).kind;
+
+    await settlePendingTake(segmentId, c.clipId, "give-up");
+    expect(await kindNow()).toBe("toString");
+
+    await recordTake(segmentId);
+    expect((await replay(c)).outcome).toBe("dropped");
+    expect(await kindNow()).toBe("toString");
+
+    await saveTake(segmentId, c.clipId, c.recorded, RATE);
+    expect(await kindNow()).toBe("toString");
+  });
+
   it("a live copy's ordinary commit of a take another copy refused still saves it, and the record becomes saved", async () => {
     const segmentId = await freshSegment();
     const c = await holdAndLoad(firstTake(segmentId));
