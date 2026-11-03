@@ -120,6 +120,14 @@ describe("completeLocales and the English-only keys", () => {
     expect(resolveLocale(["vi", "es"], completeLocales()).tag).toBe("vi");
   });
 
+  it("counts ms complete, and resolves a Malay phone to ms (#357, level 3)", () => {
+    expect(tags()).toContain("ms");
+    const ms = LOCALE_OVERRIDES.ms as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(ms, key)).toBe(false);
+    expect(resolveLocale(["ms-MY"], completeLocales()).tag).toBe("ms");
+    expect(resolveLocale(["ms", "es"], completeLocales()).tag).toBe("ms");
+  });
+
   it("counts zh-Hans complete, and resolves every Chinese phone to it (#1458, R19)", () => {
     expect(tags()).toContain("zh-Hans");
     const zh = LOCALE_OVERRIDES["zh-Hans"] as Record<string, unknown>;

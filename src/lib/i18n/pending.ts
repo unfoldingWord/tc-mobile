@@ -19,6 +19,7 @@ export const PENDING: Readonly<Record<string, readonly string[] | "all">> = {
   fr: [],
   hi: [],
   id: [],
+  ms: [],
   pt: [],
   ru: [],
   sw: [],
