@@ -193,7 +193,7 @@ interface SheetHeadProps {
    * string the same way `books-screen.tsx`'s row and `BookHead` do
    * (`coverColourHex(resolveCoverKey(...))`) -- never a bare
    * `CoverColourKey`, so this component does not need the palette to draw
-   * it. Read only in the sheet-head layout, like every other head field. Left out (no
+   * it. Read only by the sheet head, like every other head field. Left out (no
    * square drawn) when the caller has not threaded it, or has no `book` --
    * a call site that has not (yet) been updated to carry it renders exactly
    * as it did before this prop existed.

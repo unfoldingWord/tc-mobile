@@ -188,7 +188,7 @@ describe("the recorder's ⋮ drawer header (#621)", () => {
   // The menu closes every sheet on ✕ (#1268, the
   // requirements owner: "Can we use a standard close button (some form of
   // X)?"), so the dismiss no longer repeats the ⋮ that opened it; the opener
-  // stays ⋮ (#1243). The current look's ⋮ dismiss is pinned on `Menu` in
+  // stays ⋮ (#1243). The ⋮ dismiss is pinned on `Menu` in
   // `menu-hamburger-header.test.ts`.
   it("opens from ⋮ and dismisses with ✕ in O4 — not ≡, not a chevron — and a tap on it closes the drawer", async () => {
     const panel = await openMenu();

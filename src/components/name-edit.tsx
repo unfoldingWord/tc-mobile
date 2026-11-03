@@ -62,7 +62,7 @@ interface NameEditProps {
    * Extra content on its own row beneath the field and the commit control, kept
    * INSIDE the form (#1190). The form's mousedown guard keeps focus in the field
    * through a press (#1099); a control outside it would blur the field, and the
-   * The sheet docks only while `.name-edit:focus-within` holds. Only New Book
+   * sheet docks only while `.name-edit:focus-within` holds. Only New Book
    * passes it (the cover-colour row).
    */
   children?: ReactNode;

@@ -5,7 +5,7 @@ import { Control } from "./control";
 
 /**
  * The shared control wrappers (#941, epic #936): the three control shapes
- * O4's screens repeat — square 56 r14, row transport 72 and pill 60 r30 (`docs/design/o4-design-system.md` §3).
+ * the screens repeat — square 56 r14, row transport 72 and pill 60 r30 (`docs/design/o4-design-system.md` §3).
  *
  * Each one IS a `Control` with a shape class and a default glyph size, never
  * a second button. `Control` already carries every accessibility guarantee

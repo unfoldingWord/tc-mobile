@@ -46,9 +46,8 @@ export type IconName =
   // The icon batch (#940, part of #936): the 13 icons the screens use,
   // redrawn from the 24-unit, stroke-2.2 reference sprite
   // (docs/design/o4/o4-icons.svg, landing with #935) onto this file's
-  // 22-unit grid at a proportionally scaled stroke. No screen wires any of
-  // these yet — that is a later batch of the #936 design round — so today's only
-  // consumer is this file's own render tests.
+  // 22-unit grid at a proportionally scaled stroke. Screens adopt them as
+  // their batches land (#936); this file's own render tests cover the drawing.
   | "hear"
   | "hear-large"
   | "mic"

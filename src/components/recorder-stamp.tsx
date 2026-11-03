@@ -5,7 +5,7 @@ import type { RecorderLook } from "./recorder-look";
 
 /**
  * The one piece of new markup the Recorder needs (#945, epic #936): the
- * mono timestamp states 10 and 11 show. Everything else the design round changes on this
+ * mono timestamp states 10 and 11 show. Everything else the design round changed on this
  * screen is CSS, in `app/styles/3-components/recorder.css`, keyed off the stage's
  * `data-look` attribute (`recorder-look.ts`).
  */

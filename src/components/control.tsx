@@ -94,7 +94,7 @@ interface ControlProps {
    * A short word shown with the glyph — the tile and pill shapes (#941,
    * `tile-menu.tsx`, `shape-buttons.tsx`). Shown, never announced: `label`
    * stays the entire accessible name, so a control that gains a caption in
-   * the tile layout keeps the name it has in the current one. An omitted caption
+   * the tile layout keeps the name it had without one. An omitted caption
    * renders nothing, so no existing call site's markup changes.
    */
   caption?: string;

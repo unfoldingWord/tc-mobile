@@ -14,10 +14,8 @@ import { one, render } from "./render";
  * more — `forward`, `flag`, `tag`, `earlier`, `later` and `mic-off` are
  * deliberately not drawn.
  *
- * No screen wires any of these yet (that is a later batch of the #936 design round), so
- * this file's own render assertions are today's only consumer — the same
- * "a module a test imports looks used" shape AGENTS.md names for the knip
- * blind spot, made deliberate here rather than accidental.
+ * Screens adopt these as their batches land (#936); this file's render
+ * assertions cover the drawing itself.
  */
 const O4_ICONS: readonly IconName[] = [
   "hear",

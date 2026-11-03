@@ -6,13 +6,13 @@ import { strings } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 
 /**
- * The tile-menu primitive (#941, epic #936): every menu is a row of
+ * The tile-menu primitive (#941, epic #936): every tile menu is a row of
  * large coloured tiles — a 76 × 76 box, radius 20, its caption 14px below
  * with a gap of 8 (`docs/design/o4-design-system.md` §3; workbench `tile()`).
  *
  * A tile IS a `Control` — the same button, name, `busy`, `hint` and `pressed`
  * semantics every current menu row already has — with a visible caption and
- * a tone class. Swapping a menu's `Control` rows for `Tile`s in its tile branch
+ * a tone class. Swapping a menu's `Control` rows for `Tile`s
  * therefore changes no accessible name and no focus behaviour.
  *
  * THE SHEET IS NOT A SECOND SURFACE. A tile menu is still a `<Menu>`
@@ -22,8 +22,7 @@ import { cn } from "@/lib/utils";
  * handle) — keyed on the grid's presence, so the name sheets that share
  * `<Menu>` (#943's) are untouched by it.
  *
- * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), in their tile
- * branches, and by the book, app (≡) and recorder (⋮) menus. The
+ * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), and by the book, app (≡) and recorder (⋮) menus. The
  * tones, glyph size and classes live in `tile-look.ts`.
  */
 type ControlProps = ComponentProps<typeof Control>;

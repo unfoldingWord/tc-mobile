@@ -436,7 +436,7 @@
 
   /* === #949: the recorder menu (G3)
      ======================================================================
-     recorder-menu.tsx's tile branch. Marking done (G8) and the theme tile are
+     recorder-menu.tsx's tile grid. Marking done (G8) and the theme tile are
      the shared tones and ThemeControl tile above; this section holds only
      what the recorder sheet has and no other menu does.
 
