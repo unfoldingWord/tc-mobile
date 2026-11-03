@@ -1407,9 +1407,10 @@ fails again until space is freed (inference; not measured).
 1. **A take whose segment changed while its only copy was in memory**
    (#1562 item 1; PR 4). Saving it would replace the newer audio, or put
    audio back into a segment someone erased. Recommended default, until
-   decided otherwise: keep it held; Discard deletes it; Try again stores it
-   to the side as a kept refused row (park, §4) and never over the newer
-   audio. The words for this screen are part of the decision.
+   decided otherwise: keep it held; Discard deletes it; Try again runs the
+   verdict again and, when the segment still changed, drops the take (§4,
+   "Refused, dropped") and never writes it over the newer audio. The words
+   for this screen are part of the decision.
 2. **How long a refused row keeps its audio** (#1562 item 2). Decided: the
    requirements owner picked "Automatically, after a set time or size"
    (`bound`), and the DRI set the bound at the refusal, verbatim: "Delete it

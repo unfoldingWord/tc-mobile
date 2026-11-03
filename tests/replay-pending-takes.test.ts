@@ -9,8 +9,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // back, which is how a request-only Discard is kept open across a replay.
 vi.mock("@/lib/storage/takes", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/storage/takes")>();
-  return { ...actual, settlePendingTake: vi.fn(actual.settlePendingTake) };
+  return {
+    ...actual,
+    settlePendingTake: vi.fn(actual.settlePendingTake),
+    // Logs "drop-settled" when the real drop returns, so a case can order it
+    // against the failure rows (#1860).
+    dropRefusedPendingTake: vi.fn(
+      async (...args: Parameters<typeof actual.dropRefusedPendingTake>) => {
+        const result = await actual.dropRefusedPendingTake(...args);
+        order.push("drop-settled");
+        return result;
+      }
+    ),
+  };
 });
+
+const order: string[] = [];
 
 import { replayPendingTakes } from "@/hooks/replay-pending-takes";
 import {
@@ -162,7 +176,11 @@ const FORTY_SAMPLES = `length: 1 ms (40 samples)`;
 beforeEach(async () => {
   await clearAllStores();
   reports = [];
-  off = subscribeToFailures((r) => reports.push(r));
+  order.length = 0;
+  off = subscribeToFailures((r) => {
+    reports.push(r);
+    order.push(`report:${r.context}`);
+  });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -312,6 +330,18 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     expect(await getClipMeta(kept.clipId)).toBeUndefined();
   });
 
+  it("the dropped row is written only after the drop has committed (#1860)", async () => {
+    const segmentId = await freshSegment();
+    const row = await heldRow(firstTake(segmentId));
+    await putRow({ ...row, refusal: "superseded" });
+
+    await replayPendingTakes(vi.fn());
+
+    expect(order).toEqual(["drop-settled", "report:pending-take-refused"]);
+    expect(messages()[0]).toContain("audio dropped");
+    expect(await rowOf(segmentId)).toBeUndefined();
+  });
+
   it("a failed drop leaves the row as it was and reports it, and the next launch tries again", async () => {
     const segmentId = await freshSegment();
     const row = await heldRow(firstTake(segmentId));
@@ -323,7 +353,10 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     await replayPendingTakes(vi.fn());
 
     expect((await rowOf(segmentId))?.refusal).toBe("superseded");
-    expect(contexts()).toEqual(["pending-take-refused", "pending-take-delete"]);
+    expect(contexts()).toEqual(["pending-take-delete", "pending-take-refused"]);
+    expect(messages()[1]).toContain("audio still present");
+    expect(messages()[1]).not.toContain("audio dropped");
+    expect(messages().join(" ")).not.toContain("audio dropped");
 
     await replayPendingTakes(vi.fn());
     expect(await rowOf(segmentId)).toBeUndefined();

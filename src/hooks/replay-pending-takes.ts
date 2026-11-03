@@ -98,21 +98,45 @@ async function gone(row: StoredPendingTake): Promise<void> {
 }
 
 /**
- * Drop a refused row and say so once. A failed drop leaves the row as it
- * was, and the next launch reports and tries again.
+ * Drop a refused row and say so once, after the drop has committed (#1860).
+ * A failed drop leaves the row and its audio as they were, says so, and the
+ * next launch reports and tries again.
  */
 async function refuse(
   row: StoredPendingTake,
   refusal: PendingRefusal | `${PendingRefusal} (kept by an earlier build)`
 ): Promise<null> {
   const samples = row.recorded.byteLength / Int16Array.BYTES_PER_ELEMENT;
-  report(
-    refusedAndDropped(refusal, null, samples, row.sampleRate),
-    "pending-take-refused"
-  );
   const dropped = await dropRefusedPendingTake(row.segmentId, row.clipId);
-  if (!dropped.ok) report(dropped.cause, "pending-take-delete");
+  if (dropped.ok) {
+    report(
+      refusedAndDropped(refusal, null, samples, row.sampleRate),
+      "pending-take-refused"
+    );
+  } else {
+    report(dropped.cause, "pending-take-delete");
+    report(
+      refusedNotDropped(refusal, samples, row.sampleRate),
+      "pending-take-refused"
+    );
+  }
   return null;
+}
+
+/**
+ * The cause logged when a refused take's drop failed (#1860): the audio is
+ * still stored, and the next launch tries the drop again.
+ */
+export function refusedNotDropped(
+  refusal: string,
+  samples: number,
+  sampleRate: number
+): Error {
+  const ms = Math.round((samples * 1000) / sampleRate);
+  return new Error(
+    `Pending take refused, drop failed, audio still present (refusal: ` +
+      `${refusal}; length: ${ms} ms (${samples} samples))`
+  );
 }
 
 /** The cause a refused row is logged with: which check refused it. */
