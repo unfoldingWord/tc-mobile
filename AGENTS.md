@@ -629,7 +629,7 @@ export it hides.
 is stored as `@pivot` — which would silently ignore _any_ future export tagged
 `@pivot`-anything. Do not reintroduce a hyphen here.
 
-**Two blind spots remain. Do not read a green knip as "no dead code."**
+**Blind spots remain. Do not read a green knip as "no dead code."**
 
 1. **A `src/` module imported only by a test looks used.** `tests/**` is a knip
    entry point, so a test import satisfies the `files` check. This is how 372
@@ -641,6 +641,13 @@ is stored as `@pivot` — which would silently ignore _any_ future export tagged
    An orphaned custom property or component token is invisible to both; only
    the tests that read the stylesheets (see "Architecture — onion layers")
    can catch one, and only for what they pin.
+3. **A module a test imports as a whole namespace has no checkable exports.**
+   `replay: await import("@/hooks/replay-pending-takes")` in
+   `tests/pending-interleave.test.ts` makes knip treat every export of that
+   module as used, so a dead export there passes. #1863 found it: an export
+   used only inside its own file went unreported. Prefer named imports in tests
+   for a module whose exports knip should check, and do not read a green knip
+   as proof that a namespace-imported module is free of dead exports.
 
 What it does catch, on its first run: an unused `zustand`, an unused
 `lucide-react` that this document itself claimed was the icon library, and three
