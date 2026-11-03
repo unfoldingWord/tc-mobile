@@ -241,7 +241,7 @@ it("the loudness row reflects a stored on", async () => {
 // owner's `compressor-off` pick on #1433).
 it("the compressor row appears only while evening out is on, and starts off", async () => {
   await mount();
-  await click(strings.settingsOpen);
+  await openSettings();
   expect(buttons(strings.settingsCompressOnFinished)).toHaveLength(0);
 
   await click(strings.settingsNormalizeOnFinished);
@@ -257,7 +257,7 @@ it("the compressor row appears only while evening out is on, and starts off", as
 it("the compressor row persists its own switch, apart from evening out", async () => {
   window.localStorage.setItem(NORMALIZE_ON_FINISHED_KEY, "1");
   await mount();
-  await click(strings.settingsOpen);
+  await openSettings();
 
   await click(strings.settingsCompressOnFinished);
   expect(window.localStorage.getItem(COMPRESS_ON_FINISHED_KEY)).toBe("1");
@@ -277,7 +277,7 @@ it("the compressor row reflects a stored on", async () => {
   window.localStorage.setItem(NORMALIZE_ON_FINISHED_KEY, "1");
   window.localStorage.setItem(COMPRESS_ON_FINISHED_KEY, "1");
   await mount();
-  await click(strings.settingsOpen);
+  await openSettings();
   expect(
     button(strings.settingsCompressOnFinished).getAttribute("aria-checked")
   ).toBe("true");
