@@ -38,7 +38,7 @@ import { stripComments } from "./support";
  * Since #954 both headers draw crumb chips (`crumbs.tsx`) rather than a
  * text trail, and the trail survives only as the menus' spoken place line in
  * `SheetHead`. That the headers SHOW a renamed chapter's name is rendered
- * in `tests/o4-header-crumbs.test.ts` (#1230); the source checks below pin
+ * in `tests/header-crumbs.test.ts` (#1230); the source checks below pin
  * where the trail is built and where the recorder resolves the name.
  *
  * WHY SOME ASSERTIONS READ SOURCE. A duplicate and an alias produce identical

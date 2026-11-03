@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { BookDeleteAsk } from "@/components/book-delete-ask";
 import { strings } from "@/lib/strings";
-import { areaRule, areaScope, fileRules } from "./o4-area-css";
+import { areaRule, areaScope, fileRules } from "./area-css";
 import { declarationValue } from "./support";
 import { one, render } from "./render";
 
@@ -11,9 +11,9 @@ import { one, render } from "./render";
  * The O4 book sheet's delete ask (#980, G6; #949 D16) as markup: props in,
  * attributes out, through the #197 render harness. What the ask DOES —
  * focus, Keep, Escape, Back, the outcomes — is
- * `tests/books-delete-in-sheet-o4.test.ts`, which mounts the whole screen.
+ * `tests/books-delete-in-sheet.test.ts`, which mounts the whole screen.
  *
- * The stylesheet half reads rules, comments stripped (`o4-area-css.ts`), and
+ * The stylesheet half reads rules, comments stripped (`area-css.ts`), and
  * checks each new books.css selector against this markup, so a renamed class
  * on either side fails here rather than silently unstyling the sheet.
  */

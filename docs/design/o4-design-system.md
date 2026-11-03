@@ -14,7 +14,7 @@ Where the values live:
   carry an icon, text or a control's boundary, and pins the two colour values
   #937 changed (`--s-edit`, the light `--s-send-ring`).
 - **Type, radius, ambient motion:** layer 1, added by #967 (#939);
-  `tests/o4-primitives.test.ts` pins them.
+  `tests/structural-primitives.test.ts` pins them.
 - **Geometry, icons, screen states:** this file and the workbench; they are
   not primitives.
 

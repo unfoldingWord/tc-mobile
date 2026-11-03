@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { Icon } from "../src/components/icon";
 
-import { AREA_DIR, type Area } from "./o4-area-css";
+import { AREA_DIR, type Area } from "./area-css";
 import { one, render } from "./render";
 import {
   cssRule,
@@ -34,7 +34,7 @@ const read = (rel: string) => readFileSync(path.join(root, rel), "utf8");
 
 const COMPONENTS = "src/app/styles/3-components.css";
 /** An area file's path as `walk` below spells it, from the one folder
- *  constant in `o4-area-css.ts`. */
+ *  constant in `area-css.ts`. */
 const area = (name: Area) =>
   path.relative(root, path.join(AREA_DIR, `${name}.css`));
 const MENUS = area("menus");

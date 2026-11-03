@@ -33,7 +33,7 @@ test.use({
  * The requirements owner's decision on #1230: the headers show the chapter's
  * name (typed, or the default "Chapter N"), elided with "…" when it is too
  * long for the chip. jsdom computes no boxes, so this is the layout half of
- * `tests/o4-header-crumbs.test.ts` (which name each header passes) and
+ * `tests/header-crumbs.test.ts` (which name each header passes) and
  * `tests/crumbs-chapter-name.test.ts` (the declarations). At each phone
  * width it checks that the crumbs stay inside the header and push no control
  * off the screen, that a long name elides instead of wrapping or overflowing,

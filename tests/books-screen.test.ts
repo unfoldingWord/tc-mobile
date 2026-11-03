@@ -25,7 +25,7 @@ import {
   scopeDeclarations,
   scopeRules,
   selectorDeclarations,
-} from "./o4-area-css";
+} from "./area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**

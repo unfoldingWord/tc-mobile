@@ -10,7 +10,7 @@
 
    Selection and the iOS callout (#556/#564) are deliberately not set here: the
    panel keeps 3-components.css's no-select/no-callout and the field keeps its
-   own selectable text. tests/o4-sheets.test.ts pins that. */
+   own selectable text. tests/name-sheet.test.ts pins that. */
 @layer components {
   /* The backdrop: O4's dim role, and the sheet docked to the bottom edge. */
   .menu-scrim:has(.name-edit) {

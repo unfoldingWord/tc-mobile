@@ -82,7 +82,7 @@ export interface ShareChip {
   readonly state: ShareChipState;
 }
 
-export interface ShareO4View {
+export interface ShareView {
   /** The glyph in the core. */
   readonly icon: IconName;
   /** How much of the ring is filled, 0 to 1; `null` draws no ring at all. */
@@ -127,11 +127,11 @@ type VisibleProgress = Exclude<ShareProgress, { readonly phase: "hidden" }>;
 type Steps = NonNullable<Extract<ShareProgress, { phase: "busy" }>["steps"]>;
 type Carry = Extract<ShareProgress, { phase: "busy" }>["carried"];
 
-export function shareO4View(
+export function shareView(
   progress: VisibleProgress,
   scope: ShareScope,
   items: readonly ShareItem[] = []
-): ShareO4View {
+): ShareView {
   if (progress.phase === "outcome") {
     const sent = progress.settled === "sent";
     return {
@@ -158,7 +158,7 @@ export function shareO4View(
   // entirely when it has no chapter to count (`chapters.length > 0` guard,
   // lib/export/book.ts). Guarded here anyway, cheaply, as the same "no count
   // yet" look the `steps === undefined` branch already draws (D15), rather
-  // than trust every future caller of `shareO4View` to uphold that invariant.
+  // than trust every future caller of `shareView` to uphold that invariant.
   if (steps === undefined || steps.total <= 0) {
     const reading = progress.reading;
     return {

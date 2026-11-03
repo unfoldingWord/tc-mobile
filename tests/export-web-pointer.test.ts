@@ -22,7 +22,7 @@ import type { BookCard } from "@/types/view";
  * Export project outside the installed app (#1457, R3): the Scripture Bundle
  * export works in the installed app only, and the web build points to the app.
  * The whole Books screen is mounted in jsdom with the data hooks mocked, as
- * `books-menus-tiles-o4.test.ts` does. In a browser, tapping Export starts no
+ * `books-menus-tiles.test.ts` does. In a browser, tapping Export starts no
  * export and says where it works, in the sheet; in the installed shell the
  * same tap still starts it.
  *

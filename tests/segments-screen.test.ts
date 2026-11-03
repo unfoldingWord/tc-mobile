@@ -16,7 +16,7 @@ import {
   readAreaCss,
   scopeDeclarations,
   scopeRules,
-} from "./o4-area-css";
+} from "./area-css";
 import { one, render } from "./render";
 
 /**

@@ -26,7 +26,7 @@
  *   motion.css    — ambient motion, reduced-motion guard             #950
  *
  * A CHANGE TO ONE AREA EDITS ONLY ITS OWN FILE, NOT THIS INDEX, so two
- * changes to different areas never collide here. `tests/o4-cascade.test.ts`
+ * changes to different areas never collide here. `tests/area-stylesheets.test.ts`
  * asserts all ten files exist and are imported from here.
  *
  * Every file here shares `3-components.css`'s own `@layer components`

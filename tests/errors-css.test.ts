@@ -6,7 +6,7 @@ import { PermissionPanel } from "@/components/permission-panel";
 import { SaveFailed } from "@/components/save-failed";
 import { strings } from "@/lib/strings";
 
-import { areaScope, readAreaCss, scopeDeclarations } from "./o4-area-css";
+import { areaScope, readAreaCss, scopeDeclarations } from "./area-css";
 import { one, render } from "./render";
 import { cssRule, declarationValue } from "./support";
 

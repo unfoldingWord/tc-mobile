@@ -11,7 +11,7 @@ import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
 import { idleChapterAudio } from "./chapter-audio";
-import { areaScope, fileRules, selectorDeclarations } from "./o4-area-css";
+import { areaScope, fileRules, selectorDeclarations } from "./area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**

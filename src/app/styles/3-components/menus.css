@@ -75,7 +75,7 @@
 
      `tiles--compact` is scoped to that one grid, not to every TileGrid: a
      three-tile row (no stored clip, Clear absent) already fits and stays at
-     the pinned token (`tests/o4-menus-chapter-segment.test.ts` asserts it
+     the pinned token (`tests/menus-chapter-segment.test.ts` asserts it
      keeps its spacer and does NOT get this class). 64px tiles — still well
      above the repo's 44px touch-target floor, `tests/touch-policy.test.ts`
      — with a 6px gap is comfortably inside both 288px (320-wide) and 328px

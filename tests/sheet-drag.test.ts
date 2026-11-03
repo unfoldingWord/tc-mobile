@@ -14,7 +14,7 @@ import {
 /**
  * The pure half of drag down to close (#1268): how far a sheet follows the
  * finger and what a release does. `menu.tsx` owns the pointer; the mounted
- * gesture is `tests/sheet-close-o4.test.ts`.
+ * gesture is `tests/sheet-close.test.ts`.
  */
 
 /** A release with everything settled except what a case sets. */

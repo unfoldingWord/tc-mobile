@@ -113,7 +113,7 @@ import {
 } from "@/lib/takes/close-plan";
 import { cn, formatDuration } from "@/lib/utils";
 import { recorderLook } from "./recorder-look";
-import { RecorderStamp } from "./recorder-o4";
+import { RecorderStamp } from "./recorder-stamp";
 import { TakeCapMarker } from "./take-cap-marker";
 import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
@@ -215,7 +215,7 @@ interface RecorderProps {
    * commits edits and refuses over a held take), then the Segments Back the
    * adapter issues itself. Optional only so that a harness modelling no
    * Books screen need not stub it: without it the book crumb is a plain
-   * chip. App always passes it (`tests/o4-header-crumbs.test.ts` pins both
+   * chip. App always passes it (`tests/header-crumbs.test.ts` pins both
    * shapes).
    */
   onRequestBackToBooks?: () => void;
@@ -596,7 +596,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // G5 (#979): the erase confirm, raised from the bar's bin.
     const g5 = confirmFrom === "rerecord";
     // Which workbench state the stage is in (#945). Read by
-    // `3-components/recorder.css` through `data-o4-look`.
+    // `3-components/recorder.css` through `data-look`.
     const look = recorderLook({
       recording,
       playing: audio.playingBuffer,
@@ -3650,7 +3650,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // segment list, named `goToChapter`. It runs `onRequestBack`,
               // the handler the Close control above runs, and is disabled
               // by the same expression (a held take, the close window;
-              // `tests/o4-header-crumbs.test.ts` pins the close window on
+              // `tests/header-crumbs.test.ts` pins the close window on
               // both); it sits in the same
               // header, so an overlay inerts both. So a crumb tap leaves
               // exactly as Back does: `close()` stops Play, seals and saves
@@ -3795,7 +3795,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />
-              <div className="recorder-stage flex-1" data-o4-look={look}>
+              <div className="recorder-stage flex-1" data-look={look}>
                 {mode === "edit" && (
                   <div className="recorder-paste flex justify-center">
                     {/* Always mounted in edit mode, like `.recorder-cut` below

@@ -9,17 +9,17 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
-import { areaRule, areaScope } from "./o4-area-css";
+import { areaRule, areaScope } from "./area-css";
 import { declarationValue } from "./support";
 
 /**
  * Press-and-hold reorder of CHAPTERS on the Books screen (#953 PR2b), wired:
  * the real `BooksScreen`, with `useBooks` replaced at its boundary (the
- * `books-delete-in-sheet-o4` pattern), so these cases are about the call
+ * `books-delete-in-sheet` pattern), so these cases are about the call
  * sites — that the hold starts on the chapter row (the workbench's
  * `data-reorder="ch"` sits on the whole row button), and that the one
  * `moveChapter` call happens on the drop and nowhere else. The gesture itself is `hooks/use-reorder-gesture.ts`, shared with
- * the Segments list and pinned in `tests/segments-reorder-o4.test.ts` and
+ * the Segments list and pinned in `tests/segments-reorder.test.ts` and
  * `tests/reorder-gesture.test.ts`.
  *
  * Layout is faked: jsdom has none, so each chapter `<li>` reports a 68px row
@@ -250,7 +250,7 @@ describe("the O4 hold area (#953 PR2b: the chapter row)", () => {
   });
 
   // The book's own row is now the BOOK's hold area (#338,
-  // `books-shelf-reorder-o4.test.ts`); `lifted()` reads the chapter lift, so
+  // `books-shelf-reorder.test.ts`); `lifted()` reads the chapter lift, so
   // this still pins that no chapter is lifted or moved from there.
   it("never lifts a chapter from the book's own buttons", async () => {
     await mount();
@@ -463,7 +463,7 @@ describe("the hold area's markers", () => {
   it("marks exactly the chapter rows as the hold area", async () => {
     await mount();
     // Inside the chapter list: the book rows are hold areas too, for the book
-    // reorder (#338), and are pinned in `books-shelf-reorder-o4.test.ts`.
+    // reorder (#338), and are pinned in `books-shelf-reorder.test.ts`.
     expect(
       [
         ...document.querySelectorAll(

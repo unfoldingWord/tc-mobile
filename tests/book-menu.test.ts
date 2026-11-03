@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { CoverTile, BookHead, CoverPick } from "@/components/book-menu";
 import { COVER_COLOUR_KEYS } from "@/lib/cover-colour";
 import { strings } from "@/lib/strings";
-import { areaRule, areaScope } from "./o4-area-css";
+import { areaRule, areaScope } from "./area-css";
 import { one, render } from "./render";
 import { declarationValue } from "./support";
 
@@ -12,9 +12,9 @@ import { declarationValue } from "./support";
  * The O4 book menu's own pieces (#949: 04 and #937 D7) as markup: props in,
  * attributes out, through the #197 render harness. What the sheet DOES
  * (opening the picker, the write, focus) is
- * `tests/books-menus-tiles-o4.test.ts`, which mounts the whole screen.
+ * `tests/books-menus-tiles.test.ts`, which mounts the whole screen.
  *
- * The stylesheet half reads rules with comments stripped (`o4-area-css.ts`),
+ * The stylesheet half reads rules with comments stripped (`area-css.ts`),
  * so a comment naming a selector cannot stand in for the rule.
  */
 

@@ -7,7 +7,7 @@ import {
   shareProgressText,
 } from "./share-error-copy";
 import { shareOverlayGlyph } from "./share-overlay-glyph";
-import { shareO4View, type ShareItem } from "./share-o4-view";
+import { shareView, type ShareItem } from "./share-view";
 import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
 import type {
@@ -330,7 +330,7 @@ export function ShareProgress(props: ShareProgressProps) {
         ref={panelRef}
         role={role}
         text={text}
-        o4={shareO4View(progress, scope, items)}
+        view={shareView(progress, scope, items)}
       />
     </div>,
     document.body

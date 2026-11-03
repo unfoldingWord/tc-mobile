@@ -21,7 +21,7 @@ import type { SegmentRow } from "@/types/view";
  * `tests/erase-confirm-preview.test.ts` (a bare, portalled mount, the
  * `erase-confirm-glyph.test.ts` pattern). Here the real `SegmentsScreen` is
  * mounted, with `useChapterSegments` replaced at its boundary (the
- * `recorder-rerecord-o4.test.ts` pattern) and a real `useEraseSegment`, so
+ * `recorder-rerecord-confirm.test.ts` pattern) and a real `useEraseSegment`, so
  * the assertions below are about the ACTUAL call site in
  * `segments-screen.tsx` — that the row handed in is the one armed, and that Play calls the real `SegmentsAudio.playTake`
  * seam segments-screen.tsx already had — not a re-statement of the component
@@ -29,7 +29,7 @@ import type { SegmentRow } from "@/types/view";
  *
  * What this cannot see: the cascade (whether `3-components/dialogs.css` wins on a real
  * page), the drawn waveform bars (`Waveform`'s own canvas draw, mocked out
- * below the same way `recorder-rerecord-o4.test.ts` mocks it — jsdom has no
+ * below the same way `recorder-rerecord-confirm.test.ts` mocks it — jsdom has no
  * canvas 2D context), or anything on a phone.
  */
 

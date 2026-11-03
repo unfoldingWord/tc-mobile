@@ -9,7 +9,7 @@ import {
   fileRules,
   scopeDeclarations,
   scopeRules,
-} from "./o4-area-css";
+} from "./area-css";
 
 /**
  * The O4 name sheet (#943, states 02 and G4 of `docs/design/o4-design-system.md`

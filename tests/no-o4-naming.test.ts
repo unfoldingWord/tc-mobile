@@ -13,9 +13,6 @@ import { stripCssComments } from "./support";
  * stripped (a comment that cites the O4 design record is allowed; a name
  * that code or a selector uses is not) and lists every occurrence of a
  * banned form.
- *
- * `NOT_YET` is the forms a later slice of #954 still renames. Each slice
- * deletes its entries; the last one deletes the list.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -41,12 +38,17 @@ const BANNED: ReadonlyArray<readonly [label: string, pattern: RegExp]> = [
     "o4-book-menu / o4-book-delete-ask / o4-controls module",
     /o4-(book-menu|book-delete-ask|controls)\b/,
   ],
-];
-
-/** Forms a later slice renames (PR 9 of #954). Banned from nowhere yet. */
-const NOT_YET: readonly string[] = [
-  "share-o4-*, ShareO4View, data-o4-look, O4Circle, O4Chips, O4ChapterFace",
-  "the other --o4-* custom properties, recorder-o4, share-o4-view files",
+  ["share-o4-* class", /\bshare-o4-/],
+  ["ShareO4View / shareO4View", /\b[Ss]hareO4View\b/],
+  ["data-o4-look attribute", /\bdata-o4-look\b/],
+  ["O4 share and chapter-face components", /\bO4(Circle|Chips|ChapterFace)\b/],
+  ["--o4-* custom property", /--o4-/],
+  ["recorder-o4 / share-o4-view module", /\b(recorder-o4|share-o4-view)\b/],
+  // The last forms: the share panel's `o4` prop (or a local named for it), and
+  // any other `o4-` name a stylesheet or a module path still carries (a CSS
+  // counter, a test helper named for the look).
+  ["o4 prop or local", /\bo4\s*[=:,}]/],
+  ["o4- name", /\bo4-[a-z]/],
 ];
 
 const SKIP = new Set(["node_modules", ".git", "dist", "dist-e2e"]);
@@ -81,6 +83,13 @@ describe("the o4 naming is retired", () => {
     expect(files.length).toBeGreaterThan(200);
   });
 
+  it("no file in src, tests or e2e is named for o4", () => {
+    const named = files
+      .map((file) => path.relative(ROOT, file))
+      .filter((rel) => rel !== SELF && /o4/i.test(path.basename(rel)));
+    expect(named).toEqual([]);
+  });
+
   for (const [label, pattern] of BANNED) {
     it(`no ${label} remains in src, tests or e2e`, () => {
       const hits: string[] = [];
@@ -96,8 +105,4 @@ describe("the o4 naming is retired", () => {
       expect(hits).toEqual([]);
     });
   }
-
-  it("names the forms a later slice still owns", () => {
-    expect(NOT_YET.length).toBeGreaterThan(0);
-  });
 });

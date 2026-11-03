@@ -1,7 +1,7 @@
 import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
-import { readAreaCss } from "./o4-area-css";
+import { readAreaCss } from "./area-css";
 import { stripCssComments } from "./support";
 
 /**
@@ -125,7 +125,7 @@ describe("every O4 loop (#950)", () => {
     ],
     [
       "liveEdge",
-      ['.recorder-stage[data-o4-look="recording"]::after'],
+      ['.recorder-stage[data-look="recording"]::after'],
       "liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite",
     ],
     [

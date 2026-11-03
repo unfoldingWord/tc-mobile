@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, fileRules } from "./o4-area-css";
+import { areaScope, fileRules } from "./area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**

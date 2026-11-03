@@ -237,7 +237,7 @@ describe("diffRuns", () => {
   });
 
   it("maps a renamed custom property to no difference with --rename-prop, and reports it without", () => {
-    const a = run({ h1: { color: "red", "--o4-scope": "1" } }, [
+    const a = run({ h1: { color: "red", "--old-scope": "1" } }, [
       test([state("001 p0 end", { html: "h1" })]),
     ]);
     const b = run({ h2: { color: "red", "--c-components-last": "1" } }, [
@@ -248,17 +248,17 @@ describe("diffRuns", () => {
       without.differences.map((d) => [d.property, d.before, d.after])
     ).toEqual([
       ["--c-components-last", ABSENT, "1"],
-      ["--o4-scope", "1", ABSENT],
+      ["--old-scope", "1", ABSENT],
     ]);
     const { options } = parseArgs([
       "A",
       "B",
       "--rename-prop",
-      "--o4-scope=--c-components-last",
+      "--old-scope=--c-components-last",
     ]);
     const mapped = diffRuns(a, b, options);
     expect(mapped.differences).toEqual([]);
-    expect(mapped.renamed).toEqual({ "--o4-scope": "--c-components-last" });
+    expect(mapped.renamed).toEqual({ "--old-scope": "--c-components-last" });
   });
 
   it("groups one change across states and elements into one entry with a count", () => {
@@ -452,7 +452,7 @@ describe("roundValue", () => {
 
 describe("diffRuns and rounding", () => {
   const cut = (left: string) =>
-    run({ h: { ...card, "--o4-cut-left": left } }, [
+    run({ h: { ...card, "--c-cut-left": left } }, [
       test([state("001 p0 end", { [BOOKS_CARD]: "h" })]),
     ]);
 
@@ -484,7 +484,7 @@ describe("diffRuns and rounding", () => {
     const report = diffRuns(cut("37.375%"), cut("37.376%"));
     expect(
       report.differences.map((d) => [d.property, d.before, d.after])
-    ).toEqual([["--o4-cut-left", "37.375%", "37.376%"]]);
+    ).toEqual([["--c-cut-left", "37.375%", "37.376%"]]);
   });
 });
 
@@ -873,7 +873,7 @@ describe("formatReport", () => {
 
 describe("parseArgs", () => {
   it("refuses a malformed --rename-prop, an unknown option and a missing directory", () => {
-    expect(() => parseArgs(["A", "B", "--rename-prop", "--o4-scope"])).toThrow(
+    expect(() => parseArgs(["A", "B", "--rename-prop", "--old-scope"])).toThrow(
       /old=new/
     );
     expect(() => parseArgs(["A", "B", "--bogus"])).toThrow(/unknown option/);

@@ -13,7 +13,7 @@ import { restingErase } from "./support";
 /**
  * Hold a cut-off header crumb to read it whole (S14, #1284): the recorder
  * header's book and chapter crumbs, through the real `Recorder` with its
- * segment loader replaced at the boundary (the `o4-header-crumbs` pattern).
+ * segment loader replaced at the boundary (the `header-crumbs` pattern).
  * The same hold, the same bubble and the same rule as the Books and Segments
  * names: only a crumb that is actually cut off claims the press, and the
  * release's click is swallowed, so a hold never navigates.

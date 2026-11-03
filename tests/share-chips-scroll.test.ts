@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ShareChip, ShareO4View } from "@/components/share-o4-view";
+import type { ShareChip, ShareView } from "@/components/share-view";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
 
 /**
@@ -27,7 +27,7 @@ const scrollIntoView = vi.fn();
 const scrollTo = vi.fn();
 
 function isChip(el: Element): boolean {
-  return el.classList.contains("share-o4-chip");
+  return el.classList.contains("share-chip");
 }
 
 beforeEach(() => {
@@ -48,7 +48,7 @@ beforeEach(() => {
   Object.defineProperty(Element.prototype, "clientHeight", {
     configurable: true,
     get(this: Element) {
-      return this.classList.contains("share-o4-chips") ? VIEW : 0;
+      return this.classList.contains("share-chips") ? VIEW : 0;
     },
   });
   Object.defineProperty(Element.prototype, "scrollTop", {
@@ -93,7 +93,7 @@ function chipsWithCurrent(at: number, length = 150): ShareChip[] {
 }
 
 function draw(chips: readonly ShareChip[]) {
-  const o4: ShareO4View = {
+  const view: ShareView = {
     icon: "share",
     ring: 0.5,
     meter: { now: 50 },
@@ -104,14 +104,14 @@ function draw(chips: readonly ShareChip[]) {
       createElement(ShareProgressPanel, {
         role: "status",
         text: "Preparing",
-        o4,
+        view,
       })
     )
   );
 }
 
 function rowTop(): number {
-  const group = host.querySelector(".share-o4-chips");
+  const group = host.querySelector(".share-chips");
   expect(group).not.toBeNull();
   return group!.scrollTop;
 }

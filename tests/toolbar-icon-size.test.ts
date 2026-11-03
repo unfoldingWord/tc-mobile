@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { areaScope, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -27,27 +27,23 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
   const bar = cssRule(CSS, ".recorder-toolbar");
 
   it("defines each token as the base size times 1.25", () => {
-    expect(declarationValue(bar, "--o4-toolbar-icon")).toBe(
-      "calc(22px * 1.25)"
-    );
-    expect(declarationValue(bar, "--o4-toolbar-icon-quiet")).toBe(
+    expect(declarationValue(bar, "--c-toolbar-icon")).toBe("calc(22px * 1.25)");
+    expect(declarationValue(bar, "--c-toolbar-icon-quiet")).toBe(
       "calc(24px * 1.25)"
     );
   });
 
   it("sizes every bar control's glyph from the default token", () => {
     const rule = cssRule(CSS, ".recorder-toolbar .control svg");
-    expect(declarationValue(rule, "width")).toBe("var(--o4-toolbar-icon)");
-    expect(declarationValue(rule, "height")).toBe("var(--o4-toolbar-icon)");
+    expect(declarationValue(rule, "width")).toBe("var(--c-toolbar-icon)");
+    expect(declarationValue(rule, "height")).toBe("var(--c-toolbar-icon)");
   });
 
   it("sizes the edit bar's quiet glyphs from the quiet token", () => {
     const rule = cssRule(CSS, ".recorder-toolbar.edit .control--quiet svg");
-    expect(declarationValue(rule, "width")).toBe(
-      "var(--o4-toolbar-icon-quiet)"
-    );
+    expect(declarationValue(rule, "width")).toBe("var(--c-toolbar-icon-quiet)");
     expect(declarationValue(rule, "height")).toBe(
-      "var(--o4-toolbar-icon-quiet)"
+      "var(--c-toolbar-icon-quiet)"
     );
   });
 
@@ -59,8 +55,8 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
     expect(declarationValue(pair, "width")).toBe("64px");
     expect(declarationValue(pair, "height")).toBe("64px");
     const edit = cssRule(CSS, ".recorder-toolbar.edit .control");
-    expect(declarationValue(edit, "width")).toBe("var(--o4-secondary)");
-    expect(declarationValue(edit, "height")).toBe("var(--o4-secondary)");
+    expect(declarationValue(edit, "width")).toBe("var(--c-secondary)");
+    expect(declarationValue(edit, "height")).toBe("var(--c-secondary)");
   });
 
   it("keeps the largest glyph inside the smallest circle with margin", () => {
@@ -70,13 +66,13 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
     // red on a larger token once the exact-string test above was updated to
     // match it (#1262's review, batched in #1278).
     const floor = Number(
-      /--o4-secondary:\s*max\(\s*(\d+)px/.exec(
+      /--c-secondary:\s*max\(\s*(\d+)px/.exec(
         cssRule(CSS, ".recorder-toolbar.edit")
       )?.[1]
     );
     const quiet =
       /^calc\(\s*(\d+(?:\.\d+)?)px\s*\*\s*(\d+(?:\.\d+)?)\s*\)$/.exec(
-        declarationValue(bar, "--o4-toolbar-icon-quiet")
+        declarationValue(bar, "--c-toolbar-icon-quiet")
       );
     expect(quiet, "the quiet token is not `calc(<n>px * <k>)`").not.toBeNull();
     const glyph = Number(quiet![1]) * Number(quiet![2]);

@@ -21,7 +21,7 @@ import {
   fileRules,
   scopeDeclarations,
   scopeRules,
-} from "./o4-area-css";
+} from "./area-css";
 import { one, render } from "./render";
 
 /**
@@ -30,7 +30,7 @@ import { one, render } from "./render";
  * built).
  *
  * Props-to-markup through `tests/render.ts` for the banner itself, and a real
- * jsdom mount (the `tests/books-o4.test.ts` pattern) where a CLICK or the
+ * jsdom mount (the `tests/books-screen.test.ts` pattern) where a CLICK or the
  * screen's own wiring is what is under test. No cascade and no layout: that
  * the rules in `3-components/books.css` paint what the workbench shows is not something
  * this file can answer — the CSS cases below only read which roles the rules
@@ -83,7 +83,7 @@ vi.mock("@/hooks/use-library-share", () => ({
 }));
 
 // The screen-level cases below mount `BooksScreen`, so its data hooks are
-// mocked the way `tests/books-o4.test.ts` mocks them.
+// mocked the way `tests/books-screen.test.ts` mocks them.
 const pressure = vi.hoisted(() => ({
   current: null as StoragePressureMarker | null,
 }));
@@ -470,7 +470,7 @@ describe("3-components/books.css, the banner rules", () => {
     // The title and why-line sizes are structural primitives, not literal
     // px (AGENTS.md: "component and app-level rules read [structural
     // primitives] directly"), so the rule cited here is the token name; a
-    // sibling suite, `tests/o4-primitives.test.ts`, pins `--p-text-19` and
+    // sibling suite, `tests/structural-primitives.test.ts`, pins `--p-text-19` and
     // `--p-text-15` themselves to 19px/15px.
     expect(decls(".storage-title").get("font-size")).toBe("var(--p-text-19)");
     expect(decls(".storage-why").get("font-size")).toBe("var(--p-text-15)");

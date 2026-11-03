@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ShareMenuSection } from "@/components/share-menu-section";
 import type { ShareMenuSectionProps } from "@/components/share-menu-section";
-import { areaRule, areaScope } from "./o4-area-css";
+import { areaRule, areaScope } from "./area-css";
 import { declarationValue } from "./support";
 import { render } from "./render";
 

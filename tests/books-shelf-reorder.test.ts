@@ -9,13 +9,13 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
-import { areaRule, areaScope } from "./o4-area-css";
+import { areaRule, areaScope } from "./area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
  * Press-and-hold reorder of BOOKS on the Books screen (#338), wired: the real
  * `BooksScreen` with `useBooks` replaced at its boundary, as
- * `books-reorder-o4.test.ts` does for chapters. These cases are about the
+ * `books-reorder.test.ts` does for chapters. These cases are about the
  * call sites — that the hold starts on the book's own row (its expand
  * toggle), and that the one `moveBook` call happens on the drop and nowhere
  * else. The gesture itself is `hooks/use-reorder-gesture.ts`, shared with
