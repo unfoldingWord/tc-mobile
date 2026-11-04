@@ -538,9 +538,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   shareAllIncomplete: (n: number): string =>
     plural(n, {
-      one: "Não foi possível incluir {n} capítulo completo.",
-      many: "Não foi possível incluir {n} capítulos completos.",
-      other: "Não foi possível incluir {n} capítulos completos.",
+      one: "Não foi possível incluir {n} capítulo por inteiro.",
+      many: "Não foi possível incluir {n} capítulos por inteiro.",
+      other: "Não foi possível incluir {n} capítulos por inteiro.",
     }),
   shareAllFilename: "Meu trabalho.zip",
   shareAllFolder(book: string): string {

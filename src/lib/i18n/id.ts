@@ -481,7 +481,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareAllMissing: (n: number): string =>
     plural(n, { other: "{n} buku tidak dapat disertakan." }),
   shareAllIncomplete: (n: number): string =>
-    plural(n, { other: "{n} pasal lengkap tidak dapat disertakan." }),
+    plural(n, { other: "{n} pasal tidak dapat disertakan seluruhnya." }),
   shareAllFilename: "Pekerjaanku.zip",
   shareAllFolder(book: string): string {
     return filenameSafe(book) || this.shareNameFallback;
