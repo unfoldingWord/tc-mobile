@@ -119,13 +119,14 @@ async function refuse(
   return null;
 }
 
-/** The recorded length as logged; a rate that is not positive has none. */
+/**
+ * The recorded length as logged. A rate that is not finite and positive has
+ * none, so the raw rate is printed beside the sample count instead (#1867).
+ */
 function lengthText(samples: number, sampleRate: number): string {
-  const ms =
-    sampleRate > 0
-      ? `${Math.round((samples * 1000) / sampleRate)} ms`
-      : "unknown";
-  return `length: ${ms} (${samples} samples)`;
+  return Number.isFinite(sampleRate) && sampleRate > 0
+    ? `length: ${Math.round((samples * 1000) / sampleRate)} ms (${samples} samples)`
+    : `length: unknown (${samples} samples, rate ${sampleRate})`;
 }
 
 /**
