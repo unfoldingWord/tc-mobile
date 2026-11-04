@@ -1,32 +1,44 @@
 # 0013 — How recordings live on the microSD card
 
-**Status:** Proposed · **Date:** 2026-10-29 · **DRI:** the dev lead drafts;
-the DRI decides · **Issue:**
+**Status:** Accepted 2026-11-04 · **Date:** 2026-10-29 · **DRI:** the dev lead
+drafts; the DRI decides · **Issue:**
 [#1473](https://github.com/unfoldingWord/tc-mobile/issues/1473), part of the
 card epic [#1456](https://github.com/unfoldingWord/tc-mobile/issues/1456)
 
-This ADR is **Proposed**. It is written **before** the spike that gates it.
-[#1472](https://github.com/unfoldingWord/tc-mobile/issues/1472) holds no
-findings comment, and `docs/progress_tracker.md` records no run of it. The
-probe and its run sheet exist only on the draft, never-merged branch
-`spike/card-store` (PR
-[#1532](https://github.com/unfoldingWord/tc-mobile/pull/1532)), whose Java its
-own body says has not been compiled.
+This ADR is **Accepted**. On 2026-11-04 the DRI answered the S1 question put on
+#1473, verbatim: "accept S1 - we have run card test with a real phone and card,
+find these results and make sure they are linked". The same day the DRI picked
+where a held take lives when the card store is on, verbatim: "Phone storage,
+as today (Recommended)", the option that keeps held takes in IndexedDB and
+sends only saved clips to the card. Both are in the
+[decision record](https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6639160618).
+What the acceptance covers is S1, the contract the plugin work builds against,
+and the held-take answer. Coordinator reading, not the DRI's words: the S1
+question as asked described this ADR's file layout, its location and checksum
+on `clipMeta` and its never-delete-on-doubt rule, so the decision below is read
+as accepted with it.
 
-So **no sentence below says what a phone does.** Each fact that needs a phone
-is marked **owed to #1472 Pn**, where Pn is the row of #1472's run sheet that
-would observe it. What Android's documentation is expected to show is quoted
-from #1472's scope, not from a fetched document, and is labelled as such.
-Inference and assumptions are labelled. Whoever accepts this ADR does so after
-the findings comment exists, and rewrites each owed line from it.
+**The real-phone results** are the
+[#1472 findings comment](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6639193400)
+(run 2026-11-02, posted 2026-11-04), called "the results" below. They come
+from one phone, called phone (a): a Samsung Galaxy A17 5G (SM-A176B) on
+Android 16, with one 128 GB exFAT card, running the spike probe from the
+never-merged branch `spike/card-store` (PR
+[#1532](https://github.com/unfoldingWord/tc-mobile/pull/1532)). Where a fact
+below needed a phone and the results observe it, the sentence now says what
+phone (a) did and cites the results' row. Where they do not, it is still
+marked **owed to #1472 Pn**, where Pn is the run sheet's row. Phone (b), an
+Android 7 to 10 phone, has not run, so nothing below says what an older phone
+does. What Android's documentation is expected to show is quoted from #1472's
+scope, not from a fetched document, and is labelled as such. Inference and
+assumptions are labelled.
 
 Revised 2026-11-02 to close the four residuals tracked on #1473 (three named
 when [#1785](https://github.com/unfoldingWord/tc-mobile/pull/1785) merged, one
 added after): the state table now decides every delete, a checked `.part` that
 is the only copy is kept, backup recovery records its winner, and a checked
 read-back precedes any delete of `clipData` or release of a held take. Status
-stays Proposed. The #1472 spike still gates acceptance, and every test name
-below is a planned test, not a test that exists.
+stayed Proposed after that revision, with the #1472 spike gating acceptance.
 
 Revised again 2026-11-02 for the residuals #1826's round 5 left on #1473
 (<https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6583624665>):
@@ -36,8 +48,12 @@ an erase, a delete or a replacing save let go of, (e) UNCOMMITTED-OUTPUT for a
 transcode's MP3 that no row ever named, and (f) WINNER-RECORD for the backup a
 new one replaces. Every alternative a `.part` or an unnamed final is matched
 against must match its bytes, a pending row included, and a final that failed
-step 1a is kept when it is the only copy outside memory. Status stays
-Proposed.
+step 1a is kept when it is the only copy outside memory. Status stayed
+Proposed after that revision.
+
+Accepted 2026-11-04, as recorded above, with the results linked and the owed
+lines they answer rewritten. Every test name below is still a planned test,
+not a test that exists.
 
 ## Context
 
@@ -81,7 +97,7 @@ Read at `origin/develop` `292611b6`.
   `takes.ts:490` (`saveReplayedTake`) and `transcode.ts:206`
   (`commitTranscode`). The seam's own docblock says that a backend which
   cannot join an IndexedDB transaction "needs a different contract"
-  (`clip-bytes.ts:14-16`). This ADR proposes that contract.
+  (`clip-bytes.ts:14-16`). This ADR records that contract.
 - **Reads happen inside a transaction too.** The segment walk reads bytes at
   `segment-audio.ts:112` and probes for them at `segment-audio.ts:115`;
   `getClip` reads at `clips.ts:83`; the pending-take paths read at
@@ -123,29 +139,35 @@ Read at `origin/develop` `292611b6`.
 | **O3** Capture spool           | Audio streams to the card while recording.                                                 | Out of scope: streaming during capture is #1093.                        |
 | **O4** Write-through           | Every clip is written to IndexedDB and to the card.                                        | In part; it doubles the writes and does not free the phone (inference). |
 
-**Proposed: O2**, the recommendation #1472 and #1456 already make. Whether it
-holds is owed to #1472: its acceptance criterion 2 passes O2 only when P1, P4,
-P5 and P6 pass on an Android 11+ phone and an Android 7–10 phone, and a
-20-minute save finishes within 25 seconds (the DRI's threshold, 2026-11-04:
-"15-23s is acceptable", then "25 seconds (Recommended)";
+**O2**, the recommendation #1472 and #1456 already make, and the shape of the
+S1 contract the DRI accepted (coordinator reading). Whether it holds is still
+owed to #1472: its acceptance criterion 2 passes O2 only when P1, P4, P5 and P6
+pass on an Android 11+ phone and an Android 7–10 phone, and a 20-minute save
+finishes within 25 seconds (the DRI's threshold, 2026-11-04: "15-23s is
+acceptable", then "25 seconds (Recommended)";
 [record](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6640952051)).
-If O2 fails, the fallback is O1, and that is a question for the requirements
-owner, because O1 does not meet "record straight onto the card" (#1472,
-acceptance criterion 4).
+On phone (a), the results report P1 passing except the adopted-card row (not
+run), P4 passing, P5 passing only with the probe patched to close its file on
+a write error (§4), P6 passing, and twelve 20-minute saves taking 15.7 to
+23.2 s. Phone (b) has not run, so criterion 2 is not settled (the results,
+"Acceptance criteria"). If O2 fails, the fallback is O1, and that is a question
+for the requirements owner, because O1 does not meet "record straight onto the
+card" (#1472, acceptance criterion 4).
 
 ### Android storage access paths
 
 Each path below is described from #1472's scope and the spike's run sheet,
-which state what Android's documentation leads us to expect. None has been
-observed on a phone.
+which state what Android's documentation leads us to expect. The last column
+says what phone (a) showed, from the results; nothing here has run on an
+Android 7–10 phone.
 
-| Path                                                                                                    | Permission               | On uninstall                                                  | Proposed use                                       | Owed to             |
-| ------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------- | -------------------------------------------------- | ------------------- |
-| **A. The app's own folder on the card** (`getExternalFilesDirs(null)`, the removable entry)             | None expected            | Expected deleted; `hasFragileUserData` may offer to keep it   | Clip bytes (O2)                                    | P1, P7, P11         |
-| **B. A folder the user picks** (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`, persisted grant) | The user's pick          | Expected to stay; whether the grant survives anything is owed | The backup only                                    | P8                  |
-| **C. `@capacitor/filesystem` with a full card path**                                                    | Unknown                  | As A, if it writes into A                                     | Decides whether A needs a custom plugin for writes | P11                 |
-| **D. A browser folder picker** (`showDirectoryPicker()` in Chrome on Android)                           | The user's pick          | Unknown                                                       | None in v2: R5 makes the card an app feature       | P10 (evidence only) |
-| **E. Broad storage access** (`MANAGE_EXTERNAL_STORAGE`) or MediaStore                                   | A special grant, or none | MediaStore files outlive the app (assumption)                 | Not proposed                                       | Not in #1472        |
+| Path                                                                                                    | Permission               | On uninstall                                                 | Use                                                | Phone (a), from the results                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. The app's own folder on the card** (`getExternalFilesDirs(null)`, the removable entry)             | None expected            | Expected deleted; `hasFragileUserData` may offer to keep it  | Clip bytes (O2)                                    | P1: found, removable, mounted. P7: a plain uninstall deleted it; Android 16 offered "Keep app data", which kept it                                                                                                    |
+| **B. A folder the user picks** (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`, persisted grant) | The user's pick          | Expected to stay; the grant on a different card is owed (P8) | The backup only                                    | P7: untouched by uninstall. P8: the grant survived a restart, a reboot and the card out and in; a different card is cannot-tell                                                                                       |
+| **C. `@capacitor/filesystem` with a full card path**                                                    | Unknown                  | As A, if it writes into A                                    | Decides whether A needs a custom plugin for writes | P11: with `encoding: "utf8"`, a direct call wrote and read back with no prompt (Filesystem 8.1.4); the probe's own call, with no `encoding`, failed. Whether it can carry the commit protocol (§3) is not what it ran |
+| **D. A browser folder picker** (`showDirectoryPicker()` in Chrome on Android)                           | The user's pick          | Unknown                                                      | None in v2: R5 makes the card an app feature       | P10: not run (optional)                                                                                                                                                                                               |
+| **E. Broad storage access** (`MANAGE_EXTERNAL_STORAGE`) or MediaStore                                   | A special grant, or none | MediaStore files outlive the app (assumption)                | Not proposed                                       | Not in #1472                                                                                                                                                                                                          |
 
 Why A for the clips (inference, from the scope): it needs no permission prompt,
 it is private to the app on the phone, and it goes away on uninstall the way
@@ -154,9 +176,11 @@ files the app owns" fits it. Anyone holding the card in a reader can still read
 the files; R17 accepts that.
 
 Why B only for the backup (inference): a backup is meant to outlive the app,
-and a user-picked folder is the path expected to survive uninstall. #1472 P8
-expects that on Android 11 and later the card's root cannot be picked, and asks
-what the user must do instead; owed to P8.
+and a user-picked folder is the path expected to survive uninstall; on phone
+(a) it did (results, P7). #1472 P8 expected that on Android 11 and later the
+card's root cannot be picked. On phone (a) it could not: the picker shows
+"Can't use this folder" at the card's top level and disables its button, so a
+backup needs a subfolder (results, P8).
 
 Path E is not proposed and is not probed. It is listed so its absence is a
 choice, not an oversight. The assumption behind leaving it out is that a broad
@@ -174,30 +198,41 @@ a dynamic import mid-transaction and failed 74 tests with `InvalidStateError`).
 
 | Contract                                            | What changes                                                                                                                                                                                                                                           | Cost                                                                                                                             |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| **S1** Two phases around the transaction (proposed) | Bytes move outside any transaction: staged and made durable before it, deleted after it under §3's delete predicate. Inside it, the seam records and reads only a **location** on `clipMeta`. The IndexedDB backend keeps today's in-transaction path. | Every write, read and delete site in the #1768 table changes shape: read the location in the transaction, move bytes outside it. |
+| **S1** Two phases around the transaction (accepted) | Bytes move outside any transaction: staged and made durable before it, deleted after it under §3's delete predicate. Inside it, the seam records and reads only a **location** on `clipMeta`. The IndexedDB backend keeps today's in-transaction path. | Every write, read and delete site in the #1768 table changes shape: read the location in the transaction, move bytes outside it. |
 | **S2** Keep the card behind the existing methods    | `write` etc. call the plugin from inside the transaction.                                                                                                                                                                                              | Breaks the transaction (above). Rejected.                                                                                        |
 | **S3** Card bytes in IndexedDB first, moved later   | Every save lands in `clipData`, and a sweep moves it to the card.                                                                                                                                                                                      | The phone still has to hold every take at least once, which is what #339's field evidence says it cannot (inference).            |
 
-**Proposed: S1.** It keeps #1751's rule that only the seam knows where bytes
-live, and it keeps the take row, the metadata and the pending-row change in one
-transaction, which is the #38 property.
+**Accepted: S1** (the DRI, 2026-11-04, verbatim: "accept S1 - we have run card
+test with a real phone and card, find these results and make sure they are
+linked"; [record](https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6639160618)).
+It keeps #1751's rule that only the seam knows where bytes live, and it keeps
+the take row, the metadata and the pending-row change in one transaction,
+which is the #38 property.
 
-## Decision (proposed)
+## Decision
 
 ### 1. Where the files go
 
 On a phone where the card store is switched on, a clip's bytes are one file in
 the app's own folder on the card (path A), named `<clipId>.<n>.pcm` while the
 segment is being worked on and `<clipId>.<n>.mp3` once it is Finished, where
-`<n>` belongs to one write attempt (§3). A file never holds anything else. Whether the folder is reachable without a custom plugin is
-owed to P11; how it is found, and that its volume reports removable and
-mounted, is owed to P1.
+`<n>` belongs to one write attempt (§3). A file never holds anything else. On
+phone (a), `@capacitor/filesystem` reached a full card path with no prompt when
+given `encoding: "utf8"` (results, P11); whether it can carry §3's sync,
+read-back and rename is not what P11 ran, so the plugin child decides whether a
+custom plugin does the writes. P11's call is evidence that the path is
+reachable, not a write path for clip bytes: `encoding: "utf8"` writes a text
+string, and `.pcm` and `.mp3` are binary, so a utf8 write is not allowed for
+them (inference: a text encoding would alter the bytes; not checked against
+Capacitor's documentation here). No binary write through
+`@capacitor/filesystem` to the card has run. On phone (a) the probe found the folder's volume
+and it reported removable and mounted (results, P1).
 
 ### 2. The schema: where a clip lives
 
 `clipMeta` gains a location: IndexedDB, or the card, naming the card's volume
-by the UUID that P1 is asked to show is stable across reboot and reinsertion,
-and the exact file (§3). A card location also carries the file's CRC32, by which this ADR means
+by its UUID, and the exact file (§3). On phone (a) the UUID was the same across
+a reboot and across a remove and reinsert (results, P1); phone (b) has not run. A card location also carries the file's CRC32, by which this ADR means
 CRC-32/ISO-HDLC: polynomial 0x04C11DB7 (reflected, 0xEDB88320), initial value
 0xFFFFFFFF, reflected input and output, final XOR 0xFFFFFFFF, the variant zlib
 and `java.util.zip.CRC32` compute (from the algorithm's published definition,
@@ -215,8 +250,9 @@ renumbered because v13 and v14 have shipped.
 - AGENTS.md's rollback paragraph applies: once a phone has opened v15, an
   older build cannot open the database. The PR that raises the version adds
   the rollback line there.
-- If the volume UUID is not stable (P1), the location names the volume some
-  other way, and this section is rewritten before the schema child is built.
+- If the volume UUID turns out not to be stable on another phone (P1 on phone
+  (b) is owed), the location names the volume some other way, and this section
+  is rewritten before the schema child is built.
 - The release record that case (d) needs (§3) is part of the same step: a
   durable record, written in the transaction that deletes a card-located
   `clipMeta` row, naming that row's volume and file. No such record exists
@@ -237,8 +273,9 @@ committed. So the name is exclusive:
   Its alphabet is lowercase ASCII letters and digits, `[0-9a-z]`, one to 32
   characters, with no `.`, `-`, `/` or uppercase. No dot, so that
   `<clipId>.<n>.<ext>` splits unambiguously. Lowercase only, because a card
-  formatted FAT or exFAT is expected to fold case, so two names differing only
-  in case would be one file (inference, owed to P1).
+  formatted FAT or exFAT folds case, so two names differing only in case
+  would be one file. Phone (a)'s exFAT card did: `spike-case.txt` then
+  `SPIKE-CASE.txt` gave one file (results, P1). A FAT32 card has not run.
 - The `.part` is created exclusively (it fails if its name exists), and the
   rename to `<name>` never replaces an existing file. If the `.part` cannot be
   created, the attempt fails as in row S1. If `<name>` exists at the rename,
@@ -261,7 +298,8 @@ the row stores: the volume and the file name `<clipId>.<n>.<ext>` (§2).
   file name alone: case (d) deletes the pair a release record names.
 - A row whose location names **another volume** than the inserted card may own
   any file on the inserted card that carries its `clipId`: the volume id may
-  not be stable (owed to P1), the card may be a different one, or a reader may
+  not be stable (it was on phone (a), results P1; other phones are owed), the
+  card may be a different one, or a reader may
   have rewritten the id. So every such file is a possible copy of that row's
   take, so it is Keep (c) while the mismatch lasts (V1, V2). This covers a `.part` as well as a final file: a `.part`
   carrying that `clipId` may be a checked copy of the take. The app reports
@@ -424,9 +462,13 @@ A save to the card, in order:
 1. **Before any transaction**, the plugin writes `<name>.part`, syncs it, reads
    it back, checks the length and CRC32 of what it read against the bytes it
    was given, and renames it to `<name>`. A final-named file has therefore
-   passed that check before the rename. That the sync and the read-back reach
-   the card rather than a cache, and that the rename holds after a kill or a
-   power-off, is owed to P4. The outcomes of a failure in step 1 are the state
+   passed that check before the rename. On phone (a) a force-stop and a forced
+   power-off mid-write each left a `.part` or nothing, never a partial file
+   under a final name, and a file committed before the power-off was still
+   whole (results, P4). That the sync and the read-back reach the card rather
+   than a cache is still owed to P4: phone (a)'s run is a weak pass, because
+   the file it checked was committed about 13 s before the power loss, long
+   enough for an ordinary flush, so it does not isolate the sync. The outcomes of a failure in step 1 are the state
    table's, by case: the write failed or the read-back ran to completion and
    mismatched, Delete (a) (S1); the read-back could not finish, Keep (c)
    (S1d); the check passed and the rename failed, Keep (c) (S1c). A session's
@@ -448,7 +490,8 @@ A save to the card, in order:
    Delete (a) when the read-back ran to completion and mismatched and the take
    has a durable copy outside memory (S1b), Keep (c) when it mismatched and
    the take has none (S1e), and Keep (c) when it could not finish (S1d).
-   Whether the read at 1a reaches the card and not a cache is owed to P4.
+   Whether the read at 1a reaches the card and not a cache is owed to P4
+   (phone (a)'s weak pass, step 1, does not settle it).
 
 2. **One strict IndexedDB transaction**, opened only after a pass at 1a, writes the take row, the `clipMeta`
    row with its card location and CRC32, and the pending-row change, the scope
@@ -553,7 +596,8 @@ delete-predicate case applies; its Outcome says only "Delete (a)", "Delete
 (b)", "Delete (d)", "Delete (e)" or "Keep (c), report", who acts, and any
 non-delete effect. "Named" means
 a `clipMeta` location names that volume and file. "Killed" covers a
-force-stop and a power-off; what the card holds after each is owed to P4. All
+force-stop and a power-off; on phone (a) each left a `.part` or nothing under
+the attempt's name, never a partial final (results, P4). All
 tests belong to the commit-protocol child. The When-cells do not overlap, with
 one stated exception: S7 and T3 describe one shape (an unnamed final
 superseded by a committed row) from two causes, and both give the same case
@@ -624,8 +668,11 @@ app has one WebView), for the commit-protocol child to check.
 IndexedDB (`domain.ts:312`). So even with the card store on, a take is held on
 the phone until its save commits, and a phone with no free space may be unable
 to hold it (inference, from #339's field evidence). Whether the held copy moves
-to the card is out of #1751's scope by its own words, and is an **open
-technical question for the DRI** (below).
+to the card was out of #1751's scope by its own words. **Decided 2026-11-04:**
+it stays in IndexedDB. The DRI's pick, verbatim: "Phone storage, as today
+(Recommended)", whose option read "Keep held takes in IndexedDB like now; only
+saved clips go to the card. Smaller change, proven path."
+([record](https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6639160618)).
 
 **Before Stop.** While recording, MediaRecorder's slices are held in memory
 (`chunksRef`, `src/hooks/use-recorder.ts:366`, filled at `:714-715`), and
@@ -634,13 +681,20 @@ then loses the take, as it does today; that is not this ADR's to change.
 
 **Bridge throughput.** The plugin is called through Capacitor's bridge. Writing
 a 20-minute take (about 106 MB: mono 16-bit PCM at 44.1 kHz,
-`src/lib/audio/format.ts:4`, `:15`, is 5.3 MB a minute) in 384 KiB chunks, and
-the JS heap that takes, is owed to P2. Reading it back by base64 chunks or
-by `fetch(Capacitor.convertFileSrc(path))` is owed to P3. The second goes
-through the WebView's local server, so the plugin child prefers a read into the
-app process unless P3 shows that server answers only this app and the path
-cannot be guessed (open, for the plugin child). If P2 misses the
-25-second threshold, ADR 0016's trigger 2 fires
+`src/lib/audio/format.ts:4`, `:15`, is 5.3 MB a minute) in 384 KiB chunks
+was measured on phone (a) (results, P2): 111.3 MB in 15.7 to 23.2 s over
+twelve runs, median 18.7 s, five of them over 20 s, with the cause of the
+spread not established. The JS heap, sampled over devtools during one
+20-minute write, was 2.4 to 13.7 MB. The results' inference, untested, is that
+the base64 bridge, not the card, limits the save: a raw 1 GiB write and sync
+ran at about 73 MB/s against the save path's about 7 MB/s. Reading a file back
+(results, P3) gave identical bytes both ways, taking about 22.5 s by base64
+chunks and about 2 s by `fetch(Capacitor.convertFileSrc(path))`, and the
+results recommend the second. The second goes through the WebView's local
+server, so the plugin child prefers a read into the app process unless P3
+shows that server answers only this app and the path cannot be guessed; P3's
+run measured speed and bytes, not that, so it stays open, for the plugin
+child. If P2 misses the 25-second threshold, ADR 0016's trigger 2 fires
 (`0016-capacitor-or-expo.md:84-88`).
 
 ### 4. Failure behaviours
@@ -649,20 +703,37 @@ Each behaviour below needs a test in the build child named, before it ships
 (ADR 0011). The tests are named here; the children that carry them are not
 filed yet (#1456's child list).
 
-| Failure (ADR 0011's list)                                    | Proposed behaviour                                                                                                                                                                                                                                                                                                                               | Test, and the child that carries it                                                                                                                                                                                                                                | Owed to                                |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| **Card missing** at save                                     | Step 1 fails with a typed code before any transaction. The take stays held, the app says so in place, and it offers to save on the phone (#1456's "held, not lost, and can be saved on the phone instead").                                                                                                                                      | "a failed step 1 deletes its own .part and keeps the take held, and a refused create deletes nothing" (row S1) — card missing, full or different                                                                                                                   | P1, P5                                 |
-| **Card full**                                                | A free-space read before step 1 predicts it; if the write still fails, the typed "full" code takes the same path as a missing card.                                                                                                                                                                                                              | "a full card is refused before the write and the take stays held" — same child                                                                                                                                                                                     | P6                                     |
-| **Card read-only**                                           | The same path, with its own code if the plugin can tell it apart. The spike's codes (`FULL`, `UNMOUNTED`, `IO`, `NO_SESSION`, `NOT_FOUND`, `GRANT`) name none for it.                                                                                                                                                                            | "a read-only card keeps the take held" — same child                                                                                                                                                                                                                | Not probed by #1472; needs a row added |
-| **Card swapped** between sessions                            | A row whose location names another volume reads as "card not present", never as lost. No row is deleted, no file is written to the other card's folder for that clip, and the sweep deletes **nothing** on the inserted card that carries the row's `clipId` (§3, the ownership rule; rows V1, V2).                                              | "a clip on another card reads as not present and its row survives" — same child; "a volume mismatch does not delete the files on the inserted card" (row V1) and "a volume mismatch does not delete a .part on the inserted card" (row V2) — commit protocol child | P1, P9                                 |
-| **Row pointing at a missing file** (card present, file gone) | The segment shows its audio as missing, the read reports to the failure log (as `"playback-dangling"` does today, `src/hooks/use-audio-session.ts:550`), and the row is never deleted automatically.                                                                                                                                             | "a missing or CRC-mismatched card file leaves the row and reports it" — commit protocol child                                                                                                                                                                      | P1                                     |
-| **Partial file after a kill** while it was the only copy     | Read off §3's sweep rows by case: a `.part` is Delete (a) or Delete (b) (S2) or Keep (c) (S2b); an unnamed final is Delete (b) (S3, S7, T3), Delete (e) (T2), Delete (d) when a release record names it (E2), or Keep (c) (S3b, S4, S6c, S7b, T2b, T3b, E3). The alive rows' kept files (S1c, S1d, S1e, S5b, S6b) reach the sweep as these rows. | The tests of rows S1, S1b to S1e, S2, S2b, S3, S3b, S4, S5, S5b, S6 to S6c, S7, S7b, T0 to T4b (T2b included), V1, V2 and E1 to E3 — commit protocol child                                                                                                         | P4                                     |
-| **Card pulled mid-recording**                                | Nothing is written while recording, so storage is untouched. The facilitator is warned against it when the card store is switched on, per D2-microsd's note.                                                                                                                                                                                     | None beyond the missing-card test; the warning is copy                                                                                                                                                                                                             | P5                                     |
+| Failure (ADR 0011's list)                                    | Behaviour                                                                                                                                                                                                                                                                                                                                        | Test, and the child that carries it                                                                                                                                                                                                                                | Phone (a), from the results                                                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Card missing** at save                                     | Step 1 fails with a typed code before any transaction. The take stays held, the app says so in place, and it offers to save on the phone (#1456's "held, not lost, and can be saved on the phone instead").                                                                                                                                      | "a failed step 1 deletes its own .part and keeps the take held, and a refused create deletes nothing" (row S1) — card missing, full or different                                                                                                                   | P5: a pull mid-save gave the typed `UNMOUNTED` code about 30 ms after it, with Books unchanged, but only once the probe closed its file on the error (below). Phone (b) is owed |
+| **Card full**                                                | A free-space read before step 1 predicts it; if the write still fails, the typed "full" code takes the same path as a missing card.                                                                                                                                                                                                              | "a full card is refused before the write and the take stays held" — same child                                                                                                                                                                                     | P6: the typed `FULL` code (`ENOSPC`), and the free-space read predicted it. The probe left its `.part`; step 1 here deletes it (S1)                                             |
+| **Card read-only**                                           | The same path, with its own code if the plugin can tell it apart. The spike's codes (`FULL`, `UNMOUNTED`, `IO`, `NO_SESSION`, `NOT_FOUND`, `GRANT`) name none for it.                                                                                                                                                                            | "a read-only card keeps the take held" — same child                                                                                                                                                                                                                | Not probed by #1472; needs a row added                                                                                                                                          |
+| **Card swapped** between sessions                            | A row whose location names another volume reads as "card not present", never as lost. No row is deleted, no file is written to the other card's folder for that clip, and the sweep deletes **nothing** on the inserted card that carries the row's `clipId` (§3, the ownership rule; rows V1, V2).                                              | "a clip on another card reads as not present and its row survives" — same child; "a volume mismatch does not delete the files on the inserted card" (row V1) and "a volume mismatch does not delete a .part on the inserted card" (row V2) — commit protocol child | P1: the UUID was stable for one card. P9: events seen (below). A second card was not run, so the swap itself is owed                                                            |
+| **Row pointing at a missing file** (card present, file gone) | The segment shows its audio as missing, the read reports to the failure log (as `"playback-dangling"` does today, `src/hooks/use-audio-session.ts:550`), and the row is never deleted automatically.                                                                                                                                             | "a missing or CRC-mismatched card file leaves the row and reports it" — commit protocol child                                                                                                                                                                      | Not run. P1 found the card                                                                                                                                                      |
+| **Partial file after a kill** while it was the only copy     | Read off §3's sweep rows by case: a `.part` is Delete (a) or Delete (b) (S2) or Keep (c) (S2b); an unnamed final is Delete (b) (S3, S7, T3), Delete (e) (T2), Delete (d) when a release record names it (E2), or Keep (c) (S3b, S4, S6c, S7b, T2b, T3b, E3). The alive rows' kept files (S1c, S1d, S1e, S5b, S6b) reach the sweep as these rows. | The tests of rows S1, S1b to S1e, S2, S2b, S3, S3b, S4, S5, S5b, S6 to S6c, S7, S7b, T0 to T4b (T2b included), V1, V2 and E1 to E3 — commit protocol child                                                                                                         | P4: a force-stop and a power-off each left a `.part` or nothing                                                                                                                 |
+| **Card pulled mid-recording**                                | Nothing is written while recording, so storage is untouched. The facilitator is warned against it when the card store is switched on, per D2-microsd's note.                                                                                                                                                                                     | None beyond the missing-card test; the warning is copy                                                                                                                                                                                                             | Not run: P5 pulled the card mid-save                                                                                                                                            |
 
-Where the card's state changes while the app runs, which events reach the
-plugin in the foreground and the background, and what is seen on resume, is
-owed to P9. Until P9 reports, the proposed rule is to check the volume before
-every card write and read, and not to rely on an event.
+**Close every open card file on the first write error.** This is a
+requirement on the plugin work under #1456, from the results ("Requirements
+for the real card store", item 1, and row P5). With the probe as written,
+pulling the card mid-save got the app killed: Android's `vold` killed it about
+0.8 s after the pull because the `.part` was still open, since the probe's
+`writeChunk` catch never closed it. With `closeQuietly()` added to the catch in
+`writeChunk` and `writeCommit`, the app survived the pull and returned the
+typed `UNMOUNTED` code. Closing on the first `EIO` was enough on phone (a).
+Closing on `MEDIA_EJECT` too, which arrived about 0.8 s before the kill, is
+the results' inference and is untested. The plugin child carries a test that
+a write error closes the file before the error is returned.
+
+Where the card's state changes while the app runs, the events phone (a) saw
+(results, P9) were, on a physical pull with no eject in Settings,
+`MEDIA_EJECT`, `MEDIA_UNMOUNTED` and `MEDIA_BAD_REMOVAL`, with no
+`volumeCallback`; on insert, `volumeCallback` reporting mounted twice,
+`MEDIA_CHECKING` and `MEDIA_MOUNTED`. The same events arrived while the app was
+in the background, and on resume the card read as mounted with the same UUID.
+The rule stands: check the volume before every card write and read, and do not
+rely on an event (inference: a listener on `volumeCallback` alone would have
+missed the removal on phone (a)).
 
 ### 5. The backup folder
 
@@ -680,9 +751,11 @@ ADR covers only where it is written and how.
   read-back and the winner record below names it, and Keep (c) until then, so
   at every moment one checked backup exists under some name. A new backup whose
   read-back ran to completion and failed is Delete (a); one whose read-back
-  could not finish is Keep (c). How the replace is done through the grant is owed to P8;
-  the run sheet's P8 tests an `rwt` overwrite today, so it needs a
-  rename-and-replace step added.
+  could not finish is Keep (c). How the replace is done through the grant is
+  still owed to P8: phone (a) ran only the sheet's `rwt` overwrite, which left
+  no tail (a 1 MB overwrite of a 50 MB file read back as exactly 1000000
+  bytes; results, P8), and this design does not use `rwt`, so the sheet needs
+  a rename-and-replace step added.
 - **Recovery records its winner.** Once the new file passes its read-back, and
   before the previous backup is deleted (inference: a delete first would leave
   a kill with no record naming either file), the backup writes a small record that survives a
@@ -702,9 +775,11 @@ ADR covers only where it is written and how.
   "a kill before the record is written leaves the previous backup as the
   archive", and "only the file the record names as superseded is deleted, and
   another file in the backup folder is kept".
-- The grant is persisted. Whether it survives an app restart, a reboot, and
-  the card out and in, and that it stops resolving on a different card, is
-  owed to P8.
+- The grant is persisted. On phone (a) it survived an app restart, a reboot,
+  and the card out and in: with the card out the grant is listed but does not
+  resolve, and with it back it resolves and the file is still there (results,
+  P8). Whether it stops resolving on a different card is cannot-tell there,
+  with only one card, and stays owed to P8.
 - A failed backup leaves the recordings untouched; it is a report, not a loss.
 
 Where a backup goes, and whether a backup on the same card that holds the
@@ -717,17 +792,22 @@ recordings counts as "off the device", are not decided (below).
 leave the device through a channel the app does not control. #1473's scope
 adds that "some manufacturers cannot disable device-to-device migration on
 Android 12 and later"; that is Android's note as #1473 quotes it, not checked
-here, and it is not this epic's to fix. The backup this ADR proposes is the
+here, and it is not this epic's to fix. The backup this ADR describes is the
 user's own folder, not Android's backup.
 
 **`hasFragileUserData` is not decided.** #1532 adds it to the spike's manifest
 only. What the "keep app data" choice keeps on uninstall, for the card folder
-and for IndexedDB, is owed to P7. If it keeps one and not the other, the index
-and the bytes part company. This ADR proposes shipping it only if P7 shows both
-are kept together, or neither.
+and for IndexedDB, mattered because if it keeps one and not the other, the
+index and the bytes part company. This ADR ships it only if P7 shows both are
+kept together, or neither. On phone (a), Android 16 offered "Keep app data",
+and after a reinstall the card file and an IndexedDB marker were both still
+there (results, P7). No earlier Android version has run, so whether to ship it
+stays open (below).
 
-**Uninstall.** With path A, the card folder is expected to go on uninstall
-along with IndexedDB (owed to P7), so `docs/native/README.md:77-79` stays
+**Uninstall.** With path A, the card folder goes on uninstall along with
+IndexedDB: on phone (a) a plain `adb uninstall` removed the app's folders on
+the card and internally, and left the user-picked folder untouched (results,
+P7). So `docs/native/README.md:77-79` stays
 true. That sentence is rewritten when the code exists, not before (ADR 0011).
 
 ## Consequences
@@ -739,10 +819,13 @@ true. That sentence is rewritten when the code exists, not before (ADR 0011).
   #1768's table moves from "bytes inside the transaction" to "location inside,
   bytes outside" for the card backend. The IndexedDB backend keeps its
   in-transaction path, so iOS and the web build are unchanged.
-- **A held take still needs room on the phone** until its owner decides
-  otherwise (the open question below).
-- **Nothing is built, and no phone has run any of it.** This ADR records a
-  proposed design, not a capability.
+- **A held take still needs room on the phone.** The DRI's 2026-11-04 pick
+  keeps it in IndexedDB (§3, "Where a held take lives").
+- **The plugin closes card files on the first write error** (§4), a
+  requirement the results add.
+- **Nothing is built.** The spike's probe ran on one phone (the results); this
+  design has not run on any phone. This ADR records a design, not a
+  capability.
 
 ## Open questions
 
@@ -773,10 +856,6 @@ T1 to T3; picks are not answers.
   fallback is O1, a question for the requirements owner, or ADR 0016's trigger
   2 fires and a move is planned. At 25 seconds every run on the first phone is
   inside the limit, so the fork is not reached today.
-- **Accept S1**, or ask for another contract.
-- **Where a held take's bytes live** when the card store is on: IndexedDB as
-  today, or the card. #1751 left pending-take bytes out of scope for the
-  commit-protocol child to decide.
 - **The recovery path for rows S1e, S3b, S4, S5b, S6b and S6c.** The sweep keeps a
   card file that passed step 1's check (step 1a may not have run, or failed
   on a take held only in memory) and may be the only copy of a take, and
@@ -796,21 +875,46 @@ T1 to T3; picks are not answers.
   deleted meanwhile.
 - **Where the backup's winner record lives and how it is replaced** (§5)
   without a half-written record, through the grant (P8).
-- **`hasFragileUserData`**, once P7 reports.
+- **`hasFragileUserData`.** P7 has reported for phone (a) only: both the card
+  file and IndexedDB were kept (§6). Whether to ship it is not decided.
 - **What the backup's `confidential` flag says about card copies**:
   [#1580](https://github.com/unfoldingWord/tc-mobile/issues/1580), open in ADR 0011.
 - **How the plugin child reads a card file back.** Keep the read-back, and P3's
   measurement, on a plugin read into the app process, not a
   `fetch(Capacitor.convertFileSrc(path))` through the WebView's local server,
   unless P3 shows that server answers only this app and the path cannot be
-  guessed.
+  guessed. The results recommend `fetch(convertFileSrc)` on speed (about 11
+  times faster, identical bytes); P3 did not test who else that server
+  answers, so this stays open.
 
-### Owed to #1472's run sheet
+### Decided 2026-11-04
 
-P1 (finding the card, volume UUID stability, adopted cards), P2 (write time and
-heap for 2, 10 and 20 minutes), P3 (read back), P4 (kill during write), P5
-(card pulled mid-write), P6 (card full), P7 (uninstall and
-`hasFragileUserData`), P8 (the backup folder's grant and overwrite), P9 (card
-events), P10 (the browser picker, evidence for R5 only) and P11
-(`@capacitor/filesystem` with a card path). A read-only card is not a row on
-the sheet; it should be added before the run.
+Both in the
+[decision record](https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6639160618)
+on #1473.
+
+- **S1**, the DRI, verbatim: "accept S1 - we have run card test with a real
+  phone and card, find these results and make sure they are linked".
+- **Where a held take's bytes live** when the card store is on, the DRI's pick,
+  verbatim: "Phone storage, as today (Recommended)". Held takes stay in
+  IndexedDB; only saved clips go to the card.
+
+### Still owed to #1472's run sheet
+
+The results answer P1 to P9 and P11 on phone (a) and are cited where they are
+used above. Still owed:
+
+- **Phone (b), an Android 7–10 phone:** every row, and with it criterion 2.
+  The 25-second bar is on the slowest phone, which has not been named.
+- **Phone (c), with no card slot; a small FAT32 card; a second card.** None
+  has run. The second card is what P8's different-card row and the card
+  swapped behaviour (§4) need.
+- **P1, an adopted card:** not run on phone (a).
+- **P2, the spread:** five of twelve 20-minute saves over 20 s, cause not
+  established.
+- **P4, whether the sync and the read-back reach the card:** a weak pass on
+  phone (a), not isolated.
+- **P8, the backup's rename-and-replace:** not on the sheet; only `rwt` ran.
+- **P10, the browser picker:** not run (optional).
+- **A read-only card:** not a row on the sheet; it should be added before the
+  next run.
