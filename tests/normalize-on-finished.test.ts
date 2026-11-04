@@ -149,8 +149,24 @@ beforeEach(() => {
   vi.mocked(commitTranscode).mockResolvedValue("committed");
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
+afterEach(async () => {
+  // The sweep keeps module-scoped memory that outlives a test: the compressor
+  // refusal latch holds the last refused clip per segment, and only a turn
+  // that completes for that segment clears it (#1892). There is no reset
+  // seam, so end each test with one completed turn on the shared segment; a
+  // test that refused SEGMENT/CLIP then cannot swallow the next one's row.
+  // Cleared first, so the expect sees this turn's commit, not the test's.
+  try {
+    storePreference("0");
+    loadWith(Int16Array.of(10, 20, 30), RECORD);
+    const commit = vi.mocked(commitTranscode);
+    commit.mockResolvedValue("committed");
+    commit.mockClear();
+    await requestTranscodeSweep();
+    expect(commit).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 describe("normalize on Finished — the sweep (#1433)", () => {
@@ -301,6 +317,19 @@ describe("the compressor switch in the sweep (#1873)", () => {
     // Still unfinished, so the sweep went back to it: nothing was held out.
     expect(normalizePcm).toHaveBeenCalledTimes(2);
     expect(commitTranscode).not.toHaveBeenCalled();
+    const contexts = vi.mocked(reportFailure).mock.calls.map((c) => c[1]);
+    expect(contexts).toEqual(["transcode-compressor"]);
+  });
+
+  it("a second compressor refusal on the same clip, in its own test, writes its own row (#1892)", async () => {
+    storePreference("1", "1");
+    loadWith(Int16Array.of(10, 20, 30), null);
+    normalizePcm.mockRejectedValueOnce(
+      new CompressorRangeError("compressor: a later test")
+    );
+
+    await requestTranscodeSweep();
+
     const contexts = vi.mocked(reportFailure).mock.calls.map((c) => c[1]);
     expect(contexts).toEqual(["transcode-compressor"]);
   });
