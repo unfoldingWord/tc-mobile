@@ -112,6 +112,11 @@ describe("iOS microphone prompt, one per complete app language", () => {
     }
   );
 
+  it("fil.lproj carries the same prompt as tl.lproj", () => {
+    expect(promptOf("tl").length).toBeGreaterThan(0);
+    expect(promptOf("fil")).toBe(promptOf("tl"));
+  });
+
   it.each(completeLocales)("%s: the prompt is not the English line", (tag) => {
     // A copied English sentence is a defect, not a draft.
     expect(promptOf(tag)).not.toBe(english);

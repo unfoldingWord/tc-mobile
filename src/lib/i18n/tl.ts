@@ -529,8 +529,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   shareAllIncomplete: (n: number): string =>
     plural(n, {
-      one: "{n} kumpletong kabanata ang hindi naisama.",
-      other: "{n} kumpletong kabanata ang hindi naisama.",
+      one: "{n} kabanata ang hindi naisama nang buo.",
+      other: "{n} kabanata ang hindi naisama nang buo.",
     }),
   shareAllFilename: "Aking gawa.zip",
   shareAllFolder(book: string): string {
@@ -606,7 +606,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   coverColourPlum: "Ube",
   coverColourForest: "Berdeng gubat",
   coverColourBrick: "Ladrilyo",
-  coverColourSlate: "Abuhing slate",
+  coverColourSlate: "Abuhin",
   coverColourRose: "Rosas",
   coverColourOlive: "Olibo",
   coverColourRust: "Kalawang",

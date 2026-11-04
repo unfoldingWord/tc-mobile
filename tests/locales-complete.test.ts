@@ -133,6 +133,8 @@ describe("completeLocales and the English-only keys", () => {
     const tl = LOCALE_OVERRIDES.tl as Record<string, unknown>;
     for (const key of ENGLISH_ONLY) expect(Object.hasOwn(tl, key)).toBe(false);
     expect(resolveLocale(["tl-PH"], completeLocales()).tag).toBe("tl");
+    expect(resolveLocale(["fil"], completeLocales()).tag).toBe("tl");
+    expect(resolveLocale(["fil-PH", "es"], completeLocales()).tag).toBe("tl");
     expect(resolveLocale(["tl", "es"], completeLocales()).tag).toBe("tl");
   });
 

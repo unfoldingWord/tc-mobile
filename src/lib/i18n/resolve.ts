@@ -29,18 +29,23 @@ import { LOCALES, SHIPPED_LOCALE, type Locale } from "../locale";
 /** One BCP 47 subtag run, `-` or `_` separated (some platforms report `pt_BR`). */
 const TAG = /^[a-z0-9]+([-_][a-z0-9]+)*$/i;
 
-/** Retired language subtags still reported by older platforms, and `fil`. */
-const LEGACY_BASE: Readonly<Record<string, string>> = {
-  in: "id",
-  fil: "tl",
-};
+/** Retired language subtags still reported by older platforms. */
+const LEGACY_BASE: Readonly<Record<string, string>> = { in: "id" };
+
+/**
+ * Current platform tags for a language the app names by another tag. `fil` is
+ * what Android and iOS report for Filipino today; the app's table for the same
+ * written language is `tl`. Not a retired tag, so it is kept apart from
+ * `LEGACY_BASE`.
+ */
+const PLATFORM_ALIAS_BASE: Readonly<Record<string, string>> = { fil: "tl" };
 
 function baseOf(tag: unknown): string | undefined {
   if (typeof tag !== "string") return undefined;
   const trimmed = tag.trim();
   if (!TAG.test(trimmed)) return undefined;
   const base = (trimmed.split(/[-_]/)[0] ?? "").toLowerCase();
-  return LEGACY_BASE[base] ?? base;
+  return LEGACY_BASE[base] ?? PLATFORM_ALIAS_BASE[base] ?? base;
 }
 
 /**
