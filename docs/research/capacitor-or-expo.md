@@ -426,8 +426,7 @@ scheme with no handler. It has a known fallback, a small Swift module.
   check fails, add one Swift plugin that plays a take through
   `AVAudioPlayer` with the app's own session (the DRI's 2026-10-22 hold was
   lifted on 2026-11-04).
-- **microSD.** The #1456 chain as scoped (#1472 spike, ADR 0013 — reserved
-  by #1473, not yet in `docs/decisions/` — a storage
+- **microSD.** The #1456 chain as scoped (#1472 spike, ADR 0013, a storage
   seam, an Android plugin). Same Java whichever shell hosts it.
 - **Cloud backup.** The share sheet or Files picker first; a Drive or iCloud
   plugin only if the requirements owner asks for automatic backup.

@@ -13,8 +13,8 @@ threshold trigger 2 shares with #1472: first "20 seconds (Recommended)"
 superseded after the real-phone card run ([results](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6639193400)). The DRI said
 "15-23s is acceptable" and then picked "25 seconds (Recommended)", recorded in
 the [#1472 comment](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6640952051). What the acceptance covers is the decision below; the
-rest of the ADR is the dev lead's reading, and nothing in it has run on a
-phone. The research note labels every claim [observed], [inference] or [assumption]. This ADR repeats
+rest of the ADR is the dev lead's reading. The Expo container spike has not
+run on a phone; the #1472 card run, linked above, did. The research note labels every claim [observed], [inference] or [assumption]. This ADR repeats
 only the conclusions and points to the note for the evidence. The throwaway
 Expo proof (draft PR, branch `spike/1520-expo-proof`) has been built in a
 container only.
@@ -36,9 +36,9 @@ Since then three things have happened:
 - The requirements owner has a hunch that native apps will be needed in v2
   (#1520, 2026-10-20). The DRI asked for the line to be drawn on evidence.
 
-The DRI's 2026-10-22 pick on #1520 holds new Capacitor-native plugin work,
-including #1456 and an `AVAudioPlayer` plugin for #1518, until this reports. The hold was lifted when this ADR was
-accepted.
+The DRI's 2026-10-22 pick on #1520 held new Capacitor-native plugin work,
+including #1456 and an `AVAudioPlayer` plugin for #1518, until this ADR was
+accepted on 2026-11-04, which lifted the hold.
 
 ## Decision
 

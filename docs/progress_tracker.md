@@ -22,6 +22,7 @@ Records a run from 2026-11-02 that had no GitHub record until today. It supersed
 - **Not settled:** O2's acceptance criterion needs an Android 7 to 10 phone and the slowest phone's time. No such phone, no-slot phone, FAT32 card or second card was run.
 - **Open:** the probe patch is still uncommitted in its local worktree. Whether the slow runs fire ADR 0016's trigger 2 (#1520) is the DRI's reading.
 - **Findings:** [#1472 comment](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6639193400).
+- **Later the same day:** ADR 0013 (the card store, #1473) moved from Proposed to Accepted, with these findings linked and the owed lines they answer rewritten; phone (b) and the rest stay owed. [ADR 0013](decisions/0013-card-store.md); [decision record](https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6639160618).
 
 ---
 
