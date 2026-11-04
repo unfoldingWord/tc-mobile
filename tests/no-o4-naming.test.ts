@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { stripCodeComments } from "./strip-code-comments";
 import { stripCssComments } from "./support";
@@ -80,28 +80,51 @@ function codeOf(file: string): string {
   return text;
 }
 
+/**
+ * The tree is walked, and each file read and comment-stripped, once for the
+ * whole file: built lazily on first use and shared by every test below. Each
+ * pattern then scans the cached lines. The patterns and assertions are
+ * unchanged (#1887).
+ */
+interface Scanned {
+  readonly rel: string;
+  readonly base: string;
+  readonly lines: readonly string[];
+}
+let cache: readonly Scanned[] | undefined;
+function scanned(): readonly Scanned[] {
+  cache ??= sources().map((file) => ({
+    rel: path.relative(ROOT, file),
+    base: path.basename(file),
+    lines: codeOf(file).split("\n"),
+  }));
+  return cache;
+}
+
 describe("the o4 naming is retired", () => {
-  const files = sources();
+  // The one-time walk happens here, with headroom, not inside the first test's
+  // 5 s budget.
+  beforeAll(() => {
+    scanned();
+  }, 60_000);
 
   it("reads a real tree", () => {
-    expect(files.length).toBeGreaterThan(200);
+    expect(scanned().length).toBeGreaterThan(200);
   });
 
   it("no file in src, tests or e2e is named for o4", () => {
-    const named = files
-      .map((file) => path.relative(ROOT, file))
-      .filter((rel) => rel !== SELF && /o4/i.test(path.basename(rel)));
+    const named = scanned()
+      .filter(({ rel, base }) => rel !== SELF && /o4/i.test(base))
+      .map(({ rel }) => rel);
     expect(named).toEqual([]);
   });
 
   for (const [label, pattern] of BANNED) {
     it(`no ${label} remains in src, tests or e2e`, () => {
       const hits: string[] = [];
-      for (const file of files) {
-        const rel = path.relative(ROOT, file);
+      for (const { rel, base, lines } of scanned()) {
         if (rel === SELF) continue;
-        if (pattern.test(path.basename(file))) hits.push(`${rel} (file name)`);
-        const lines = codeOf(file).split("\n");
+        if (pattern.test(base)) hits.push(`${rel} (file name)`);
         lines.forEach((line, i) => {
           if (pattern.test(line)) hits.push(`${rel}:${i + 1}`);
         });
