@@ -400,16 +400,23 @@ export async function sweep(
       return measure(page, '[role="dialog"]');
     }
     case "settings": {
-      // Settings is a tile in the ≡ menu (#1871).
+      // Settings is the first tile in the ≡ menu (#1871). Switch first, then
+      // open, as the app-menu case does (#1880): the localized tile name is
+      // not known here, so the tile is taken by position, and Settings has
+      // opened once the tile grid is gone from the dialog.
       await page.goto("/");
       await expect(page.locator("#launch-intro")).toBeHidden({
         timeout: 10_000,
       });
-      await page.getByRole("button", { name: /^Open menu/ }).click();
-      await settled(page, '[role="dialog"]');
-      const tile = await handle(page, "button", "Settings", true);
+      const open = await handle(page, "button", /^Open menu/);
       await switchLanguage(page, tag);
-      await tile.click();
+      await open.click();
+      await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
+        3
+      );
+      await settled(page, '[role="dialog"]');
+      await page.locator('[role="dialog"] .tiles button').first().click();
+      await expect(page.locator('[role="dialog"] .tiles')).toHaveCount(0);
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }

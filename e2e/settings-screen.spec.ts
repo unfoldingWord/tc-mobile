@@ -79,6 +79,7 @@ test("the ≡ menu's Settings tile opens Settings, Back to books closes it, and 
   await expect(settings(page)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(settings(page)).toHaveCount(0);
+  await expect(menuButton(page)).toBeFocused();
 });
 
 test("the browser's Back closes Settings and stays on Books", async ({
@@ -107,11 +108,11 @@ test("the theme moved: the ≡ menu no longer holds it, Settings does, and it re
   await expect(
     menu.getByRole("button", { name: /(light|dark) screen/i })
   ).toHaveCount(0);
-  await page.keyboard.press("Escape");
 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
-  await openSettings(page);
+  // The menu is still open: take its Settings tile, do not press ≡ again.
+  await menu.getByRole("button", { name: "Settings", exact: true }).click();
   await settings(page)
     .getByRole("button", { name: /light screen/i })
     .click();

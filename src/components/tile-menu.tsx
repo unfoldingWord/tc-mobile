@@ -74,7 +74,8 @@ export function TileGrid({
 
 /**
  * Pushes the tiles after it to the far end of the row — where the theme tile
- * sits in every menu (workbench G1, G2, G3). Decorative.
+ * sits in every tile menu (workbench G1, G2, G3); the name sheets are not tile
+ * grids and have none. Decorative.
  */
 export function TileSpacer() {
   return <span className="tiles-gap" aria-hidden="true" />;
