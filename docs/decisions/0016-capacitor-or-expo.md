@@ -1,12 +1,20 @@
 # 0016 — Stay on Capacitor with targeted plugins; move to Expo only on named triggers
 
-**Status:** Proposed · **Date:** 2026-10-22 · **DRI:** the dev lead drafts;
-the DRI decides · **Issue:**
+**Status:** Accepted 2026-11-04 · **Date:** 2026-10-22 · **DRI:** the dev lead
+drafts; the DRI decides · **Issue:**
 [#1520](https://github.com/unfoldingWord/tc-mobile/issues/1520) · **Research:**
 [`../research/capacitor-or-expo.md`](../research/capacitor-or-expo.md)
 
-This ADR is **Proposed**. Nothing in it has run on a phone. The research note
-labels every claim [observed], [inference] or [assumption]. This ADR repeats
+This ADR is **Accepted**. On 2026-11-04 the DRI answered the question put on
+#1520, "Accept middle path (Recommended)", recorded in the
+[decision comment](https://github.com/unfoldingWord/tc-mobile/issues/1520#issuecomment-6638506295). The same day the DRI set the
+threshold trigger 2 shares with #1472: first "20 seconds (Recommended)"
+([comment](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6638507329)),
+superseded after the real-phone card run ([results](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6639193400)). The DRI said
+"15-23s is acceptable" and then picked "25 seconds (Recommended)", recorded in
+the [#1472 comment](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6640952051). What the acceptance covers is the decision below; the
+rest of the ADR is the dev lead's reading, and nothing in it has run on a
+phone. The research note labels every claim [observed], [inference] or [assumption]. This ADR repeats
 only the conclusions and points to the note for the evidence. The throwaway
 Expo proof (draft PR, branch `spike/1520-expo-proof`) has been built in a
 container only.
@@ -29,9 +37,10 @@ Since then three things have happened:
   (#1520, 2026-10-20). The DRI asked for the line to be drawn on evidence.
 
 The DRI's 2026-10-22 pick on #1520 holds new Capacitor-native plugin work,
-including #1456 and an `AVAudioPlayer` plugin for #1518, until this reports.
+including #1456 and an `AVAudioPlayer` plugin for #1518, until this reports. The hold was lifted when this ADR was
+accepted.
 
-## Decision (proposed)
+## Decision
 
 ### 1. Where each native need goes
 
@@ -54,16 +63,14 @@ would be needed in Expo too, because Expo has no first-party module for the
 card, Drive or iCloud. The one need Expo plainly simplifies is the iOS audio
 session.
 
-### 2. Recommendation for the DRI
+### 2. The decision: the middle path
 
-**Stay on Capacitor and add targeted plugins (the middle path).** Lift the
-hold on #1456 and on a #1518 plugin once the DRI accepts this. A move to Expo
+**Stay on Capacitor and add targeted plugins (the middle path).** The DRI
+accepted this on 2026-11-04. A move to Expo
 costs roughly 120–200 PRs, against about 17–33 for the middle path (note §6).
 It rewrites the UI and most of the browser boundary, and it needs a data
 migration that has not been proven on a phone. Nothing found so far pays for
 that.
-
-This is a recommendation. The DRI decides.
 
 ### 3. What would trigger a move
 
@@ -76,8 +83,9 @@ Reopen this ADR, and plan a move, if **any one** of the first three fires, or
    recording.
 2. **Storage outgrows the WebView.** A field phone hits the iOS embedded-web
    quota or loses data to eviction. Or, with clip bytes in files (the card
-   seam), the base64 bridge cannot save a 20-minute take within the DRI's
-   threshold on an entry-level Android phone (#1472 measures this).
+   seam), the base64 bridge cannot save a 20-minute take within 25 seconds, the DRI's
+   threshold (2026-11-04, [record](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6640952051)), on an entry-level Android phone
+   (#1472 measures this; first results: [run](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6639193400)).
 3. **The proof's Play, with the silent switch on, is audible in Expo where the
    Capacitor build's is not after both #1518 fixes**, and the requirements
    owner rules that blocking.
@@ -113,10 +121,11 @@ The move then ships a first-launch export of IndexedDB to native files that:
 
 ## Consequences
 
-- **The hold lifts.** If accepted, #1456 and any #1518 plugin proceed as
-  Capacitor plugins. Their Android Java and iOS Swift would carry into an
-  Expo module later with a new bridge layer, so the work is not lost if a
-  trigger fires. [inference]
+- **The hold is lifted.** The DRI's 2026-10-22 hold on Capacitor-native plugin
+  work no longer applies, which unblocks #1456 and #1518. They proceed as
+  Capacitor plugins.
+  [inference] Their Android Java and iOS Swift would carry into an Expo module
+  later with a new bridge layer, so the work is not lost if a trigger fires.
 - **The exit cost keeps growing.** `src/` was ≈8.6k lines at the 2026-08-27
   decision and is ≈64k now. Every Capacitor-specific UI PR adds to a later
   rewrite. Keeping `lib/` DOM-free, and keeping clip storage behind the #1456
@@ -124,10 +133,4 @@ The move then ships a first-launch export of IndexedDB to native files that:
 - **The DRI runs the proof.** Its run sheet maps each phone result to these
   triggers. A failed migration probe on iOS does not by itself trigger
   anything; it makes any move costlier by one Swift module (note §4.3).
-- **This ADR closes #1520** when the DRI accepts or rejects it.
-
-## Open questions for the DRI
-
-- Accept the middle path, or ask for more evidence first? The proof's phone
-  run is the cheapest next evidence.
-- The threshold for trigger 2's 20-minute save (shared with #1472).
+- **This ADR closes #1520.**
