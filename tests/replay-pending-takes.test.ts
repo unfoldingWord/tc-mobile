@@ -26,7 +26,10 @@ vi.mock("@/lib/storage/takes", async (importOriginal) => {
 
 const order: string[] = [];
 
-import { replayPendingTakes } from "@/hooks/replay-pending-takes";
+import {
+  refusedAndDropped,
+  replayPendingTakes,
+} from "@/hooks/replay-pending-takes";
 import {
   subscribeToFailures,
   type FailureReport,
@@ -373,7 +376,13 @@ describe("classification, before any audio is read (§3, The replay's own reads)
   });
 
   it.each(
-    [0, -1, Number.NaN, Number.POSITIVE_INFINITY].flatMap((rate) =>
+    [
+      0,
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ].flatMap((rate) =>
       (["drop commits", "drop fails"] as const).map(
         (path) => [rate, path] as const
       )
@@ -397,6 +406,19 @@ describe("classification, before any audio is read (§3, The replay's own reads)
       expect(messages()[0]).toContain(
         `length: unknown (40 samples, rate ${rate})`
       );
+    }
+  );
+
+  it.each([
+    [40, Number.MIN_VALUE],
+    [Number.POSITIVE_INFINITY, 48_000],
+    [Number.NaN, 48_000],
+  ] as const)(
+    "a length that computes to a non-finite value prints unknown with samples and rate (%s samples, rate %s)",
+    (samples, rate) => {
+      expect(
+        refusedAndDropped("sample-rate", null, samples, rate).message
+      ).toContain(`length: unknown (${samples} samples, rate ${rate})`);
     }
   );
 

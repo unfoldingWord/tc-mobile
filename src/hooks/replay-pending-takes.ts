@@ -124,8 +124,12 @@ async function refuse(
  * none, so the raw rate is printed beside the sample count instead (#1867).
  */
 function lengthText(samples: number, sampleRate: number): string {
-  return Number.isFinite(sampleRate) && sampleRate > 0
-    ? `length: ${Math.round((samples * 1000) / sampleRate)} ms (${samples} samples)`
+  const ms =
+    Number.isFinite(sampleRate) && sampleRate > 0
+      ? Math.round((samples * 1000) / sampleRate)
+      : Number.NaN;
+  return Number.isFinite(ms)
+    ? `length: ${ms} ms (${samples} samples)`
     : `length: unknown (${samples} samples, rate ${sampleRate})`;
 }
 
