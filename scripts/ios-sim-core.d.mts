@@ -29,6 +29,10 @@ export interface DeviceList {
     Array<{ udid: string; name: string; state: string; [key: string]: unknown }>
   >;
 }
+export declare function bootedDevices(
+  list: DeviceList,
+  name?: string
+): Array<{ udid: string; name: string }>;
 export declare function bootedDevice(
   list: DeviceList,
   name?: string

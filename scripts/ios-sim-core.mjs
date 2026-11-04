@@ -16,12 +16,22 @@ export const BUNDLE_ID = "org.unfoldingword.tcmobile";
  */
 export const BRIDGE_HOST = "::ffff:127.0.0.1";
 
-/** The addresses `os.networkInterfaces()` reports that another machine could reach. */
+/**
+ * The addresses `os.networkInterfaces()` reports that another machine could
+ * reach, link-local IPv6 included (#1857): a "::" bind answers on those too,
+ * and the connect needs the interface as a zone (`fe80::1%en0`) to be dialled.
+ * An empty result means no external interface, so nothing remote can connect.
+ */
 export function nonLoopbackAddresses(interfaces) {
-  return Object.values(interfaces)
-    .flat()
-    .filter((a) => a && !a.internal && !a.address.startsWith("fe80:"))
-    .map((a) => a.address);
+  return Object.entries(interfaces).flatMap(([name, addrs]) =>
+    (addrs ?? [])
+      .filter((a) => a && !a.internal)
+      .map((a) =>
+        a.address.toLowerCase().startsWith("fe80:")
+          ? `${a.address}%${name}`
+          : a.address
+      )
+  );
 }
 
 /** Flags that never take a value, so `eval --async '<js>'` keeps its `<js>`. */
@@ -51,16 +61,22 @@ export function parseArgs(argv) {
   return { command, positionals, flags };
 }
 
-/** The booted device in `xcrun simctl list devices --json`, optionally by name. */
-export function bootedDevice(list, name) {
+/** Every booted device in `xcrun simctl list devices --json`, optionally only the one named. */
+export function bootedDevices(list, name) {
+  const found = [];
   for (const devices of Object.values(list.devices ?? {})) {
     for (const d of devices) {
       if (d.state === "Booted" && (name === undefined || d.name === name)) {
-        return { udid: d.udid, name: d.name };
+        found.push({ udid: d.udid, name: d.name });
       }
     }
   }
-  return null;
+  return found;
+}
+
+/** The first booted device, optionally by name. Callers that act on it use bootedDevices and refuse an ambiguous pick. */
+export function bootedDevice(list, name) {
+  return bootedDevices(list, name)[0] ?? null;
 }
 
 /**

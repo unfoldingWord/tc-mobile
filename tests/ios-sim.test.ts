@@ -10,7 +10,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { BRIDGE_HOST, nonLoopbackAddresses } from "../scripts/ios-sim-core.mjs";
 
-import { main, reachableOn, type Deps } from "../scripts/ios-sim.mjs";
+import { main, reachableOn, withPage, type Deps } from "../scripts/ios-sim.mjs";
 
 // The CLI half of the iOS Simulator harness (#1840). The rules are in
 // tests/ios-sim-core.test.ts; this file pins the guards (each in both
@@ -87,6 +87,31 @@ describe("the booted-Simulator guard", () => {
   it("passes when a device is booted", async () => {
     const f = fakes();
     expect(await main(["eval", "1+1"], f.deps)).toBe(0);
+  });
+
+  const TWO = JSON.stringify({
+    devices: {
+      ios: [
+        { udid: UDID, name: "iPhone 18 Pro", state: "Booted" },
+        { udid: "B", name: "iPhone 17e", state: "Booted" },
+      ],
+    },
+  });
+
+  it("refuses two booted devices without --device, eval included (#1857 F3)", async () => {
+    const f = fakes({ booted: TWO });
+    expect(await main(["eval", "1+1"], f.deps)).toBe(1);
+    expect(f.err.join("\n")).toMatch(
+      /2 Simulators are booted.*iPhone 18 Pro.*iPhone 17e.*--device/s
+    );
+    expect(f.evaluated).toEqual([]);
+  });
+
+  it("accepts two booted devices when --device names one", async () => {
+    const f = fakes({ booted: TWO });
+    expect(await main(["eval", "1+1", "--device", "iPhone 17e"], f.deps)).toBe(
+      0
+    );
   });
 });
 
@@ -439,6 +464,25 @@ describe("reachableOn, the check that the bridge is loopback-only", () => {
   });
 });
 
+describe("withPage restores console.error (#1857 F2)", () => {
+  it("restores it when startCdpServer throws", async () => {
+    const before = console.error;
+    await expect(
+      withPage(
+        1,
+        async () => 0,
+        {},
+        {
+          startServer: async () => {
+            throw new Error("EADDRINUSE");
+          },
+        }
+      )
+    ).rejects.toThrow(/EADDRINUSE/);
+    expect(console.error).toBe(before);
+  });
+});
+
 describe("the pinned inspect-webkit bridge, on a real socket", () => {
   // The bind spelling is only worth what the dependency does with it, so this
   // starts the real server rather than comparing strings. Its sources are
@@ -477,6 +521,20 @@ describe("the pinned inspect-webkit bridge, on a real socket", () => {
       await expect(reachableOn(port, external)).resolves.toBeNull();
     } finally {
       server.stop();
+    }
+  });
+
+  it("a server on :: is caught through a link-local address alone (#1857 F1)", async () => {
+    const linkLocal = external.filter((a) => a.startsWith("fe80:"));
+    // Hosts with no link-local address cannot show this; the rest must.
+    if (linkLocal.length === 0) return;
+    const port = await freePort();
+    const server = createServer();
+    await new Promise<void>((r) => server.listen(port, "::", r));
+    try {
+      await expect(reachableOn(port, linkLocal)).resolves.toBe(linkLocal[0]);
+    } finally {
+      server.close();
     }
   });
 
