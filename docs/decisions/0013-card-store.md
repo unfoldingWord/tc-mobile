@@ -126,9 +126,12 @@ Read at `origin/develop` `292611b6`.
 **Proposed: O2**, the recommendation #1472 and #1456 already make. Whether it
 holds is owed to #1472: its acceptance criterion 2 passes O2 only when P1, P4,
 P5 and P6 pass on an Android 11+ phone and an Android 7–10 phone, and a
-20-minute save finishes within 20 seconds (the DRI's threshold, 2026-11-04). If O2 fails, the fallback
-is O1, and that is a question for the requirements owner, because O1 does not
-meet "record straight onto the card" (#1472, acceptance criterion 4).
+20-minute save finishes within 25 seconds (the DRI's threshold, 2026-11-04:
+"15-23s is acceptable", then "25 seconds (Recommended)";
+[record](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6640952051)).
+If O2 fails, the fallback is O1, and that is a question for the requirements
+owner, because O1 does not meet "record straight onto the card" (#1472,
+acceptance criterion 4).
 
 ### Android storage access paths
 
@@ -637,8 +640,8 @@ by `fetch(Capacitor.convertFileSrc(path))` is owed to P3. The second goes
 through the WebView's local server, so the plugin child prefers a read into the
 app process unless P3 shows that server answers only this app and the path
 cannot be guessed (open, for the plugin child). If P2 misses the
-20-second threshold, ADR 0016's trigger 2 fires
-(`0016-capacitor-or-expo.md:80-85`).
+25-second threshold, ADR 0016's trigger 2 fires
+(`0016-capacitor-or-expo.md:84-88`).
 
 ### 4. Failure behaviours
 
@@ -766,6 +769,10 @@ T1 to T3; picks are not answers.
 
 ### For the DRI
 
+- **When a phone misses the limit, which runs first:** O2 fails and the
+  fallback is O1, a question for the requirements owner, or ADR 0016's trigger
+  2 fires and a move is planned. At 25 seconds every run on the first phone is
+  inside the limit, so the fork is not reached today.
 - **Accept S1**, or ask for another contract.
 - **Where a held take's bytes live** when the card store is on: IndexedDB as
   today, or the card. #1751 left pending-take bytes out of scope for the
