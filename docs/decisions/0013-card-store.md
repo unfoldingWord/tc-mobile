@@ -38,8 +38,7 @@ when [#1785](https://github.com/unfoldingWord/tc-mobile/pull/1785) merged, one
 added after): the state table now decides every delete, a checked `.part` that
 is the only copy is kept, backup recovery records its winner, and a checked
 read-back precedes any delete of `clipData` or release of a held take. Status
-stays Proposed. The #1472 spike still gates acceptance, and every test name
-below is a planned test, not a test that exists.
+stayed Proposed after that revision, with the #1472 spike gating acceptance.
 
 Revised again 2026-11-02 for the residuals #1826's round 5 left on #1473
 (<https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6583624665>):
@@ -162,13 +161,13 @@ which state what Android's documentation leads us to expect. The last column
 says what phone (a) showed, from the results; nothing here has run on an
 Android 7–10 phone.
 
-| Path                                                                                                    | Permission               | On uninstall                                                | Use                                                | Phone (a), from the results                                                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A. The app's own folder on the card** (`getExternalFilesDirs(null)`, the removable entry)             | None expected            | Expected deleted; `hasFragileUserData` may offer to keep it | Clip bytes (O2)                                    | P1: found, removable, mounted. P7: a plain uninstall deleted it; Android 16 offered "Keep app data", which kept it                                                                                                    |
-| **B. A folder the user picks** (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`, persisted grant) | The user's pick          | Expected to stay; the grant on a different card is owed     | The backup only                                    | P7: untouched by uninstall. P8: the grant survived a restart, a reboot and the card out and in; a different card is cannot-tell                                                                                       |
-| **C. `@capacitor/filesystem` with a full card path**                                                    | Unknown                  | As A, if it writes into A                                   | Decides whether A needs a custom plugin for writes | P11: with `encoding: "utf8"`, a direct call wrote and read back with no prompt (Filesystem 8.1.4); the probe's own call, with no `encoding`, failed. Whether it can carry the commit protocol (§3) is not what it ran |
-| **D. A browser folder picker** (`showDirectoryPicker()` in Chrome on Android)                           | The user's pick          | Unknown                                                     | None in v2: R5 makes the card an app feature       | P10: not run (optional)                                                                                                                                                                                               |
-| **E. Broad storage access** (`MANAGE_EXTERNAL_STORAGE`) or MediaStore                                   | A special grant, or none | MediaStore files outlive the app (assumption)               | Not proposed                                       | Not in #1472                                                                                                                                                                                                          |
+| Path                                                                                                    | Permission               | On uninstall                                                 | Use                                                | Phone (a), from the results                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. The app's own folder on the card** (`getExternalFilesDirs(null)`, the removable entry)             | None expected            | Expected deleted; `hasFragileUserData` may offer to keep it  | Clip bytes (O2)                                    | P1: found, removable, mounted. P7: a plain uninstall deleted it; Android 16 offered "Keep app data", which kept it                                                                                                    |
+| **B. A folder the user picks** (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`, persisted grant) | The user's pick          | Expected to stay; the grant on a different card is owed (P8) | The backup only                                    | P7: untouched by uninstall. P8: the grant survived a restart, a reboot and the card out and in; a different card is cannot-tell                                                                                       |
+| **C. `@capacitor/filesystem` with a full card path**                                                    | Unknown                  | As A, if it writes into A                                    | Decides whether A needs a custom plugin for writes | P11: with `encoding: "utf8"`, a direct call wrote and read back with no prompt (Filesystem 8.1.4); the probe's own call, with no `encoding`, failed. Whether it can carry the commit protocol (§3) is not what it ran |
+| **D. A browser folder picker** (`showDirectoryPicker()` in Chrome on Android)                           | The user's pick          | Unknown                                                      | None in v2: R5 makes the card an app feature       | P10: not run (optional)                                                                                                                                                                                               |
+| **E. Broad storage access** (`MANAGE_EXTERNAL_STORAGE`) or MediaStore                                   | A special grant, or none | MediaStore files outlive the app (assumption)                | Not proposed                                       | Not in #1472                                                                                                                                                                                                          |
 
 Why A for the clips (inference, from the scope): it needs no permission prompt,
 it is private to the app on the phone, and it goes away on uninstall the way
@@ -224,7 +223,9 @@ read-back and rename is not what P11 ran, so the plugin child decides whether a
 custom plugin does the writes. P11's call is evidence that the path is
 reachable, not a write path for clip bytes: `encoding: "utf8"` writes a text
 string, and `.pcm` and `.mp3` are binary, so a utf8 write is not allowed for
-them. On phone (a) the probe found the folder's volume
+them (inference: a text encoding would alter the bytes; not checked against
+Capacitor's documentation here). No binary write through
+`@capacitor/filesystem` to the card has run. On phone (a) the probe found the folder's volume
 and it reported removable and mounted (results, P1).
 
 ### 2. The schema: where a clip lives
