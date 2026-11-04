@@ -11,6 +11,20 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-04 — device session: #1472 card spike findings posted (run 2026-11-02, Galaxy A17)
+
+Records a run from 2026-11-02 that had no GitHub record until today. It supersedes the "findings are not posted yet" line in the 2026-11-02 (evening) entry.
+
+- **What ran:** the #1472 microSD run sheet (P1 to P9 and P11; optional P10 skipped).
+- **On:** Samsung SM-A176B, Android 16 (SDK 36), one 128 GB exFAT card, build `e1aacfdf` (`spike/card-store`), with a two-line probe patch from the P5 rerun onward.
+- **Save time:** 5 of 12 20-minute saves took more than the 20-second threshold the DRI set on 2026-11-04 (15.7 to 23.2 s, median 18.7 s). The cause of the spread is not established.
+- **Card pull mid-save:** the app was killed by Android while a card file stayed open. Closing the file on the first write error fixed it on this phone, so the real card store has to do the same.
+- **Not settled:** O2's acceptance criterion needs an Android 7 to 10 phone and the slowest phone's time. No such phone, no-slot phone, FAT32 card or second card was run.
+- **Open:** the probe patch is still uncommitted in its local worktree. Whether the slow runs fire ADR 0016's trigger 2 (#1520) is the DRI's reading.
+- **Findings:** [#1472 comment](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6639193400).
+
+---
+
 ## 2026-11-03 (day) — Sprint 6 day 2: Malay and Arabic drafts, refused takes dropped at refusal, compressor behind a switch, Settings moves into ≡, #954 closed, 17 PRs merged
 
 The orchestrator session: the start-of-day INAs, then waves of lanes on the review bench.
