@@ -11,6 +11,60 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-04 (day) — Sprint 6 day 3: ADR 0016 accepted (stay on Capacitor), 25-second save bar, ADR 0013 accepted, Tagalog drafted, the trademark notice fixed, 14 PRs merged
+
+The orchestrator session: start of day, then waves of 3–5 disjoint lanes through the review bench.
+
+### Decisions (DRI)
+
+- **#357, the next language:** "Tagalog (tl) (Recommended)".
+- **ADR 0016 (#1520):** "Accept middle path (Recommended)". Stay on Capacitor with targeted card and audio plugins; move to Expo only on the named triggers.
+- **The save bar:** first "20 seconds (Recommended)". After the real-phone card run, the DRI said "15-23s is acceptable", then picked "25 seconds (Recommended)", which supersedes 20 s everywhere (#1472).
+- **Reading the card run's save time:** "Not a trigger yet (Recommended)". The slow part is passing audio through the base64 bridge, not the card. Re-measure with the native plugin on phone (a) and an older phone (b).
+- **ADR 0013, the card store (#1473):** "accept S1 - we have run card test with a real phone and card, find these results and make sure they are linked". Where a held take lives: "Phone storage, as today (Recommended)".
+- **The trademark notice (#1608):** use ® on unfoldingWord, citing the live USPTO registration (serial 90561833). Permission requests go to the website's contact page.
+- **Waveform (#1201 item 3)** and **the offline-ready sign (#161):** "Ask Tim (Recommended)". Item 3 turned out to be already answered on the site on 10-19 ("fine"). #161 is Round 10 on the Review page.
+- **Branches:** GitHub's auto-delete of a merged PR's branch: "Turn it on (Recommended)". It is on: the repo's `delete_branch_on_merge` reads `true`.
+- **Zulip:** the old key file is retired and deleted. The hosted Zulip MCP is read-only by design. Write access was researched and parked ("we can skip it for now"), so the DRI posts drafts.
+
+### Merged to develop (14)
+
+- **Native direction:** #1906 ADR 0016 accepted with the 25-second bar, the plugin hold lifted, #1520 closed. #1910 ADR 0013 accepted: it links the #1472 results, keeps held takes on the phone, requires closing card files on the first write error, and says no text (utf8) write is allowed for clip bytes. #1473 stays open for phone (b) and criterion 2. Follow-up: #1911, an ADR 0013 wording pass.
+- **Languages:** #1889 Tagalog (tl), an AI draft and a level-3 language. #1898 fixes "complete chapters not included" wording in id, ms, pt, sw and vi (#1897). The sw and vi wording still needs a native read.
+- **Audio:** #1886 compressor follow-ups (#1879).
+- **Storage:** #1894 guards non-finite rates in the refused-take length text (#1867).
+- **Legal:** #1908 restores unfoldingWord® and points permission requests at the contact page (#1608). George's Low follow-up is #1909.
+- **Tests and harness:**
+  - #1890: the O4 naming gate walks the tree once, from 12.7 s to 2.5 s (#1887).
+  - #1895: the compressor refusal latch is cleared between tests (#1892).
+  - #1888: Settings e2e hygiene and a tile-menu comment fix (#1880, #1883).
+  - #1902: the locale sweep's ≡ opener after the switch (#1893).
+  - #1885, #1896: iOS Simulator harness follow-ups (#1857, #1891).
+- **Docs:** #1907, the card spike findings tracker entry (from the device session).
+
+Closed: #1520, #1608, #1857, #1879, #1880, #1883, #1887, #1891, #1892, #1893, #1897.
+
+### Artifacts
+
+- **Project site v35:** every page is refreshed for today's decisions, the card results and Round 10 (#161). https://claude.ai/artifact/Fx2ZuoxfYQiQoB3CvhHTBx
+  - **New Health page** (`#health`, with a strip on Home): each state shows its numbers and method. At the 22:06Z snapshot:
+    - **Sprint 6:** Ahead, 29 of 51 issues closed (57%) with 21% of the sprint gone.
+    - **15 Nov promotion:** Not yet clear; device runs #974, #1464 and #1486 are open.
+    - **v2 by end of 2026:** Ahead on count. 20 v2-required issues are open, so we need 2.5 a week, against 7.5 a week closed over the last 14 days. This counts issues, not their size.
+    - **Quality:** Healthy, 19 of the last 20 develop CI runs passed, with 6 open bugs.
+  - **Snapshot routine:** it now fetches its script from the site database (`tools/snapshot`, checked by sha256) instead of carrying it inline.
+- **Zulip:** the Round 10 note to the requirements owner is posted (637640584, "tC Mobile v2").
+
+### Open, and where each stands
+
+- **No ready PRs are in flight;** the merge queue is empty.
+- **Draft spike PRs:** #1612 (the Expo proof, Part of the now-closed #1520) and #1532 (the microSD probe, Part of #1472). Both stay open as drafts, per the DRI on 30 Oct: "Keep both open".
+- **Before the v1.2 promotion and the v1.3.0 tester cut (11-15):** device runs #1464 (iPhone row), #974 and #1486, the Moto G re-test (#1201 item 4), the compressor listening check, and Filipino `lproj` selection on an iPhone.
+- **Card plugin (#1456):** re-measure the 20-minute save natively on phone (a) and an older Android 7–10 phone (b), against the 25-second bar.
+- **Follow-ups:** #1909 (pin the restored trademark sentence in the test) and #1911 (ADR 0013 wording pass).
+
+---
+
 ## 2026-11-04 — device session: #1472 card spike findings posted (run 2026-11-02, Galaxy A17)
 
 Records a run from 2026-11-02 that had no GitHub record until today. It supersedes the "findings are not posted yet" line in the 2026-11-02 (evening) entry.
