@@ -55,7 +55,15 @@ function liveLocales(
     .filter((tag) => !held.includes(tag));
 }
 
-const completeLocales = liveLocales(PENDING);
+/**
+ * iOS names Filipino \`fil\`, and the app's Tagalog entry is \`tl\`, so a live
+ * \`tl\` ships both lprojs (#357). Which one a Filipino iPhone selects is not
+ * verified on a device.
+ */
+const IOS_ALIASES: Readonly<Record<string, string>> = { tl: "fil" };
+const completeLocales = liveLocales(PENDING).flatMap((tag) =>
+  IOS_ALIASES[tag] ? [tag, IOS_ALIASES[tag]] : [tag]
+);
 
 const stringsPath = (tag: string) =>
   `ios/App/App/${tag}.lproj/InfoPlist.strings`;
