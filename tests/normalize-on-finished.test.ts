@@ -321,6 +321,19 @@ describe("the compressor switch in the sweep (#1873)", () => {
     expect(contexts).toEqual(["transcode-compressor"]);
   });
 
+  it("a second compressor refusal on the same clip, in its own test, writes its own row (#1892)", async () => {
+    storePreference("1", "1");
+    loadWith(Int16Array.of(10, 20, 30), null);
+    normalizePcm.mockRejectedValueOnce(
+      new CompressorRangeError("compressor: a later test")
+    );
+
+    await requestTranscodeSweep();
+
+    const contexts = vi.mocked(reportFailure).mock.calls.map((c) => c[1]);
+    expect(contexts).toEqual(["transcode-compressor"]);
+  });
+
   it("any other chain failure keeps its existing context", async () => {
     storePreference("1", "1");
     loadWith(Int16Array.of(10, 20, 30), null);
