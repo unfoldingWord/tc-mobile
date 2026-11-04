@@ -155,12 +155,18 @@ afterEach(async () => {
   // that completes for that segment clears it (#1892). There is no reset
   // seam, so end each test with one completed turn on the shared segment; a
   // test that refused SEGMENT/CLIP then cannot swallow the next one's row.
-  storePreference("0");
-  loadWith(Int16Array.of(10, 20, 30), RECORD);
-  vi.mocked(commitTranscode).mockResolvedValue("committed");
-  await requestTranscodeSweep();
-  expect(commitTranscode).toHaveBeenCalled();
-  vi.unstubAllGlobals();
+  // Cleared first, so the expect sees this turn's commit, not the test's.
+  try {
+    storePreference("0");
+    loadWith(Int16Array.of(10, 20, 30), RECORD);
+    const commit = vi.mocked(commitTranscode);
+    commit.mockResolvedValue("committed");
+    commit.mockClear();
+    await requestTranscodeSweep();
+    expect(commit).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 describe("normalize on Finished — the sweep (#1433)", () => {
