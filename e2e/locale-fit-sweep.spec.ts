@@ -264,6 +264,14 @@ async function measure(
   );
 }
 
+/**
+ * The Books header's ≡, found by its structure because its name is translated.
+ * It is located AFTER a language switch, as a lazy locator, so a header that
+ * re-renders on the switch cannot leave a detached handle behind (#1893).
+ */
+const booksMenuButton = (page: Page) =>
+  page.locator(".control-hinted > button.books-ghost");
+
 /** The recorder's ≡ sheet, told apart from the recorder dialog under it. */
 const RECORDER_MENU = ".menu-panel:has(.recorder-menu-tile)";
 
@@ -391,9 +399,8 @@ export async function sweep(
       await expect(page.locator("#launch-intro")).toBeHidden({
         timeout: 10_000,
       });
-      const open = await handle(page, "button", /^Open menu/);
       await switchLanguage(page, tag);
-      await open.click();
+      await booksMenuButton(page).click();
       await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
         3
       );
@@ -409,9 +416,8 @@ export async function sweep(
       await expect(page.locator("#launch-intro")).toBeHidden({
         timeout: 10_000,
       });
-      const open = await handle(page, "button", /^Open menu/);
       await switchLanguage(page, tag);
-      await open.click();
+      await booksMenuButton(page).click();
       await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
         3
       );
