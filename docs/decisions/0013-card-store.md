@@ -49,8 +49,8 @@ an erase, a delete or a replacing save let go of, (e) UNCOMMITTED-OUTPUT for a
 transcode's MP3 that no row ever named, and (f) WINNER-RECORD for the backup a
 new one replaces. Every alternative a `.part` or an unnamed final is matched
 against must match its bytes, a pending row included, and a final that failed
-step 1a is kept when it is the only copy outside memory. Status stays
-Proposed.
+step 1a is kept when it is the only copy outside memory. Status stayed
+Proposed after that revision.
 
 Accepted 2026-11-04, as recorded above, with the results linked and the owed
 lines they answer rewritten. Every test name below is still a planned test,
@@ -165,7 +165,7 @@ Android 7–10 phone.
 | Path                                                                                                    | Permission               | On uninstall                                                  | Use                                                | Phone (a), from the results                                                                                                                                                                                           |
 | ------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A. The app's own folder on the card** (`getExternalFilesDirs(null)`, the removable entry)             | None expected            | Expected deleted; `hasFragileUserData` may offer to keep it   | Clip bytes (O2)                                    | P1: found, removable, mounted. P7: a plain uninstall deleted it; Android 16 offered "Keep app data", which kept it                                                                                                    |
-| **B. A folder the user picks** (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`, persisted grant) | The user's pick          | Expected to stay; whether the grant survives anything is owed | The backup only                                    | P7: untouched by uninstall. P8: the grant survived a restart, a reboot and the card out and in; a different card is cannot-tell                                                                                       |
+| **B. A folder the user picks** (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`, persisted grant) | The user's pick          | Expected to stay; the grant on a different card is owed       | The backup only                                    | P7: untouched by uninstall. P8: the grant survived a restart, a reboot and the card out and in; a different card is cannot-tell                                                                                       |
 | **C. `@capacitor/filesystem` with a full card path**                                                    | Unknown                  | As A, if it writes into A                                     | Decides whether A needs a custom plugin for writes | P11: with `encoding: "utf8"`, a direct call wrote and read back with no prompt (Filesystem 8.1.4); the probe's own call, with no `encoding`, failed. Whether it can carry the commit protocol (§3) is not what it ran |
 | **D. A browser folder picker** (`showDirectoryPicker()` in Chrome on Android)                           | The user's pick          | Unknown                                                       | None in v2: R5 makes the card an app feature       | P10: not run (optional)                                                                                                                                                                                               |
 | **E. Broad storage access** (`MANAGE_EXTERNAL_STORAGE`) or MediaStore                                   | A special grant, or none | MediaStore files outlive the app (assumption)                 | Not proposed                                       | Not in #1472                                                                                                                                                                                                          |
@@ -221,7 +221,10 @@ segment is being worked on and `<clipId>.<n>.mp3` once it is Finished, where
 phone (a), `@capacitor/filesystem` reached a full card path with no prompt when
 given `encoding: "utf8"` (results, P11); whether it can carry §3's sync,
 read-back and rename is not what P11 ran, so the plugin child decides whether a
-custom plugin does the writes. On phone (a) the probe found the folder's volume
+custom plugin does the writes. P11's call is evidence that the path is
+reachable, not a write path for clip bytes: `encoding: "utf8"` writes a text
+string, and `.pcm` and `.mp3` are binary, so a utf8 write is not allowed for
+them. On phone (a) the probe found the folder's volume
 and it reported removable and mounted (results, P1).
 
 ### 2. The schema: where a clip lives
