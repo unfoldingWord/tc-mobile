@@ -27,7 +27,9 @@ describe("trademark notice (#1608)", () => {
     expect(notice).toContain(
       "translationCore is a trademark of unfoldingWord®"
     );
-    expect(notice).toContain("the unfoldingWord® name or logo");
+    expect(notice.split("®")).toHaveLength(2);
+    expect(notice).toContain("unfoldingWord's trademarks or logos");
+    expect(notice.trimEnd().endsWith(`contact page: ${CONTACT}`)).toBe(true);
     expect(notice).not.toContain("support@unfoldingword.org");
     expect(notice).toContain(CONTACT);
   });
