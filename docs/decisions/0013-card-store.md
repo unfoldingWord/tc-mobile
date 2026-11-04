@@ -275,7 +275,7 @@ committed. So the name is exclusive:
   `<clipId>.<n>.<ext>` splits unambiguously. Lowercase only, because a card
   formatted FAT or exFAT folds case, so two names differing only in case
   would be one file. Phone (a)'s exFAT card did: `spike-case.txt` then
-  `SPIKE-CASE.txt` gave one file (results, P1). A FAT32 card has not run.
+  `SPIKE-CASE.txt` gave one file (results, P1). A FAT32 formatting behavior remains an untested assumption for phone (a).
 - The `.part` is created exclusively (it fails if its name exists), and the
   rename to `<name>` never replaces an existing file. If the `.part` cannot be
   created, the attempt fails as in row S1. If `<name>` exists at the rename,
@@ -298,7 +298,7 @@ the row stores: the volume and the file name `<clipId>.<n>.<ext>` (§2).
   file name alone: case (d) deletes the pair a release record names.
 - A row whose location names **another volume** than the inserted card may own
   any file on the inserted card that carries its `clipId`: the volume id may
-  not be stable (it was on phone (a), results P1; other phones are owed), the
+  It was on phone (a), (results P1); other phones are owed), the
   card may be a different one, or a reader may
   have rewritten the id. So every such file is a possible copy of that row's
   take, so it is Keep (c) while the mismatch lasts (V1, V2). This covers a `.part` as well as a final file: a `.part`
@@ -913,7 +913,7 @@ used above. Still owed:
 - **P2, the spread:** five of twelve 20-minute saves over 20 s, cause not
   established.
 - **P4, whether the sync and the read-back reach the card:** a weak pass on
-  phone (a), not isolated.
+  phone (a), not isolated.checked file had about 13 s to flush).
 - **P8, the backup's rename-and-replace:** not on the sheet; only `rwt` ran.
 - **P10, the browser picker:** not run (optional).
 - **A read-only card:** not a row on the sheet; it should be added before the
