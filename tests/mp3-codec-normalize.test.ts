@@ -164,7 +164,8 @@ describe("codec.normalizePcm — the client half (#1433)", () => {
   });
 
   it("a compressor refusal is the compressor's error, not the encoder failing (#1873)", async () => {
-    const { CompressorRangeError } = await import("@/lib/audio/compressor");
+    const { CompressorRangeError } =
+      await import("@/lib/audio/compressor-error");
     // More refusals than the encoder's failure threshold: none may count.
     for (let i = 0; i <= codecModule.ENCODER_FAILURE_THRESHOLD; i++) {
       const settled = normalize(Int16Array.of(1), { compress: true });
@@ -326,7 +327,8 @@ describe("mp3.worker — the compressor in the chain (#1873)", () => {
 
   it("answers a compressor refusal as an error naming the compressor", async () => {
     vi.doMock("@/lib/audio/loudness", async () => {
-      const { CompressorRangeError } = await import("@/lib/audio/compressor");
+      const { CompressorRangeError } =
+        await import("@/lib/audio/compressor-error");
       return {
         normalizePcm: () => {
           throw new CompressorRangeError("compressor: refused");

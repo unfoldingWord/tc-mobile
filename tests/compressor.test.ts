@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  CompressorRangeError,
-  SPEECH_COMPRESSOR,
-  SpeechCompressor,
-} from "@/lib/audio/compressor";
+import { CompressorRangeError } from "@/lib/audio/compressor-error";
+import { SPEECH_COMPRESSOR, SpeechCompressor } from "@/lib/audio/compressor";
 import { speechLikePcm } from "@/lib/phone-check/speech";
 
 /**

@@ -58,7 +58,7 @@ import {
   DEFAULT_BITRATE_KBPS,
   expectedMp3ByteLength,
 } from "@/lib/audio/mp3-size";
-import { CompressorRangeError } from "@/lib/audio/compressor";
+import { CompressorRangeError } from "@/lib/audio/compressor-error";
 import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 import { computePeaks } from "@/lib/audio/peaks";
 import { freeByteCount } from "@/lib/storage/pressure";
@@ -187,6 +187,20 @@ interface FailedTranscode {
  * drawing and playing from it, and the next launch tries it again.
  */
 const failedSegments = new Map<SegmentId, FailedTranscode>();
+
+/**
+ * The clip the speech compressor last refused, per segment (#1879). A refusal
+ * is not held out of later sweeps: the segment stays unfinished and is tried
+ * again, so the Books `≡` marker stays lit for as long as it fails. What this
+ * map stops is the same clip's refusal being written again by every sweep: one
+ * `"transcode-compressor"` row per segment and clip per page, as
+ * {@link failedSegments} does for quota. Each `reportFailure` call appends a
+ * row (a fresh `Error` per call, so `reportFailure`'s same-object collapse
+ * never applies and `installFailureLog` queues one write per report), which is
+ * why the dedupe has to live here. Removed when a turn for the segment
+ * completes or fails any other way.
+ */
+const refusedClips = new Map<SegmentId, OwedClipId>();
 
 /**
  * Fixed floor for {@link retryHeadroomMarginBytes}, so a very short segment's
@@ -607,8 +621,10 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // about the clip, but it does mean the head of the queue moved on.
       stalledSegmentIds.delete(segmentId);
       failedSegments.delete(segmentId);
+      refusedClips.delete(segmentId);
     } catch (cause) {
       const outOfRoom = isQuotaExceeded(cause);
+      const refused = cause instanceof CompressorRangeError;
       // To the app's ONE sink, not the console alone (#167). The segment id
       // rides in a wrapper rather than in the context, because `context` is the
       // sink's dedup key and has to stay a short, stable name for the SITE —
@@ -616,7 +632,10 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // Running out of room again on a clip already logged this page is not
       // logged again (#1010).
       const alreadyLogged =
-        outOfRoom && failedSegments.get(segmentId)?.clipId === clipId;
+        (outOfRoom && failedSegments.get(segmentId)?.clipId === clipId) ||
+        (refused && refusedClips.get(segmentId) === clipId);
+      if (refused) refusedClips.set(segmentId, clipId);
+      else refusedClips.delete(segmentId);
       if (!alreadyLogged) {
         // A compressor refusal (#1873) has its own context, so a defect in
         // that stage is told apart from the rest of the transcode.
@@ -625,9 +644,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
             `Transcoding finished segment ${segmentId} failed; its PCM is kept`,
             { cause }
           ),
-          cause instanceof CompressorRangeError
-            ? "transcode-compressor"
-            : "transcode-segment"
+          refused ? "transcode-compressor" : "transcode-segment"
         );
       }
       if (outOfRoom) {
