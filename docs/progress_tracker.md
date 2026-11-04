@@ -62,6 +62,7 @@ Closed: #1520, #1608, #1857, #1879, #1880, #1883, #1887, #1891, #1892, #1893, #1
 - **Before the v1.2 promotion and the v1.3.0 tester cut (11-15):** device runs #1464 (iPhone row), #974 and #1486, the Moto G re-test (#1201 item 4), the compressor listening check, and Filipino `lproj` selection on an iPhone.
 - **Card plugin (#1456):** re-measure the 20-minute save natively on phone (a) and an older Android 7–10 phone (b), against the 25-second bar.
 - **Follow-ups:** #1909 (pin the restored trademark sentence in the test) and #1911 (ADR 0013 wording pass).
+- **CI flake, observed once:** #1912. `tests/db-open.test.ts:961` failed in this entry's own pre-push hook, then passed alone and on the next full run.
 
 ---
 
