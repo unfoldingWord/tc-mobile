@@ -26,7 +26,10 @@ vi.mock("@/lib/storage/takes", async (importOriginal) => {
 
 const order: string[] = [];
 
-import { replayPendingTakes } from "@/hooks/replay-pending-takes";
+import {
+  refusedAndDropped,
+  replayPendingTakes,
+} from "@/hooks/replay-pending-takes";
 import {
   subscribeToFailures,
   type FailureReport,
@@ -372,12 +375,24 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     expect(await rowOf(segmentId)).toBeUndefined();
   });
 
-  it.each(["drop commits", "drop fails"] as const)(
-    "a row stored at rate 0 reports its length as unknown, never Infinity (%s)",
-    async (path) => {
+  it.each(
+    [
+      0,
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ].flatMap((rate) =>
+      (["drop commits", "drop fails"] as const).map(
+        (path) => [rate, path] as const
+      )
+    )
+  )(
+    "a row stored at rate %s reports its length as unknown with the rate shown (%s)",
+    async (rate, path) => {
       const segmentId = await freshSegment();
       const row = await heldRow(firstTake(segmentId));
-      await putRow({ ...row, sampleRate: 0 });
+      await putRow({ ...row, sampleRate: rate });
       if (path === "drop fails") {
         vi.spyOn(IDBObjectStore.prototype, "delete").mockImplementationOnce(
           () => {
@@ -388,8 +403,22 @@ describe("classification, before any audio is read (§3, The replay's own reads)
 
       await replayPendingTakes(vi.fn());
 
-      expect(messages()[0]).toContain("length: unknown (40 samples)");
-      expect(messages()[0]).not.toMatch(/Infinity|NaN/);
+      expect(messages()[0]).toContain(
+        `length: unknown (40 samples, rate ${rate})`
+      );
+    }
+  );
+
+  it.each([
+    [40, Number.MIN_VALUE],
+    [Number.POSITIVE_INFINITY, 48_000],
+    [Number.NaN, 48_000],
+  ] as const)(
+    "a length that computes to a non-finite value prints unknown with samples and rate (%s samples, rate %s)",
+    (samples, rate) => {
+      expect(
+        refusedAndDropped("sample-rate", null, samples, rate).message
+      ).toContain(`length: unknown (${samples} samples, rate ${rate})`);
     }
   );
 
