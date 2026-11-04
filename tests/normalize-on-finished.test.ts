@@ -149,7 +149,17 @@ beforeEach(() => {
   vi.mocked(commitTranscode).mockResolvedValue("committed");
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // The sweep keeps module-scoped memory that outlives a test: the compressor
+  // refusal latch holds the last refused clip per segment, and only a turn
+  // that completes for that segment clears it (#1892). There is no reset
+  // seam, so end each test with one completed turn on the shared segment; a
+  // test that refused SEGMENT/CLIP then cannot swallow the next one's row.
+  storePreference("0");
+  loadWith(Int16Array.of(10, 20, 30), RECORD);
+  vi.mocked(commitTranscode).mockResolvedValue("committed");
+  await requestTranscodeSweep();
+  expect(commitTranscode).toHaveBeenCalled();
   vi.unstubAllGlobals();
 });
 
