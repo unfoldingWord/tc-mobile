@@ -13,6 +13,9 @@
  *   `pt-BR` and `pt-PT` are `pt` (#357 Ask 2, "Region variants fall back to
  *   the base language").
  * - The legacy tag `in` is Indonesian, `id`.
+ * - `fil` (Filipino, the tag Android and iOS report for it) is the Tagalog
+ *   entry, `tl`: CLDR's Filipino plural rules are the ones the `tl` table
+ *   is written for, and the two are one written language here.
  * - Every Chinese tag, Traditional script and regions included, is the
  *   Simplified entry (R19, "default to simplified text on Chinese phones").
  *   That follows from comparing the base only: `zh-Hans`'s base is `zh`.
@@ -26,8 +29,11 @@ import { LOCALES, SHIPPED_LOCALE, type Locale } from "../locale";
 /** One BCP 47 subtag run, `-` or `_` separated (some platforms report `pt_BR`). */
 const TAG = /^[a-z0-9]+([-_][a-z0-9]+)*$/i;
 
-/** Retired language subtags still reported by older platforms. */
-const LEGACY_BASE: Readonly<Record<string, string>> = { in: "id" };
+/** Retired language subtags still reported by older platforms, and `fil`. */
+const LEGACY_BASE: Readonly<Record<string, string>> = {
+  in: "id",
+  fil: "tl",
+};
 
 function baseOf(tag: unknown): string | undefined {
   if (typeof tag !== "string") return undefined;

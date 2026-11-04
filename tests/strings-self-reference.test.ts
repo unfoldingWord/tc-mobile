@@ -425,6 +425,7 @@ describe("no complete locale table embeds beyond the English set (#169)", () => 
         "pt",
         "ru",
         "sw",
+        "tl",
         "vi",
       ])
     );

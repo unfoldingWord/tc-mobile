@@ -35,6 +35,7 @@ const LOCALES = [
   "hi",
   "ru",
   "vi",
+  "tl",
   "ms",
   "zh-Hans",
 ] as const;

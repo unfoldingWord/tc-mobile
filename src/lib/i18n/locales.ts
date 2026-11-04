@@ -30,6 +30,7 @@ import { table as ms } from "./ms";
 import { table as pt } from "./pt";
 import { table as ru } from "./ru";
 import { table as sw } from "./sw";
+import { table as tl } from "./tl";
 import { table as vi } from "./vi";
 import { table as zhHans } from "./zh-Hans";
 
@@ -44,6 +45,7 @@ export const LOCALE_OVERRIDES: Readonly<Record<string, Partial<Strings>>> = {
   pt,
   ru,
   sw,
+  tl,
   vi,
   "zh-Hans": zhHans,
 };
