@@ -48,4 +48,16 @@ export declare function reachableOn(
   }
 ): Promise<string | null>;
 
+export declare function withPage<T>(
+  pid: number,
+  body: (evaluate: (expression: string) => Promise<EvalReply>) => Promise<T>,
+  flags?: Record<string, string | true>,
+  options?: {
+    startServer?: (opts: {
+      port: number;
+      host: string;
+    }) => Promise<{ stop(): void }>;
+  }
+): Promise<T>;
+
 export declare function main(argv: string[], deps?: Deps): Promise<number>;

@@ -4,6 +4,7 @@ import {
   appPid,
   asyncExpression,
   bootedDevice,
+  bootedDevices,
   BRIDGE_HOST,
   harnessEnv,
   nonLoopbackAddresses,
@@ -70,6 +71,45 @@ describe("bootedDevice", () => {
 
   it("returns null when nothing is booted", () => {
     expect(bootedDevice({ devices: {} })).toBeNull();
+  });
+
+  it("lists every booted device, for the caller that must refuse an ambiguous pick", () => {
+    const two = {
+      devices: {
+        a: [{ udid: "A", name: "iPhone 18 Pro", state: "Booted" }],
+        b: [{ udid: "B", name: "iPhone 17e", state: "Booted" }],
+      },
+    };
+    expect(bootedDevices(two).map((d) => d.udid)).toEqual(["A", "B"]);
+    expect(bootedDevices(two, "iPhone 17e").map((d) => d.udid)).toEqual(["B"]);
+  });
+});
+
+describe("nonLoopbackAddresses (#1857 F1)", () => {
+  const v6 = (address: string, internal = false) => ({
+    address,
+    family: "IPv6",
+    internal,
+    scopeid: 4,
+  });
+
+  it("keeps a link-local address, scoped to its interface so it can be dialled", () => {
+    expect(nonLoopbackAddresses({ en0: [v6("fe80::1")] })).toEqual([
+      "fe80::1%en0",
+    ]);
+  });
+
+  it("keeps a global address as is and drops internal ones", () => {
+    expect(
+      nonLoopbackAddresses({
+        lo0: [v6("::1", true)],
+        en0: [v6("2001:db8::5")],
+      })
+    ).toEqual(["2001:db8::5"]);
+  });
+
+  it("is empty when there is no external interface (nothing remote can connect)", () => {
+    expect(nonLoopbackAddresses({})).toEqual([]);
   });
 });
 
@@ -221,7 +261,7 @@ describe("the inspector bridge's bind address", () => {
     expect(BRIDGE_HOST).toBe("::ffff:127.0.0.1");
   });
 
-  it("lists every external address and no loopback or link-local one", () => {
+  it("lists every external address and link-local ones scoped and no loopback one", () => {
     expect(
       nonLoopbackAddresses({
         lo0: [
@@ -235,7 +275,7 @@ describe("the inspector bridge's bind address", () => {
         ],
         utun3: undefined,
       })
-    ).toEqual(["10.250.0.36", "2001:db8::5"]);
+    ).toEqual(["fe80::1c2b:3a4d%en0", "10.250.0.36", "2001:db8::5"]);
   });
 });
 

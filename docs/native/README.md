@@ -477,7 +477,10 @@ npm run ios-sim -- logs --seconds 60
   authentication, so it binds to loopback only, and `eval` refuses to run if
   the bridge answers on any other address. `eval` runs with the app's own
   origin, so it can read or delete that Simulator's IndexedDB and OPFS data;
-  none of this ships in the app. `--timeout` is in milliseconds for both
+  none of this ships in the app.
+  The exposure probe counts a connect timeout as reachable on purpose, so a VPN
+  or blackhole address can make `eval` refuse to run; that is fail-closed, and
+  it should not be "fixed" by counting timeouts as closed. `--timeout` is in milliseconds for both
   `eval --async` and `tap`.
 - **Native taps:** they go through `ios/Harness/`, a separate Xcode project with
   one UI test (`DriveTests`). The UI test drives tC Mobile by bundle id; each

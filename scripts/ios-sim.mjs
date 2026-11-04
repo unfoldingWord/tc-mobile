@@ -28,6 +28,7 @@ import {
   appPid,
   asyncExpression,
   bootedDevice,
+  bootedDevices,
   BRIDGE_HOST,
   BUNDLE_ID,
   harnessEnv,
@@ -76,13 +77,16 @@ function booted(deps, flags) {
       "simctl list"
     ).stdout
   );
-  const device = bootedDevice(
-    list,
-    typeof flags.device === "string" ? flags.device : undefined
-  );
-  if (!device)
+  const named = typeof flags.device === "string" ? flags.device : undefined;
+  const found = bootedDevices(list, named);
+  if (found.length === 0)
     throw new Fail("no booted Simulator: run `npm run ios-sim -- boot` first");
-  return device;
+  // Never pick whichever the list shows first: `eval` can delete data.
+  if (found.length > 1)
+    throw new Fail(
+      `${found.length} Simulators are booted (${found.map((d) => d.name).join(", ")}): pass --device "<name>"`
+    );
+  return found[0];
 }
 
 function runningPid(deps, udid) {
@@ -442,15 +446,17 @@ export async function reachableOn(
 }
 
 /** Start the bridge, find the app's page, hand `body` an evaluate(), stop the bridge. */
-async function withPage(pid, body, flags = {}) {
+export async function withPage(pid, body, flags = {}, { startServer } = {}) {
   const port = Number(flags.port ?? 9224);
-  const { startCdpServer } = await import("inspect-webkit");
+  const start = startServer ?? (await import("inspect-webkit")).startCdpServer;
   const quiet = console.error;
-  // The bridge prints a banner and narrates every attach on console.error. Our
-  // own failures go through process.stderr, so muting it loses nothing of ours.
-  if (!flags.verbose) console.error = () => {};
-  const server = await startCdpServer({ port, host: BRIDGE_HOST });
+  let server;
   try {
+    // The bridge prints a banner and narrates every attach on console.error.
+    // Our own failures go through process.stderr, so muting it loses nothing
+    // of ours. The mute sits inside the try so a failed start restores it.
+    if (!flags.verbose) console.error = () => {};
+    server = await start({ port, host: BRIDGE_HOST });
     // The debugger has no authentication, so a bridge another machine can
     // reach is refused before any target is attached (BRIDGE_HOST says why).
     const exposed = await reachableOn(
@@ -515,7 +521,7 @@ async function withPage(pid, body, flags = {}) {
       ws.close();
     }
   } finally {
-    server.stop();
+    server?.stop();
     console.error = quiet;
   }
 }
