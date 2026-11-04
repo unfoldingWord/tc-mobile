@@ -107,11 +107,59 @@ describe("the booted-Simulator guard", () => {
     expect(f.evaluated).toEqual([]);
   });
 
+  const SAME_NAME = JSON.stringify({
+    devices: {
+      ios26: [{ udid: "U-26", name: "iPhone 17", state: "Booted" }],
+      ios27: [{ udid: "U-27", name: "iPhone 17", state: "Booted" }],
+    },
+  });
+
+  it("refuses two booted devices that share a name, printing name (udid) (#1891)", async () => {
+    const f = fakes({ booted: SAME_NAME });
+    expect(await main(["eval", "1+1", "--device", "iPhone 17"], f.deps)).toBe(
+      1
+    );
+    expect(f.err.join("\n")).toMatch(
+      /2 Simulators are booted.*iPhone 17 \(U-26\).*iPhone 17 \(U-27\).*--device/s
+    );
+    expect(f.evaluated).toEqual([]);
+  });
+
+  it("accepts --device by UDID to pick one of two same-named devices (#1891)", async () => {
+    const f = fakes({ booted: SAME_NAME });
+    expect(await main(["eval", "1+1", "--device", "U-27"], f.deps)).toBe(0);
+    expect(f.evaluated).toEqual(["1+1"]);
+  });
+
   it("accepts two booted devices when --device names one", async () => {
     const f = fakes({ booted: TWO });
     expect(await main(["eval", "1+1", "--device", "iPhone 17e"], f.deps)).toBe(
       0
     );
+  });
+});
+
+describe("boot --device (#1891)", () => {
+  const LIST = JSON.stringify({
+    devices: {
+      a: [{ udid: "U-26", name: "iPhone 17", state: "Shutdown" }],
+      b: [{ udid: "U-27", name: "iPhone 17", state: "Shutdown" }],
+    },
+  });
+
+  it("boots the one device a UDID names, not the first of two same-named", async () => {
+    const f = fakes({ booted: LIST });
+    expect(await main(["boot", "--device", "U-27"], f.deps)).toBe(0);
+    expect(f.calls.map((c) => c.args.join(" "))).toContain("simctl boot U-27");
+    expect(f.calls.map((c) => c.args.join(" "))).not.toContain(
+      "simctl boot U-26"
+    );
+  });
+
+  it("still refuses a selector that matches no name or UDID", async () => {
+    const f = fakes({ booted: LIST });
+    expect(await main(["boot", "--device", "U-99"], f.deps)).toBe(1);
+    expect(f.err.join("\n")).toMatch(/no available Simulator named U-99/);
   });
 });
 
@@ -481,6 +529,38 @@ describe("withPage restores console.error (#1857 F2)", () => {
     ).rejects.toThrow(/EADDRINUSE/);
     expect(console.error).toBe(before);
   });
+
+  it("restores it when stop() throws (#1891)", async () => {
+    const before = console.error;
+    await expect(
+      withPage(
+        1,
+        async () => 0,
+        { port: "1" },
+        {
+          startServer: async () => ({
+            stop: () => {
+              throw new Error("stop failed");
+            },
+          }),
+        }
+      )
+    ).rejects.toThrow();
+    expect(console.error).toBe(before);
+  });
+
+  it("restores it when stop() is fine (green case)", async () => {
+    const before = console.error;
+    await expect(
+      withPage(
+        1,
+        async () => 0,
+        { port: "1" },
+        { startServer: async () => ({ stop: () => {} }) }
+      )
+    ).rejects.toThrow();
+    expect(console.error).toBe(before);
+  });
 });
 
 describe("the pinned inspect-webkit bridge, on a real socket", () => {
@@ -524,19 +604,33 @@ describe("the pinned inspect-webkit bridge, on a real socket", () => {
     }
   });
 
-  it("a server on :: is caught through a link-local address alone (#1857 F1)", async () => {
-    const linkLocal = external.filter((a) => a.startsWith("fe80:"));
-    // Hosts with no link-local address cannot show this; the rest must.
-    if (linkLocal.length === 0) return;
-    const port = await freePort();
-    const server = createServer();
-    await new Promise<void>((r) => server.listen(port, "::", r));
-    try {
-      await expect(reachableOn(port, linkLocal)).resolves.toBe(linkLocal[0]);
-    } finally {
-      server.close();
+  // A host with no fe80 address cannot show this, so it reports as skipped
+  // rather than as a pass that asserted nothing.
+  const linkLocal = external.filter((a) => a.startsWith("fe80:"));
+  it.skipIf(linkLocal.length === 0)(
+    "a server on :: is caught through a link-local address alone (#1857 F1)",
+    async () => {
+      const port = await freePort();
+      const server = createServer();
+      // reachableOn resolves the same for an accept and for a connect timeout
+      // (the README counts a timeout as reachable), so the result alone cannot
+      // tell them apart. The server's own connection event can: only a real
+      // accept raises it.
+      const accepted = new Promise<void>((r) => server.once("connection", r));
+      await new Promise<void>((r) => server.listen(port, "::", r));
+      try {
+        await expect(reachableOn(port, linkLocal)).resolves.toBe(linkLocal[0]);
+        await expect(
+          Promise.race([
+            accepted.then(() => "accepted"),
+            new Promise((r) => setTimeout(() => r("no accept"), 1000)),
+          ])
+        ).resolves.toBe("accepted");
+      } finally {
+        server.close();
+      }
     }
-  });
+  );
 
   it("answers on an external address when bound to localhost (the state F1 found)", async () => {
     const port = await freePort();

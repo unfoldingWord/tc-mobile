@@ -61,12 +61,15 @@ export function parseArgs(argv) {
   return { command, positionals, flags };
 }
 
-/** Every booted device in `xcrun simctl list devices --json`, optionally only the one named. */
+/** Every booted device in `xcrun simctl list devices --json`, optionally only the one whose name or UDID is `name`. */
 export function bootedDevices(list, name) {
   const found = [];
   for (const devices of Object.values(list.devices ?? {})) {
     for (const d of devices) {
-      if (d.state === "Booted" && (name === undefined || d.name === name)) {
+      if (
+        d.state === "Booted" &&
+        (name === undefined || d.name === name || d.udid === name)
+      ) {
         found.push({ udid: d.udid, name: d.name });
       }
     }

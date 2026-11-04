@@ -82,6 +82,9 @@ describe("bootedDevice", () => {
     };
     expect(bootedDevices(two).map((d) => d.udid)).toEqual(["A", "B"]);
     expect(bootedDevices(two, "iPhone 17e").map((d) => d.udid)).toEqual(["B"]);
+    // The same selector also matches a UDID (#1891), and nothing else.
+    expect(bootedDevices(two, "B").map((d) => d.udid)).toEqual(["B"]);
+    expect(bootedDevices(two, "C")).toEqual([]);
   });
 });
 
