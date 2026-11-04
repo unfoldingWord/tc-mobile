@@ -55,7 +55,15 @@ function liveLocales(
     .filter((tag) => !held.includes(tag));
 }
 
-const completeLocales = liveLocales(PENDING);
+/**
+ * iOS names Filipino \`fil\`, and the app's Tagalog entry is \`tl\`, so a live
+ * \`tl\` ships both lprojs (#357). Which one a Filipino iPhone selects is not
+ * verified on a device.
+ */
+const IOS_ALIASES: Readonly<Record<string, string>> = { tl: "fil" };
+const completeLocales = liveLocales(PENDING).flatMap((tag) =>
+  IOS_ALIASES[tag] ? [tag, IOS_ALIASES[tag]] : [tag]
+);
 
 const stringsPath = (tag: string) =>
   `ios/App/App/${tag}.lproj/InfoPlist.strings`;
@@ -103,6 +111,11 @@ describe("iOS microphone prompt, one per complete app language", () => {
       expect(promptOf(tag).trim().length).toBeGreaterThan(0);
     }
   );
+
+  it("fil.lproj carries the same prompt as tl.lproj", () => {
+    expect(promptOf("tl").length).toBeGreaterThan(0);
+    expect(promptOf("fil")).toBe(promptOf("tl"));
+  });
 
   it.each(completeLocales)("%s: the prompt is not the English line", (tag) => {
     // A copied English sentence is a defect, not a draft.

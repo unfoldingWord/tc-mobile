@@ -5,7 +5,7 @@
  * screenshots and logs. Local and Mac-only; nothing here runs in CI.
  *
  *   npm run ios-sim -- build [--harness]
- *   npm run ios-sim -- boot [--device "<name>"] | install | launch | grant-mic
+ *   npm run ios-sim -- boot [--device "<name|udid>"] | install | launch | grant-mic
  *   npm run ios-sim -- eval '<expression>' [--async] [--timeout <ms>] [--port <n>]
  *   npm run ios-sim -- tap '<accessibility label>' [--timeout <ms>] | home | describe
  *   npm run ios-sim -- shot <file.png> | logs [--seconds <n>]
@@ -42,7 +42,7 @@ import {
 
 const USAGE = `usage: npm run ios-sim -- <command>
   build [--harness]        build the app for the Simulator (or the XCUITest harness)
-  boot [--device <name>]   boot a Simulator (default: the first available iPhone)
+  boot [--device <name|udid>]  boot a Simulator (default: the first available iPhone)
   install | launch         install or launch the built app on the booted Simulator
   grant-mic                pre-grant the microphone to tC Mobile
   eval <expr> [--async]    evaluate JS in the app's WebView and print the value
@@ -84,7 +84,7 @@ function booted(deps, flags) {
   // Never pick whichever the list shows first: `eval` can delete data.
   if (found.length > 1)
     throw new Fail(
-      `${found.length} Simulators are booted (${found.map((d) => d.name).join(", ")}): pass --device "<name>"`
+      `${found.length} Simulators are booted (${found.map((d) => `${d.name} (${d.udid})`).join(", ")}): pass --device "<name or udid>"`
     );
   return found[0];
 }
@@ -283,7 +283,7 @@ function boot(deps, flags) {
   const all = Object.values(list.devices ?? {}).flat();
   const device =
     typeof flags.device === "string"
-      ? all.find((d) => d.name === flags.device)
+      ? all.find((d) => d.name === flags.device || d.udid === flags.device)
       : all.find((d) => d.name.startsWith("iPhone"));
   if (!device)
     throw new Fail(
@@ -521,8 +521,12 @@ export async function withPage(pid, body, flags = {}, { startServer } = {}) {
       ws.close();
     }
   } finally {
-    server?.stop();
-    console.error = quiet;
+    try {
+      server?.stop();
+    } finally {
+      // A throwing stop() must not leave the bridge's console mute in place.
+      console.error = quiet;
+    }
   }
 }
 
