@@ -38,6 +38,7 @@ const CASES: Record<string, Case[]> = {
     { n: 1, inFull: /kikamilifu/, wrong: /kamili(?!fu)/ },
     { n: 2, inFull: /kikamilifu/, wrong: /kamili(?!fu)/ },
   ],
+  tl: [{ n: 2, inFull: /nang buo/, wrong: /kumpletong/ }],
   vi: [{ n: 2, inFull: /không thể được đưa vào đầy đủ/, wrong: /đầy đủ vào/ }],
 };
 
@@ -53,6 +54,7 @@ const OLD: Record<string, string[]> = {
     "Sura 1 kamili haikuweza kujumuishwa.",
     "Sura 2 kamili hazikuweza kujumuishwa.",
   ],
+  tl: ["2 kumpletong kabanata ang hindi naisama."],
   vi: ["Không thể đưa 2 chương đầy đủ vào."],
 };
 
