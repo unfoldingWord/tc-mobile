@@ -2,7 +2,7 @@
 
 **Issue:** [#1520](https://github.com/unfoldingWord/tc-mobile/issues/1520) ·
 **Date:** 2026-10-22 · **Decision record:**
-[ADR 0016](../decisions/0016-capacitor-or-expo.md) (Proposed) · **Throwaway
+[ADR 0016](../decisions/0016-capacitor-or-expo.md) (Accepted 2026-11-04) · **Throwaway
 proof:** the draft PR on branch `spike/1520-expo-proof` (never merged)
 
 Every claim below carries one of three labels:
@@ -424,11 +424,11 @@ scheme with no handler. It has a known fallback, a small Swift module.
 
 - **Audio session.** Ship the #1518 `"playback"` declaration. If the device
   check fails, add one Swift plugin that plays a take through
-  `AVAudioPlayer` with the app's own session (on hold by the DRI's
-  2026-10-22 pick until this spike reports).
+  `AVAudioPlayer` with the app's own session (the DRI's 2026-10-22 hold was
+  lifted on 2026-11-04).
 - **microSD.** The #1456 chain as scoped (#1472 spike, ADR 0013 — reserved
   by #1473, not yet in `docs/decisions/` — a storage
-  seam, an Android plugin). Same Java whichever shell hosts it. Also on hold.
+  seam, an Android plugin). Same Java whichever shell hosts it.
 - **Cloud backup.** The share sheet or Files picker first; a Drive or iCloud
   plugin only if the requirements owner asks for automatic backup.
 - **Limiter.** Web Audio, in `hooks/`.

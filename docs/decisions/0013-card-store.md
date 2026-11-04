@@ -107,12 +107,10 @@ Read at `origin/develop` `292611b6`.
   in chunks of `SHARE_CHUNK_BYTES = 384 * 1024` (`share-target.ts:50`).
 - **Uninstall deletes every recording today**, because IndexedDB is the system
   of record and backups are off (`docs/native/README.md:77-79`).
-- **The plugin work is held.** The DRI's 2026-10-22 pick on #1520 holds new
-  Capacitor-native plugin work, "including #1456", until
-  [ADR 0016](0016-capacitor-or-expo.md) reports (`0016-capacitor-or-expo.md:31-32`).
-  ADR 0016 is Proposed and recommends lifting the hold. This ADR does not
-  lift it; it gives the plugin a contract to be built against once it lifts.
-  ADR 0016 also records that the same Java would carry into an Expo module.
+- **The plugin work is no longer held.** [ADR 0016](0016-capacitor-or-expo.md)
+  was Accepted on 2026-11-04 and lifted the 2026-10-22 hold. This ADR gives the
+  plugin a contract to be built against. ADR 0016 also records that the same
+  Java would carry into an Expo module.
 
 ## Options
 
@@ -128,7 +126,7 @@ Read at `origin/develop` `292611b6`.
 **Proposed: O2**, the recommendation #1472 and #1456 already make. Whether it
 holds is owed to #1472: its acceptance criterion 2 passes O2 only when P1, P4,
 P5 and P6 pass on an Android 11+ phone and an Android 7–10 phone, and a
-20-minute save meets a threshold the DRI has not set. If O2 fails, the fallback
+20-minute save finishes within 20 seconds (the DRI's threshold, 2026-11-04). If O2 fails, the fallback
 is O1, and that is a question for the requirements owner, because O1 does not
 meet "record straight onto the card" (#1472, acceptance criterion 4).
 
@@ -639,8 +637,8 @@ by `fetch(Capacitor.convertFileSrc(path))` is owed to P3. The second goes
 through the WebView's local server, so the plugin child prefers a read into the
 app process unless P3 shows that server answers only this app and the path
 cannot be guessed (open, for the plugin child). If P2 misses the
-threshold the DRI sets, ADR 0016's trigger 2 fires
-(`0016-capacitor-or-expo.md:77-80`).
+20-second threshold, ADR 0016's trigger 2 fires
+(`0016-capacitor-or-expo.md:80-85`).
 
 ### 4. Failure behaviours
 
@@ -769,8 +767,6 @@ T1 to T3; picks are not answers.
 ### For the DRI
 
 - **Accept S1**, or ask for another contract.
-- **The 20-minute save threshold.** #1472 proposes 20 seconds; ADR 0016's
-  trigger 2 shares it.
 - **Where a held take's bytes live** when the card store is on: IndexedDB as
   today, or the card. #1751 left pending-take bytes out of scope for the
   commit-protocol child to decide.
@@ -796,7 +792,6 @@ T1 to T3; picks are not answers.
 - **`hasFragileUserData`**, once P7 reports.
 - **What the backup's `confidential` flag says about card copies**:
   [#1580](https://github.com/unfoldingWord/tc-mobile/issues/1580), open in ADR 0011.
-- **The plugin hold** on #1520 (ADR 0016).
 - **How the plugin child reads a card file back.** Keep the read-back, and P3's
   measurement, on a plugin read into the app process, not a
   `fetch(Capacitor.convertFileSrc(path))` through the WebView's local server,
