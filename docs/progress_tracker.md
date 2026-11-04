@@ -20,7 +20,7 @@ The orchestrator session: start of day, then waves of 3–5 disjoint lanes throu
 - **#357, the next language:** "Tagalog (tl) (Recommended)".
 - **ADR 0016 (#1520):** "Accept middle path (Recommended)". Stay on Capacitor with targeted card and audio plugins; move to Expo only on the named triggers.
 - **The save bar:** first "20 seconds (Recommended)". After the real-phone card run, the DRI said "15-23s is acceptable", then picked "25 seconds (Recommended)", which supersedes 20 s everywhere (#1472).
-- **Reading the card run's save time:** "Not a trigger yet (Recommended)". The slow part is passing audio through the base64 bridge, not the card. Re-measure with the native plugin on phone (a) and an older phone (b).
+- **Reading the card run's save time:** "Not a trigger yet (Recommended)". The current inference, untested, is that the base64 bridge limits save speed, not the card (ADR 0013). Re-measure with the native plugin on phone (a) and an older phone (b).
 - **ADR 0013, the card store (#1473):** "accept S1 - we have run card test with a real phone and card, find these results and make sure they are linked". Where a held take lives: "Phone storage, as today (Recommended)".
 - **The trademark notice (#1608):** use ® on unfoldingWord, citing the live USPTO registration (serial 90561833). Permission requests go to the website's contact page.
 - **Waveform (#1201 item 3)** and **the offline-ready sign (#161):** "Ask Tim (Recommended)". Item 3 turned out to be already answered on the site on 10-19 ("fine"). #161 is Round 10 on the Review page.
