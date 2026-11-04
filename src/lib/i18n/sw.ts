@@ -527,8 +527,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   shareAllIncomplete: (n: number): string =>
     plural(n, {
-      one: "Sura {n} haikuweza kujumuishwa yote.",
-      other: "Sura {n} hazikuweza kujumuishwa zote.",
+      one: "Sura {n} haikuweza kujumuishwa kikamilifu.",
+      other: "Sura {n} hazikuweza kujumuishwa kikamilifu.",
     }),
   shareAllFilename: "Kazi yangu.zip",
   shareAllFolder(book: string): string {

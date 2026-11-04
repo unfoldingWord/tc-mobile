@@ -11,42 +11,74 @@ import { LOCALE_OVERRIDES } from "@/lib/i18n/locales";
  * are AI drafts, not native-reviewed); this pins only that the "complete
  * chapter" reading does not come back, and that each wording keeps its
  * "in full" marker and the count.
+ *
+ * Both patterns run on RENDERED text, digits filled in, so neither may
+ * contain a `{n}`.
  */
+
+interface Case {
+  n: number;
+  /** The "not in full" marker the new wording carries. */
+  inFull: RegExp;
+  /** The modifier that made the old wording say "complete chapters". */
+  wrong: RegExp;
+}
+
+const CASES: Record<string, Case[]> = {
+  id: [{ n: 2, inFull: /seluruhnya/, wrong: /lengkap/ }],
+  ms: [{ n: 2, inFull: /sepenuhnya/, wrong: /lengkap/ }],
+  pt: [
+    { n: 1, inFull: /por inteiro/, wrong: /completos?\./ },
+    { n: 2, inFull: /por inteiro/, wrong: /completos?\./ },
+    // Intl.PluralRules("pt") gives "many" for 1 000 000, a slot no small
+    // count reaches.
+    { n: 1_000_000, inFull: /por inteiro/, wrong: /completos?\./ },
+  ],
+  sw: [
+    { n: 1, inFull: /kikamilifu/, wrong: /kamili(?!fu)/ },
+    { n: 2, inFull: /kikamilifu/, wrong: /kamili(?!fu)/ },
+  ],
+  vi: [{ n: 2, inFull: /không thể được đưa vào đầy đủ/, wrong: /đầy đủ vào/ }],
+};
+
+/** The sentences the tables used to render, for the negative matcher. */
+const OLD: Record<string, string[]> = {
+  id: ["2 pasal lengkap tidak dapat disertakan."],
+  ms: ["2 bab lengkap tidak dapat disertakan."],
+  pt: [
+    "Não foi possível incluir 1 capítulo completo.",
+    "Não foi possível incluir 2 capítulos completos.",
+  ],
+  sw: [
+    "Sura 1 kamili haikuweza kujumuishwa.",
+    "Sura 2 kamili hazikuweza kujumuishwa.",
+  ],
+  vi: ["Không thể đưa 2 chương đầy đủ vào."],
+};
 
 const original = activeLocale();
 afterEach(() => setActiveLocale(original));
 
-/** The marker of each table's "not in full" sense, per locale. */
-const IN_FULL: Record<string, RegExp> = {
-  id: /seluruhnya/,
-  ms: /sepenuhnya/,
-  pt: /por inteiro/,
-  sw: /(yote|zote)/,
-  vi: /chưa được đưa vào đầy đủ/,
-};
-
-/** The wrong readings: a modifier meaning "complete" on the chapter noun. */
-const WRONG: Record<string, RegExp> = {
-  id: /pasal lengkap/,
-  ms: /bab lengkap/,
-  pt: /completos?\./,
-  sw: /Sura \{n\} kamili/,
-  vi: /chương đầy đủ vào/,
-};
-
 describe("shareAllIncomplete keeps the 'not in full' meaning (#1897)", () => {
-  for (const tag of Object.keys(IN_FULL)) {
+  for (const [tag, cases] of Object.entries(CASES)) {
     it(`${tag}: says not fully included, never 'complete chapters not included'`, () => {
       const locale = LOCALES.find((l) => l.tag === tag);
       if (locale === undefined) throw new Error(`no locale ${tag}`);
       setActiveLocale(locale);
       const render = LOCALE_OVERRIDES[tag]?.shareAllIncomplete;
       if (render === undefined) throw new Error(`no entry for ${tag}`);
-      for (const n of [1, 2, 5]) {
-        const text = render(n);
-        expect(text).toContain(String(n));
-        expect(text).toMatch(IN_FULL[tag] ?? /^$/);
-        expect(text).not.toMatch(WRONG[tag] ?? /^$/);
+      for (const c of cases) {
+        const text = render(c.n);
+        expect(text).toContain(String(c.n));
+        expect(text).toMatch(c.inFull);
+        expect(text).not.toMatch(c.wrong);
+      }
+    });
+
+    it(`${tag}: the negative matcher rejects every old sentence`, () => {
+      for (const old of OLD[tag] ?? []) {
+        expect(cases.some((c) => c.wrong.test(old))).toBe(true);
+        expect(cases.some((c) => c.inFull.test(old))).toBe(false);
       }
     });
   }
