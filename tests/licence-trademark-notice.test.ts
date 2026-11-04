@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MARKER = "Trademark notice (not part of the MIT license):";
-const CONTACT = "support@unfoldingword.org";
+const CONTACT = "https://unfoldingword.org/contact-us/";
 
 function read(rel: string): string {
   return readFileSync(path.join(ROOT, rel), "utf8");
@@ -24,7 +24,13 @@ describe("trademark notice (#1608)", () => {
     const at = text.indexOf(MARKER);
     expect(at).toBeGreaterThan(text.indexOf("SOFTWARE.\n"));
     const notice = text.slice(at);
-    expect(notice).toContain("translationCore is a trademark of unfoldingWord");
+    expect(notice).toContain(
+      "translationCore is a trademark of unfoldingWord®"
+    );
+    expect(notice.split("®")).toHaveLength(2);
+    expect(notice).toContain("unfoldingWord's trademarks or logos");
+    expect(notice.trimEnd().endsWith(`contact page: ${CONTACT}`)).toBe(true);
+    expect(notice).not.toContain("support@unfoldingword.org");
     expect(notice).toContain(CONTACT);
   });
 
