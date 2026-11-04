@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { withEncoder } from "@/hooks/mp3-codec";
 import { reportFailure } from "@/hooks/report-failure";
-import { CompressorRangeError } from "@/lib/audio/compressor";
+import { CompressorRangeError } from "@/lib/audio/compressor-error";
 import { computePeaks } from "@/lib/audio/peaks";
 import { NORMALIZE_STAGES } from "@/lib/audio/loudness";
 import {
@@ -275,6 +275,34 @@ describe("the compressor switch in the sweep (#1873)", () => {
     const [cause, context] = vi.mocked(reportFailure).mock.calls[0]!;
     expect(context).toBe("transcode-compressor");
     expect((cause as Error).cause).toBe(refused);
+  });
+
+  it("a clip the compressor refused on two sweeps writes one row, and is tried again each time (#1879)", async () => {
+    storePreference("1", "1");
+    loadWith(Int16Array.of(10, 20, 30), null);
+    // The sweep's memory is module state that outlives a test; a turn that
+    // completes clears it, so this one starts from none.
+    await requestTranscodeSweep();
+    vi.mocked(commitTranscode).mockClear();
+    vi.mocked(reportFailure).mockClear();
+    loadWith(Int16Array.of(10, 20, 30), null);
+    normalizePcm.mockClear();
+    // A fresh error per sweep, as the worker round trip builds one per reply.
+    normalizePcm
+      .mockRejectedValueOnce(new CompressorRangeError("compressor: first"))
+      .mockRejectedValueOnce(new CompressorRangeError("compressor: second"));
+    vi.mocked(listPcmFinishedSegments).mockResolvedValue([
+      { segmentId: SEGMENT, clipId: CLIP },
+    ]);
+
+    await requestTranscodeSweep();
+    await requestTranscodeSweep();
+
+    // Still unfinished, so the sweep went back to it: nothing was held out.
+    expect(normalizePcm).toHaveBeenCalledTimes(2);
+    expect(commitTranscode).not.toHaveBeenCalled();
+    const contexts = vi.mocked(reportFailure).mock.calls.map((c) => c[1]);
+    expect(contexts).toEqual(["transcode-compressor"]);
   });
 
   it("any other chain failure keeps its existing context", async () => {

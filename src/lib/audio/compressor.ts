@@ -75,6 +75,8 @@
  * Pure arithmetic: no DOM, Web Audio or Worker globals, and no clock.
  */
 
+import { CompressorRangeError } from "./compressor-error";
+
 export interface CompressorSettings {
   /** Where the knee is centred, in dBFS of the sample-peak detector. */
   readonly thresholdDb: number;
@@ -112,11 +114,6 @@ const SLOW_RELEASE_SECONDS = 0.6;
  * relative, which is inaudible, and it keeps a long pause out of subnormals.
  */
 const FLUSH_DB = 1e-4;
-
-/** What the compressor throws when it refuses its settings or a chunk. */
-export class CompressorRangeError extends RangeError {
-  override name = "CompressorRangeError";
-}
 
 function requirePositive(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0)

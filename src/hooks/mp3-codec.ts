@@ -55,7 +55,7 @@
 
 import { decodeMp3ToCanonical } from "./audio-io";
 import { reportFailure } from "./report-failure";
-import { CompressorRangeError } from "@/lib/audio/compressor";
+import { CompressorRangeError } from "@/lib/audio/compressor-error";
 import { errorMessage } from "@/lib/failure-text";
 // The BUILT worker chunk's URL. `?worker&url` is the only form that yields it
 // outside a `new Worker(new URL(...))` literal: a bare

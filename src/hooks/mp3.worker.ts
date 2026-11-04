@@ -62,7 +62,7 @@ import {
   encodeMp3,
 } from "@/lib/audio/mp3";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { CompressorRangeError } from "@/lib/audio/compressor";
+import { CompressorRangeError } from "@/lib/audio/compressor-error";
 import { normalizePcm } from "@/lib/audio/loudness";
 import { errorMessage } from "@/lib/failure-text";
 import { runDspBench } from "@/lib/phone-check/dsp-bench";

@@ -188,7 +188,7 @@ export interface AudioCodec {
    * (transferred), as `encodeMp3` does. Optional, so existing fakes are
    * untouched; the transcode sweep records `stages: []` for a codec without it.
    * A refusal by the compressor rejects with the codec's
-   * `CompressorFailedError` (#1873), not as the encoder failing.
+   * `CompressorRangeError` (#1873), not as the encoder failing.
    */
   readonly normalizePcm?: (
     samples: Int16Array,
