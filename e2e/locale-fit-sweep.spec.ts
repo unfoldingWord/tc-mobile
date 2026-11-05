@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type ElementHandle, type Page } from "./support/test";
+import { expect, test, type Page } from "./support/test";
 import { asInstalledApp } from "./support/installed-app";
 
 import { editRecordingButton } from "./recorder-fixtures";
@@ -26,8 +26,9 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  * `navigator.languages` and firing `languagechange` while idle
  * (`hooks/phone-locale.ts`), after the walk that seeds the book has used the
  * English labels, the same way `mic-refusal-card-fit.spec.ts` does. The
- * control that opens a screen is held as a handle before the switch so the
- * click does not depend on a translated name.
+ * control that opens a screen is located after the switch by a test id, so the
+ * click does not depend on a translated name or on a handle that a re-render
+ * could detach.
  *
  * What counts as a fit failure, for every visible control in the screen (or
  * the top dialog) and for every element inside one:
@@ -265,12 +266,19 @@ async function measure(
 }
 
 /**
- * The Books header's ≡, found by its structure because its name is translated.
- * It is located AFTER a language switch, as a lazy locator, so a header that
- * re-renders on the switch cannot leave a detached handle behind (#1893).
+ * An opener, found by a test id because its name is translated. Every opener
+ * is located AFTER a language switch, as a lazy locator, so a re-render on the
+ * switch cannot leave a detached handle behind (#1893, #1904). It must also
+ * carry a name once translated: an unnamed opener is a defect the sweep would
+ * otherwise click straight through.
  */
-const booksMenuButton = (page: Page) =>
-  page.locator(".control-hinted > button.books-ghost");
+const opener = (page: Page, testId: string) => page.getByTestId(testId).first();
+
+async function clickNamedOpener(page: Page, testId: string) {
+  const button = opener(page, testId);
+  await expect(button).toHaveAccessibleName(/.+/);
+  await button.click();
+}
 
 /** The recorder's ≡ sheet, told apart from the recorder dialog under it. */
 const RECORDER_MENU = ".menu-panel:has(.recorder-menu-tile)";
@@ -288,17 +296,6 @@ async function settled(page: Page, selector: string) {
         .map((a) => a.finished.catch(() => undefined))
     ).then(() => undefined);
   }, selector);
-}
-
-async function handle(
-  page: Page,
-  role: "button",
-  name: string | RegExp,
-  exact?: boolean
-): Promise<ElementHandle> {
-  const h = await page.getByRole(role, { name, exact }).first().elementHandle();
-  expect(h, `no ${String(name)} to hold before the switch`).not.toBeNull();
-  return h!;
 }
 
 /** In an open recorder, record a short take from the synthetic microphone. */
@@ -327,16 +324,17 @@ async function recordOneSegment(page: Page): Promise<void> {
 }
 
 /**
- * Open the book's menu in English, hold the control that starts an ask,
- * switch the language with the menu open, then take that control.
+ * Open the book's menu in English, switch the language with the menu open,
+ * then take the tile that starts an ask, located after the switch by its test
+ * id (#1904).
  */
-async function openAsk(page: Page, tag: string, name: string) {
+async function openAsk(page: Page, tag: string, tileTestId: string) {
   await recordOneSegment(page);
-  await page.getByRole("button", { name: /^More actions for/ }).click();
+  await opener(page, "book-menu-open").click();
   await settled(page, '[role="dialog"]');
-  const start = await handle(page, "button", name, true);
+  await expect(opener(page, tileTestId)).toBeVisible();
   await switchLanguage(page, tag);
-  await start.click();
+  await clickNamedOpener(page, tileTestId);
 }
 
 /** Walk to `screen` in English, switch to `tag`, and return what overflows. */
@@ -348,8 +346,9 @@ export async function sweep(
   switch (screen) {
     case "books": {
       await seedToSegments(page);
-      const back = await handle(page, "button", "Back to books", true);
-      await back.click();
+      await page
+        .getByRole("button", { name: "Back to books", exact: true })
+        .click();
       await expect(
         page.getByRole("button", { name: "New book" })
       ).toBeVisible();
@@ -361,9 +360,9 @@ export async function sweep(
       await page
         .getByRole("button", { name: "Back to books", exact: true })
         .click();
-      const more = await handle(page, "button", /^More actions for/);
+      await expect(opener(page, "book-menu-open")).toBeVisible();
       await switchLanguage(page, tag);
-      await more.click();
+      await clickNamedOpener(page, "book-menu-open");
       // The Licence tile (#1455) appears once the book's provenance is read, so
       // the five-tile row is the one measured.
       await expect(page.locator(".tile--licence")).toBeVisible();
@@ -386,9 +385,9 @@ export async function sweep(
       // is live, as a translator meets it.
       await seedToRecorder(page);
       await recordTake(page);
-      const more = await handle(page, "button", "More actions", true);
+      await expect(opener(page, "recorder-menu-open")).toBeVisible();
       await switchLanguage(page, tag);
-      await more.click();
+      await clickNamedOpener(page, "recorder-menu-open");
       await expect(page.locator(".recorder-menu-tile")).toHaveCount(2);
       await settled(page, RECORDER_MENU);
       return measure(page, RECORDER_MENU);
@@ -400,7 +399,7 @@ export async function sweep(
         timeout: 10_000,
       });
       await switchLanguage(page, tag);
-      await booksMenuButton(page).click();
+      await clickNamedOpener(page, "books-menu");
       await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
         3
       );
@@ -417,7 +416,7 @@ export async function sweep(
         timeout: 10_000,
       });
       await switchLanguage(page, tag);
-      await booksMenuButton(page).click();
+      await clickNamedOpener(page, "books-menu");
       await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
         3
       );
@@ -432,11 +431,11 @@ export async function sweep(
       await expect(page.locator("#launch-intro")).toBeHidden({
         timeout: 10_000,
       });
-      await page.getByRole("button", { name: /^Open menu/ }).click();
+      await opener(page, "books-menu").click();
       await settled(page, '[role="dialog"]');
-      const tile = await handle(page, "button", "Templates", true);
+      await expect(opener(page, "menu-templates")).toBeVisible();
       await switchLanguage(page, tag);
-      await tile.click();
+      await clickNamedOpener(page, "menu-templates");
       // The picker lists the bundled package and its thumbnail.
       await expect(page.locator('[role="dialog"] img').first()).toBeVisible();
       await settled(page, '[role="dialog"]');
@@ -444,7 +443,7 @@ export async function sweep(
     }
     case "licence-ask": {
       // A new book has no licence, so Share book asks first (#1455).
-      await openAsk(page, tag, "Share book");
+      await openAsk(page, tag, "tile-share-book");
       await expect(page.locator('[role="radiogroup"]')).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
@@ -453,7 +452,7 @@ export async function sweep(
       // A book with no language asks first on Export project (#1492), in the
       // installed app: a browser gets the pointer instead (#1457).
       await asInstalledApp(page);
-      await openAsk(page, tag, "Export project");
+      await openAsk(page, tag, "tile-export-project");
       await expect(page.locator('input[type="search"]')).toBeVisible();
       await expect(
         page
