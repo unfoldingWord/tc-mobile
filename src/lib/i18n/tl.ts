@@ -10,6 +10,24 @@ import { filenameSafe } from "@/lib/utils";
  * "Tagalog (tl) (Recommended)"). AI DRAFT, AWAITING NATIVE-SPEAKER REVIEW: no
  * Tagalog reader has checked the meaning.
  *
+ * Least certain cells, for the native reader to check first:
+ * - `tileRename` ("Bagong pangalan") literally means "new name"; it is
+ *   shortened to fit the tile caption budget, while the glossary's "Palitan
+ *   ang pangalan" is used elsewhere.
+ * - `recorderDialog` ("Pang-record") is a loan-plus-prefix coined to avoid
+ *   the English-equal word, and may not read as the name of a dialog.
+ * - The licence names (`licenceNameCcBySa`, "Pagkilala-Parehong
+ *   Pagbabahagi", and its siblings) are renderings of the Creative Commons
+ *   terms; no source for an official Filipino wording is recorded.
+ * - The cover colours, especially `coverColourSlate` ("Abuhin", grey),
+ *   `coverColourAmber` ("Dilaw-kahel") and `coverColourTeal` ("Asul-berde"),
+ *   where Tagalog has no settled single word for the shade.
+ * - `settingsCompressOnFinished` ("Hinaan ang malalakas na bahagi kapag
+ *   tapos na") is a plain-language paraphrase of compressing loud parts.
+ * - `shareAllIncomplete` says the chapter was "not included in full"
+ *   ("hindi naisama nang buo"); the first draft got this meaning wrong, so
+ *   it is worth a second look.
+ *
  * Register: buttons and labels are the short command a phone's own menus use
  * ("I-record", "Ibahagi"); sentences that speak to the person are plain and
  * polite. Words a Filipino phone already shows in English are kept as loans
