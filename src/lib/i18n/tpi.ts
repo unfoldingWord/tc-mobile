@@ -63,9 +63,11 @@ import { filenameSafe } from "@/lib/utils";
  * - `shareBookMissingAndPartial`'s partial clause ("Long ... sapta i stap
  *   insait, {n} hap i no inap i go insait"): the chapters are in the share,
  *   the segments are not; a reader should confirm it reads as one claim.
- * - `loadFailedBody`: it mirrors the English, which sends the person back to
- *   reset the recording from the list, so it names "stat gen", the Reset
- *   word; a reader should confirm that does not contradict "i stap gut".
+ * - `loadFailedBody`: it mirrors the English, which asks for "Traim gen"
+ *   first and offers reset from the list only "if it still won't open"
+ *   (#1933), so it names "stat gen", the Reset word; a reader should confirm
+ *   that does not contradict "i stap gut", and that "Sapos yu no inap opim
+ *   yet" reads as "if it still won't open" rather than "before you open it".
  *
  * Entries that only arrange other entries (`trail`, `sentences`, the filename
  * builders) reuse the English logic through the merged table, so the licence
@@ -206,7 +208,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     plural(n, { other: "{n} minit i stap" }),
   loadFailedTitle: "I no inap opim dispela rekod",
   loadFailedBody:
-    "Rekod bilong yu i stap gut. Traim gen, o go bek na stat gen long en long lis.",
+    "Rekod bilong yu i stap gut. Traim gen. Sapos yu no inap opim yet, yu ken stat gen long en long lis.",
   loadRetry: "Traim gen",
   loadBack: "Go bek",
   loadRetrying: "Wok long opim rekod bilong yu…",

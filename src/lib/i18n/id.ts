@@ -152,7 +152,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   takeCapWarning: (n: number): string => plural(n, { other: "Sisa {n} mnt" }),
   loadFailedTitle: "Rekaman ini tidak dapat dibuka",
   loadFailedBody:
-    "Rekamanmu aman. Coba lagi, atau kembali untuk menyetel ulang dari daftar.",
+    "Rekamanmu aman. Coba lagi. Jika masih tidak terbuka, kamu bisa menyetel ulang dari daftar.",
   loadRetry: "Coba lagi",
   loadBack: "Kembali",
   loadRetrying: "Membuka rekamanmu…",

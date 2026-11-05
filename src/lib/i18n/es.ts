@@ -163,7 +163,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "No se pudo abrir esta grabación",
   loadFailedBody:
-    "Tu grabación está segura. Intenta de nuevo, o vuelve para restablecerla desde la lista.",
+    "Tu grabación está segura. Intenta de nuevo. Si aún no se abre, puedes restablecerla desde la lista.",
   loadRetry: "Intentar de nuevo",
   loadBack: "Volver",
   loadRetrying: "Abriendo tu grabación…",

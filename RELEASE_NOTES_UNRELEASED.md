@@ -19,6 +19,7 @@ its body and empties it.
 - A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.
 - About & licenses now shows the translationCore trademark notice after the licence text, with the web address of unfoldingWord's contact page to ask for permission (#1608).
 - The Books screen has one menu button: the gear is gone, and Settings is now the first tile in the ≡ menu (#1871).
+- When a recording will not open, the message now says to try again first, and to reset it from the list only if it still won't open, in every language (#1933).
 
 ## Fixed
 

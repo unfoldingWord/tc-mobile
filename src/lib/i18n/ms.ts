@@ -165,7 +165,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     plural(n, { other: "Tinggal {n} min" }),
   loadFailedTitle: "Rakaman ini tidak dapat dibuka",
   loadFailedBody:
-    "Rakaman anda selamat. Cuba lagi, atau kembali untuk set semula daripada senarai.",
+    "Rakaman anda selamat. Cuba lagi. Jika masih tidak dapat dibuka, anda boleh set semula daripada senarai.",
   loadRetry: "Cuba lagi",
   loadBack: "Kembali",
   loadRetrying: "Membuka rakaman anda…",

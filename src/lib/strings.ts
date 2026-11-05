@@ -473,9 +473,12 @@ export const stringsEn = {
   // corrupt clip. The sheet is a full panel, not a blank: the recording is
   // untouched, "Try again" resumes the context and re-decodes, and Back returns
   // to the Segments list, where the row's Reset (which does not decode) works.
+  // The body asks for Try again first and names Reset only as the fallback
+  // "if it still won't open" (#1933), since a transient failure is the common
+  // case and Reset discards the recording.
   loadFailedTitle: "This recording could not be opened",
   loadFailedBody:
-    "Your recording is safe. Try again, or go back to reset it from the list.",
+    "Your recording is safe. Try again. If it still won't open, you can reset it from the list.",
   loadRetry: "Try again",
   loadBack: "Go back",
   // Shown BENEATH the panel's two controls (both stay mounted) while a "Try

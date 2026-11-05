@@ -164,7 +164,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "Cet enregistrement n'a pas pu s'ouvrir",
   loadFailedBody:
-    "Votre enregistrement est en sécurité. Réessayez, ou retournez à la liste pour le réinitialiser.",
+    "Votre enregistrement est en sécurité. Réessayez. S'il ne s'ouvre toujours pas, vous pouvez le réinitialiser depuis la liste.",
   loadRetry: "Réessayer",
   loadBack: "Retour",
   loadRetrying: "Ouverture de votre enregistrement…",
