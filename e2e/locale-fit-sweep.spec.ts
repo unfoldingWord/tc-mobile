@@ -70,6 +70,7 @@ const LOCALES = [
   "ru",
   "sw",
   "tl",
+  "tpi",
   "vi",
   "zh-Hans",
 ] as const;

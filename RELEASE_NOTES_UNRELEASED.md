@@ -7,6 +7,7 @@ its body and empties it.
 
 ## Added
 
+- Tok Pisin: a phone set to Tok Pisin now opens tC Mobile in Tok Pisin, including the iPhone microphone prompt. This first draft is machine-written and no Tok Pisin speaker has read it yet.
 - Tagalog: a phone set to Tagalog now opens tC Mobile in Tagalog, including the iPhone microphone prompt. This first draft is machine-written and no Tagalog speaker has read it yet.
 - Malay: a phone set to Malay now opens tC Mobile in Malay, including the iPhone microphone prompt. This first draft is machine-written and no Malay speaker has read it yet.
 - Vietnamese: a phone set to Vietnamese now opens tC Mobile in Vietnamese, including the iPhone microphone prompt. This first draft is machine-written and no Vietnamese speaker has read it yet.
