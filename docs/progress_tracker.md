@@ -11,6 +11,70 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-05 (day) — Sprint 6 day 4: Tok Pisin drafted, Capacitor-or-Expo reopened on users and maintainability, develop CI keeps one run per merge, 13 PRs merged
+
+The orchestrator session: start of day, then four waves of lanes through the review bench, and two follow-up lanes.
+
+### Decisions (DRI)
+
+- **#1914, an outside PR on #1911:** "Close politely, we fix #1911 (Recommended)". Closed with a thank-you comment; its workflows were never approved.
+- **Waves:** "Run as planned (Recommended)". **#357, the next language:** "Tok Pisin (tpi)".
+- **#1456, the card schema step:** "Scope today, build after 11-15 (Recommended)", so it is not in the v1.3.0 cut. Then on #1925: O1 "Build in Sprint 7 (Recommended)", and O2–O4 "Take all three (Recommended)".
+- **Capacitor or Expo (ADR 0016):**
+  - The DRI's frame: "the Expo rewrite is pretty inconsequential with our agentic tools, so we don't need to make that part of the equation. Keep that as a non-factor."
+  - The goal: "what is the best end product for users and maintainability".
+  - The ADR's amendment is held: "lets do some tests, also waiting for tim to chime in".
+  - The requirements owner's v3 scope, given in the team chat, is recorded on #1915: BT Servant chat or QR preload, microSD project files, Bluetooth, email attachments.
+- **#1780:** "Close as unobserved (Recommended)". **#575:** "Close it, fix AGENTS.md (Recommended)".
+- **#1933, the load-failed panel:** "Try again first, Reset as fallback (Recommended)". **#1935:** "Lane now (Recommended)".
+- **Language reach:** the DRI asked for a USB Android test: "can we test it on our local android device (dev) usb connected now - just a gh isue and prompt please" (#1936).
+- **#1930:** "approved to merge today on clean and green".
+- **The five small follow-ups:** "One batch, next session (Recommended)".
+
+### Merged to develop (13)
+
+- **Languages:**
+  - #1930 Tok Pisin (tpi), an AI draft and a level-3 language. Part of #357. Round 1 found two Mediums: a contradictory share sentence (fixed, with a new test), and a `loadFailedBody` pointer to Reset that was refuted for tpi because it mirrors the English, then became #1933.
+  - #1917 lists the least-certain Tagalog cells (#1900).
+- **Copy:** #1938 makes the load-failed panel offer Try again first and Reset only as the fallback, in English and all 13 locale tables (#1933). The translations are AI drafts.
+- **CI:** #1937 gives push runs on develop, staging and main a per-commit concurrency group (Part of #1935). Before it, a newer _pending_ run cancelled the older one, so 6 of the day's first 11 merge commits got no run of their own, and #1929's got none at all.
+- **Storage:** #1919 adds a negative-sample-count guard on the refused-take log (#1901). #1867 was found already finished by #1894 and closed.
+- **Tests:**
+  - #1918: the trademark sentence pin (#1909).
+  - #1920: the normalize pin is order-independent (#1903).
+  - #1922: the share-incomplete guard throws on missing fixtures (#1905).
+  - #1924: db-open "opened" waits are bounded by a hang guard (Part of #1912; the flake was not reproduced).
+  - #1931: locale-sweep openers are found by test id after the language switch (#1904).
+- **Docs:**
+  - #1916: ADR 0013 wording (#1911).
+  - #1926: the facilitator runbook matches 1.2.2, the 11-15 production build (Part of #248). Round 1 found a Medium, "the problem report appears once the app has recorded something"; the real condition is "while the failure log is non-empty". The bench fixed it.
+  - #1929: AGENTS.md records the #575 sweep as finished.
+
+Closed: #575, #1780, #1867, #1900, #1901, #1903, #1904, #1905, #1909, #1911, #1933.
+
+### Filed
+
+- **Decisions and research:**
+  - #1915, v3: linking to BT Servant. No ADR 0016 trigger fires. Any link needs a server holding the worker key, plus identity and ADR 0012 opt-in.
+  - #1921: Capacitor vs Expo on the iOS Simulator and Android emulator (duplex audio, writes to internal storage and a card). Prompt: `/workspace/temp/tc-mobile/sim-compare-1921/PROMPT.md`.
+  - #1925: the card schema v15 scope (Sprint 7).
+  - #1936: can an Android phone reach Tok Pisin and Filipino? The manifest declares no `android:localeConfig`. Prompt: `/workspace/temp/tc-mobile/lang-reach-1936/PROMPT.md`.
+- **Follow-ups (reviewer Lows):** #1923, #1927, #1928, #1932 and #1934.
+
+### Open, and where each stands
+
+- **No PRs are in flight.** The drafts #1612 and #1532 stay open, per the DRI on 30 Oct.
+- **#1935:** owed a post-merge check. After the next burst of develop merges, `gh run list --branch develop --event push` should show one completed run per merge commit.
+- **#1912:** stays open in case the flake recurs.
+- **Before the 11-15 cut:**
+  - device runs #1464, #974 and #1486;
+  - the compressor listening check;
+  - Filipino and Tok Pisin language selection (#1936 for Android; iPhone still owed).
+- **ADR 0016:** waits on the #1921 runs and the requirements owner.
+- **Process note:** two lanes repeated their hand-back until stopped. GitHub twice refused a push with "fatal error in commit_refs_rules", and the accepted retry fired no `pull_request` run; closing and reopening #1930 started CI.
+
+---
+
 ## 2026-11-04 (day) — Sprint 6 day 3: ADR 0016 accepted (stay on Capacitor), 25-second save bar, ADR 0013 accepted, Tagalog drafted, the trademark notice fixed, 14 PRs merged
 
 The orchestrator session: start of day, then waves of 3–5 disjoint lanes through the review bench.
