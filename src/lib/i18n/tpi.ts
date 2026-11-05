@@ -57,8 +57,15 @@ import { filenameSafe } from "@/lib/utils";
  * - `zoomAtWhole`, `zoomAtQuarter`, `selectionStartHandle`,
  *   `selectionEndHandle`, `liveWaveform`, `vuMeterLabel`: editing words the
  *   drafter has no attested Tok Pisin for, so they are descriptions.
- * - `shareAllIncomplete` ("i no olgeta"): must mean "only in part", not
- *   "complete chapters were not included" (#1897).
+ * - `shareAllIncomplete` ("i go insait hap tasol", went in only in part):
+ *   must mean "only in part", not "complete chapters were not included"
+ *   (#1897).
+ * - `shareBookMissingAndPartial`'s partial clause ("Long ... sapta i stap
+ *   insait, {n} hap i no inap i go insait"): the chapters are in the share,
+ *   the segments are not; a reader should confirm it reads as one claim.
+ * - `loadFailedBody`: it mirrors the English, which sends the person back to
+ *   reset the recording from the list, so it names "stat gen", the Reset
+ *   word; a reader should confirm that does not contradict "i stap gut".
  *
  * Entries that only arrange other entries (`trail`, `sentences`, the filename
  * builders) reuse the English logic through the merged table, so the licence
@@ -274,7 +281,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     `Sapta ${n} i stap long ples bilong en.`,
   bookReorderLifted: (heading: string): string => `Wok long muvim ${heading}.`,
   bookReorderMoved: (heading: string, to: number): string =>
-    `${heading} i stap long ples ${to} long sel nau.`,
+    `${heading} i stap long namba ${to} ples nau.`,
   bookReorderStayed: (heading: string): string =>
     `${heading} i stap long ples bilong en.`,
   moveUp: "Muvim i go antap",
@@ -362,7 +369,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   licenceAskTitle: "Laisens bilong dispela buk",
   licenceAskLead:
     "Husat i ken serim ol dispela rekod? Yu makim wanpela taim tasol long dispela buk.",
-  licenceAllRightsReserved: "Olgeta rait i stap long papa",
+  licenceAllRightsReserved: "Olgeta rait i stap long man i kamapim",
   licenceSaving: "Wok long sevim laisens.",
   licenceAskContinue: "Serim",
   licenceAskCancel: "Lusim",
@@ -401,12 +408,14 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     const scope = Math.max(partialChapters, 1);
     const bySegments = (from: string): string =>
       plural(segments, {
-        other: `{n} hap ${from} i no inap i go insait.`,
+        other: `Long ${from}, {n} hap i no inap i go insait.`,
       }).replaceAll("{chapters}", () => String(scope));
     // "wanpela sapta" is for exactly one chapter, so it rides the `"=1"` arm.
+    // The chapters "i stap insait" (are in the share); only the segments
+    // "i no inap i go insait", so the sentence makes one claim (#1930 r1).
     const partial = plural(scope, {
-      "=1": bySegments("bilong wanpela sapta i go insait"),
-      other: bySegments("bilong {chapters} sapta i go insait"),
+      "=1": bySegments("wanpela sapta i stap insait"),
+      other: bySegments("{chapters} sapta i stap insait"),
     });
     return this.sentences(this.shareBookMissing(chapters), partial);
   },
@@ -534,7 +543,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareAllMissing: (n: number): string =>
     plural(n, { other: "{n} buk i no inap i go insait." }),
   shareAllIncomplete: (n: number): string =>
-    plural(n, { other: "{n} sapta i no inap i go insait olgeta." }),
+    plural(n, { other: "{n} sapta i go insait hap tasol." }),
   shareAllFilename: "Wok bilong mi.zip",
   shareAllFolder(book: string): string {
     return filenameSafe(book) || this.shareNameFallback;

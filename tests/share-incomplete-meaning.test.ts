@@ -39,6 +39,7 @@ const CASES: Record<string, Case[]> = {
     { n: 2, inFull: /kikamilifu/, wrong: /kamili(?!fu)|yote|zote/ },
   ],
   tl: [{ n: 2, inFull: /nang buo/, wrong: /kumpletong/ }],
+  tpi: [{ n: 2, inFull: /hap tasol/, wrong: /olgeta|i no inap/ }],
   vi: [{ n: 2, inFull: /không thể được đưa vào đầy đủ/, wrong: /đầy đủ vào/ }],
 };
 
@@ -55,6 +56,7 @@ const OLD: Record<string, string[]> = {
     "Sura 2 kamili hazikuweza kujumuishwa.",
   ],
   tl: ["2 kumpletong kabanata ang hindi naisama."],
+  tpi: ["2 sapta i no inap i go insait olgeta."],
   vi: ["Không thể đưa 2 chương đầy đủ vào."],
 };
 
