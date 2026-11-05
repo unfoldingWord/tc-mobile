@@ -5,8 +5,8 @@ import { LOCALE_OVERRIDES } from "@/lib/i18n/locales";
 
 /**
  * `shareAllIncomplete` means chapters that went into the share only in part
- * (English: "could not be included in full"), #1897. Five AI-drafted tables
- * once said that COMPLETE chapters were NOT included, which is false and
+ * (English: "could not be included in full"), #1897. Six AI-drafted tables
+ * (id, ms, pt, sw, tl, vi) once said that COMPLETE chapters were NOT included, which is false and
  * different. A reader's judgement is still needed for the new wording (these
  * are AI drafts, not native-reviewed); this pins only that the "complete
  * chapter" reading does not come back, and that each wording keeps its
@@ -35,8 +35,8 @@ const CASES: Record<string, Case[]> = {
     { n: 1_000_000, inFull: /por inteiro/, wrong: /completos?\./ },
   ],
   sw: [
-    { n: 1, inFull: /kikamilifu/, wrong: /kamili(?!fu)/ },
-    { n: 2, inFull: /kikamilifu/, wrong: /kamili(?!fu)/ },
+    { n: 1, inFull: /kikamilifu/, wrong: /kamili(?!fu)|yote|zote/ },
+    { n: 2, inFull: /kikamilifu/, wrong: /kamili(?!fu)|yote|zote/ },
   ],
   tl: [{ n: 2, inFull: /nang buo/, wrong: /kumpletong/ }],
   vi: [{ n: 2, inFull: /không thể được đưa vào đầy đủ/, wrong: /đầy đủ vào/ }],
@@ -56,6 +56,17 @@ const OLD: Record<string, string[]> = {
   ],
   tl: ["2 kumpletong kabanata ang hindi naisama."],
   vi: ["Không thể đưa 2 chương đầy đủ vào."],
+};
+
+/**
+ * Sentences that keep the "in full" marker but bring the old meaning back by
+ * another word, which the old-sentence check above cannot see.
+ */
+const REGRESSIONS: Record<string, string[]> = {
+  sw: [
+    "Sura 1 yote haikuweza kujumuishwa kikamilifu.",
+    "Sura 2 zote hazikuweza kujumuishwa kikamilifu.",
+  ],
 };
 
 const original = activeLocale();
@@ -78,10 +89,21 @@ describe("shareAllIncomplete keeps the 'not in full' meaning (#1897)", () => {
     });
 
     it(`${tag}: the negative matcher rejects every old sentence`, () => {
-      for (const old of OLD[tag] ?? []) {
+      const olds = OLD[tag];
+      if (olds === undefined || olds.length === 0) {
+        throw new Error(`no old-sentence fixture for ${tag}`);
+      }
+      for (const old of olds) {
         expect(cases.some((c) => c.wrong.test(old))).toBe(true);
         expect(cases.some((c) => c.inFull.test(old))).toBe(false);
       }
     });
+
+    for (const bad of REGRESSIONS[tag] ?? []) {
+      it(`${tag}: the negative matcher rejects the regression "${bad}"`, () => {
+        expect(cases.some((c) => c.inFull.test(bad))).toBe(true);
+        expect(cases.some((c) => c.wrong.test(bad))).toBe(true);
+      });
+    }
   }
 });
