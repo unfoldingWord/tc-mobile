@@ -108,6 +108,7 @@ const NON_UI_PROPS: ReadonlyMap<string, string> = new Map([
     "aria-labelledby",
     "aria-describedby",
     "aria-controls",
+    "testId",
   ].map((name) => [name, "an id or a key, never shown"] as const),
   // A link target: the browser navigates to it; the link's words are its
   // children and its `label`, which stay in scope.

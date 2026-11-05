@@ -19,6 +19,11 @@ interface ControlProps {
   size?: number;
   className?: string;
   /**
+   * A stable `data-testid` for an e2e locator that must survive a language
+   * switch, where the accessible name is translated. Not for styling.
+   */
+  testId?: string;
+  /**
    * Take focus on mount. For a control that *is* the screen — the recovery
    * overlay — where landing anywhere else is landing nowhere; or for one that
    * has just BECOME the primary action of an already-focused surface, where the
@@ -135,6 +140,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
       disabled,
       size,
       className,
+      testId,
       autoFocus,
       busy,
       hint,
@@ -173,6 +179,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
         aria-pressed={pressed}
         autoFocus={autoFocus}
         aria-label={name}
+        data-testid={testId}
         aria-describedby={describedBy}
         title={name}
         className={cn(

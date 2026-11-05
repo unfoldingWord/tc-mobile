@@ -40,4 +40,4 @@ export const test = base.extend<{ styleCapture: void }>({
 });
 
 export { expect } from "@playwright/test";
-export type { ElementHandle, Locator, Page } from "@playwright/test";
+export type { Locator, Page } from "@playwright/test";
