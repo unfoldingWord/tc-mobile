@@ -13,11 +13,19 @@ on:
 # Least privilege by default; jobs opt in to what they need.
 permissions: {}
 
+# A pull request's runs share one group per PR (github.ref is
+# refs/pull/<n>/merge), and a newer push cancels the run it supersedes.
+# A push to develop, staging or main gets a group of its own per commit (the
+# ref plus github.sha), so a merge never waits behind another merge's run and
+# keeps its own CI. One group per branch was not enough (#1935): GitHub keeps
+# at most one running and one pending run per group, and a newly queued run
+# cancels the pending one whatever cancel-in-progress says, so a burst of
+# merges left every queued commit but the newest with a cancelled run.
+# cancel-in-progress stays false for push: with a group per commit there is
+# nothing to supersede, and a merge's run is never cut short.
+# tests/ci-concurrency.test.ts evaluates both expressions against that rule.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Cancel only superseded PR runs. On the long-lived branches (develop, staging,
-  # main) every merged commit must keep its own run: two merges landing close
-  # together would otherwise leave the first commit with no completed CI.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
