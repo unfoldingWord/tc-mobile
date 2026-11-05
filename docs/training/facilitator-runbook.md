@@ -264,9 +264,10 @@ default, the text there says to keep using it.
      "finished" for the same state. <!-- source: src/lib/strings.ts tileFinished ("Done", D17 #949), tileErase ("Reset", #1220), eraseSegment ("Reset segment and start over"), enterEdit ("Edit recording", the scissors), storageLow ("Mark segments finished ..."); src/components/segment-row.tsx; not device-verified; George round 1 P2-1 on PR #1297 -->
 
    - **≡** (three stacked lines) — only in the top corner of the Books screen.
-     It opens the app's menu: the problem report (only once the app has
-     recorded something, §5), About and Templates. Rename and delete stay on
-     the item's **⋮**.
+     It opens the app's menu: About, Templates, and the problem report while
+     the problem log holds an entry (§5). No recording is needed for that, and
+     clearing the log removes the report. Rename and delete stay on the
+     item's **⋮**.
    - **The gear** — also only in the Books header, beside **≡**. It opens
      Settings (§3, "What is new in 1.2"). Settings is no longer in the **≡**
      menu.
@@ -491,7 +492,7 @@ your other notes (§5).
 
 This is what a facilitator meets that 1.0.1 did not have. It follows the
 1.2.2 tester release notes, which also say what to check on a phone. **Almost
-none of it has been run on a phone.** The one phone result on record is the
+none of it has been run on a phone.** The one 1.2 phone result on record is the
 upgrade check below; everything else here says what the code is written to do,
 not what anyone saw. <!-- source: gh release view tester-build-v1.2.2
 (published 2026-10-30; "Known limits": "None of this build's changes has been
@@ -600,7 +601,7 @@ src/lib/storage/db.ts on origin/staging); docs/progress_tracker.md 2026-11-02
   notes say none of that build's changes had been run on a phone when it was
   published. The progress tracker since records one Android upgrade run (1.1.0 to
   1.2.2, §3) and, for 1.1, five iPhone checks the DRI reported as passed (the
-  upgrade, reordering, a new book's cover colour, Record again and Play after
+  1.1 upgrade, reordering, a new book's cover colour, Record again and Play after
   lock and unlock; phone model and iOS version not recorded). Treat every "not
   confirmed on a phone" note in this file as still open. <!-- source: GitHub
   release tester-build-v1.2.2 notes, "Known limits" ("None of this build's
