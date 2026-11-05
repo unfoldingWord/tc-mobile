@@ -423,6 +423,26 @@ describe("classification, before any audio is read (§3, The replay's own reads)
   );
 
   it.each([
+    [-40, 48_000],
+    [-1, 22_050],
+    [-0.5, 48_000],
+  ] as const)(
+    "a negative sample count prints unknown with samples and rate, never a negative ms (%s samples, rate %s)",
+    (samples, rate) => {
+      const message = refusedAndDropped(
+        "sample-rate",
+        null,
+        samples,
+        rate
+      ).message;
+      expect(message).toContain(
+        `length: unknown (${samples} samples, rate ${rate})`
+      );
+      expect(message).not.toMatch(/length: -?\d+ ms/);
+    }
+  );
+
+  it.each([
     [
       "legacy",
       (row: StoredPendingTake): StoredPendingTake => {

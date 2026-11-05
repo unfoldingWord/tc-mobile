@@ -2352,6 +2352,7 @@ export function BooksScreen({
             }
             variant="quiet"
             className="books-ghost"
+            testId="books-menu"
             onClick={openGlobalMenu}
           />
           {markedFailureCount > 0 && (
@@ -2620,6 +2621,7 @@ export function BooksScreen({
             icon="book-open"
             label={strings.templatesOpen}
             caption={strings.tileTemplates}
+            testId="menu-templates"
             onClick={openTemplates}
           />
           <Tile
@@ -2908,6 +2910,7 @@ export function BooksScreen({
                             icon="file-zip"
                             label={strings.exportProject}
                             caption={strings.tileExport}
+                            testId="tile-export-project"
                             busy={bookShare.status === "preparing"}
                             onClick={onPrepareBookExport}
                           />
@@ -3187,6 +3190,7 @@ function BookItem({
           label={strings.bookMenuOpen(heading)}
           variant="quiet"
           className="books-ghost"
+          testId="book-menu-open"
           onClick={onOpenShareMenu}
         />
       </div>

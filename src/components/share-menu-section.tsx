@@ -109,6 +109,7 @@ export function ShareMenuSection({
         className={tileClass("send", cn(affordance.className, "is-armed"))}
         size={TILE_GLYPH}
         caption={strings.tileShare}
+        testId={`tile-share-${scope}`}
         autoFocus
         onClick={onSend}
       />
@@ -131,6 +132,7 @@ export function ShareMenuSection({
         className={tileClass("send")}
         size={TILE_GLYPH}
         caption={strings.tileShare}
+        testId={`tile-share-${scope}`}
         busy={affordance.busy}
         onClick={onPrepare}
       />

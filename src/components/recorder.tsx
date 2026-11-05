@@ -3710,6 +3710,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             <Control
               icon="more"
               label={strings.recorderMenuOpen}
+              testId="recorder-menu-open"
               variant="quiet"
               // Also closed while `denied`: the permission panel owns the body
               // and its Retry/Back, and opening the menu inerts the sheet — which
