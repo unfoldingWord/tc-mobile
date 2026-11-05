@@ -147,8 +147,9 @@ finishes within 25 seconds (the DRI's threshold, 2026-11-04: "15-23s is
 acceptable", then "25 seconds (Recommended)";
 [record](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6640952051)).
 On phone (a), the results report P1 passing except the adopted-card row (not
-run), P4 passing, P5 passing only with the probe patched to close its file on
-a write error (§4), P6 passing, and twelve 20-minute saves taking 15.7 to
+run), P4 passing except the sync and read-back isolation (a weak pass: the
+checked file had about 13 s to flush), P5 passing only with the probe patched
+to close its file on a write error (§4), P6 passing, and twelve 20-minute saves taking 15.7 to
 23.2 s. Phone (b) has not run, so criterion 2 is not settled (the results,
 "Acceptance criteria"). If O2 fails, the fallback is O1, and that is a question
 for the requirements owner, because O1 does not meet "record straight onto the
@@ -273,9 +274,10 @@ committed. So the name is exclusive:
   Its alphabet is lowercase ASCII letters and digits, `[0-9a-z]`, one to 32
   characters, with no `.`, `-`, `/` or uppercase. No dot, so that
   `<clipId>.<n>.<ext>` splits unambiguously. Lowercase only, because a card
-  formatted FAT or exFAT folds case, so two names differing only in case
-  would be one file. Phone (a)'s exFAT card did: `spike-case.txt` then
-  `SPIKE-CASE.txt` gave one file (results, P1). A FAT32 card has not run.
+  may fold case, and two names differing only in case would then be one file.
+  Phone (a)'s exFAT card folded case: `spike-case.txt` then `SPIKE-CASE.txt`
+  gave one file (results, P1). A FAT32 card has not run, so that it folds case
+  is an assumption.
 - The `.part` is created exclusively (it fails if its name exists), and the
   rename to `<name>` never replaces an existing file. If the `.part` cannot be
   created, the attempt fails as in row S1. If `<name>` exists at the rename,
@@ -298,8 +300,8 @@ the row stores: the volume and the file name `<clipId>.<n>.<ext>` (§2).
   file name alone: case (d) deletes the pair a release record names.
 - A row whose location names **another volume** than the inserted card may own
   any file on the inserted card that carries its `clipId`: the volume id may
-  not be stable (it was on phone (a), results P1; other phones are owed), the
-  card may be a different one, or a reader may
+  not be stable on every phone (it was stable on phone (a), results P1; other
+  phones are owed), the card may be a different one, or a reader may
   have rewritten the id. So every such file is a possible copy of that row's
   take, so it is Keep (c) while the mismatch lasts (V1, V2). This covers a `.part` as well as a final file: a `.part`
   carrying that `clipId` may be a checked copy of the take. The app reports
