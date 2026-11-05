@@ -174,7 +174,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "Rekodi hii haikuweza kufunguliwa",
   loadFailedBody:
-    "Rekodi yako iko salama. Jaribu tena, au rudi ili uiweke upya kutoka kwenye orodha.",
+    "Rekodi yako iko salama. Jaribu tena. Ikiwa bado haifunguki, unaweza kuiweka upya kutoka kwenye orodha.",
   loadRetry: "Jaribu tena",
   loadBack: "Rudi",
   loadRetrying: "Inafungua rekodi yako…",

@@ -185,7 +185,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     ),
   loadFailedTitle: "تعذّر فتح هذا التسجيل",
   loadFailedBody:
-    "تسجيلك في أمان. حاول مرة أخرى، أو ارجع لإعادة تعيينه من القائمة.",
+    "تسجيلك في أمان. حاول مرة أخرى. إذا لم يُفتح رغم ذلك، يمكنك إعادة تعيينه من القائمة.",
   loadRetry: "حاول مرة أخرى",
   loadBack: "رجوع",
   loadRetrying: "جارٍ فتح تسجيلك…",

@@ -161,7 +161,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderSaving: "正在保存…",
   takeCapWarning: (n: number): string => plural(n, { other: "还剩 {n} 分钟" }),
   loadFailedTitle: "未能打开这段录音",
-  loadFailedBody: "你的录音是安全的。请重试，或返回后在列表中重置它。",
+  loadFailedBody:
+    "你的录音是安全的。请重试。如果仍然打不开，你可以在列表中重置它。",
   loadRetry: "重试",
   loadBack: "返回",
   loadRetrying: "正在打开你的录音…",

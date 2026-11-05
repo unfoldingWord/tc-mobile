@@ -154,7 +154,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   takeCapWarning: (n: number): string => plural(n, { other: "Còn {n} phút" }),
   loadFailedTitle: "Không mở được bản ghi âm này",
   loadFailedBody:
-    "Bản ghi âm của bạn vẫn an toàn. Hãy thử lại, hoặc quay lại để đặt lại từ danh sách.",
+    "Bản ghi âm của bạn vẫn an toàn. Hãy thử lại. Nếu vẫn không mở được, bạn có thể đặt lại từ danh sách.",
   loadRetry: "Thử lại",
   loadBack: "Quay lại",
   loadRetrying: "Đang mở bản ghi âm của bạn…",

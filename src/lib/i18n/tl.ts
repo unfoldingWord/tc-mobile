@@ -27,6 +27,10 @@ import { filenameSafe } from "@/lib/utils";
  * - `shareAllIncomplete` says the chapter was "not included in full"
  *   ("hindi naisama nang buo"); the first draft got this meaning wrong, so
  *   it is worth a second look.
+ * - `loadFailedBody` asks for "Subukan muli" first and offers "i-reset" only
+ *   "kung hindi pa rin ito mabuksan" (if it still won't open, #1933); the
+ *   reset clause must read as a fallback after trying again, not as a second
+ *   choice beside it.
  *
  * Register: buttons and labels are the short command a phone's own menus use
  * ("I-record", "Ibahagi"); sentences that speak to the person are plain and
@@ -187,7 +191,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     plural(n, { one: "{n} min na lang", other: "{n} min na lang" }),
   loadFailedTitle: "Hindi mabuksan ang recording na ito",
   loadFailedBody:
-    "Ligtas ang recording mo. Subukan muli, o bumalik para i-reset ito mula sa listahan.",
+    "Ligtas ang recording mo. Subukan muli. Kung hindi pa rin ito mabuksan, puwede mo itong i-reset mula sa listahan.",
   loadRetry: "Subukan muli",
   loadBack: "Bumalik",
   loadRetrying: "Binubuksan ang iyong recording…",
