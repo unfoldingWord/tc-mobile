@@ -713,6 +713,25 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     ]);
   }
 
+  /**
+   * Wait for the newer copy's open when the case expects it to GO THROUGH.
+   * `raceOpen`'s short bound is right for "it is still waiting" (a stalled
+   * process can only make that answer more likely, so it cannot fail a case) but wrong
+   * for "it opened": fake-indexeddb hops its work through `setImmediate`, and
+   * an expired `delay` timer runs before the next hop, so a process stall past
+   * the bound reports "waiting" for an open that was about to land. The guard
+   * here is only a hang guard, set below vitest's 5 s test timeout so a real
+   * stranded copy still fails on this assertion and not on the timeout (#1912).
+   */
+  function awaitOpened(
+    newer: ReturnType<typeof openNewerCopy>
+  ): Promise<string> {
+    return Promise.race<string>([
+      newer.db.then(() => "opened"),
+      delay(3000).then(() => "waiting"),
+    ]);
+  }
+
   /** Let go of this copy's connection and tidy the newer one away. */
   async function release(
     newer: ReturnType<typeof openNewerCopy>
@@ -747,7 +766,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await awaitOpened(newer)).toBe("opened");
       expect(closedBeforeTheHandlerReturned).toBe(true);
       expect(newer.wasBlocked()).toBe(false);
       expect(app.onYielded).toHaveBeenCalledTimes(1);
@@ -853,7 +872,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       holding = false;
       yieldDeferredUpgrade();
 
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await awaitOpened(newer)).toBe("opened");
       expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);
@@ -958,7 +977,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       yieldDeferredUpgrade();
       setUpgradeCoordinator(null);
 
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await awaitOpened(newer)).toBe("opened");
     } finally {
       await release(newer);
     }
@@ -993,7 +1012,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       // Released the way the app releases it: the samples are let go of, and the
       // hook hands the refused upgrade on.
       yieldDeferredUpgrade();
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await awaitOpened(newer)).toBe("opened");
       expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);
@@ -1051,7 +1070,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
       clipboard = null; // backToBooks / openChapter, chapter-scoped (G3)
       yieldDeferredUpgrade();
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await awaitOpened(newer)).toBe("opened");
       expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);
@@ -1075,7 +1094,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
       const newer = openNewerCopy();
       try {
-        expect(await raceOpen(newer)).toBe("opened");
+        expect(await awaitOpened(newer)).toBe("opened");
         expect(app.onYielded).toHaveBeenCalledTimes(1);
 
         // What the sweep does when its encode finishes, after all that.
@@ -1158,7 +1177,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     await getDb();
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await awaitOpened(newer)).toBe("opened");
       expect(status).toBe("reloadNeeded");
 
       // A late caller the panel could not stop asks for the database. It is
@@ -1198,7 +1217,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await awaitOpened(newer)).toBe("opened");
       expect(newer.wasBlocked()).toBe(false);
     } finally {
       await release(newer);
