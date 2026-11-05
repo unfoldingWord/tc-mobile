@@ -120,12 +120,14 @@ async function refuse(
 }
 
 /**
- * The recorded length as logged. A rate that is not finite and positive has
- * none, so the raw rate is printed beside the sample count instead (#1867).
+ * The recorded length as logged. A rate that is not finite and positive, or a
+ * sample count that is negative, has none, so the raw rate is printed beside
+ * the sample count instead (#1867, #1901). A quotient that is not finite has
+ * none either.
  */
 function lengthText(samples: number, sampleRate: number): string {
   const ms =
-    Number.isFinite(sampleRate) && sampleRate > 0
+    Number.isFinite(sampleRate) && sampleRate > 0 && samples >= 0
       ? Math.round((samples * 1000) / sampleRate)
       : Number.NaN;
   return Number.isFinite(ms)
