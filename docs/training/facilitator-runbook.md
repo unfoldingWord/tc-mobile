@@ -55,15 +55,16 @@ default, the text there says to keep using it.
 5. **Know which build you are on.** The current tester build is **1.2.2**. The
    same name appears in the small build stamp at the bottom of every screen
    (`v1.2.2 · <short code>`; the short code after the `·` changes with every
-   build). Check it on each phone before the session. The 1.2 line is what the
-   team plans to promote to production at the end of the current sprint, if the
-   requirements owner and DRI decide to go, so ask the maintainer which build the session
-   names. On an iPhone, TestFlight may not yet offer the new build to every
+   build). Check it on each phone before the session. The plan is to promote the
+   1.2 line to production on 2026-11-15, the end of Sprint 6, as a go or no-go
+   decision for the DRI. If it goes, 1.2.2 is what production serves; a no-go
+   holds it, and the held version is promoted later as the next patch number,
+   so ask the maintainer which build the session names. On an iPhone, TestFlight may not yet offer the new build to every
    tester group; if it offers nothing newer and the stamp is not the one named
    for the session (§2 says how to read it), note the phone and tell the
    maintainer rather than reinstalling. A phone whose stamp shows an older
    version is on an old build: update it the way §2 says, over the top, never by
-   uninstalling. <!-- source: gh release view tester-build-v1.2.2 (published 2026-10-30); src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); AGENTS.md "Versions and milestones" (1.2 promoted staging -> main at Sprint 6's end, a DRI go/no-go); docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the previous one; happened on 1.0.0-rc.1) -->
+   uninstalling. <!-- source: gh release view tester-build-v1.2.2 (published 2026-10-30); src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); AGENTS.md "Versions and milestones" (1.2 promoted staging -> main at Sprint 6's end, 2026-11-15, a DRI go/no-go; a no-go is promoted later as the next patch on a new release branch); origin/staging is at 1.2.2 (package.json, merge 24b144d7), the same tree as origin/release/v1.2.2; docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the previous one; happened on 1.0.0-rc.1) -->
 
    **Every phone has the same look.** Open any menu: its top corner shows a
    **✕**. Menus also close by dragging them down, and the screen headers carry
@@ -241,12 +242,13 @@ default, the text there says to keep using it.
    padlock/"i" icon by the address bar → site settings → Microphone.
 4. **A dismissed permission question can look like a real block.** If someone
    closes the microphone question without answering it, the app may show the
-   same "allow it, or check your device settings" message it would for an
-   actual block. Retry first — if the question does not come back, use the
+   same message it would for an unreadable permission state: "Microphone
+   access is needed to record. Allow it when asked — or if you already allowed
+   it, check your device settings." Retry first — if the question does not come back, use the
    Settings path in step 3. <!-- source: src/lib/audio/mic-refusal.ts — a dismissed prompt and an unreadable permission state both map to the same indeterminate message; a confirmed device-level block gets its own distinct message (#203, closed) -->
-5. **Show them the two menu buttons before they need them.** Everything in
-   this app is opened by a picture, never a word, and there are exactly two
-   pictures that open a menu:
+5. **Show them the menu buttons before they need them.** Everything in
+   this app is opened by a picture, never a word, and there are two pictures
+   that open a menu (plus the gear on the Books screen, below):
    - **⋮** (three dots in a column) — on a book, a chapter, or a segment,
      and in the top corner of the recorder. It opens that one item's own
      actions: rename it, delete it, mark a segment done, and so on. The
@@ -261,13 +263,18 @@ default, the text there says to keep using it.
      The tile reads **Done**; the app's storage warnings and these notes say
      "finished" for the same state. <!-- source: src/lib/strings.ts tileFinished ("Done", D17 #949), tileErase ("Reset", #1220), eraseSegment ("Reset segment and start over"), enterEdit ("Edit recording", the scissors), storageLow ("Mark segments finished ..."); src/components/segment-row.tsx; not device-verified; George round 1 P2-1 on PR #1297 -->
 
-   - **≡** (three stacked lines) — only in the top corner of the Books screen
-     (settings and the problem report). Rename and delete stay on the item's
-     **⋮**.
+   - **≡** (three stacked lines) — only in the top corner of the Books screen.
+     It opens the app's menu: About, Templates, and the problem report while
+     the problem log holds an entry (§5). No recording is needed for that, and
+     clearing the log removes the report. Rename and delete stay on the
+     item's **⋮**.
+   - **The gear** — also only in the Books header, beside **≡**. It opens
+     Settings (§3, "What is new in 1.2"). Settings is no longer in the **≡**
+     menu.
 
    Point this out once, early: a participant who has only ever seen one of
-   the two glyphs will otherwise tap the wrong one and conclude nothing is
-   there. <!-- source: src/components/menu.tsx (hamburger prop docblock); src/components/recorder.tsx (recorderMenuOpen icon="more", #1225); src/components/books-screen.tsx (bookMenuOpen icon="more"); src/components/segments-screen.tsx (chapterMenuOpen icon="more"); src/components/segment-row.tsx (segmentMenu icon="more"); gh PR #683 (Part of #589), decided by the dev lead 2026-09-23: "please use kebab on objects and hamburger menu for global" (https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5787553352) -->
+   the glyphs will otherwise tap the wrong one and conclude nothing is
+   there. <!-- source: src/components/books-screen.tsx on origin/staging (header: the gear Control, strings.settingsOpen, then the ≡ Control; the global Menu holds FailureLogPanel while the log is non-empty, then the About and Templates tiles; SettingsPanel is its own panel); src/components/menu.tsx (hamburger prop docblock); src/components/recorder.tsx (recorderMenuOpen icon="more", #1225); src/components/books-screen.tsx (bookMenuOpen icon="more"); src/components/segments-screen.tsx (chapterMenuOpen icon="more"); src/components/segment-row.tsx (segmentMenu icon="more"); gh PR #683 (Part of #589), decided by the dev lead 2026-09-23: "please use kebab on objects and hamburger menu for global" (https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5787553352) -->
 
 ## 3. During the training
 
@@ -484,24 +491,33 @@ your other notes (§5).
 ## What is new in 1.2 (tester build 1.2.2)
 
 This is what a facilitator meets that 1.0.1 did not have. It follows the
-1.2.2 tester release notes, which also say what to check on a phone. **None of
-it has been run on a phone.** The release notes say so, and this file has no
-later device result. Where this section says what a screen does, it says what
-the code is written to do, not what anyone saw. <!-- source: gh release view
-tester-build-v1.2.2 (published 2026-10-30; "Known limits": "None of this build's
-changes has been run on a phone yet"); git log tester-build-v1.2.2..HEAD for
-what is later -->
+1.2.2 tester release notes, which also say what to check on a phone. **Almost
+none of it has been run on a phone.** The one 1.2 phone result on record is the
+upgrade check below; everything else here says what the code is written to do,
+not what anyone saw. <!-- source: gh release view tester-build-v1.2.2
+(published 2026-10-30; "Known limits": "None of this build's changes has been
+run on a phone yet"); docs/progress_tracker.md "2026-11-02 (evening) to
+2026-11-03 — device session" for the one later result; this section describes
+origin/staging (1.2.2), not develop -->
 
 **The first time 1.2.2 opens over an older build — a 1.0.1 store phone or a
-1.1.x tester phone — it upgrades the app's stored data.** The upgrade has not been run on a phone. Before updating a phone that
-matters, share what is on it. After updating, check that the stamp starts
+1.1.x tester phone — it upgrades the app's stored data.** The progress tracker records one phone
+run of this upgrade: an Android phone, from 1.1.0 to 1.2.2, over disposable
+data. Its books, chapters, names, Done marks and recordings all survived, and
+recording, delete, Done, adding a chapter and Share Chapter worked afterwards.
+That is one phone and one starting build. It has not been run on an iPhone, from
+1.0.1, or on a phone whose data matters, so the upgrade is still unproven
+there. Before updating a phone that matters, share what is on it. After
+updating, check that the stamp starts
 `v1.2.2`, that every book is there in its old order, and that an older
 recording still plays. Do not put an older build back and do not uninstall to
 clear a problem: §2 says what to do, and AGENTS.md, "Confirming a deploy and
 rolling one back", is the one statement of why. <!-- source: tester-build-v1.2.2
 notes; AGENTS.md "A rollback is not free once a phone has opened a build with a
 newer database schema" (v1.1.0 moved the schema from 9 to 11 and v1.2.0 from 11
-to 14, so 1.0.1 and 1.1.x are both older than 1.2.2's schema) -->
+to 14, so 1.0.1 and 1.1.x are both older than 1.2.2's schema; DB_VERSION = 14 in
+src/lib/storage/db.ts on origin/staging); docs/progress_tracker.md 2026-11-02
+(evening) to 2026-11-03 (#1464, Android only; the iPhone row is open) -->
 
 - **A Settings screen.** A gear in the Books header opens it. It holds the light
   and dark choice, "Always show chapter numbers", and "Even out the volume when
@@ -575,25 +591,24 @@ to 14, so 1.0.1 and 1.1.x are both older than 1.2.2's schema) -->
 - **On Android, About shows a QR code for the Play listing**, so another person
   can scan it. <!-- source: tester-build-v1.2.2 notes -->
 
-**Coming in the next build, not in 1.2.2.** Vietnamese app text (an unchecked
-AI draft); Export project in a web browser telling the person to use the
-installed app; and a book made from a template scrolling into view on the
-Books shelf. Do not tell a participant on 1.2.2 that they have any of these.
-<!-- source: RELEASE_NOTES_UNRELEASED.md on develop at 4a91da4e; git log tester-build-v1.2.2..HEAD (#1830, #1828, #1825) -->
-
 ## 4. Known limits (as of build 1.2.2)
 
 - **The iPhone app is iPhone-only.** There is no iPad version, and the app
   has not been tried on an iPad. An Android tablet is not something any
   build has been run on either; this file says "phone" throughout because
   phones are what has been tested. <!-- source: ios/App/App.xcodeproj/project.pbxproj TARGETED_DEVICE_FAMILY = 1 (#1289); PR #1289 "Not verified"; docs/progress_tracker.md 2026-10-02 "Not run" ("The iPhone-only build has not been installed on a device") -->
-- **Nothing new in 1.1 or 1.2 has a phone result in this file.** The 1.2.2
-  release notes say none of that build's changes had been run on a phone when it
-  was published, and nothing later is recorded here. Treat every "not confirmed
-  on a phone" note in this file as still open. <!-- source: GitHub release
-  tester-build-v1.2.2 notes, "Known limits" ("None of this build's changes has
-  been run on a phone yet"); no later device result is in docs/progress_tracker.md
-  as of the 2026-10-30 entries I read -->
+- **Almost nothing new in 1.1 or 1.2 has a phone result.** The 1.2.2 release
+  notes say none of that build's changes had been run on a phone when it was
+  published. The progress tracker since records one Android upgrade run (1.1.0 to
+  1.2.2, §3) and, for 1.1, five iPhone checks the DRI reported as passed (the
+  1.1 upgrade, reordering, a new book's cover colour, Record again and Play after
+  lock and unlock; phone model and iOS version not recorded). Treat every "not
+  confirmed on a phone" note in this file as still open. <!-- source: GitHub
+  release tester-build-v1.2.2 notes, "Known limits" ("None of this build's
+  changes has been run on a phone yet"); docs/progress_tracker.md "2026-11-02
+  (evening) to 2026-11-03 — device session" (#1464, Galaxy A17, Android 16) and
+  the "2026-10-15 (day)" entry's "iPhone, TestFlight 1.1 (1791982821)" run; the iOS
+  Simulator run of #1251 in the first entry is not a phone and is not counted -->
 - **A long name can still be cut off** with "…" in headers and menus. Press and
   hold a cut-off name on the Books, Segments or recorder screen to read it in
   full, and hold the cover or the number badge to move it instead. Short names
@@ -816,7 +831,21 @@ use-template-library.ts, replay-pending-takes.ts), not by running anything -->
   from a segment, or a template (`books-load`, `chapter-load`,
   `recorder-segment-load`, `recorder-segment-reload`, `template-load`,
   `template-create`), and a waiting recording the launch could not read
-  (`pending-take-read`). These are in the code but not in AGENTS.md's list.
+  (`pending-take-read`).
+- Other screens and background work, listed in AGENTS.md and present in the
+  1.2.2 code: creating, adding a chapter to, or renaming a book
+  (`books-create`, `books-add-chapter`, `books-rename`); adding a segment,
+  renaming a chapter, or marking a chapter finished (`chapter-add-segment`,
+  `chapter-rename`, `chapter-set-finished`); the Android Back button failing to
+  attach or act (`native-back-handler`, `native-back-exit`,
+  `native-back-remove`, `native-back-listener`); the installed app failing to
+  clear the web app's old service worker or its caches
+  (`native-sw-unregister`, `native-sw-cache-cleanup`); a storage-space listener
+  that threw (`storage-pressure-bump`); a light or dark choice or other setting
+  that could not be saved (`use-theme: persist`, `use-settings: persist`); the
+  problem report's own share and clear (`failure-log-share-prepare`,
+  `failure-log-share-send`, `failure-log-clear`); and the background
+  conversion failing to record that it stalled (`transcode-stall-accounting`).
 
 **Written down, but does not put the red mark on ≡:**
 
@@ -847,7 +876,7 @@ use-template-library.ts, replay-pending-takes.ts), not by running anything -->
 
 **What is not written down today:** a Stop that fails the way you see it (the
 recorder's own notice that no sound was recorded or that the recording could not
-be decoded), and the recorder's "recording is not supported" line when the phone
+be decoded), and the recorder's "This device cannot record audio." line when the phone
 cannot record at all. Each shows its own message on screen and leaves no entry
 behind. So when a Stop fails in front of you, **write it down yourself**
 (§5.2) and do not assume this report carries it. <!-- source: AGENTS.md "What is
