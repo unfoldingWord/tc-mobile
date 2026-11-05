@@ -164,6 +164,8 @@ afterEach(async () => {
     commit.mockClear();
     await requestTranscodeSweep();
     expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit.mock.calls[0]?.[0]).toBe(SEGMENT);
+    expect(commit.mock.calls[0]?.[1]).toBe(CLIP);
   } finally {
     vi.unstubAllGlobals();
   }
@@ -323,15 +325,31 @@ describe("the compressor switch in the sweep (#1873)", () => {
 
   it("a second compressor refusal on the same clip, in its own test, writes its own row (#1892)", async () => {
     storePreference("1", "1");
+    // Start from no latch whatever ran before: one completed turn clears it.
+    loadWith(Int16Array.of(10, 20, 30), null);
+    await requestTranscodeSweep();
+    vi.mocked(reportFailure).mockClear();
+
+    // Refusal, a completed turn, then the same clip refused again: the second
+    // refusal is a new episode and writes its own row, with no other test's
+    // state needed to make the latch dirty.
     loadWith(Int16Array.of(10, 20, 30), null);
     normalizePcm.mockRejectedValueOnce(
-      new CompressorRangeError("compressor: a later test")
+      new CompressorRangeError("compressor: first episode")
     );
+    await requestTranscodeSweep();
 
+    loadWith(Int16Array.of(10, 20, 30), null);
+    await requestTranscodeSweep();
+
+    loadWith(Int16Array.of(10, 20, 30), null);
+    normalizePcm.mockRejectedValueOnce(
+      new CompressorRangeError("compressor: second episode")
+    );
     await requestTranscodeSweep();
 
     const contexts = vi.mocked(reportFailure).mock.calls.map((c) => c[1]);
-    expect(contexts).toEqual(["transcode-compressor"]);
+    expect(contexts).toEqual(["transcode-compressor", "transcode-compressor"]);
   });
 
   it("any other chain failure keeps its existing context", async () => {
