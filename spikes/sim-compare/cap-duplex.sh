@@ -1,0 +1,7 @@
+s=$1; P=org.unfoldingword.tcmobile; D=$(dirname $0); c(){ node $D/cdp.mjs $s $P "$1" ${2:-60000}; }
+fresh(){ echo "HAL tone-source so far: $(adb -s $s logcat -d | grep -c "creating a tone source")"; adb -s $s shell am force-stop $P; adb -s $s shell am start -n $P/.MainActivity >/dev/null; sleep 6; c 'location.assign("/?harness=1");1' >/dev/null; sleep 5; adb -s $s shell input tap 500 500; sleep 1; }
+echo "--- A1 fresh: record 5 s then play"; fresh; c '__sim.startRec()'; sleep 5; c '__sim.status()'; c '__sim.stopRec()'; c '__sim.playTake()'; sleep 2; c '__sim.status()'; sleep 2; c '__sim.status()'; c '__sim.stopPlay();1' >/dev/null
+echo "--- A2 fresh: tone 30 s, record at +3 s"; fresh; c '__sim.playTone(30)'; sleep 3; c '__sim.status()'; c '__sim.startRec()'; for i in 1 2 3 4 5 6; do sleep 1; c '__sim.status()'; done; c '__sim.stopRec()'; c '__sim.status()'; sleep 2; c '__sim.status()'; c '__sim.stopPlay();1' >/dev/null
+echo "--- A3 fresh: record, tone (earlier-take stand-in) at +3 s"; fresh; c '__sim.startRec()'; sleep 3; c '__sim.status()'; c '__sim.playTone(8)'; for i in 1 2 3 4; do sleep 1; c '__sim.status()'; done; c '__sim.stopRec()'; c '__sim.status()'; c '__sim.stopPlay();1' >/dev/null
+echo "--- repeat-capture control"; fresh; for i in 1 2 3; do c '__sim.startRec()'>/dev/null; sleep 4; c '__sim.stopRec()'; sleep 1; done
+echo "HAL tone-source fallbacks in log: $(adb -s $s logcat -d | grep -c 'creating a tone source')"

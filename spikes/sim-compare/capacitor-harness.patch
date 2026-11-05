@@ -1,0 +1,273 @@
+diff --git a/src/app/main.tsx b/src/app/main.tsx
+index c2d170ee..11ab2761 100644
+--- a/src/app/main.tsx
++++ b/src/app/main.tsx
+@@ -8,6 +8,7 @@ import "./install-failure-listeners";
+ import { StrictMode } from "react";
+ import { createRoot } from "react-dom/client";
+ 
++import { SimHarness } from "./sim-harness";
+ import { ErrorBoundary } from "@/components/error-boundary";
+ import { installPhoneLocale } from "@/hooks/phone-locale";
+ import { bootstrapServiceWorker } from "@/hooks/register-service-worker";
+@@ -41,7 +42,11 @@ if (!container) throw new Error("Missing #root element");
+ createRoot(container).render(
+   <StrictMode>
+     <ErrorBoundary>
+-      <App />
++      {new URLSearchParams(window.location.search).get("harness") === "1" ? (
++        <SimHarness />
++      ) : (
++        <App />
++      )}
+     </ErrorBoundary>
+   </StrictMode>
+ );
+@@ -60,3 +65,27 @@ createRoot(container).render(
+ if (import.meta.env.MODE === "e2e") {
+   void import("./e2e-harness");
+ }
++
++// THROWAWAY (#1921): iOS command channel to a loopback server on the Mac.
++if ((window as unknown as { Capacitor?: { getPlatform(): string } }).Capacitor?.getPlatform() === "ios") {
++  const base = "http://127.0.0.1:8921";
++  const poll = async (): Promise<void> => {
++    try {
++      const r = await fetch(`${base}/next`);
++      if (r.status === 200) {
++        const { id, code } = (await r.json()) as { id: number; code: string };
++        let out: unknown;
++        try {
++          out = await (0, eval)(code);
++        } catch (e) {
++          out = { exception: String(e) };
++        }
++        await fetch(`${base}/result`, { method: "POST", body: JSON.stringify({ id, out }) });
++      }
++    } catch {
++      // Server not up yet: keep polling.
++    }
++    setTimeout(() => void poll(), 200);
++  };
++  void poll();
++}
+diff --git a/src/app/sim-harness.tsx b/src/app/sim-harness.tsx
+new file mode 100644
+index 00000000..23bd05bf
+--- /dev/null
++++ b/src/app/sim-harness.tsx
+@@ -0,0 +1,214 @@
++/**
++ * THROWAWAY (#1921): duplex and write-test harness for the Capacitor side of the
++ * simulator comparison. Never merged to develop; opened with `?harness=1`.
++ * Uses the product's recorder and player directly, without the product's floor
++ * (`lib/audio/session.ts`), which refuses play-while-record by design.
++ */
++import { Directory, Filesystem } from "@capacitor/filesystem";
++import { Capacitor } from "@capacitor/core";
++import { useEffect, useRef, useState } from "react";
++
++import { playSamples, resumeAudioContext } from "@/hooks/audio-io";
++import { SHARE_CHUNK_BYTES } from "@/hooks/share-target";
++import { useRecorder } from "@/hooks/use-recorder";
++import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
++
++const crcTable = new Uint32Array(256).map((_, n) => {
++  let c = n;
++  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
++  return c >>> 0;
++});
++function crc32(b: Uint8Array): number {
++  let c = 0xffffffff;
++  for (let i = 0; i < b.length; i++)
++    c = crcTable[(c ^ b[i]!) & 0xff]! ^ (c >>> 8);
++  return (c ^ 0xffffffff) >>> 0;
++}
++
++/** Same generator as the Expo harness, so both stacks write identical bytes. */
++function makeBytes(size: number): Uint8Array {
++  const words = new Uint32Array(Math.ceil(size / 4));
++  let x = 0x1921;
++  for (let i = 0; i < words.length; i++) {
++    x ^= x << 13;
++    x ^= x >>> 17;
++    x ^= x << 5;
++    words[i] = x >>> 0;
++  }
++  return new Uint8Array(words.buffer, 0, size);
++}
++
++function toBase64(b: Uint8Array): string {
++  let s = "";
++  const step = 0x8000 - (0x8000 % 3);
++  for (let i = 0; i < b.length; i += step)
++    s += btoa(String.fromCharCode(...b.subarray(i, i + step)));
++  return s;
++}
++
++function fromBase64(s: string): Uint8Array {
++  const bin = atob(s);
++  const out = new Uint8Array(bin.length);
++  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
++  return out;
++}
++
++function perSecondPeak(samples: Int16Array): number[] {
++  const out: number[] = [];
++  for (let i = 0; i < samples.length; i += CANONICAL_SAMPLE_RATE) {
++    let p = 0;
++    const end = Math.min(samples.length, i + CANONICAL_SAMPLE_RATE);
++    for (let j = i; j < end; j++) p = Math.max(p, Math.abs(samples[j]!));
++    out.push(+(p / 32768).toFixed(5));
++  }
++  return out;
++}
++
++function tone(seconds: number): Int16Array {
++  const out = new Int16Array(seconds * CANONICAL_SAMPLE_RATE);
++  for (let i = 0; i < out.length; i++)
++    out[i] = 8000 * Math.sin((2 * Math.PI * 440 * i) / CANONICAL_SAMPLE_RATE);
++  return out;
++}
++
++const expected = new Map<number, number>();
++
++type Mode = "oneshot" | "chunked";
++
++async function writeRun(opts: {
++  size: number;
++  /** "internal", or a `file://` directory on the removable volume. */
++  where: string;
++  mode: Mode;
++  base64Read: boolean;
++}) {
++  const { size, where, mode, base64Read } = opts;
++  const bytes = makeBytes(size);
++  if (!expected.has(size)) expected.set(size, crc32(bytes));
++  const name = `w-${size}.bin`;
++  const target =
++    where === "internal"
++      ? { path: name, directory: Directory.Data }
++      : { path: `${where}/${name}` };
++  const t0 = performance.now();
++  let encodeMs = 0;
++  if (mode === "oneshot") {
++    const e0 = performance.now();
++    const data = toBase64(bytes);
++    encodeMs = performance.now() - e0;
++    await Filesystem.writeFile({ ...target, data, recursive: true });
++  } else {
++    for (let at = 0; at < size; at += SHARE_CHUNK_BYTES) {
++      const e0 = performance.now();
++      const data = toBase64(bytes.subarray(at, at + SHARE_CHUNK_BYTES));
++      encodeMs += performance.now() - e0;
++      if (at === 0)
++        await Filesystem.writeFile({ ...target, data, recursive: true });
++      else await Filesystem.appendFile({ ...target, data });
++    }
++  }
++  const writeMs = performance.now() - t0;
++  const uri =
++    where === "internal"
++      ? (await Filesystem.getUri({ path: name, directory: Directory.Data })).uri
++      : `${where}/${name}`;
++  const f0 = performance.now();
++  const res = await fetch(Capacitor.convertFileSrc(uri));
++  const fetched = new Uint8Array(await res.arrayBuffer());
++  const fetchReadMs = performance.now() - f0;
++  const fetchCrcOk = crc32(fetched) === expected.get(size);
++  const out: Record<string, unknown> = {
++    stack: "capacitor",
++    size,
++    where,
++    mode,
++    writeMs: Math.round(writeMs),
++    encodeMs: Math.round(encodeMs),
++    fetchReadMs: Math.round(fetchReadMs),
++    fetchLen: fetched.length,
++    fetchCrcOk,
++    crc: expected.get(size),
++  };
++  if (base64Read) {
++    try {
++      const b0 = performance.now();
++      const { data } = await Filesystem.readFile(target);
++      const decoded = fromBase64(data as string);
++      out.base64ReadMs = Math.round(performance.now() - b0);
++      out.base64CrcOk = crc32(decoded) === expected.get(size);
++    } catch (e) {
++      out.base64ReadError = String(e).slice(0, 240);
++    }
++  }
++  await Filesystem.deleteFile(target);
++  return out;
++}
++
++export function SimHarness() {
++  const recorder = useRecorder();
++  const rec = useRef(recorder);
++  const [primed, setPrimed] = useState("not primed");
++  useEffect(() => {
++    rec.current = recorder;
++  });
++  useEffect(() => {
++    let lastTake: Int16Array | null = null;
++    let handle: { stop: () => void; elapsed: () => number } | null = null;
++    const play = async (samples: Int16Array) => {
++      handle = await playSamples(samples, { isStillCurrent: () => true });
++      return { duration: samples.length / CANONICAL_SAMPLE_RATE };
++    };
++    (window as unknown as Record<string, unknown>).__sim = {
++      writeRun,
++      volumes: async () =>
++        (await Filesystem.getUri({ path: "", directory: Directory.External }))
++          .uri,
++      startRec: () => rec.current.start(),
++      stopRec: async () => {
++        const r = await rec.current.stop();
++        if (r.samples) lastTake = r.samples;
++        return {
++          error: r.error,
++          blob: r.blob ? r.blob.size : null,
++          seconds: r.samples
++            ? r.samples.length / CANONICAL_SAMPLE_RATE
++            : null,
++          perSecondPeak: r.samples ? perSecondPeak(r.samples) : null,
++        };
++      },
++      playTone: (seconds: number) => play(tone(seconds)),
++      playTake: () => (lastTake ? play(lastTake) : null),
++      stopPlay: () => handle?.stop(),
++      takeB64: () =>
++        lastTake
++          ? toBase64(
++              new Uint8Array(
++                lastTake.buffer,
++                lastTake.byteOffset,
++                lastTake.byteLength
++              )
++            )
++          : null,
++      status: () => ({
++        recorder: rec.current.readState(),
++        elapsedMs: rec.current.elapsedMs,
++        playElapsed: handle ? +handle.elapsed().toFixed(2) : null,
++        audioSession: (
++          navigator as unknown as { audioSession?: { type?: string } }
++        ).audioSession?.type,
++        visibility: document.visibilityState,
++      }),
++    };
++  }, []);
++  return (
++    <button
++      aria-label="harness prime"
++      style={{ width: "100%", height: "50vh", fontSize: 32 }}
++      onClick={() => {
++        void resumeAudioContext().then(() => setPrimed("primed"));
++      }}
++    >
++      {primed}
++    </button>
++  );
++}

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "tC Mobile",
+    "name": "Expo Proof",
     "slug": "tc-mobile-expo-proof",
     "version": "0.0.1",
     "orientation": "portrait",
@@ -8,10 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "org.unfoldingword.tcmobile"
+      "bundleIdentifier": "org.unfoldingword.tcmobile.expoproof"
     },
     "android": {
-      "package": "org.unfoldingword.tcmobile",
+      "package": "org.unfoldingword.tcmobile.expoproof",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -31,6 +31,7 @@
         }
       ],
       "expo-asset"
-    ]
+    ],
+    "scheme": "expoproof"
   }
 }
