@@ -45,6 +45,7 @@
 		A1C0000A000000000000000A /* ms */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ms; path = ms.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A1C0000B000000000000000B /* tl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tl; path = tl.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A1C0000C000000000000000C /* fil */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fil; path = fil.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1C0000D000000000000000D /* tpi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tpi; path = tpi.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,6 +151,7 @@
 				sw,
 				tl,
 				fil,
+				tpi,
 				vi,
 				"zh-Hans",
 			);
@@ -228,6 +230,7 @@
 				A1C0000A000000000000000A /* ms */,
 				A1C0000B000000000000000B /* tl */,
 				A1C0000C000000000000000C /* fil */,
+				A1C0000D000000000000000D /* tpi */,
 			);
 			name = InfoPlist.strings;
 			sourceTree = "<group>";
