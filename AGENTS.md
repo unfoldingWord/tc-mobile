@@ -341,8 +341,8 @@ link that comment's URL; it may not restate its output. `docs/progress_tracker.m
 **is** the run record, and a dated observation a file needs in order to explain
 itself is a reason rather than a run report. This rule binds prose you write or
 edit; the sweep of what already violated it finished on 2026-11-05 (#575,
-closed), so an instance found now is fixed where it is found. Counts go in an assertion,
-not in prose: a CSS comment quoting its own grep named a count the tree no
+closed), so an instance found now is fixed in the file you are already
+editing. Counts go in an assertion, not in prose: a CSS comment quoting its own grep named a count the tree no
 longer returns, having counted four comment lines as declarations — one of them
 the sentence's own grep string. Do not name an environment: a docblock credited
 a pinned Chromium that resolved to a path with nothing at it, so the run it
@@ -367,8 +367,8 @@ false sentence went on propagating into every agent's context, because that is
 what AGENTS.md does. Correct a false claim where you find it, and prefer
 deleting it to restating it. Deferring is available only when the claim is
 quoted at several sites that have to move together and the deferral names the
-issue that moves them — #525 is the standing example (#575 was another, now finished). A single
-false sentence does not qualify.
+issue that moves them — #525 is the standing example (#575 was another, now
+finished). A single false sentence does not qualify.
 
 This applies to **living instructions** — this file, `CONTRIBUTING.md`, the
 runbooks, docblocks, CSS comments. It does **not** apply to a dated entry in
