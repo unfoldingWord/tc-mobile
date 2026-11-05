@@ -30,6 +30,11 @@ describe("trademark notice (#1608)", () => {
     expect(notice.split("®")).toHaveLength(2);
     expect(notice).toContain("unfoldingWord's trademarks or logos");
     expect(notice.trimEnd().endsWith(`contact page: ${CONTACT}`)).toBe(true);
+    // The permission sentence, whole: widening or rewording it must fail.
+    // The file is hard-wrapped, so compare on collapsed whitespace.
+    expect(notice.replace(/\s+/g, " ")).toContain(
+      "Any other use of the name or logo requires the written permission of unfoldingWord."
+    );
     expect(notice).not.toContain("support@unfoldingword.org");
     expect(notice).toContain(CONTACT);
   });
