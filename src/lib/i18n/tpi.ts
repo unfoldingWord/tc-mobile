@@ -50,6 +50,9 @@ import { filenameSafe } from "@/lib/utils";
  * - The cover colours: Tok Pisin names few colours, so most cells are loans
  *   or descriptions ("Blugrin", "Grinpela bus", "Retpela graun") that a reader
  *   may not recognise as colour names.
+ * - `coverColourRust` ("Ros"): also the ordinary word for the flower, while
+ *   `coverColourRose` is "Pinkpela"; a reader should check that "Ros" reads
+ *   as rust and not as rose.
  * - The licence names (`licenceNameCcBySa`, `licenceNameCcBy`,
  *   `licenceNameCc0`): legal terms with no established Tok Pisin rendering.
  * - `settingsNormalizeOnFinished`, `settingsCompressOnFinished`: sound terms
