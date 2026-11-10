@@ -164,8 +164,8 @@ afterEach(async () => {
     commit.mockClear();
     await requestTranscodeSweep();
     expect(commit).toHaveBeenCalledTimes(1);
-    expect(commit.mock.calls[0]?.[0]).toBe(SEGMENT);
-    expect(commit.mock.calls[0]?.[1]).toBe(CLIP);
+    expect(commit.mock.calls[0]![0]).toBe(SEGMENT);
+    expect(commit.mock.calls[0]![1]).toBe(CLIP);
   } finally {
     vi.unstubAllGlobals();
   }
@@ -350,6 +350,14 @@ describe("the compressor switch in the sweep (#1873)", () => {
 
     const contexts = vi.mocked(reportFailure).mock.calls.map((c) => c[1]);
     expect(contexts).toEqual(["transcode-compressor", "transcode-compressor"]);
+    // Each row carries its own episode's refusal, not one error twice.
+    const messages = vi
+      .mocked(reportFailure)
+      .mock.calls.map((c) => ((c[0] as Error).cause as Error).message);
+    expect(messages).toEqual([
+      "compressor: first episode",
+      "compressor: second episode",
+    ]);
   });
 
   it("any other chain failure keeps its existing context", async () => {
