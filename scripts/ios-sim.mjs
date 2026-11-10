@@ -281,14 +281,26 @@ function boot(deps, flags) {
   );
   if (already) return deps.out(`booted: ${already.name} ${already.udid}`);
   const all = Object.values(list.devices ?? {}).flat();
-  const device =
-    typeof flags.device === "string"
-      ? all.find((d) => d.name === flags.device || d.udid === flags.device)
-      : all.find((d) => d.name.startsWith("iPhone"));
-  if (!device)
-    throw new Fail(
-      `no available Simulator${typeof flags.device === "string" ? ` named ${flags.device}` : ""}`
+  let device;
+  if (typeof flags.device === "string") {
+    const matches = all.filter(
+      (d) => d.name === flags.device || d.udid === flags.device
     );
+    // Never boot whichever the list shows first: the same name can be two
+    // devices, and only a UDID tells them apart.
+    if (matches.length > 1)
+      throw new Fail(
+        `${matches.length} Simulators match "${flags.device}" (${matches.map((d) => `${d.name} (${d.udid})`).join(", ")}): pass the UDID`
+      );
+    if (matches.length === 0)
+      throw new Fail(
+        `"${flags.device}" matches neither a Simulator name nor a UDID`
+      );
+    device = matches[0];
+  } else {
+    device = all.find((d) => d.name.startsWith("iPhone"));
+    if (!device) throw new Fail("no available Simulator");
+  }
   check(deps.run("xcrun", ["simctl", "boot", device.udid]), "simctl boot");
   check(
     deps.run("xcrun", ["simctl", "bootstatus", device.udid, "-b"]),

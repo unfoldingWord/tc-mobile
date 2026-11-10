@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
-import { createServer, type Server } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import { networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
 
@@ -156,10 +156,23 @@ describe("boot --device (#1891)", () => {
     );
   });
 
-  it("still refuses a selector that matches no name or UDID", async () => {
+  it("refuses a name that matches two devices, listing them and asking for a UDID (#1899)", async () => {
+    const f = fakes({ booted: LIST });
+    expect(await main(["boot", "--device", "iPhone 17"], f.deps)).toBe(1);
+    expect(f.err.join("\n")).toMatch(
+      /2 Simulators match.*iPhone 17 \(U-26\).*iPhone 17 \(U-27\).*UDID/s
+    );
+    expect(f.calls.map((c) => c.args.join(" "))).not.toContain(
+      "simctl boot U-26"
+    );
+  });
+
+  it("says a selector that matches neither a name nor a UDID did so (#1899)", async () => {
     const f = fakes({ booted: LIST });
     expect(await main(["boot", "--device", "U-99"], f.deps)).toBe(1);
-    expect(f.err.join("\n")).toMatch(/no available Simulator named U-99/);
+    expect(f.err.join("\n")).toMatch(
+      /"U-99" matches neither a Simulator name nor a UDID/
+    );
   });
 });
 
@@ -545,7 +558,7 @@ describe("withPage restores console.error (#1857 F2)", () => {
           }),
         }
       )
-    ).rejects.toThrow();
+    ).rejects.toThrow(/stop failed/);
     expect(console.error).toBe(before);
   });
 
@@ -616,7 +629,13 @@ describe("the pinned inspect-webkit bridge, on a real socket", () => {
       // (the README counts a timeout as reachable), so the result alone cannot
       // tell them apart. The server's own connection event can: only a real
       // accept raises it.
-      const accepted = new Promise<void>((r) => server.once("connection", r));
+      let held: Socket | undefined;
+      const accepted = new Promise<void>((r) =>
+        server.once("connection", (socket) => {
+          held = socket;
+          r();
+        })
+      );
       await new Promise<void>((r) => server.listen(port, "::", r));
       try {
         await expect(reachableOn(port, linkLocal)).resolves.toBe(linkLocal[0]);
@@ -627,6 +646,7 @@ describe("the pinned inspect-webkit bridge, on a real socket", () => {
           ])
         ).resolves.toBe("accepted");
       } finally {
+        held?.destroy();
         server.close();
       }
     }
