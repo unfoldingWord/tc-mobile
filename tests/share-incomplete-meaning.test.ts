@@ -62,7 +62,7 @@ const OLD: Record<string, string[]> = {
 
 /**
  * Sentences that keep the "in full" marker but bring the old meaning back by
- * another word, which the old-sentence check above cannot see.
+ * another word, which the `OLD` table's check (the second `it` below) cannot see.
  */
 const REGRESSIONS: Record<string, string[]> = {
   sw: [
@@ -70,6 +70,12 @@ const REGRESSIONS: Record<string, string[]> = {
     "Sura 2 zote hazikuweza kujumuishwa kikamilifu.",
   ],
 };
+
+for (const key of Object.keys(REGRESSIONS)) {
+  // A fixture under a key that is not a `CASES` tag would register nothing.
+  if (!Object.hasOwn(CASES, key))
+    throw new Error(`REGRESSIONS key ${key} is not a CASES tag`);
+}
 
 const original = activeLocale();
 afterEach(() => setActiveLocale(original));
