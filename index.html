@@ -305,6 +305,16 @@
       fails when the two differ, so raising the target cannot leave this
       check behind, and when a feature's `since` is above BUILT_FOR_CHROME.
 
+      Every entry must also exist in Safari/iOS 15.4, the other floor in that
+      target: this check must never block an iPhone. `Object.hasOwn` is in
+      Safari 15.4, `crypto.randomUUID` in 15.4 and `replaceAll` in 13.1.
+      `tests/dist-old-webview-features.test.ts` scans the built bundle for
+      post-Chrome-85 built-ins and fails when one is used that is not listed.
+      A built-in the bundle uses that iOS 15.4 lacks is not listed here.
+      `crypto.randomUUID` exists only in a secure context, so it is required
+      only where the page is one (a plain-http LAN page is not a WebView
+      problem).
+
       The sentence is English only. This runs before any app code, so it
       cannot read `lib/strings.ts` or the locale tables, and no translation
       of it has been made. Colours are literal hex values with a token
@@ -322,6 +332,14 @@
             name: "Object.hasOwn",
             since: 93,
             present: typeof Object.hasOwn === "function",
+          },
+          {
+            name: "crypto.randomUUID",
+            since: 92,
+            present:
+              window.isSecureContext === false ||
+              (typeof crypto !== "undefined" &&
+                typeof crypto.randomUUID === "function"),
           },
           {
             name: "String.prototype.replaceAll",

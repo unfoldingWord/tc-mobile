@@ -60,6 +60,17 @@ test("a missing String.replaceAll alone also shows the update screen (#1944)", a
   await expect(page.locator(SCREEN)).toBeVisible();
 });
 
+test("a missing crypto.randomUUID in a secure context shows the update screen (#1944)", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    // @ts-expect-error: simulating an engine that predates randomUUID.
+    delete Crypto.prototype.randomUUID;
+  });
+  await page.goto("/");
+  await expect(page.locator(SCREEN)).toBeVisible();
+});
+
 test("with every built-in present the check is invisible and the app renders (#1944)", async ({
   page,
 }) => {

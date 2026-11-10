@@ -11,15 +11,6 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
-## 2026-11-10 (day) — #1944: a plain update screen for an Android WebView below the floor
-
-A PR lane built the DRI's pick on #1944, "Plain error screen (Recommended)". `index.html` gains a classic ES5 script that runs before the bundle, detects `Object.hasOwn` and `String.prototype.replaceAll`, and shows a picture with one English sentence instead of an empty page. The build target is unchanged. A Playwright spec against `dist/` and a Node test that pins the check to `vite.config.ts`'s target were added.
-
-- **Owed, not done:** the WebView 91 emulator run with the logcat saved (the fourth done-when on #1944). The Android 10 (API 29) image with its stock WebView 91, as in the #1921 runs.
-- **Follow-up:** the sentence is English only; a translated version needs its own issue.
-
----
-
 ## 2026-11-05 (day) — Sprint 6 day 4: Tok Pisin drafted, Capacitor-or-Expo reopened on users and maintainability, develop CI keeps one run per merge, 13 PRs merged
 
 The orchestrator session: start of day, then four waves of lanes through the review bench, and two follow-up lanes.

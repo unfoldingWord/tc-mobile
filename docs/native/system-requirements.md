@@ -225,7 +225,7 @@ are the two iOS floors.
 
 **An Android System WebView below the floor shows a plain update screen** (#1944).
 `index.html` carries a small classic script, `#old-webview-check`, that runs
-before the app bundle and feature-detects `Object.hasOwn` and
+before the app bundle and feature-detects `Object.hasOwn`, `crypto.randomUUID` and
 `String.prototype.replaceAll`. When one is missing it shows a picture and one
 English sentence telling the person to update Android System WebView, and the
 app does not start. Before it, WebView 91 opened to an empty page. The build
