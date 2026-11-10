@@ -427,7 +427,7 @@ describe("classification, before any audio is read (§3, The replay's own reads)
     [-1, 22_050],
     [-0.5, 48_000],
   ] as const)(
-    "a negative sample count prints unknown with samples and rate, never a negative ms (%s samples, rate %s)",
+    "a negative sample count prints unknown with samples and rate, never a numeric ms (%s samples, rate %s)",
     (samples, rate) => {
       const message = refusedAndDropped(
         "sample-rate",

@@ -127,7 +127,10 @@ async function refuse(
  */
 function lengthText(samples: number, sampleRate: number): string {
   const ms =
-    Number.isFinite(sampleRate) && sampleRate > 0 && samples >= 0
+    Number.isFinite(sampleRate) &&
+    sampleRate > 0 &&
+    Number.isFinite(samples) &&
+    samples >= 0
       ? Math.round((samples * 1000) / sampleRate)
       : Number.NaN;
   return Number.isFinite(ms)
