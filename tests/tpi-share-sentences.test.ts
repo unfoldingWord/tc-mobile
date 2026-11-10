@@ -10,6 +10,9 @@ import { buildTable } from "@/lib/i18n/locales";
  * claimed both. This pins the shape only: no rendered sentence of the share
  * counts says "i go insait" twice. Whether the wording is right is a Tok Pisin
  * reader's call (the table is an AI draft).
+ *
+ * The exact-string pins below record today's AI-draft text, not a
+ * native-reviewed one, so a deliberate rewording updates them.
  */
 
 const original = activeLocale();
@@ -53,5 +56,15 @@ describe("tpi share counts say one thing per sentence", () => {
     expect(
       goesIn("3 hap bilong wanpela sapta i go insait i no inap i go insait.")
     ).toBe(2);
+  });
+
+  it("pins the exact rendered text of the missing-and-partial sentence", () => {
+    setActiveLocale(locale);
+    expect(table.shareBookMissingAndPartial(2, 3, 1)).toBe(
+      "2 sapta i no inap i go insait. Long wanpela sapta i stap insait, 3 hap i no inap i go insait."
+    );
+    expect(table.shareBookMissingAndPartial(2, 3, 4)).toBe(
+      "2 sapta i no inap i go insait. Long 4 sapta i stap insait, 3 hap i no inap i go insait."
+    );
   });
 });
