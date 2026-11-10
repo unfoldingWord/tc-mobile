@@ -28,7 +28,7 @@ default, the text there says to keep using it.
 2. Know which kind of build each phone is getting: an Android phone installs
    an APK from a download link; an iPhone installs through TestFlight. <!-- source: docs/tester-install.md, "Android (download link)" and "iPhone (TestFlight)" sections --> The
    Android app needs **Android 7.0 (2016) or newer**, with Android System
-   WebView kept up to date — an older phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor; DRI pick 2026-09-28 on #1017 "Keep Android 7 (Recommended)"); the WebView wording is docs/native/system-requirements.md "Platform floors" --> The iPhone
+   WebView kept up to date — an older phone cannot install it. A phone whose WebView is too old shows a screen with a phone and an up arrow, not the app: update Android System WebView in Google Play. <!-- source: index.html #old-webview-check (#1944); not yet seen on a real WebView 91 --> <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor; DRI pick 2026-09-28 on #1017 "Keep Android 7 (Recommended)"); the WebView wording is docs/native/system-requirements.md "Platform floors" --> The iPhone
    app needs **iOS 15.4 or newer**, and it is an **iPhone app: there is no
    iPad version** as of 1.2.2, and it has not been tried on an iPad. <!-- source: ios/App/App.xcodeproj/project.pbxproj IPHONEOS_DEPLOYMENT_TARGET = 15.4 and TARGETED_DEVICE_FAMILY = 1 (#1289, DRI pick 2026-10-01 "iPhone only for now"); PR #1289 "Not verified" (iPad compatibility mode not tried) --> The
    full requirements statement, with what is and is not measured, is

@@ -280,6 +280,108 @@
       })();
     </script>
     <div id="root"></div>
+    <!--
+      OLD-ENGINE CHECK (#1944). A classic script, ES5 syntax only, so a very
+      old WebView can parse it. It runs before the module bundle (module
+      scripts are deferred until the document is parsed, wherever Vite puts
+      the tag), feature-detects, and uses no timeout.
+
+      Why it exists: the build targets Chrome 111 (`vite.config.ts`
+      `build.target`) and does not polyfill. On Android System WebView 91 the
+      bundle threw `Object.hasOwn is not a function` before React mounted, so
+      the person saw an empty page, and `error-boundary.tsx` and the failure
+      log, which live in that bundle, never ran. The build target does NOT
+      change.
+
+      When a feature is missing it removes `#launch-intro` and `#root`, then
+      draws a plain screen: a picture first (the people who see it may not
+      read), one sentence, nothing to tap. With `#root` gone, `main.tsx`
+      throws at its first line and nothing mounts. When every feature is
+      present it does nothing visible.
+
+      FEATURES lists only built-ins the bundle is known to use, each with the
+      Chrome version that added it. BUILT_FOR_CHROME is the Chrome number in
+      `vite.config.ts`'s `build.target`; `tests/old-webview-check.test.ts`
+      fails when the two differ, so raising the target cannot leave this
+      check behind, and when a feature's `since` is above BUILT_FOR_CHROME.
+
+      The sentence is English only. This runs before any app code, so it
+      cannot read `lib/strings.ts` or the locale tables, and no translation
+      of it has been made. Colours are literal hex values with a token
+      comment beside each, the pattern `#launch-intro` above uses, because the
+      stylesheets are part of the bundle that may not run. No failure-log
+      row: the log is IndexedDB code in that same bundle. Works offline: it is
+      inline, so the precached `index.html` carries it; the Capacitor shells
+      load this same file.
+    -->
+    <script id="old-webview-check">
+      (function () {
+        var BUILT_FOR_CHROME = 111;
+        var FEATURES = [
+          {
+            name: "Object.hasOwn",
+            since: 93,
+            present: typeof Object.hasOwn === "function",
+          },
+          {
+            name: "String.prototype.replaceAll",
+            since: 85,
+            present: typeof String.prototype.replaceAll === "function",
+          },
+        ];
+        var missing = false;
+        for (var i = 0; i < FEATURES.length; i++) {
+          if (!FEATURES[i].present) missing = true;
+        }
+        if (!missing) return;
+
+        var dark = true; // src/lib/theme.ts DEFAULT_THEME
+        try {
+          if (window.localStorage.getItem("tc-mobile.theme") === "light")
+            dark = false;
+        } catch (e) {
+          // localStorage can throw in some WebViews; keep the app default.
+        }
+        var floor = dark ? "#0b1016" : "#f6f8fa"; // --s-floor
+        var ink = dark ? "#e7ecf3" : "#101821"; // --s-ink
+        var accent = dark ? "#f0b24a" : "#a35f14"; // --s-warn-text / --s-warn
+
+        var intro = document.getElementById("launch-intro");
+        if (intro && intro.parentNode) intro.parentNode.removeChild(intro);
+        var root = document.getElementById("root");
+        if (root && root.parentNode) root.parentNode.removeChild(root);
+
+        var screen = document.createElement("div");
+        screen.id = "old-webview-screen";
+        screen.setAttribute("role", "alert");
+        screen.style.cssText =
+          "position:fixed;top:0;right:0;bottom:0;left:0;display:flex;" +
+          "flex-direction:column;align-items:center;justify-content:center;" +
+          "padding:24px;text-align:center;box-sizing:border-box;" +
+          "font-family:system-ui,sans-serif;font-size:20px;line-height:1.4;" +
+          "background:" +
+          floor +
+          ";color:" +
+          ink +
+          ";";
+        screen.innerHTML =
+          '<svg width="160" height="160" viewBox="0 0 160 160" aria-hidden="true" ' +
+          'fill="none" stroke="' +
+          ink +
+          '" stroke-width="6" ' +
+          'stroke-linecap="round" stroke-linejoin="round">' +
+          '<rect x="44" y="12" width="72" height="136" rx="12"/>' +
+          '<line x1="68" y1="132" x2="92" y2="132"/>' +
+          '<path stroke="' +
+          accent +
+          '" d="M80 100V52M62 70l18-18 18 18"/>' +
+          "</svg>" +
+          '<p style="margin:24px 0 0;max-width:20em">' +
+          "Update Android System WebView in Google Play, then open tC Mobile again." +
+          "</p>";
+        document.body.appendChild(screen);
+      })();
+    </script>
     <script type="module" src="/src/app/main.tsx"></script>
   </body>
 </html>
