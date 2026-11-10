@@ -223,6 +223,16 @@ There is no `ios/App/Podfile` in the tree; the iOS project uses Swift Package
 Manager (`ios/App/CapApp-SPM/Package.swift`), so the Xcode setting and that file
 are the two iOS floors.
 
+**An Android System WebView below the floor shows a plain update screen** (#1944).
+`index.html` carries a small classic script, `#old-webview-check`, that runs
+before the app bundle and feature-detects `Object.hasOwn`, `crypto.randomUUID` and
+`String.prototype.replaceAll`. When one is missing it shows a picture and one
+English sentence telling the person to update Android System WebView, and the
+app does not start. Before it, WebView 91 opened to an empty page. The build
+target did not change. The check is pinned to it by
+`tests/old-webview-check.test.ts`. Not run on a real WebView 91 yet: that
+emulator run is owed on #1944.
+
 **The iOS app is iPhone-only as of 1.0.1** (#1289, DRI pick 2026-10-01,
 verbatim: "iPhone only for now (Recommended)"): `TARGETED_DEVICE_FAMILY = 1`
 in both app-target configurations, and the `~ipad` orientation set is gone
