@@ -102,7 +102,7 @@ function evalExpression(src: string, run: Run): Value {
     }
     if (t.startsWith("'")) return t.slice(1, -1).replace(/''/g, "'");
     if (t === "true" || t === "false") return t === "true";
-    if (t in context) return context[t] as string;
+    if (Object.hasOwn(context, t)) return context[t] as string;
     throw new Error(`unmodelled token ${t} in ${src}`);
   };
   const equality = (): Value => {
@@ -255,5 +255,13 @@ describe("ci.yml: run-level concurrency (#1935)", () => {
     expect(() =>
       evalExpression("github.head_ref", push("develop", "a"))
     ).toThrow(/unmodelled token/);
+  });
+
+  it("the evaluator refuses an inherited key such as toString", () => {
+    for (const token of ["toString", "constructor", "hasOwnProperty"]) {
+      expect(() => evalExpression(token, push("develop", "a"))).toThrow(
+        /unmodelled token/
+      );
+    }
   });
 });
