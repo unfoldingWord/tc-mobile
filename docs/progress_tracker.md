@@ -11,6 +11,66 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-06 to 2026-11-11 — Sprint 6 days 5–10: #1921 results checked, two waves of seven lanes merged, Capacitor 8.6.0, an update screen for old WebViews, #1935 confirmed on a real burst, 8 PRs merged
+
+One orchestrator session: start of day on 11-06, the #1921 check and a sprint read, the wave plan on 11-09, and both waves built, reviewed and merged on 11-10.
+
+### Decisions (DRI)
+
+- **Waves (11-09):** "Both waves (Recommended)".
+- **#1944, the old-WebView blank screen:** "Plain error screen (Recommended)". The build target stays at Chrome 111.
+- **Sprint 7 work before the cut:** "No, wait for 11-16 (Recommended)". The v1.3.0 cut carries Sprint 6 work only.
+- **Merging (11-10):** "You can start another wave asynchronously if we have some disjoint issues available and approved to merge on clean and green."
+
+### Checked
+
+- **#1921, the Capacitor vs Expo simulator runs (11-05):** the results comment's write ratios (42×, 37×, 4.0×), the A6 card-pull results and the Expo crash trace match the raw files in the run folder. The `Object.hasOwn` blank-screen error is in the comment only; no saved log holds it. #1921 is still open; closing it waits on the DRI.
+- **Sprint pace (11-06):** 38 of Sprint 6's 65 issues closed with 4 of 14 days gone, at about 20 PRs a day, the same rate as Sprint 5. v2-required: 21 open, 7 closed in the 14 days to 11-06, so 3.5 a week against 2.7 a week needed for the end of 2026. The site's Health page had shown 7.5 a week on 11-04; why the two differ was not found.
+
+### Merged to develop (8)
+
+- **Dependencies:**
+  - #1942: `ruby/setup-ruby` v1.336.0. Its pinned SHA was checked against the upstream tag.
+  - #1951: the npm minor/patch group with **Capacitor 8.6.0**, plus the iOS Swift package pin. It supersedes Dependabot's #1943, whose only red check was that pin. No native build has run.
+- **App:** #1952, Part of #1944. On an Android WebView below the build's floor, a plain screen with a picture says to update Android System WebView, instead of an empty page. A bundle scan found no unguarded built-in newer than Chrome 93, and a new `test:dist` check keeps that true. The old engine was simulated in desktop Chromium only.
+- **Follow-ups and tests:**
+  - #1946: Tok Pisin share-sentence pins (#1934).
+  - #1947: `Number.isFinite` on the refused-take sample count (#1927). Both reviewers agreed it changes no output, so there is no red-first test.
+  - #1948: normalize pins (#1928).
+  - #1949: `ios-sim` refuses an ambiguous `--device` name (#1899).
+  - #1950: test hygiene (#1932). It also closed #1912 as never reproduced, following the #1780 precedent.
+
+Every PR merged at a head where Frank and George were both clean in round 1 and CI was green, with a triage comment posted. George's one Medium (#1952: an insecure LAN origin still goes blank) was refuted on the PR: no served or shipped origin is insecure. Every Low went to #1954.
+
+Closed: #1899, #1912, #1927, #1928, #1932, #1934, #1935, and Dependabot's PR #1943.
+
+### CI (#1935)
+
+The seven merges on 11-10 landed about a minute apart, and each merge commit got its own develop `push` run, all successful and none cancelled. #1935 is closed with the table.
+
+### Filed
+
+- #1944: old Android WebView opens to an empty screen (Sprint 6). Stays open for the WebView 91 run.
+- #1945: `pending-take-write` UnknownError when backgrounding mid-take on the iOS Simulator (Backlog). A lane read the write path and found no read outside its transaction; findings are on the issue. It needs a Simulator re-run.
+- #1953: the update screen's sentence is English only (Backlog, waits on a DRI pick).
+- #1954: the reviewer Lows from #1946–#1952 (Backlog). Item 1 pins the old-WebView check to iOS 15.4, so a future feature can't put the Android message on iPhones.
+
+### Open, and where each stands
+
+- **No PRs are in flight** except the two standing drafts, #1612 and #1532.
+- **Nothing else is buildable today:** two sweeps of Sprint 6 and the Backlog found every remaining item waiting on a phone, a decision or a native-speaker review. Sprint 7 starts 11-16.
+- **Owed before the 11-15 cut, all on a device:**
+  - Capacitor 8.6.0 on an Android phone and an iPhone (#1951);
+  - the WebView 91 emulator run (#1944);
+  - the #1945 Simulator re-run;
+  - #1464, #974, #1486, #1940, #1936 and #1941.
+- **Process notes:**
+  - Spawning four worktree lanes at once raced once; the harness refused one worktree, and a single retry worked.
+  - Two lanes kept waking on leftover background work after handing back, and were stopped once their PR heads were confirmed unchanged.
+  - One lane's push again fired no `pull_request` run; close and reopen started CI.
+
+---
+
 ## 2026-11-05 (day) — Sprint 6 day 4: Tok Pisin drafted, Capacitor-or-Expo reopened on users and maintainability, develop CI keeps one run per merge, 13 PRs merged
 
 The orchestrator session: start of day, then four waves of lanes through the review bench, and two follow-up lanes.
