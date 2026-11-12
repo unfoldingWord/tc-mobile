@@ -11,6 +11,60 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-12 — Sprint 6 day 11: status of the 1.2 device checks, one wave of five lanes, 4 PRs merged, the v15 schema step held for the cut
+
+One orchestrator session: start of day, the Items Needing Attention, one wave of five lanes, and two scouts.
+
+### Decisions (DRI)
+
+- **Merging (11-12):** "approved to merge on clean green".
+- **Sprint 7 work before the v1.3.0 cut:** "Build now, hold S7 merges (Recommended)". Sprint 7 lanes are built and reviewed now, and merge from 11-16, after the cut.
+
+### Status of the 1.2 device checks
+
+The project manager asked about the three checks the 11-15 promotion depends on. Read from the issues today:
+
+- **#974:** not run. The Android run sheet has been ready since 11-02.
+- **#1464:** Android passed on 11-03. The iPhone and web two-copy rows are open.
+- **#1486:** not run.
+
+The DRI replied directly.
+
+### Merged to develop (4)
+
+- #1961: `vitest` pinned exactly to 5.1.0, to match `@vitest/coverage-v8` (#1954).
+- #1962: the test-hygiene Lows from #1946, #1948, #1949 and #1950 (#1954).
+- #1963: the old-WebView check is pinned to the iOS 15.4 floor without a build. A `toSorted` row added as a mutation made the new test fail. `targetChrome()` now reads `build.target`, and the insecure-origin limit is written in the comment (#1954 items 1–4). On item 5, the four calls before the `#root` throw write nothing to IndexedDB. The rest of the import graph was not read.
+- #1964: `tl.ts` provenance docblock (closes #1923).
+
+Each merged at a head where Frank and George were both clean in round 1 and CI was green, with a triage comment posted. Develop CI passed on all four merge commits. Every reviewer Low is recorded on #1954.
+
+### Held
+
+- **#1965, #1925's v15 card-store schema step** (DB_VERSION 14 → 15: a `location` on clip metadata, a `cardReleases` store, a release record on every delete path). Frank and George were both clean in round 1 and CI is green. Its body opens with a HOLD line: it merges after the v1.3.0 develop → staging cut. George's two follow-ups are on #1925: a card-located transcode test, and one predicate at the release write. Both must land before any real card location is written. The v14 → v15 upgrade has not been opened on a real engine; it needs a row on the v1.4.0 device sheet.
+
+### Filed and closed
+
+- Filed #1960: the Android accessibility tree, as read by uiautomator, was missing the recorder's Done tile and the chapter menu's Move up and Move down (a side finding from the #1464 run). A lane checked desktop Chromium's tree and found every tile exposed as a named button. Done's accessible name is "Mark segment N done", so a search of the dump for "Done" would miss it (inference). That does not explain Move up and Move down. TalkBack on a phone is still owed.
+- Closed #1957: George's round-1 rows on #1550 now have dispositions on that PR (4 fixed, 6 refuted, none open). Three of the citations were checked against develop.
+- Closed #1923 (by #1964).
+
+### Open, and where each stands
+
+- **Nothing else is buildable before Sprint 7.** Two scouts went through Sprint 6, Sprint 7 and the Backlog. #1455 and #1452 have no code left to write. #1233's 10-19 plan has been carried out. The one marginal item is #1233 item 35: the failure-log cap may push out the first playback rows. That is an inference, and the fix needs a design pick, so it waits on the DRI.
+- **Owed before the 11-15 promotion and cut, all on a device:**
+  - #974, #1464 (iPhone row) and #1486;
+  - Capacitor 8.6.0 on both phones (#1951);
+  - the WebView 91 emulator run (#1944);
+  - #1945, #1940, #1936 and #1941;
+  - TalkBack for #1960.
+- **After the cut:** merge #1965, if its head has not moved.
+- **Process notes:**
+  - The pipeline playbook's PR template failed `check:pr-body`. Lanes now use the repo's `.github/pull_request_template.md`.
+  - One lane again kept waking on leftover background work after its PR merged, and was stopped.
+
+---
+
 ## 2026-11-06 to 2026-11-11 — Sprint 6 days 5–10: #1921 results checked, two waves of seven lanes merged, Capacitor 8.6.0, an update screen for old WebViews, #1935 confirmed on a real burst, 8 PRs merged
 
 One orchestrator session: start of day on 11-06, the #1921 check and a sprint read, the wave plan on 11-09, and both waves built, reviewed and merged on 11-10.
