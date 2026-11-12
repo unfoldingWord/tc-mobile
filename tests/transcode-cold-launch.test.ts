@@ -87,6 +87,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
       transcodeStallCount: 0,
       peaks: null,
       processing: null,
+      location: { kind: "idb" },
     });
     await tx.objectStore("clipData").put(samples.buffer, clipId);
   }

@@ -457,7 +457,8 @@ export function isStaleBookFailure(
  * goes with it, and the tombstone it leaves (#1463). v13 (#38): the pending
  * rows of the segments it deletes (deleted with them, rebuild PR 2) and the
  * rows a clip's use is counted from, and the disposition records of the
- * segments it deletes.
+ * segments it deletes. v15 (#1925): the release record a card-located clip
+ * leaves.
  */
 const DELETE_BOOK_STORES = withClipBytes([
   "books",
@@ -468,6 +469,7 @@ const DELETE_BOOK_STORES = withClipBytes([
   "tombstones",
   "pendingTakes",
   "takeDispositions",
+  "cardReleases",
 ]);
 
 /**
@@ -1293,7 +1295,7 @@ async function renumberSegments(
  * The stores a segment delete touches: the tree link (the chapter it hangs
  * off), the segment itself, its take, both halves of its clip, the book
  * whose `updatedAt` it bumps (#590), and the tombstone it leaves (#1463).
- * v13 (#38): as {@link DELETE_BOOK_STORES}.
+ * v13 (#38) and v15 (#1925): as {@link DELETE_BOOK_STORES}.
  */
 const DELETE_SEGMENT_STORES = withClipBytes([
   "books",
@@ -1304,6 +1306,7 @@ const DELETE_SEGMENT_STORES = withClipBytes([
   "tombstones",
   "pendingTakes",
   "takeDispositions",
+  "cardReleases",
 ]);
 
 /**
