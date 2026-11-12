@@ -17,7 +17,7 @@ import {
 // the name and the version the app requests. Kept in sync by hand — there is
 // nothing else to key them off. (Mirrors tests/db-migration.test.ts.)
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 
 /**
  * Delete the database outright so each case starts from a true fresh install,
@@ -406,7 +406,7 @@ describe("roll forward only: the current database and an older build (#1462, #38
 
     const db = await getDb();
     expect(db.version).toBe(APP_VERSION);
-    expect(Array.from(db.objectStoreNames)).toHaveLength(10);
+    expect(Array.from(db.objectStoreNames)).toHaveLength(11);
   });
 });
 
