@@ -42,7 +42,7 @@ type ClipEncoding = "pcm" | "mp3";
  * the commit-protocol child of #1456, which changes a row's location only in
  * the transaction that makes its take current.
  */
-export type ClipLocation =
+type ClipLocation =
   | { readonly kind: "idb" }
   | {
       readonly kind: "card";

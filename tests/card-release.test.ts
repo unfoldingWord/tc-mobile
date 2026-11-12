@@ -225,16 +225,18 @@ describe("every path that lets go of a card-located clip writes a release record
     const first = await recordTake(segmentId);
     const expected = await locateOnCard(first.clipId);
 
+    const secondClip = newClipId();
     const second = savedTake(
       await saveTake(
         segmentId,
-        newClipId(),
+        secondClip,
         new Int16Array(80).fill(7),
         CANONICAL_SAMPLE_RATE
       )
     );
 
-    expect(second.clipId).not.toBe(first.clipId);
+    expect(second.clipId).toBe(secondClip);
+    expect((await getClipMeta(secondClip))?.location).toEqual({ kind: "idb" });
     expect(await getClipMeta(first.clipId)).toBeUndefined();
     expect(await releases()).toEqual([expected]);
   });
