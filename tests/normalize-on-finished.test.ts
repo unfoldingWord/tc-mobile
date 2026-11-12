@@ -348,13 +348,16 @@ describe("the compressor switch in the sweep (#1873)", () => {
     );
     await requestTranscodeSweep();
 
-    const contexts = vi.mocked(reportFailure).mock.calls.map((c) => c[1]);
-    expect(contexts).toEqual(["transcode-compressor", "transcode-compressor"]);
-    // Each row carries its own episode's refusal, not one error twice.
-    const messages = vi
-      .mocked(reportFailure)
-      .mock.calls.map((c) => ((c[0] as Error).cause as Error).message);
-    expect(messages).toEqual([
+    const calls = vi.mocked(reportFailure).mock.calls;
+    expect(calls.map((c) => c[1])).toEqual([
+      "transcode-compressor",
+      "transcode-compressor",
+    ]);
+    // Each row carries its own episode's refusal, not one error twice. The
+    // cause shape is asserted first, so a missing cause fails by name.
+    const causes = calls.map((c) => (c[0] as Error).cause);
+    for (const cause of causes) expect(cause).toBeInstanceOf(Error);
+    expect(causes.map((cause) => (cause as Error).message)).toEqual([
       "compressor: first episode",
       "compressor: second episode",
     ]);

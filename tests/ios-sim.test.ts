@@ -162,9 +162,11 @@ describe("boot --device (#1891)", () => {
     expect(f.err.join("\n")).toMatch(
       /2 Simulators match.*iPhone 17 \(U-26\).*iPhone 17 \(U-27\).*UDID/s
     );
-    expect(f.calls.map((c) => c.args.join(" "))).not.toContain(
-      "simctl boot U-26"
-    );
+    // Neither candidate may reach `simctl boot`: a guess between two is the defect.
+    const booted = f.calls.map((c) => c.args.join(" "));
+    expect(booted).not.toContain("simctl boot U-26");
+    expect(booted).not.toContain("simctl boot U-27");
+    expect(booted.filter((a) => a.startsWith("simctl boot"))).toEqual([]);
   });
 
   it("says a selector that matches neither a name nor a UDID did so (#1899)", async () => {
