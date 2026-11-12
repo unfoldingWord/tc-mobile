@@ -62,7 +62,7 @@ const OLD: Record<string, string[]> = {
 
 /**
  * Sentences that keep the "in full" marker but bring the old meaning back by
- * another word, which the `OLD` table's check (the second `it` below) cannot see.
+ * another word, which the `OLD` table's check (the "negative matcher rejects every old sentence" test below) cannot see.
  */
 const REGRESSIONS: Record<string, string[]> = {
   sw: [

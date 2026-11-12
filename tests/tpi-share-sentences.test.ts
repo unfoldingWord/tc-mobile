@@ -7,12 +7,13 @@ import { buildTable } from "@/lib/i18n/locales";
  * The Tok Pisin share report, PR #1930 round 1: the partial clause of
  * `shareBookMissingAndPartial` once put "i go insait" (went in) into a
  * template ending "i no inap i go insait" (could not go in), so one sentence
- * claimed both. This pins the shape only: no rendered sentence of the share
- * counts says "i go insait" twice. Whether the wording is right is a Tok Pisin
- * reader's call (the table is an AI draft).
+ * claimed both. The first test pins the shape: no rendered sentence of the
+ * share counts says "i go insait" twice. Whether the wording is right is a Tok
+ * Pisin reader's call (the table is an AI draft).
  *
- * The exact-string pins below record today's AI-draft text, not a
- * native-reviewed one, so a deliberate rewording updates them.
+ * The later `it`s pin exact AI-draft text (the missing-and-partial sentence,
+ * and the two cover-colour words `tpi.ts`'s docblock names), not a
+ * native-reviewed wording, so a deliberate rewording updates them.
  */
 
 const original = activeLocale();
@@ -58,13 +59,22 @@ describe("tpi share counts say one thing per sentence", () => {
     ).toBe(2);
   });
 
-  it("pins the exact rendered text of the missing-and-partial sentence", () => {
+  it("pins the exact text of the missing-and-partial sentence, one partial chapter", () => {
     setActiveLocale(locale);
     expect(table.shareBookMissingAndPartial(2, 3, 1)).toBe(
       "2 sapta i no inap i go insait. Long wanpela sapta i stap insait, 3 hap i no inap i go insait."
     );
+  });
+
+  it("pins the exact text of the missing-and-partial sentence, several partial chapters", () => {
+    setActiveLocale(locale);
     expect(table.shareBookMissingAndPartial(2, 3, 4)).toBe(
       "2 sapta i no inap i go insait. Long 4 sapta i stap insait, 3 hap i no inap i go insait."
     );
+  });
+
+  it("pins the two cover-colour words that tpi.ts's docblock contrasts", () => {
+    expect(table.coverColourRust).toBe("Ros");
+    expect(table.coverColourRose).toBe("Pinkpela");
   });
 });
