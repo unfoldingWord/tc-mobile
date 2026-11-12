@@ -10,7 +10,8 @@ import { filenameSafe } from "@/lib/utils";
  * "Tagalog (tl) (Recommended)"). AI DRAFT, AWAITING NATIVE-SPEAKER REVIEW: no
  * Tagalog reader has checked the meaning.
  *
- * Least certain cells, for the native reader to check first:
+ * Least certain cells, for the native reader to check first (this list comes
+ * from #1900 / #1889 and stays unconfirmed until a Tagalog reader signs off):
  * - `tileRename` ("Bagong pangalan") literally means "new name"; it is
  *   shortened to fit the tile caption budget, while the glossary's "Palitan
  *   ang pangalan" is used elsewhere.
@@ -25,8 +26,9 @@ import { filenameSafe } from "@/lib/utils";
  * - `settingsCompressOnFinished` ("Hinaan ang malalakas na bahagi kapag
  *   tapos na") is a plain-language paraphrase of compressing loud parts.
  * - `shareAllIncomplete` says the chapter was "not included in full"
- *   ("hindi naisama nang buo"); the first draft got this meaning wrong, so
- *   it is worth a second look.
+ *   ("hindi naisama nang buo"). The current string IS the correction of the
+ *   first draft, which got this meaning wrong; do not "fix" it back toward
+ *   the draft. It is still worth a second look from the reader.
  * - `loadFailedBody` asks for "Subukan muli" first and offers "i-reset" only
  *   "kung hindi pa rin ito mabuksan" (if it still won't open, #1933); the
  *   reset clause must read as a fallback after trying again, not as a second
