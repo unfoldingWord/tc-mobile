@@ -474,7 +474,7 @@ function stallRows(): unknown[][] {
   );
 }
 
-/** What the real tap does after five seconds of exact zeros. */
+/** What the real tap does once the silence window of exact zeros has run. */
 function tapReadsSilence(): void {
   const onCaptureSilent = mocks.tapOptions?.onCaptureSilent;
   if (!onCaptureSilent) {
@@ -531,7 +531,7 @@ describe("the recorder hook: capture goes silent with no event (R13)", () => {
     // Written at the seal, before any save (no sheet is mounted here), so the
     // row must not say the take was saved (#1747).
     expect((stallRows()[0]![0] as Error).message).toBe(
-      "The level tap read exact silence for 5000 ms on a running clock with no track or recorder event; the take was sealed, and saving it comes after this row (#1294)"
+      "The level tap read exact silence for 30000 ms on a running clock with no track or recorder event; the take was sealed, and saving it comes after this row (#1294)"
     );
 
     // The timer stops where the seal landed, and a second report is a no-op.

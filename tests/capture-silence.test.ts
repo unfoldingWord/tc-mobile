@@ -11,7 +11,7 @@ import {
 /**
  * The pure half of R13 on #1294: a capture that an alarm stopped without any
  * event reads as exact digital zeros on a running, advancing clock. The
- * window says so once, after five seconds of wall time. The value is written
+ * window says so once, after thirty seconds of wall time. The value is written
  * as a literal here on purpose, so moving the constant is a visible change to
  * this file as well.
  */
@@ -51,18 +51,30 @@ function pull(
 }
 
 describe("createSilenceWindow", () => {
-  it("the window is five seconds, its gap bound one second", () => {
-    expect(CAPTURE_SILENCE_MS).toBe(5000);
+  it("the window is thirty seconds, its gap bound one second", () => {
+    expect(CAPTURE_SILENCE_MS).toBe(30_000);
     expect(CAPTURE_SILENCE_MAX_GAP_MS).toBe(1000);
   });
 
-  it("fires once at five seconds of zeros on an advancing clock, not one millisecond before", () => {
+  it("a quiet pause of 6 s or 25 s of zeros does not fire (#1972)", () => {
+    // The window latches after firing, so watch every note, not the last.
+    for (const endMs of [6000, 25_000]) {
+      const window = createSilenceWindow();
+      let fired = false;
+      for (let t = 0; t <= endMs; t += 100) {
+        fired = window.note(true, t, t / 1000) || fired;
+      }
+      expect(fired).toBe(false);
+    }
+  });
+
+  it("fires once at thirty seconds of zeros on an advancing clock, not one millisecond before", () => {
     const window = createSilenceWindow();
-    expect(pull(window, 0, 4900)).toBe(false);
-    expect(window.note(true, 4999, 4.999)).toBe(false);
-    expect(window.note(true, 5000, 5)).toBe(true);
+    expect(pull(window, 0, 29_900)).toBe(false);
+    expect(window.note(true, 29_999, 29.999)).toBe(false);
+    expect(window.note(true, 30_000, 30)).toBe(true);
     // Latched: the caller seals once.
-    expect(pull(window, 5100, 9000)).toBe(false);
+    expect(pull(window, 30_100, 40_000)).toBe(false);
   });
 
   it("any non-silent sample restarts the run", () => {
@@ -70,49 +82,49 @@ describe("createSilenceWindow", () => {
     pull(window, 0, 4000);
     window.note(false, 4100, 4.1);
     // The new run starts at the first silent sample after the reset.
-    expect(pull(window, 4200, 9100)).toBe(false);
-    expect(window.note(true, 9200, 9.2)).toBe(true);
+    expect(pull(window, 4200, 34_100)).toBe(false);
+    expect(window.note(true, 34_200, 34.2)).toBe(true);
   });
 
   it("a clock that has not moved across the run never fires (#1251 is that case, not this)", () => {
     const window = createSilenceWindow();
-    expect(pull(window, 0, 20_000, () => 3)).toBe(false);
+    expect(pull(window, 0, 60_000, () => 3)).toBe(false);
   });
 
   it("a clock that moves once and then stands still never fires; a run restarts when it moves again", () => {
-    // Frank round 1: an endpoint compare let (0,1) (100,1.1) … (5000,1.1) fire.
+    // Frank round 1: an endpoint compare let (0,1) (100,1.1) … (window end,1.1) fire.
     const window = createSilenceWindow();
     window.note(true, 0, 1);
     expect(pull(window, 100, 8000, () => 1.1)).toBe(false);
     // Each stall restarted the run, last at 7800; from 8100 the clock moves
-    // again, so that run fires five seconds after it began, not before.
-    expect(pull(window, 8100, 12_700)).toBe(false);
-    expect(window.note(true, 12_800, 12.8)).toBe(true);
+    // again, so that run fires one window after it began, not before.
+    expect(pull(window, 8100, 37_700)).toBe(false);
+    expect(window.note(true, 37_800, 37.8)).toBe(true);
   });
 
   it("a gap with no pull in it ends the run; a late silent sample only starts the next", () => {
-    // George round 1: two silent notes five seconds apart must not fire.
+    // George round 1: two silent notes one window apart must not fire.
     const window = createSilenceWindow();
     window.note(true, 0, 0);
-    expect(window.note(true, 5000, 5)).toBe(false);
-    expect(pull(window, 5100, 9900)).toBe(false);
-    expect(window.note(true, 10_000, 10)).toBe(true);
+    expect(window.note(true, 30_000, 30)).toBe(false);
+    expect(pull(window, 30_100, 59_900)).toBe(false);
+    expect(window.note(true, 60_000, 60)).toBe(true);
   });
 
   it("a gap in the middle of a run restarts it", () => {
     const window = createSilenceWindow();
     pull(window, 0, 3000);
-    // 1.1 s with no pull, then a run that must last five seconds again.
-    expect(pull(window, 4100, 9000)).toBe(false);
-    expect(window.note(true, 9100, 9.1)).toBe(true);
+    // 1.1 s with no pull, then a run that must last a full window again.
+    expect(pull(window, 4100, 34_000)).toBe(false);
+    expect(window.note(true, 34_100, 34.1)).toBe(true);
   });
 
   it("reset() restarts the run, the way a context leaving running does", () => {
     const window = createSilenceWindow();
     pull(window, 0, 4000);
     window.reset();
-    expect(pull(window, 4100, 9000)).toBe(false);
-    expect(window.note(true, 9100, 9.1)).toBe(true);
+    expect(pull(window, 4100, 34_000)).toBe(false);
+    expect(window.note(true, 34_100, 34.1)).toBe(true);
   });
 
   it("speech never fires, however long it runs", () => {

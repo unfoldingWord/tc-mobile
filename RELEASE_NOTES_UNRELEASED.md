@@ -17,6 +17,7 @@ its body and empties it.
 ## Changed
 
 - In a book made from a template, segments can no longer be moved (their order is the template's) (#1969).
+- In a book made from a template, the segments the template made can no longer be deleted; a segment you add yourself still can (#1979).
 - A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.
 - About & licenses now shows the translationCore trademark notice after the licence text, with the web address of unfoldingWord's contact page to ask for permission (#1608).
 - The Books screen has one menu button: the gear is gone, and Settings is now the first tile in the ≡ menu (#1871).
@@ -24,8 +25,10 @@ its body and empties it.
 
 ## Fixed
 
+- In a quiet room, a pause of a few seconds no longer stops the recording; only 30 seconds of complete silence does (#1972).
 - On an Android phone whose Android System WebView is too old, the app now shows a picture and one English sentence saying to update it, instead of an empty page (#1944).
 - After a menu is dragged closed, the next tap works the first time (#1974). Not yet checked on a phone.
+- On Android, the phone's status-bar and navigation-bar icons are now dark on the light theme, so they can be seen (#1973). Not yet checked on a phone.
 
 ## Removed
 
