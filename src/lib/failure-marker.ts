@@ -81,6 +81,11 @@ const RESUME_CONTEXTS: readonly string[] = [
  *   Retry asks again; nothing is lost (inference: on iOS a `NotAllowedError`
  *   can also mean a request made outside a tap, which is a defect, and this
  *   row cannot tell the two apart).
+ * - `"system-bars-style"`: not a recorder-sheet row, but the same rule. The
+ *   native shell could not restyle the phone's status and navigation bars to
+ *   match the theme (#1973). The bars keep their previous style, nothing the
+ *   person made is touched and the theme toggle still works; it is written
+ *   once per page so a call that fails every time cannot fill the log.
  *
  * Two recorder-start rows light ≡ by the default:
  * `"recorder-mic-start"`, every other microphone failure (`NotFoundError`,
@@ -106,6 +111,7 @@ const ROUTINE_RECOVERABLE_CONTEXTS: ReadonlySet<string> = new Set([
   "recorder-decode-retry-resume",
   "recorder-mic-refused",
   "book-provenance-read",
+  "system-bars-style",
 ]);
 
 /** True when a row with this context should mark the Books ≡ control. */

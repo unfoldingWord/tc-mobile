@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { reportFailure } from "./report-failure";
+import { applySystemBarsStyle } from "./system-bars";
 import {
   THEME_STORAGE_KEY,
   nextTheme,
@@ -179,6 +180,10 @@ function applyTheme(theme: Theme): void {
       "content",
       theme === "light" ? "default" : "black-translucent"
     );
+  // The native shell's own status and navigation bars (#1973). The metas above
+  // are read by browsers; the WebView inside the Capacitor shell ignores them,
+  // so the bars there are styled through the core plugin. A no-op on the web.
+  applySystemBarsStyle(theme);
   const floor = getComputedStyle(root).getPropertyValue("--s-floor").trim();
   if (floor === "") return;
   const meta = document.querySelector('meta[name="theme-color"]');

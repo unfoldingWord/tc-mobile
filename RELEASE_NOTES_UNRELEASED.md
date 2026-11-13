@@ -25,6 +25,7 @@ its body and empties it.
 ## Fixed
 
 - On an Android phone whose Android System WebView is too old, the app now shows a picture and one English sentence saying to update it, instead of an empty page (#1944).
+- On Android, the phone's status-bar and navigation-bar icons are now dark on the light theme, so they can be seen (#1973). Not yet checked on a phone.
 
 ## Removed
 

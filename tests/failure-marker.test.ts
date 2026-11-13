@@ -82,6 +82,12 @@ describe("lightsFailureMarker", () => {
     }
   );
 
+  // #1973: a failed restyle of the phone's system bars is cosmetic. The bars
+  // keep their previous style and nothing the person made is touched.
+  it("the system-bars-style row is logged but does not light the marker", () => {
+    expect(lightsFailureMarker("system-bars-style")).toBe(false);
+  });
+
   it.each([
     "recorder-commit-stop",
     "recorder-commit-close",
