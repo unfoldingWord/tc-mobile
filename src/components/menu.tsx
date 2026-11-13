@@ -385,6 +385,31 @@ export function Menu({
     settle();
   };
 
+  // A drag's touch moves are the sheet's, and are cancelled as such
+  // (#1974). With `touch-action: none` alone, a tap soon after a quick
+  // release can fire no click in Chromium — #1974's lost tap on Play after
+  // the recorder ≡ was dragged closed. Why is an inference: the browser
+  // still reads the release as a fling, and a tap that stops a fling is not
+  // a click. Cancelling the moves the drag owns keeps that tap a tap
+  // (`e2e/sheet-drag-tap-after.spec.ts`). React's own `onTouchMove` is
+  // passive and cannot cancel, hence the native listener. Only while a drag
+  // is in progress, so a press on the ✕ is still the browser's.
+  useEffect(() => {
+    if (!open) return;
+    const surfaces = [gripRef.current, headerRef.current];
+    const onTouchMove = (ev: TouchEvent) => {
+      if (dragRef.current !== null && ev.cancelable) ev.preventDefault();
+    };
+    for (const el of surfaces) {
+      el?.addEventListener("touchmove", onTouchMove, { passive: false });
+    }
+    return () => {
+      for (const el of surfaces) {
+        el?.removeEventListener("touchmove", onTouchMove);
+      }
+    };
+  }, [open]);
+
   // Bound on every panel; where the grip is not drawn (the side drawer), a
   // press never starts a drag (`onDragStart`).
   const dragHandlers = {

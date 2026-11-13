@@ -570,13 +570,13 @@ src/lib/storage/db.ts on origin/staging); docs/progress_tracker.md 2026-11-02
   start with the chapter's number ("Jonah - 03 Jonah runs.mp3"), a moved
   chapter takes the number of the place it lands in, and a second book with the
   same name as another is refused. <!-- source: tester-build-v1.2.2 notes ("Changed") -->
-- **The recorder stops by itself after five seconds of exact silence** and
+- **The recorder stops by itself after a long stretch of exact silence** and
   saves what it captured. This is for a microphone that goes dead without
   telling the app. It reacts only to exact digital silence (every sample zero),
   not to a quiet pause, which still carries the microphone's noise. That a
   phone never sends exact silence during a real pause has not been checked on
   a phone, so write down any time it stops a recording while someone was
-  speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS = 5000; the no-zeros-in-a-pause assumption is checked by the #1294 device sheet); §5 -->
+  speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS; the no-zeros-in-a-pause assumption is checked by the #1294 device sheet); §5 -->
 - **A recording waiting at launch is saved quietly.** If the app closed while a
   recording was waiting to be saved, the next launch saves it, with no screen,
   if its saved copy is intact. It writes one line in the problem record that
@@ -806,7 +806,7 @@ use-template-library.ts, replay-pending-takes.ts), not by running anything -->
   recovered recording that could not be saved or shared
   (`recorder-recovered-save`, `recorder-recovered-share`); a Back that found
   nothing to close (`recorder-back-no-handle`); and a recording the app stopped
-  by itself after five seconds of exact digital silence, shown as
+  by itself after a long stretch of exact digital silence, shown as
   `recorder-capture-stalled`. That row is written when the app stops the
   recording, before it saves what it captured. If the save then fails, the
   save-failed screen in "If a recording will not save" appears and writes a row

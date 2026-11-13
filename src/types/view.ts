@@ -106,6 +106,11 @@ export interface SegmentRow {
    */
   readonly label: string | null;
   /**
+   * = `Segment.templateKey != null` (#1979): a template made this segment, as
+   * opposed to the user adding it; absent reads as false. Only this row's Delete is withheld.
+   */
+  readonly fromTemplate?: boolean;
+  /**
    * Playable audio is present — derived from
    * `resolveSegmentAudio(...).kind === "resolved"`, NOT from
    * `activeTakeId !== null`. This folds the dangling/undecodable cases into
