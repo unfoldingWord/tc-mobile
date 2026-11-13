@@ -568,7 +568,10 @@ native shell's service-worker cleanup (`hooks/register-service-worker.ts`:
 listener that threw (`hooks/use-storage-pressure.ts`,
 `"storage-pressure-bump"`), a preference that could not be saved
 (`hooks/use-settings.ts`, `"use-settings: persist"`; `hooks/use-theme.ts`,
-`"use-theme: persist"`), and the log's own share and clear paths
+`"use-theme: persist"`), the native shell's system bars not taking the
+theme's style (`hooks/system-bars.ts`, `"system-bars-style"`, #1973, written
+once per page and not lighting `≡`: the bars keep their previous style and
+nothing is lost), and the log's own share and clear paths
 (`hooks/use-failure-log-share.ts`: `"failure-log-share-prepare"` and
 `"failure-log-share-send"`; `hooks/failure-log.ts`: `"failure-log-clear"`). Each of the contexts added to this paragraph on
 2026-11-02 lights ≡, since none is in `lib/failure-marker.ts`'s lists, and no
