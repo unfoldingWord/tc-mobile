@@ -1490,7 +1490,7 @@ export const SegmentsScreen = forwardRef<
                   }
                   onErase={() => armErase(row.segmentId)}
                   onDeleteSegment={
-                    bookFromTemplate
+                    row.fromTemplate
                       ? undefined
                       : () => armDelete(row.segmentId, row.ordinal)
                   }
