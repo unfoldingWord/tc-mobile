@@ -163,6 +163,7 @@ export const SegmentsScreen = forwardRef<
     bookName,
     bookCoverHex,
     bookLicence,
+    bookFromTemplate,
     chapterNumber,
     chapterTemplateNumber,
     chapterName,
@@ -1257,7 +1258,12 @@ export const SegmentsScreen = forwardRef<
     commitSegmentMove(row, toIndex);
   };
   const reorder = useReorderGesture<SegmentId>({
-    enabled: !listInert && !refreshing && !loading && !staleTarget,
+    enabled:
+      !bookFromTemplate &&
+      !listInert &&
+      !refreshing &&
+      !loading &&
+      !staleTarget,
     ids: rows.map((row) => row.segmentId),
     nodeFor: rowReveal.nodeFor,
     scrollRef,
@@ -1490,8 +1496,14 @@ export const SegmentsScreen = forwardRef<
                   bookName={bookName}
                   bookCoverHex={bookCoverHex ?? undefined}
                   chapterHeading={chapterHeading}
-                  onHoldStart={reorder.holdStart(index)}
-                  onMove={(step) => moveFromMenu(index, step)}
+                  onHoldStart={
+                    bookFromTemplate ? undefined : reorder.holdStart(index)
+                  }
+                  onMove={
+                    bookFromTemplate
+                      ? undefined
+                      : (step) => moveFromMenu(index, step)
+                  }
                   isFirst={index === 0}
                   isLast={index === rows.length - 1}
                 />
