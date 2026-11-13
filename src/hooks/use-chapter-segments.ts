@@ -127,6 +127,8 @@ interface ChapterView {
   readonly bookCoverHex: string | null;
   /** The book's licence (#1566), or `null` when none is chosen or the book could not be read. */
   readonly bookLicence: LicenceId | null;
+  /** True when the book was made from a template, so its segment order is the template's (#1969). */
+  readonly bookFromTemplate: boolean;
   /**
    * The chapter's slot in its book (#1272 B, `lib/chapter-slot.ts`), not the
    * stored `Chapter.number`. The stored number stands in only when the book
@@ -164,6 +166,7 @@ export async function loadChapterView(
         )
       : null,
     bookLicence: book?.licence ?? null,
+    bookFromTemplate: book?.provenance.kind === "template",
     // A chapter its book no longer lists has no slot; its stored number is
     // the only one left to show (#1747).
     chapterNumber: (await chapterSlot(chapter)) ?? chapter.number,
@@ -297,6 +300,7 @@ export function useChapterSegments(chapterId: ChapterId) {
   const [bookName, setBookName] = useState("");
   const [bookCoverHex, setBookCoverHex] = useState<string | null>(null);
   const [bookLicence, setBookLicence] = useState<LicenceId | null>(null);
+  const [bookFromTemplate, setBookFromTemplate] = useState(false);
   const [chapterNumber, setChapterNumber] = useState(0);
   const [chapterTemplateNumber, setChapterTemplateNumber] = useState<
     number | null
@@ -428,6 +432,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         setBookName(view.bookName);
         setBookCoverHex(view.bookCoverHex);
         setBookLicence(view.bookLicence);
+        setBookFromTemplate(view.bookFromTemplate);
         setChapterNumber(view.chapterNumber);
         setChapterTemplateNumber(view.chapterTemplateNumber);
         setChapterName(view.chapterName);
@@ -850,6 +855,7 @@ export function useChapterSegments(chapterId: ChapterId) {
     bookName,
     bookCoverHex,
     bookLicence,
+    bookFromTemplate,
     chapterNumber,
     chapterTemplateNumber,
     chapterName,
