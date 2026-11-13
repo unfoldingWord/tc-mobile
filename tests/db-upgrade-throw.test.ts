@@ -22,7 +22,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
  */
 
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 
 async function wipe(): Promise<void> {
   await closeDb();
@@ -432,8 +432,79 @@ describe("a throw inside the v14 upgrade (#1433)", () => {
     const db = await getDb();
     expect(db.version).toBe(APP_VERSION);
     expect(await db.getAll("clipMeta")).toEqual(
-      before.map((c) => ({ ...c, processing: null }))
+      before.map((c) => ({ ...c, processing: null, location: { kind: "idb" } }))
     );
+    expect((await db.getAllKeys("clipData")).map(String)).toEqual([CLIP_KEY]);
+  });
+});
+
+describe("a throw inside the v15 upgrade (#1925)", () => {
+  /** A v14 database holding five clip rows without `location`. */
+  async function seedV14Clips() {
+    const db = await openDB(DB_NAME, 14, {
+      upgrade(upgrading) {
+        createStores(upgrading);
+        createV12Stores(upgrading);
+        upgrading
+          .createObjectStore("takeDispositions", { keyPath: "clipId" })
+          .createIndex("bySegment", "segmentId");
+      },
+    });
+    for (let i = 1; i <= 5; i++) {
+      await db.put("clipMeta", {
+        id: `c${i}`,
+        sampleRate: 44100,
+        frameCount: 4,
+        durationMs: 1,
+        createdAt: i,
+        encoding: "mp3",
+        generation: 1,
+        byteLength: 8,
+        transcodeStallCount: 0,
+        peaks: null,
+        processing: null,
+      });
+    }
+    await db.put("clipData", CLIP_BYTES.slice().buffer, CLIP_KEY);
+    const clips = await db.getAll("clipMeta");
+    const stores = Array.from(db.objectStoreNames).sort();
+    db.close();
+    return { clips, stores };
+  }
+
+  it("rejects the open, keeps version 14, every clip row and no cardReleases store, then migrates cleanly on the retry", async () => {
+    const { clips: before, stores } = await seedV14Clips();
+    // The v15 backfill is the only clipMeta writer on a v14 database.
+    const realUpdate = IDBCursor.prototype.update;
+    let calls = 0;
+    vi.spyOn(IDBCursor.prototype, "update").mockImplementation(function (
+      this: IDBCursor,
+      ...args
+    ) {
+      const store = this.source as IDBObjectStore;
+      if (store.name === "clipMeta" && ++calls === 4) {
+        throw new Error("simulated fault inside the upgrade");
+      }
+      return realUpdate.apply(this, args);
+    });
+
+    await expect(getDb()).rejects.toThrow("simulated fault inside the upgrade");
+    vi.restoreAllMocks();
+
+    const raw = await openDB(DB_NAME);
+    expect(raw.version).toBe(14);
+    // The v15 create rolled back with the step: v14's stores, exactly.
+    expect(Array.from(raw.objectStoreNames).sort()).toEqual(stores);
+    expect(await raw.getAll("clipMeta")).toEqual(before);
+    expect((await raw.getAllKeys("clipData")).map(String)).toEqual([CLIP_KEY]);
+    raw.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await db.getAll("clipMeta")).toEqual(
+      before.map((c) => ({ ...c, location: { kind: "idb" } }))
+    );
+    expect(await db.count("cardReleases")).toBe(0);
     expect((await db.getAllKeys("clipData")).map(String)).toEqual([CLIP_KEY]);
   });
 });

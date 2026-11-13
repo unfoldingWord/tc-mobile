@@ -87,6 +87,7 @@ function metaFor(id: ClipId, encoding: "pcm" | "mp3", frames: number) {
     transcodeStallCount: 0,
     peaks: null,
     processing: null,
+    location: { kind: "idb" },
   } as const;
 }
 

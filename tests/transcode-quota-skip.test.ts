@@ -94,6 +94,7 @@ function pcmClip(id: ClipId, samples: Int16Array, durationMs = 1): Clip {
       transcodeStallCount: 0,
       peaks: null,
       processing: null,
+      location: { kind: "idb" },
     },
     samples,
   };
