@@ -27,6 +27,7 @@ its body and empties it.
 
 - In a quiet room, a pause of a few seconds no longer stops the recording; only 30 seconds of complete silence does (#1972).
 - On an Android phone whose Android System WebView is too old, the app now shows a picture and one English sentence saying to update it, instead of an empty page (#1944).
+- After a menu is dragged closed, the next tap works the first time (#1974). Not yet checked on a phone.
 - On Android, the phone's status-bar and navigation-bar icons are now dark on the light theme, so they can be seen (#1973). Not yet checked on a phone.
 
 ## Removed
