@@ -1489,7 +1489,11 @@ export const SegmentsScreen = forwardRef<
                     guide.segmentId === row.segmentId
                   }
                   onErase={() => armErase(row.segmentId)}
-                  onDeleteSegment={() => armDelete(row.segmentId, row.ordinal)}
+                  onDeleteSegment={
+                    row.fromTemplate
+                      ? undefined
+                      : () => armDelete(row.segmentId, row.ordinal)
+                  }
                   onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}

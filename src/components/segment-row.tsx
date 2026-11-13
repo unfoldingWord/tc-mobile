@@ -66,8 +66,11 @@ interface SegmentRowProps {
    * owns the confirm and the store op. Unlike `onErase`, offered on EVERY
    * row, recorded or not — deleting the row is exactly what an accidentally
    * added, never-recorded segment needs (#590's own field-tester ask).
+   * Omitted for a segment the template made (`SegmentRow.fromTemplate`), whose
+   * slot is the template's: the tile is then not rendered (#1979). A segment
+   * the user added to a template chapter keeps it.
    */
-  onDeleteSegment: () => void;
+  onDeleteSegment?: () => void;
   /**
    * Commit a typed label (#591), resolving `true` once it has landed. The store
    * normalises it (trim, blank ⇒ `null`); the row only keeps its field up on
@@ -803,23 +806,26 @@ export function SegmentRow({
                   }}
                 />
               )}
-              {/* Delete is unconditional: reachable on a never-recorded row,
+              {/* Delete is offered whenever the screen passes a handler (a
+                  template book passes none, #1979); otherwise unconditional: reachable on a never-recorded row,
                   unlike Clear just before it (#590's own field-tester ask).
                   Last in both rows. On the 3-tile (no-clip) row the spacer
                   above pushes it to the far end; on the 4-tile (hasClip) row
                   there is no spacer and it follows Clear. */}
-              <Tile
-                tone="erase"
-                icon="trash"
-                label={strings.deleteSegment}
-                caption={strings.tileDelete}
-                onClick={() => {
-                  // Delete first, then close: the same 1 -> 2 -> 1 layer
-                  // interleave as Clear above (#452 PR3).
-                  onDeleteSegment();
-                  closeMenu();
-                }}
-              />
+              {onDeleteSegment && (
+                <Tile
+                  tone="erase"
+                  icon="trash"
+                  label={strings.deleteSegment}
+                  caption={strings.tileDelete}
+                  onClick={() => {
+                    // Delete first, then close: the same 1 -> 2 -> 1 layer
+                    // interleave as Clear above (#452 PR3).
+                    onDeleteSegment();
+                    closeMenu();
+                  }}
+                />
+              )}
             </TileGrid>
             {onMove && (
               // Move up / Move down (#1344): their own row under the

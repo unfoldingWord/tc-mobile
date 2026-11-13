@@ -22,6 +22,8 @@ import { restingErase } from "./support";
 
 const mocks = vi.hoisted(() => ({
   fromTemplate: false,
+  // The template-made flag of the row whose menu is opened (ordinal 2).
+  rowFromTemplate: false,
   moveSegment: vi.fn(),
 }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
@@ -34,6 +36,7 @@ vi.mock("@/hooks/use-chapter-segments", () => ({
       segmentId: `s${i}` as SegmentId,
       ordinal: i + 1,
       label: null,
+      fromTemplate: i === 1 && mocks.rowFromTemplate,
       hasClip: true,
       finished: false,
       clipId: `c${i}` as ClipId,
@@ -133,5 +136,33 @@ describe("segment Move in a template book (#1969)", () => {
     expect(text()).toContain(strings.moveUp);
     expect(text()).toContain(strings.moveDown);
     expect(document.querySelector("[data-reorder-handle]")).not.toBeNull();
+  });
+});
+
+const deleteButton = () =>
+  [...document.querySelectorAll("button")].find(
+    (b) => b.getAttribute("aria-label") === strings.deleteSegment
+  );
+
+describe("segment Delete in a template book (#1979)", () => {
+  it("shows no Delete on a segment the template made", async () => {
+    mocks.fromTemplate = true;
+    mocks.rowFromTemplate = true;
+    await mountAndOpenMenu();
+    expect(deleteButton()).toBeUndefined();
+  });
+
+  it("keeps Delete on a segment the user added to a template book", async () => {
+    mocks.fromTemplate = true;
+    mocks.rowFromTemplate = false;
+    await mountAndOpenMenu();
+    expect(deleteButton()).toBeDefined();
+  });
+
+  it("keeps Delete in a hand-made book", async () => {
+    mocks.fromTemplate = false;
+    mocks.rowFromTemplate = false;
+    await mountAndOpenMenu();
+    expect(deleteButton()).toBeDefined();
   });
 });
