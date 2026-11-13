@@ -66,6 +66,8 @@ interface SegmentRowProps {
    * owns the confirm and the store op. Unlike `onErase`, offered on EVERY
    * row, recorded or not — deleting the row is exactly what an accidentally
    * added, never-recorded segment needs (#590's own field-tester ask).
+   * Omitted in a book made from a template, whose segments are the
+   * template's: the tile is then not rendered (#1979).
    */
   onDeleteSegment?: () => void;
   /**
