@@ -24,6 +24,7 @@ its body and empties it.
 
 ## Fixed
 
+- In a quiet room, a pause of a few seconds no longer stops the recording; only 30 seconds of complete silence does (#1972).
 - On an Android phone whose Android System WebView is too old, the app now shows a picture and one English sentence saying to update it, instead of an empty page (#1944).
 
 ## Removed
