@@ -17,6 +17,7 @@ its body and empties it.
 ## Changed
 
 - In a book made from a template, segments can no longer be moved (their order is the template's) (#1969).
+- In a book made from a template, segments can no longer be deleted either (#1979).
 - A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.
 - About & licenses now shows the translationCore trademark notice after the licence text, with the web address of unfoldingWord's contact page to ask for permission (#1608).
 - The Books screen has one menu button: the gear is gone, and Settings is now the first tile in the ≡ menu (#1871).

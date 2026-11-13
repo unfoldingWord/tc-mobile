@@ -135,3 +135,17 @@ describe("segment Move in a template book (#1969)", () => {
     expect(document.querySelector("[data-reorder-handle]")).not.toBeNull();
   });
 });
+
+describe("segment Delete in a template book (#1979)", () => {
+  it("shows no Delete tile when the book came from a template", async () => {
+    mocks.fromTemplate = true;
+    await mountAndOpenMenu();
+    expect(text()).not.toContain(strings.tileDelete);
+  });
+
+  it("keeps Delete in a hand-made book", async () => {
+    mocks.fromTemplate = false;
+    await mountAndOpenMenu();
+    expect(text()).toContain(strings.tileDelete);
+  });
+});
