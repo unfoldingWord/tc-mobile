@@ -25,6 +25,7 @@ its body and empties it.
 ## Fixed
 
 - On an Android phone whose Android System WebView is too old, the app now shows a picture and one English sentence saying to update it, instead of an empty page (#1944).
+- After a menu is dragged closed, the next tap works the first time (#1974). Not yet checked on a phone.
 
 ## Removed
 
