@@ -2220,6 +2220,7 @@ export function BooksScreen({
   const moveChapterFromMenu = (step: -1 | 1) => {
     if (!chapterMenu) return;
     const { book, index, row } = chapterMenu;
+    if (book.fromTemplate) return;
     const toIndex = index + step;
     if (toIndex < 0 || toIndex >= book.chapters.length) return;
     closeChapterMenu();
@@ -3083,7 +3084,7 @@ function BookItem({
   // this card's rows. Collapsing the book switches it off, which lets go of a
   // row in hand without a write.
   const gesture = useReorderGesture<ChapterId>({
-    enabled: reorder.enabled && expanded,
+    enabled: reorder.enabled && expanded && !book.fromTemplate,
     ids: book.chapters.map((chapter) => chapter.chapterId),
     nodeFor: reorder.nodeFor,
     scrollRef: reorder.scrollRef,
@@ -3207,10 +3208,18 @@ function BookItem({
               chapter={chapter}
               audio={audio}
               onOpen={() => onOpenChapter(chapter.chapterId)}
-              onOpenMenu={() => onOpenChapterMenu(chapter.chapterId)}
+              // A template book's chapter order is the template's (#1985): no
+              // hold to move and no ⋮, whose sheet holds only Move.
+              onOpenMenu={
+                book.fromTemplate
+                  ? undefined
+                  : () => onOpenChapterMenu(chapter.chapterId)
+              }
               guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
-              onHoldStart={gesture.holdStart(index)}
+              onHoldStart={
+                book.fromTemplate ? undefined : gesture.holdStart(index)
+              }
               lifted={drag?.fromIndex === index}
               // While a row is lifted: it follows the finger and the rows
               // between its slot and the target slide one slot to make room.
@@ -3235,8 +3244,8 @@ interface ChapterItemProps {
   chapter: ChapterRow;
   audio: ChapterAudio;
   onOpen: () => void;
-  /** Open this row's ⋮ menu (#1730). */
-  onOpenMenu: () => void;
+  /** Open this row's ⋮ menu (#1730); absent in a template book (#1985). */
+  onOpenMenu?: () => void;
   /** This row is the guided step (#604). */
   guided: boolean;
   setNode: (id: string, el: HTMLElement | null) => void;
@@ -3319,14 +3328,16 @@ function ChapterItem({
           reason the play control is, laid over the end of the slot the row's
           face keeps for both (`books-chapter-go`). Named by the slot, as the
           move line is, so it reads the new number after a move. */}
-      <Control
-        icon="more"
-        label={strings.chapterRowMenu(chapter.number)}
-        variant="quiet"
-        size={20}
-        className="books-more"
-        onClick={onOpenMenu}
-      />
+      {onOpenMenu && (
+        <Control
+          icon="more"
+          label={strings.chapterRowMenu(chapter.number)}
+          variant="quiet"
+          size={20}
+          className="books-more"
+          onClick={onOpenMenu}
+        />
+      )}
     </li>
   );
 }
