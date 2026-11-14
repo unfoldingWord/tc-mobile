@@ -9,6 +9,8 @@ its body and empties it.
 
 ## Changed
 
+- In a book made from a template, chapters can no longer be moved (their order is the template's) (#1985).
+
 ## Fixed
 
 ## Removed

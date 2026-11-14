@@ -559,7 +559,8 @@ src/lib/storage/db.ts on origin/staging); docs/progress_tracker.md 2026-11-02
 - **Move a chapter, a book or a segment without press-and-hold.** Every
   chapter on the Books screen has a **⋮**; a book's menu and a segment's menu
   have Move up and Move down. Each moves the row one place and is greyed on the
-  first or last. On a chapter with many segments the progress dots may look a
+  first or last. In a book made from a template, chapters and segments have
+  no Move, because their order is the template's (#1985, #1969). On a chapter with many segments the progress dots may look a
   little smaller. <!-- source: tester-build-v1.2.2 notes ("Move a chapter without press-and-hold", "Move up and Move down"); not run on a phone -->
 - **Hold a cut-off name to read it whole** on the Books, Segments and recorder
   screens (§4). <!-- source: tester-build-v1.2.2 notes -->
