@@ -3,7 +3,7 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { O4SheetHead } from "@/components/o4-crumbs";
+import { SheetHead } from "@/components/crumbs";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
@@ -13,7 +13,7 @@ import { restingErase } from "./support";
 /**
  * Hold a cut-off header crumb to read it whole (S14, #1284): the recorder
  * header's book and chapter crumbs, through the real `Recorder` with its
- * segment loader replaced at the boundary (the `o4-header-crumbs` pattern).
+ * segment loader replaced at the boundary (the `header-crumbs` pattern).
  * The same hold, the same bubble and the same rule as the Books and Segments
  * names: only a crumb that is actually cut off claims the press, and the
  * release's click is swallowed, so a hold never navigates.
@@ -149,7 +149,7 @@ async function mountRecorder() {
 const crumbText = (n: number) =>
   document
     .querySelector("header")!
-    .querySelectorAll<HTMLElement>(".o4-crumb > span")[n]!;
+    .querySelectorAll<HTMLElement>(".crumb > span")[n]!;
 const bubble = () => document.querySelector<HTMLElement>(".name-reveal");
 
 /** The ellipsis, as layout would report it: more content than room. */
@@ -229,10 +229,10 @@ describe("a menu's sheet head stays decoration (#1269)", () => {
   it("a cut-off crumb in a sheet head claims no press: the menu shows the name whole already", async () => {
     await act(async () =>
       root.render(
-        createElement(O4SheetHead, { book: LONG_BOOK, chapter: LONG_CHAPTER })
+        createElement(SheetHead, { book: LONG_BOOK, chapter: LONG_CHAPTER })
       )
     );
-    const text = container.querySelector<HTMLElement>(".o4-crumb > span")!;
+    const text = container.querySelector<HTMLElement>(".crumb > span")!;
     cutOff(text);
     await act(async () => pointer(text, "pointerdown"));
     await act(async () => vi.advanceTimersByTime(1000));

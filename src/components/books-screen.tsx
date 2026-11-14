@@ -25,24 +25,20 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { NameReveal } from "./name-reveal";
-import { O4BookDeleteAsk } from "./o4-book-delete-ask";
-import { O4SheetHead } from "./o4-crumbs";
+import { BookDeleteAsk } from "./book-delete-ask";
+import { SheetHead } from "./crumbs";
 import { CoverPicker } from "./cover-picker";
 import { LanguageAsk } from "./language-ask";
 import { LicenceAsk } from "./licence-ask";
-import {
-  CoverTile,
-  LicenceTile,
-  O4BookHead,
-  O4CoverPick,
-} from "./o4-book-menu";
-import { MoveTiles, Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { CoverTile, LicenceTile, BookHead, CoverPick } from "./book-menu";
+import { MoveTiles, Tile, TileGrid, TileSpacer } from "./tile-menu";
 import { Notice } from "./notice";
-import { SquareButton } from "./o4-controls";
+import { isNativeShell } from "@/hooks/share-target";
+import { SquareButton } from "./shape-buttons";
 import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
-import { bookShareItems } from "./share-o4-view";
+import { bookShareItems } from "./share-view";
 import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
@@ -125,7 +121,7 @@ import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
  *
  * `books:library-share` (#1045/#1056) is the one exception that IS a layer.
  * Share your work has no enclosing menu to fold `ownsScreen()`'s busy check
- * into — the O4 storage banner's button sits directly on the shelf, not
+ * into — the storage banner's button sits directly on the shelf, not
  * behind a ⋮ — so there is nothing else to guard Back with while its own
  * `<ShareProgress>` owns the screen (DRI, 2026-09-26: "Refuse, like Book share
  * (Recommended)"). It is opened from the SAME tap that starts `prepare()`/
@@ -269,8 +265,9 @@ export function BooksScreen({
   // About closes the menu, and the About panel owns its own Menu.
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutViewing, setAboutViewing] = useState<LicenseText | null>(null);
-  // Settings (#1575), opened by the gear in the header. Its own flag and its
-  // own Back layer, like About's, so the two never share a close path.
+  // Settings (#1575), opened from its tile in the global menu (#1871). Its own
+  // flag and its own Back layer, like About's, so the two never share a close
+  // path.
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The Template Library (#246): its own panel, opened from a ≡ tile.
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -383,6 +380,9 @@ export function BooksScreen({
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
   // resolves the id back to a row, auto-closing the menu if that book vanishes.
   const [shareMenuBookId, setShareMenuBookId] = useState<BookId | null>(null);
+  // Export project outside the installed app (#1457, R3): set by a tap on the
+  // tile in a browser, which exports nothing and says where export works.
+  const [exportPointer, setExportPointer] = useState(false);
   // The chapter row's ⋮ menu (#1730): which chapter's menu is open. It holds
   // Move up / Move down only, and writes nothing until a tile is tapped.
   const [chapterMenuId, setChapterMenuId] = useState<ChapterId | null>(null);
@@ -473,7 +473,7 @@ export function BooksScreen({
   // time, so it sees the live value, not the one closed over at save.
   const bookMenuSession = useRef(0);
   const bookShare = useBookShare();
-  // Share your work (#987), from the O4 storage banner. Held here, not in the
+  // Share your work (#987), from the storage banner. Held here, not in the
   // banner, so its overlay and the shelf's `inert` follow the timeline in the
   // same render (#1045). Idle unless that banner's button starts it.
   const libraryShare = useLibraryShare();
@@ -627,6 +627,7 @@ export function BooksScreen({
     cancelLanguageAsk();
     cancelLicenceAsk();
     setSavingName(false);
+    setExportPointer(false);
     bookShare.reset();
     return true;
   }, [
@@ -670,7 +671,7 @@ export function BooksScreen({
   // ── Delete asks inside the book sheet (#980, G6; #949 D16) ──────────────
   //
   // Delete does NOT close the book sheet: the sheet stays up and swaps its
-  // actions for Keep and Delete (`O4BookDeleteAsk`). `deleteTargetId` names
+  // actions for Keep and Delete (`BookDeleteAsk`). `deleteTargetId` names
   // the armed book and `"books:delete-confirm"` is the layer over the
   // sheet's own, so Back, `busy()` and the vanish effect below see it. Keep
   // goes back to the SAME open sheet (the workbench's `bmDelNo`), and focus
@@ -840,7 +841,7 @@ export function BooksScreen({
   }, [libraryShareOwnsScreenNow, layers]);
   // The banner never calls `libraryShare.prepare`/`send` directly — this
   // wrapping is the one place both taps are guaranteed to open the layer
-  // before the flow can claim the screen, without duplicating the O4 banner's
+  // before the flow can claim the screen, without duplicating the banner's
   // own click handlers. `libraryShare`'s own identity is a fresh object every
   // render (`useLibraryShare` returns a literal, not a memoized one), so this
   // recomputes every render too; nothing downstream keys an effect on its
@@ -871,11 +872,15 @@ export function BooksScreen({
     setMenuOpen(true);
     layers.open("books:global-menu");
   }, [globalMenuFocusRestore, layers]);
-  // Once the menu is gone and the shelf's `inert` has lifted.
+  // Once the menu is gone and the shelf's `inert` has lifted. The Settings
+  // tile hands the menu off to Settings in one commit (#1871), with the shelf
+  // still `inert` under it, so the restore is HELD (not called) while Settings
+  // is up, and the ≡ that opened the menu gets focus back when Settings
+  // closes: the ≡ is the only way to Settings now.
   useLayoutEffect(() => {
-    if (menuOpen) return;
+    if (menuOpen || settingsOpen) return;
     globalMenuFocusRestore.restore({ suppressed: false, fallback: null });
-  }, [menuOpen, globalMenuFocusRestore]);
+  }, [menuOpen, settingsOpen, globalMenuFocusRestore]);
   const closeGlobalMenu = useCallback(() => {
     closeGlobalMenuState();
     // The Clear confirm lives INSIDE this panel and unmounts with it, so its
@@ -923,24 +928,19 @@ export function BooksScreen({
     },
     [layers]
   );
-  // The gear's ONE open and ONE close. Opened from the tap itself, so the
-  // layer is registered in the gesture, and the ≡ menu is not involved: the
-  // gear is its own opener.
-  const settingsFocusRestore = useFocusRestore();
+  // Settings' ONE open and ONE close, opened from its ≡ tile (#1871). Like
+  // About, it replaces the global menu: the new layer registers BEFORE the
+  // menu's closes, so the stack is never empty between the two. Focus comes
+  // back to the ≡ through the menu's own held restore above.
   const openSettings = useCallback(() => {
-    settingsFocusRestore.capture();
     layers.open("books:settings");
+    closeGlobalMenu();
     setSettingsOpen(true);
-  }, [layers, settingsFocusRestore]);
+  }, [closeGlobalMenu, layers]);
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     layers.close("books:settings");
   }, [layers]);
-  // Once the screen is gone and the shelf's `inert` has lifted.
-  useLayoutEffect(() => {
-    if (settingsOpen) return;
-    settingsFocusRestore.restore({ suppressed: false, fallback: null });
-  }, [settingsOpen, settingsFocusRestore]);
   // The Template Library's ONE open and ONE close, like About: it replaces the
   // global menu, so the menu's layer goes with it.
   const templatesBusy = useRef(false);
@@ -956,10 +956,18 @@ export function BooksScreen({
     setTemplatesOpen(false);
     layers.close("books:templates");
   }, [layers]);
-  const onTemplateCreated = useCallback(() => {
-    closeTemplates();
-    reload();
-  }, [closeTemplates, reload]);
+  const onTemplateCreated = useCallback(
+    (bookId: BookId) => {
+      closeTemplates();
+      // Reveal the new book the way New Book does (#246): arm BEFORE the
+      // reload, never after. The row is not on the shelf yet; the load effect
+      // above spends the arm on the commit that brings the reloaded list in.
+      rowReveal.armScroll(bookId);
+      rowReveal.armFocus(bookId);
+      reload();
+    },
+    [closeTemplates, reload, rowReveal]
+  );
   const closeLicenseText = useCallback(() => {
     setAboutViewing(null);
     layers.close("books:about-text");
@@ -1309,7 +1317,7 @@ export function BooksScreen({
     bookKinds[shareMenuBook.bookId] === false &&
     bookShare.status === "idle";
   // The open book's cover colour: its stored key, or #957's id-derived
-  // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
+  // fallback. The sheet head, the Cover colour tile, the picker's pressed
   // swatch and the delete ask all read this one value.
   const shareMenuCoverKey: CoverColourKey | null = shareMenuBook
     ? resolveCoverKey({
@@ -1411,7 +1419,7 @@ export function BooksScreen({
   const onCloseShareMenu = useCallback(() => {
     if (closeBookMenuState()) layers.close("books:book-menu");
   }, [closeBookMenuState, layers]);
-  // Keep, from the O4 ask's own button. The state half above, plus the ask's
+  // Keep, from the ask's own button. The state half above, plus the ask's
   // layer. A system Back reaches the state half through the layer instead.
   const onKeepDelete = useCallback(() => {
     if (keepDeleteState()) layers.close("books:delete-confirm");
@@ -1506,7 +1514,7 @@ export function BooksScreen({
     setRenamingBook(false);
     setSavingName(false);
   }, [setSavingName]);
-  // ── O4: the Cover colour tile and #957's picker (#949, #937 D7) ─────────
+  // ── The Cover colour tile and #957's picker (#949, #937 D7) ─────────
   //
   // The write is #964's hook, which reports a failure to the funnel itself
   // and queues a second tap while one is in flight. `reload()` after a
@@ -1695,6 +1703,12 @@ export function BooksScreen({
   );
   const onPrepareBookExport = useCallback(() => {
     if (!shareMenuBook) return;
+    // R3: export works in the installed app only. A browser gets the pointer,
+    // in the sheet, and nothing else: no chapter stop, no language ask.
+    if (!isNativeShell()) {
+      setExportPointer(true);
+      return;
+    }
     focusRestore.capture();
     stopChapter();
     bookMenuSession.current += 1;
@@ -2206,6 +2220,7 @@ export function BooksScreen({
   const moveChapterFromMenu = (step: -1 | 1) => {
     if (!chapterMenu) return;
     const { book, index, row } = chapterMenu;
+    if (book.fromTemplate) return;
     const toIndex = index + step;
     if (toIndex < 0 || toIndex >= book.chapters.length) return;
     closeChapterMenu();
@@ -2326,15 +2341,8 @@ export function BooksScreen({
             render. Same two classes, same `aria-hidden` sibling shape, so the
             two marks cannot drift apart visually; the only difference is the
             colour, because this one is a state mark rather than a reason. */}
-        {/* Settings (#1575, the DRI: "Gear icon on Books header"). Its own
-            Control, ahead of the ≡, so the ≡'s hint wrapper below is untouched. */}
-        <Control
-          icon="gear"
-          label={strings.settingsOpen}
-          variant="quiet"
-          className="books-ghost"
-          onClick={openSettings}
-        />
+        {/* One control here (#1871, the DRI: "≡ only; Settings is a tile
+            (Recommended)"): Settings is a tile in the menu this ≡ opens. */}
         <span className="control-hinted">
           <Control
             icon="menu"
@@ -2345,6 +2353,7 @@ export function BooksScreen({
             }
             variant="quiet"
             className="books-ghost"
+            testId="books-menu"
             onClick={openGlobalMenu}
           />
           {markedFailureCount > 0 && (
@@ -2555,18 +2564,20 @@ export function BooksScreen({
         {chapterPlayLine}
       </span>
 
-      {/* The global menu: the failure-log panel, then About & licenses. The
-          theme toggle left it for the Settings screen (#1575), which the gear
-          in the header opens.
+      {/* The global menu: the failure-log panel, then the tiles Settings,
+          Templates and About, in that order (#1871, the DRI: "≡ only; Settings
+          is a tile (Recommended)"). The theme toggle left this menu for the
+          Settings screen (#1575), and the Books header's gear went when
+          Settings became a tile here.
 
           THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
           focus on its first actionable child on open, and while the log is
           non-empty the ≡ is named "Open menu. N problems recorded." — reaching
           the report is its whole point. So the report is what a switch/AT
-          user must land on, not About or a control that flips the theme
-          (George R1 P2 on #457). The panel is mounted only while the log holds
-          something, so a phone that has never failed opens on About, as the
-          first actionable child.
+          user must land on, not a tile (George R1 P2 on #457). The panel is
+          mounted only while the log holds something, so a phone that has
+          never failed opens on the Settings tile, as the first actionable
+          child.
 
           About & licenses (#36): the reachable-on-the-phone home for the LGPL
           notice and the bundled-component attribution. Opening it closes the
@@ -2597,19 +2608,29 @@ export function BooksScreen({
         {/* The report panel above stays as it is (its Export tile's words are
             a DRI call). */}
         <TileGrid>
+          {/* The caption is the screen's own title, so the tile, its spoken
+              name and the heading it opens say the same word (#1871). */}
           <Tile
             tone="plain"
-            icon="info"
-            label={strings.aboutOpen}
-            caption={strings.tileAbout}
-            onClick={openAbout}
+            icon="gear"
+            label={strings.settingsOpen}
+            caption={strings.settingsTitle}
+            onClick={openSettings}
           />
           <Tile
             tone="plain"
             icon="book-open"
             label={strings.templatesOpen}
             caption={strings.tileTemplates}
+            testId="menu-templates"
             onClick={openTemplates}
+          />
+          <Tile
+            tone="plain"
+            icon="info"
+            label={strings.aboutOpen}
+            caption={strings.tileAbout}
+            onClick={openAbout}
           />
         </TileGrid>
       </Menu>
@@ -2747,7 +2768,7 @@ export function BooksScreen({
             while it is up; rename cannot be open at the same time, because
             Delete is only reachable from the action list. */}
         {deleteArmed && shareMenuBook && (
-          <O4BookDeleteAsk
+          <BookDeleteAsk
             name={shareMenuBookName}
             coverHex={shareMenuCoverHex}
             busy={deleting}
@@ -2808,7 +2829,7 @@ export function BooksScreen({
           // tiles for #957's picker in the same sheet; a choice writes and
           // comes back here.
           <>
-            <O4BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
+            <BookHead name={shareMenuBookName} coverHex={shareMenuCoverHex}>
               {!pickingCover &&
                 askingLanguageFor === null &&
                 askingLicenceFor === null && (
@@ -2816,11 +2837,11 @@ export function BooksScreen({
                     icon="pencil"
                     label={strings.renameBook}
                     size={24}
-                    className="o4-head-pen"
+                    className="head-pen"
                     onClick={() => setRenamingBook(true)}
                   />
                 )}
-            </O4BookHead>
+            </BookHead>
             {askingLanguageFor !== null ? (
               <LanguageAsk
                 state={languageList.state}
@@ -2846,7 +2867,7 @@ export function BooksScreen({
                 error={licenceFailed ? strings[licenceFailed] : null}
               />
             ) : pickingCover ? (
-              <O4CoverPick
+              <CoverPick
                 selected={shareMenuCoverKey}
                 onSelect={onChooseCover}
                 error={coverFailed ? strings[coverFailed] : null}
@@ -2890,6 +2911,7 @@ export function BooksScreen({
                             icon="file-zip"
                             label={strings.exportProject}
                             caption={strings.tileExport}
+                            testId="tile-export-project"
                             busy={bookShare.status === "preparing"}
                             onClick={onPrepareBookExport}
                           />
@@ -2918,6 +2940,9 @@ export function BooksScreen({
                     ),
                   }}
                 />
+                {exportPointer && (
+                  <Notice tone="info">{strings.exportProjectWebPointer}</Notice>
+                )}
                 {/* Move up / Move down (#1344), the pair the segment menu
                   draws too: the first book's Move up and the last book's
                   Move down are greyed with their reason (#135). */}
@@ -3059,7 +3084,7 @@ function BookItem({
   // this card's rows. Collapsing the book switches it off, which lets go of a
   // row in hand without a write.
   const gesture = useReorderGesture<ChapterId>({
-    enabled: reorder.enabled && expanded,
+    enabled: reorder.enabled && expanded && !book.fromTemplate,
     ids: book.chapters.map((chapter) => chapter.chapterId),
     nodeFor: reorder.nodeFor,
     scrollRef: reorder.scrollRef,
@@ -3100,7 +3125,7 @@ function BookItem({
           onPointerDown={onHoldStart}
           // The book's hold area (#338). The card already keeps a long press
           // from selecting text or raising the phone's callout
-          // (`o4/books.css`, `.books-card`).
+          // (`3-components/books.css`, `.books-card`).
           data-reorder-handle={onHoldStart ? "" : undefined}
           aria-expanded={expanded}
           aria-controls={listId}
@@ -3118,7 +3143,7 @@ function BookItem({
                   draws for its swatches: a cover colour is the book's
                   identity, not a themed role (`lib/cover-colour.ts`'s
                   docblock argues it). Every other colour on the card is a
-                  layer-2 role in `o4/books.css`. */}
+                  layer-2 role in `3-components/books.css`. */}
             <span
               className="books-cover"
               aria-hidden="true"
@@ -3166,6 +3191,7 @@ function BookItem({
           label={strings.bookMenuOpen(heading)}
           variant="quiet"
           className="books-ghost"
+          testId="book-menu-open"
           onClick={onOpenShareMenu}
         />
       </div>
@@ -3182,10 +3208,18 @@ function BookItem({
               chapter={chapter}
               audio={audio}
               onOpen={() => onOpenChapter(chapter.chapterId)}
-              onOpenMenu={() => onOpenChapterMenu(chapter.chapterId)}
+              // A template book's chapter order is the template's (#1985): no
+              // hold to move and no ⋮, whose sheet holds only Move.
+              onOpenMenu={
+                book.fromTemplate
+                  ? undefined
+                  : () => onOpenChapterMenu(chapter.chapterId)
+              }
               guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
-              onHoldStart={gesture.holdStart(index)}
+              onHoldStart={
+                book.fromTemplate ? undefined : gesture.holdStart(index)
+              }
               lifted={drag?.fromIndex === index}
               // While a row is lifted: it follows the finger and the rows
               // between its slot and the target slide one slot to make room.
@@ -3210,8 +3244,8 @@ interface ChapterItemProps {
   chapter: ChapterRow;
   audio: ChapterAudio;
   onOpen: () => void;
-  /** Open this row's ⋮ menu (#1730). */
-  onOpenMenu: () => void;
+  /** Open this row's ⋮ menu (#1730); absent in a template book (#1985). */
+  onOpenMenu?: () => void;
   /** This row is the guided step (#604). */
   guided: boolean;
   setNode: (id: string, el: HTMLElement | null) => void;
@@ -3260,7 +3294,7 @@ function ChapterItem({
         type="button"
         onClick={onOpen}
         onPointerDown={onHoldStart}
-        // `o4/books.css` reads it to keep a long press from selecting text
+        // `3-components/books.css` reads it to keep a long press from selecting text
         // or raising the phone's callout.
         data-reorder-handle={onHoldStart ? "" : undefined}
         aria-label={strings.openChapter(heading)}
@@ -3269,7 +3303,7 @@ function ChapterItem({
         // what keeps it out of the scroll container's clip (3-components.css).
         className={cn("books-chapter", guided && "is-guided")}
       >
-        <O4ChapterFace chapter={chapter} />
+        <ChapterFace chapter={chapter} />
       </button>
       {/* A sibling of the row button, never inside it: a button in a button is
           invalid, and a tap or a hold here must not reach the row's open and
@@ -3294,14 +3328,16 @@ function ChapterItem({
           reason the play control is, laid over the end of the slot the row's
           face keeps for both (`books-chapter-go`). Named by the slot, as the
           move line is, so it reads the new number after a move. */}
-      <Control
-        icon="more"
-        label={strings.chapterRowMenu(chapter.number)}
-        variant="quiet"
-        size={20}
-        className="books-more"
-        onClick={onOpenMenu}
-      />
+      {onOpenMenu && (
+        <Control
+          icon="more"
+          label={strings.chapterRowMenu(chapter.number)}
+          variant="quiet"
+          size={20}
+          className="books-more"
+          onClick={onOpenMenu}
+        />
+      )}
     </li>
   );
 }
@@ -3343,7 +3379,7 @@ function ChapterMenuHead({
     chapter.templateNumber
   );
   return (
-    <O4SheetHead
+    <SheetHead
       book={strings.bookHeading(book.name, book.number)}
       bookCoverHex={coverColourHex(
         resolveCoverKey({
@@ -3374,7 +3410,7 @@ function ChapterMenuHead({
  * reorder changes (#1272, Q1 (b)). The badge is always the slot. A title that was only spoken is
  * tier 2 (after the training) and is not drawn here.
  */
-function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
+function ChapterFace({ chapter }: { chapter: ChapterRow }) {
   const heading = useChapterHeading(
     chapter.name,
     chapter.number,
@@ -3474,7 +3510,7 @@ function dotStates(chapter: ChapterRow): SegmentRowState[] {
  * − 44 (`.books-chapter-num`) − 2 × 14 (the row's two gaps)
  * − 72 (`.books-chapter-go`, the slot the play control and the row's ⋮
  * share, #1469 and #1730) = 110. It was 154 while a 28px chevron held that
- * slot, and 138 while play alone did. `tests/books-o4.test.ts` re-derives it
+ * slot, and 138 while play alone did. `tests/books-screen.test.ts` re-derives it
  * from the stylesheets.
  */
 const DOT_COLUMN = 110;
@@ -3499,7 +3535,7 @@ const TITLED_DOT_ROOM = 19;
  * wrapped rows fit in `height` ({@link TITLED_DOT_ROOM}). Past what the
  * smallest step can hold, the smallest step is returned anyway and the dots
  * wrap onto more rows: the row's height is a floor, not a cap
- * (`o4/books.css`, #1229), so it grows rather than clipping a dot. The
+ * (`3-components/books.css`, #1229), so it grows rather than clipping a dot. The
  * workbench's steps, fitted against {@link DOT_COLUMN} rather than the
  * workbench's 206.
  */

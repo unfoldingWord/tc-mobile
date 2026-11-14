@@ -5,12 +5,13 @@ import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
-import { AREA_DIR, readAreaCss } from "./o4-area-css";
+import { AREA_DIR, readAreaCss, type Area } from "./area-css";
 import {
   builtCssRules,
   compareSpecificity,
   normalizeSelector,
   specificity,
+  stripCssComments,
   subjectCompound,
   type BuiltCssRule,
 } from "./support";
@@ -19,14 +20,14 @@ import {
  * The component layer's cascade, read from the shipped `dist/assets/*.css`
  * (#954). It replaces the per-file "every selector starts with `:root`"
  * checks the area-stylesheet suites carried, and the dist half of
- * `tests/o4-cascade.test.ts`.
+ * `tests/area-stylesheets.test.ts`.
  *
  * Two stylesheets write into the one `@layer components`: the base,
  * `src/app/styles/3-components.css`, and the area files under
- * `src/app/styles/o4/`, imported after it. Sharing one layer means a tie in
+ * `src/app/styles/3-components/`, imported after it. Sharing one layer means a tie in
  * specificity goes to whichever rule comes later, and the area files rely on
  * that. A `:root ` prefix on every area selector used to hold each area rule
- * one step above the base rule it restyles; #954 takes that prefix off, and
+ * one step above the base rule it restyles; #954 took that prefix off, and
  * this gate is what says, statically, where an area rule now loses.
  *
  * THREE CLAIMS, each on the built file, because the bundler and the minifier
@@ -37,7 +38,7 @@ import {
  *      rule. Every built rule maps back to a source rule in one of the two
  *      sets, and every source rule with a declaration is found in the build,
  *      which is the non-empty floor for everything below.
- *   2. THE SENTINEL. `o4/index.css`'s one declaration is the last thing in
+ *   2. THE SENTINEL. `3-components/index.css`'s one declaration is the last thing in
  *      the components block, right before the utilities layer opens. A
  *      comment-only marker would not survive: the build strips comments, so
  *      an empty `@layer components {}` compiles to nothing.
@@ -77,8 +78,8 @@ const GATE = resolveDistGate(CSS_FILES.length > 0, "dist/assets/*.css");
 
 const LAYER = "@layer components";
 
-/** The minified sentinel rule `o4/index.css` declares. */
-const SENTINEL = ":root{--o4-scope:1}";
+/** The minified sentinel rule `3-components/index.css` declares. */
+const SENTINEL = ":root{--c-components-last:1}";
 
 /** A source rule, in the one spelling the build is compared in. */
 interface SourceRule {
@@ -120,7 +121,7 @@ function byKey(rules: readonly SourceRule[]): Map<string, SourceRule> {
 
 /**
  * Which side a built rule came from, when both sources write its key (an
- * area rule restyling a base selector at the same weight, once #954 takes
+ * area rule restyling a base selector at the same weight, now that #954 took
  * the `:root` prefix off). Told apart by the built declarations, never by
  * order — order is what the layer-order check tests. A side fits when it
  * writes every built property at the same importance; when both fit, the
@@ -157,7 +158,7 @@ function ruleKey(selector: string, context: readonly string[]): string {
   return [...inner, normalizeSelector(selector)].join(" » ");
 }
 
-/** The area files, in `o4/index.css`'s import order. */
+/** The area files, in `3-components/index.css`'s import order. */
 function areaFiles(): string[] {
   const index = postcss.parse(readAreaCss("index"));
   const files = index.nodes
@@ -165,7 +166,8 @@ function areaFiles(): string[] {
       (n): n is postcss.AtRule => n.type === "atrule" && n.name === "import"
     )
     .map((n) => n.params.replace(/^["']\.\/|["']$/g, ""));
-  if (files.length === 0) throw new Error("o4/index.css imports no files");
+  if (files.length === 0)
+    throw new Error("3-components/index.css imports no files");
   return files;
 }
 
@@ -299,7 +301,7 @@ function missing(
 }
 
 // Fixture CSS, not the build: runs under `npm test` too. A selector both
-// sources write, as it ships once #954 takes the `:root` prefix off.
+// sources write, as it ships now that #954 took the `:root` prefix off.
 describe("a selector written in both sources (#954)", () => {
   const BASE = ".x{color:red;padding:1px}.y{margin:0}";
   const AREA = ".x{color:blue}";
@@ -373,6 +375,43 @@ describe("a selector written in both sources (#954)", () => {
       place(wrap(".x{color:red}.x{color:red}"), same.baseByKey, same.areaByKey)
         .unmapped
     ).toHaveLength(2);
+  });
+});
+
+/** Every area file. None carries the standalone `:root ` prefix (#954). The
+ *  list is checked against `3-components/index.css`'s imports below, so a
+ *  new area file cannot be left out of the ban. */
+const AREAS: readonly Area[] = [
+  "books",
+  "controls",
+  "dialogs",
+  "errors",
+  "menus",
+  "motion",
+  "recorder",
+  "segments",
+  "share",
+  "sheets",
+];
+
+// Source read, so it runs under `npm test` too. A `:root[dir="rtl"]`
+// compound is not standalone: the `\s` after `:root` is what leaves it out.
+describe("the area files carry no standalone :root (#954)", () => {
+  it("bans it in every file the index imports", () => {
+    expect(
+      areaFiles()
+        .map((file) => file.replace(/\.css$/, ""))
+        .sort()
+    ).toEqual([...AREAS].sort());
+  });
+
+  it.each(AREAS)("%s.css has no `:root ` descendant prefix", (area) => {
+    const css = stripCssComments(readAreaCss(area));
+    expect(css.length).toBeGreaterThan(0);
+    const lines = css
+      .split("\n")
+      .filter((line) => /(^|[^\w-]):root\s/.test(line));
+    expect(lines).toEqual([]);
   });
 });
 
@@ -500,8 +539,12 @@ function label(rule: Placed): string {
 }
 
 /**
- * The contested pairs on develop when this gate landed, each with why it is
- * allowed to stand. The target, once #954's flatten slices land, is empty.
+ * The contested pairs with every area file flat (#954), each with why it is
+ * allowed to stand. Most come from a handful of base rules whose subject is
+ * a bare element (an <svg>, an <input>) or an attribute, so the subject test
+ * cannot rule out any area rule that sets the same property; the reasons
+ * repeat for that reason. A new entry needs its own markup reason, not one
+ * copied from a neighbour.
  *
  * Every entry below is one the subject test lets through only because one
  * side's subject has no class. Each reason says why the two subjects still
@@ -515,29 +558,166 @@ const DOT =
 const NOT_AN_ICON =
   "Only <Icon> sets data-rtl-mirror (icon.tsx), and only on its own <svg>.";
 
+const LANG =
+  "The [lang] element is the autonym <span> inside a language row " +
+  "(language-ask.tsx), which carries no class, so the base rule's class " +
+  "cannot match it.";
+const SHEET_DRAG =
+  "Only menu.tsx writes data-sheet-drag, and only on the menu panel, a " +
+  '<div class="menu-panel"> that is neither a .control nor a .paste-marker.';
+const SHEET_DRAG_RTL = `${SHEET_DRAG} ${NOT_AN_ICON}`;
+const LIST_ITEM =
+  "The area subject is a reorder-state <li> (or its lifted class on that " +
+  `<li>) in books-screen.tsx / segments-screen.tsx; the base rule needs an <svg>. ${NOT_AN_ICON}`;
+const CIRCLE = `The area subject is a <circle> inside the glyph; the base rule needs an <svg>. ${NOT_AN_ICON}`;
+const TEXT_FIELD =
+  "The base rule only matches an input, a textarea or a [contenteditable] " +
+  "element; the area subject is a <li> (books-screen.tsx), a plain <div> " +
+  "(name-reveal.tsx, segments-screen.tsx's crumbs bar) or a <button> " +
+  "(crumbs.tsx) with none of those.";
+const BUSY_SVG =
+  "The base rule needs an <svg> inside a busy .control; the area subject is " +
+  "never an <svg>: a <button> (control.tsx, books-screen.tsx's card toggle " +
+  "and chapter row, the share tile), a <span> (recorder-toolbars.tsx's " +
+  "record guide, recorder.tsx's recording dot) or a <div> " +
+  "(book-delete-ask.tsx's sheet head, permission-panel.tsx's body).";
+
 const REVIEWED: Record<string, string> = {
-  ':root .books-dots > [data-state="finished"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
+  ".books-card ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
+    TEXT_FIELD,
+  '.books-chapters[data-reordering] > .books-lifted ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.books-chapters[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.books-delete-ask > .sheet-head ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.books-delete-ask > .sheet-head ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.books-dots > [data-state="finished"] ⟵ .control--quiet:disabled:hover [background]':
     DOT,
-  ':root .books-dots > [data-state="recorded"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
+  '.books-dots > [data-state="finished"] ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
     DOT,
-  ":root .books-dots > i ⟵ .control--quiet:disabled:hover [background]": DOT,
-  ':root .books-dots > i ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
+  '.books-dots > [data-state="finished"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
     DOT,
-  ":root .books-dots > i ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]":
+  '.books-dots > [data-state="finished"] ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
     DOT,
-  ":root .books-dots > i ⟵ .recorder-toolbar.pair .control--play [height, width]":
+  '.books-dots > [data-state="recorded"] ⟵ .control--quiet:disabled:hover [background]':
     DOT,
-  ":root .books-dots > i ⟵ .recorder-toolbar.pair .control--record [height, width]":
+  '.books-dots > [data-state="recorded"] ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
     DOT,
-  ':root .books-dots > i ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
+  '.books-dots > [data-state="recorded"] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]':
     DOT,
-  ":root .language-row [lang] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [color]":
-    "The [lang] element is the autonym <span> inside a language row " +
-    "(language-ask.tsx), which carries no class, so .control--play cannot " +
-    "match it.",
-  ':root .recorder-cut .cut-anchor ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.cut-anchor is a <div> (cut-anchor.tsx), and the base rule needs an <svg>. ${NOT_AN_ICON}`,
-  ':root .share-o4-ring ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.share-o4-ring is an <svg> drawn by share-progress-panel.tsx, not by <Icon>. ${NOT_AN_ICON}`,
-  ':root [data-sheet-drag] ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
-    "Only menu.tsx writes data-sheet-drag, and only on the menu panel, " +
-    `which is a <div>. ${NOT_AN_ICON}`,
+  '.books-dots > [data-state="recorded"] ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
+    DOT,
+  ".books-dots > i ⟵ .control--quiet:disabled:hover [background]": DOT,
+  ".books-dots > i ⟵ .control--quiet:hover [background]": DOT,
+  '.books-dots > i ⟵ .control--quiet[aria-disabled="true"]:hover [background]':
+    DOT,
+  ".books-dots > i ⟵ .name-edit-with-extra > .name-input [flex]": DOT,
+  ".books-dots > i ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [background]":
+    DOT,
+  ".books-dots > i ⟵ .recorder-toolbar.edit [height]": DOT,
+  ".books-dots > i ⟵ .recorder-toolbar.pair [height]": DOT,
+  ".books-dots > i ⟵ .row .control--mic [height, width]": DOT,
+  ".books-dots > i ⟵ .row .control--record [height, width]": DOT,
+  ".books-dots > i ⟵ .row--finished .control--play [background]": DOT,
+  ".books-dots > i ⟵ .row-open:focus-visible [border-radius]": DOT,
+  ".books-dots > i ⟵ .scrub:focus-visible [border-radius]": DOT,
+  '.books-dots > i ⟵ .vu-meter[data-state="unavailable"] .vu-meter__track [background]':
+    DOT,
+  '.books-dots > i ⟵ .vu-meter__fill[data-zone="green"] [background]': DOT,
+  '.books-dots > i ⟵ .vu-meter__fill[data-zone="red"] [background]': DOT,
+  '.books-dots > i ⟵ .vu-meter__fill[data-zone="yellow"] [background]': DOT,
+  '.books-list[data-reordering] > .books-card-lifted ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.books-list[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.confirm-panel-record .confirm-glyph circle ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    CIRCLE,
+  '.control--mic.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.control--mic.is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.control--record.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.control--record.is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.is-guided[inert] ⟵ .control[aria-busy="true"] svg [animation]': BUSY_SVG,
+  '.is-guided[inert] ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  ".language-row [lang] ⟵ .control--quiet:disabled:hover [color]": LANG,
+  '.language-row [lang] ⟵ .control--quiet[aria-disabled="true"]:hover [color]':
+    LANG,
+  '.language-row [lang] ⟵ .notice[data-tone="alert"] .notice-glyph [color]':
+    LANG,
+  '.language-row [lang] ⟵ .notice[data-tone="busy"] .notice-glyph [color]':
+    LANG,
+  '.language-row [lang] ⟵ .notice[data-tone="info"] .notice-glyph [color]':
+    LANG,
+  ".language-row [lang] ⟵ .recorder-sheet--finished .recorder-toolbar.pair .control--play [color]":
+    LANG,
+  ".name-reveal ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-user-select, user-select]":
+    TEXT_FIELD,
+  ".crumbs-bar ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
+    TEXT_FIELD,
+  '.err-body[data-refused] ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.err-body[data-refused] ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.tile--send.is-armed ⟵ .control[aria-busy="true"] svg [animation]': BUSY_SVG,
+  '.tile--send.is-armed ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.record-guide.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.record-guide.is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.recorder-cut .cut-anchor ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.cut-anchor is a <div> (cut-anchor.tsx), and the base rule needs an <svg>. ${NOT_AN_ICON}`,
+  '.recorder-status .rec-dot ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.recorder-status .rec-dot ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '.segments-list[data-reordering] > .segments-item--lifted ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.segments-list[data-reordering] > li ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    LIST_ITEM,
+  '.share-ring ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]': `.share-ring is an <svg> drawn by share-progress-panel.tsx, not by <Icon>. ${NOT_AN_ICON}`,
+  '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .sheet-head ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .books-delete-ask > .sheet-head ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .control--mic.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .control--mic.is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .control--record.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .control--record.is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .err-body[data-refused] ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .err-body[data-refused] ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .tile--send.is-armed ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .tile--send.is-armed ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .record-guide.is-guided ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .record-guide.is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .recorder-status .rec-dot ⟵ .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  '@media (prefers-reduced-motion:reduce) » .recorder-status .rec-dot ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  "[data-sheet-drag] ⟵ .control:active [transform]": SHEET_DRAG,
+  "[data-sheet-drag] ⟵ .control:disabled [transform]": SHEET_DRAG,
+  '[data-sheet-drag] ⟵ .control[aria-disabled="true"] [transform]': SHEET_DRAG,
+  "[data-sheet-drag] ⟵ .paste-marker:active [transform]": SHEET_DRAG,
+  '[data-sheet-drag] ⟵ :root[dir="rtl"] svg[data-rtl-mirror] [transform]':
+    SHEET_DRAG_RTL,
+  '[inert] .is-guided ⟵ .control[aria-busy="true"] svg [animation]': BUSY_SVG,
+  '[inert] .is-guided ⟵ @media (prefers-reduced-motion:reduce) » .control[aria-busy="true"] svg [animation]':
+    BUSY_SVG,
+  "button.crumb ⟵ .app-shell :is(input, textarea, [contenteditable]) [-webkit-touch-callout, -webkit-user-select, user-select]":
+    TEXT_FIELD,
 };

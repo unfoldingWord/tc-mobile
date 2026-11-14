@@ -310,3 +310,16 @@ describe("Control describedBy (#1032)", () => {
     ).toBe(false);
   });
 });
+
+describe("Control test id", () => {
+  it("emits testId as data-testid, and nothing without one", () => {
+    const withId = button({
+      icon: "menu",
+      label: "Open menu",
+      testId: "books-menu",
+    });
+    expect(withId.getAttribute("data-testid")).toBe("books-menu");
+    const without = button({ icon: "menu", label: "Open menu" });
+    expect(without.hasAttribute("data-testid")).toBe(false);
+  });
+});

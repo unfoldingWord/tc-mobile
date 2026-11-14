@@ -79,7 +79,7 @@ for (const theme of ["light", "dark"] as const) {
       .click();
     const dialog = page.getByRole("dialog", { name: "Chapter" });
     await expect(dialog).toBeVisible();
-    await expectWholeAndWrapped(dialog.locator(".o4-sheet-name"), CHAPTER);
+    await expectWholeAndWrapped(dialog.locator(".sheet-name"), CHAPTER);
     // The accessible name of the menu is unchanged by the heading.
     await expect(dialog).toHaveAccessibleName("Chapter");
     await shot(page, `chapter-menu-${theme}`);
@@ -111,7 +111,7 @@ test("the segment menu shows the whole segment name, wrapped", async ({
     .getByRole("button", { name: "More actions for segment 1" })
     .click();
   const dialog = page.getByRole("dialog", { name: "More" });
-  await expectWholeAndWrapped(dialog.locator(".o4-menu-title"), SEGMENT);
+  await expectWholeAndWrapped(dialog.locator(".menu-title"), SEGMENT);
   await shot(page, "segment-menu");
 });
 
@@ -130,11 +130,7 @@ for (const width of [320, 360]) {
       .click();
     const dialog = page.getByRole("dialog", { name: "More" });
     await expect(dialog).toBeVisible();
-    await expectWholeAndWrapped(
-      dialog.locator(".o4-sheet-name"),
-      CHAPTER,
-      width
-    );
+    await expectWholeAndWrapped(dialog.locator(".sheet-name"), CHAPTER, width);
     await shot(page, `recorder-menu-${width}`);
   });
 }

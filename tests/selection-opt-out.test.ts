@@ -3,14 +3,14 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector, fileRules } from "./o4-area-css";
+import { areaScope, fileRules } from "./area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
  * Extends #559's selection opt-out (#563, the DRI's "Extend it with the same
  * CSS" pick, 2026-09-28): the same three declarations #559 put on
  * `.recorder-sheet`, `.menu-panel` and `.confirm-panel` now also sit on the
- * Segments rows (`.row`), the Segments header's crumb row (`.o4-crumbs-bar`,
+ * Segments rows (`.row`), the Segments header's crumb row (`.crumbs-bar`,
  * which replaced the `.breadcrumb` button in #1269 and carries the same
  * three declarations), the
  * Books rows (`.books-card`, which reaches its chapter rows by inheritance —
@@ -46,8 +46,8 @@ const COMPONENTS_PATH = path.resolve(
 const componentsCss = readFileSync(COMPONENTS_PATH, "utf8");
 const booksO4Css = areaScope("books");
 const menusO4Css = areaScope("menus");
-const CRUMBS_BAR = areaSelector("menus", ".o4-crumbs-bar");
-const BOOKS_CARD = areaSelector("books", ".books-card");
+const CRUMBS_BAR = ".crumbs-bar";
+const BOOKS_CARD = ".books-card";
 
 /**
  * `.row`'s own real ambiguity, worked around rather than hidden: the
@@ -101,7 +101,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
     expectOptOut(componentsCss, ".row");
   });
 
-  it("opts the Segments header's crumb row out (.o4-crumbs-bar, o4/menus.css)", () => {
+  it("opts the Segments header's crumb row out (.crumbs-bar, 3-components/menus.css)", () => {
     expectOptOut(menusO4Css, CRUMBS_BAR);
   });
 
@@ -109,7 +109,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
     expectOptOut(componentsCss, ".share-scrim");
   });
 
-  it("opts the Books rows out (.books-card, o4/books.css — reaches .books-chapter by inheritance)", () => {
+  it("opts the Books rows out (.books-card, 3-components/books.css — reaches .books-chapter by inheritance)", () => {
     expectOptOut(booksO4Css, BOOKS_CARD);
   });
 
@@ -131,7 +131,7 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
         /name-input/
       );
     }
-    // The two O4 roots: every rule for the selector in the whole area file,
+    // The two roots: every rule for the selector in the whole area file,
     // every nested block included, not only the layer's own.
     for (const [area, selector] of [
       ["menus", CRUMBS_BAR],

@@ -1,0 +1,34 @@
+/* Shared controls. Owner: #941. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
+
+   The three shapes `components/shape-buttons.tsx` puts on a `Control`
+   (docs/design/o4-design-system.md §3). Each is layered onto the base
+   control rule, so hover, active, focus-visible, the inert dimming and the
+   guide ring are the base rule's own; only size, radius, fill and ink move.
+   The row transport takes its fill and ink from the play and record variants
+   it wears, so it sets size alone. */
+@layer components {
+  .square {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--p-radius-lg);
+    background: var(--s-well);
+    color: var(--s-ink);
+  }
+  .transport {
+    width: 72px;
+    height: 72px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    width: auto;
+    height: 60px;
+    padding: 0 24px;
+    border-radius: 30px; /* #939 token */
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 17px; /* #939 token */
+    font-weight: 700; /* #939 token */
+  }
+}

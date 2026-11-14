@@ -1,8 +1,8 @@
 /**
  * Which of the O4 workbench's five recorder states the stage is in (#945,
- * epic #936). `recorder.tsx` writes the answer to the stage's `data-o4-look`
- * attribute, and `app/styles/o4/recorder.css` keys its
- * per-state rules off it; `RecorderStamp` (`recorder-o4.tsx`) reads it too.
+ * epic #936). `recorder.tsx` writes the answer to the stage's `data-look`
+ * attribute, and `app/styles/3-components/recorder.css` keys its
+ * per-state rules off it; `RecorderStamp` (`recorder-stamp.tsx`) reads it too.
  */
 
 /** The workbench's recorder states: 08 idle, 09 recording, 10 recorded, 11 playing, 12 editing. */

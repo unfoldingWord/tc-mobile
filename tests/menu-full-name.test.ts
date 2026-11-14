@@ -4,15 +4,15 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { O4BookHead } from "@/components/o4-book-menu";
-import { O4SheetHead } from "@/components/o4-crumbs";
+import { BookHead } from "@/components/book-menu";
+import { SheetHead } from "@/components/crumbs";
 import { SegmentsScreen } from "@/components/segments-screen";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { strings } from "@/lib/strings";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
-import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./area-css";
 import { render } from "./render";
 import { cssRule, declarationValue, restingErase } from "./support";
 
@@ -129,12 +129,12 @@ async function mount() {
 describe("the chapter menu shows the full chapter name at its top (#1284, U3)", () => {
   it("draws the whole typed name as a heading once the kebab opens the menu, and not before", async () => {
     await mount();
-    expect(document.querySelector(".o4-sheet-name")).toBeNull();
+    expect(document.querySelector(".sheet-name")).toBeNull();
     const kebab = [...document.querySelectorAll("button")].find(
       (b) => b.getAttribute("aria-label") === strings.chapterMenuOpen
     )!;
     await act(async () => kebab.click());
-    const heading = document.querySelector(".o4-sheet-name")!;
+    const heading = document.querySelector(".sheet-name")!;
     expect(heading.textContent).toBe(LONG);
     // The menu keeps its own name, and the spoken place line still carries
     // the chapter's name once, so the heading is decoration for a reader.
@@ -146,7 +146,7 @@ describe("the chapter menu shows the full chapter name at its top (#1284, U3)", 
     expect(name).toBe(strings.chapterMenuTitle);
     // The crumbs follow the setting, so they read "Chapter 1"; the heading
     // does not.
-    expect(document.querySelector(".o4-sheet-place")?.textContent).toContain(
+    expect(document.querySelector(".sheet-place")?.textContent).toContain(
       "Chapter 1"
     );
     expect(heading.getAttribute("aria-hidden")).toBeNull();
@@ -156,18 +156,18 @@ describe("the chapter menu shows the full chapter name at its top (#1284, U3)", 
 describe("the same pattern on the book and segment menus", () => {
   it("draws the heading only when asked, and keeps the screen-reader line either way", () => {
     const off = render(
-      createElement(O4SheetHead, { book: "Book", chapter: LONG })
+      createElement(SheetHead, { book: "Book", chapter: LONG })
     );
-    expect(off.querySelector(".o4-sheet-name")).toBeNull();
+    expect(off.querySelector(".sheet-name")).toBeNull();
     const on = render(
-      createElement(O4SheetHead, {
+      createElement(SheetHead, {
         book: "Book",
         chapter: LONG,
         fullName: LONG,
       })
     );
-    expect(on.querySelector(".o4-sheet-name")?.textContent).toBe(LONG);
-    expect(on.querySelector(".o4-sheet-place")?.textContent).toContain(LONG);
+    expect(on.querySelector(".sheet-name")?.textContent).toBe(LONG);
+    expect(on.querySelector(".sheet-place")?.textContent).toContain(LONG);
   });
 
   /** What a screen reader gets from a head: text outside any aria-hidden. */
@@ -189,7 +189,7 @@ describe("the same pattern on the book and segment menus", () => {
     // Setting off: the crumbs and the heading carry the same name, so the
     // screen-reader line says it and the heading stays hidden.
     const off = render(
-      createElement(O4SheetHead, {
+      createElement(SheetHead, {
         book: "Book",
         chapter: LONG,
         fullName: LONG,
@@ -199,7 +199,7 @@ describe("the same pattern on the book and segment menus", () => {
     // Setting on: the crumbs read "Chapter 1", the name is the heading, and
     // the heading must be exposed because the place line does not carry it.
     const on = render(
-      createElement(O4SheetHead, {
+      createElement(SheetHead, {
         book: "Book",
         chapter: "Chapter 1",
         fullName: LONG,
@@ -211,24 +211,21 @@ describe("the same pattern on the book and segment menus", () => {
 
   it("puts the whole book name in the book menu head", () => {
     const head = render(
-      createElement(O4BookHead, { name: LONG, coverHex: "#336699" })
+      createElement(BookHead, { name: LONG, coverHex: "#336699" })
     );
     expect(head.querySelector(".books-sheet-name")?.textContent).toBe(LONG);
   });
 
   it("declares no nowrap, ellipsis or clip on the three name lines, and wraps them", () => {
     for (const [area, selector] of [
-      ["menus", ".o4-sheet-name"],
-      ["menus", ".o4-menu-title"],
+      ["menus", ".sheet-name"],
+      ["menus", ".menu-title"],
       ["books", ".books-sheet-name"],
     ] as const) {
-      const rule = cssRule(areaScope(area), areaSelector(area, selector));
+      const rule = cssRule(areaScope(area), selector);
       // The bans read every rule for the selector in the whole file, every
       // nested block included; the wrap pin reads the layer's one rule.
-      for (const [property, value] of selectorDeclarations(
-        area,
-        areaSelector(area, selector)
-      )) {
+      for (const [property, value] of selectorDeclarations(area, selector)) {
         const decl = `${property}: ${value}`;
         expect(decl, selector).not.toMatch(/white-space\s*:\s*nowrap/);
         expect(decl, selector).not.toMatch(/text-overflow/);

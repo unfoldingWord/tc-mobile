@@ -9,7 +9,7 @@ import type { Book, BookId } from "@/types/domain";
 /**
  * Set a book's cover colour. Reusable: each caller mounts its own instance.
  *
- * Mounted by the O4 book menu (#949, `books-screen.tsx`). The new-book sheet
+ * Mounted by the book menu (#949, `books-screen.tsx`). The new-book sheet
  * (#1190) does not mount it: it hands its pick to `createBook`, so the colour
  * lands in the create's own write transaction rather than in a second one.
  *
@@ -99,8 +99,8 @@ export interface UseBookCoverColour {
   /** True while ANY write is in flight, across every book, including any
    *  coalesced follow-up writes queued for the same book — a picker could
    *  disable its swatches on this, the same shape `useEraseSegment`'s
-   *  `erasing` disables its Erase button, though the O4 picker
-   *  (`o4-book-menu.tsx`'s `O4CoverPick`) deliberately does not: see that
+   *  `erasing` disables its Erase button, though the picker
+   *  (`book-menu.tsx`'s `CoverPick`) deliberately does not: see that
    *  component's own docblock for why it relies on the `"queued"` result
    *  instead. */
   settingCoverColour: boolean;

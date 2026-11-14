@@ -13,6 +13,7 @@ import {
   type TemplateEntry,
 } from "@/lib/templates/packages";
 import { planBookFromTemplate, type BookPlan } from "@/lib/templates/plan";
+import type { BookId } from "@/types/domain";
 
 /**
  * The Template Library's data and create (#246, part of #1450). The entries
@@ -77,7 +78,7 @@ export type TemplateLibraryStatus = "loading" | "ready" | "failed";
  */
 export function useTemplateLibrary(
   open: boolean,
-  onCreated: () => void,
+  onCreated: (bookId: BookId) => void,
   onBusyChange?: (busy: boolean) => void
 ) {
   const [status, setStatus] = useState<TemplateLibraryStatus>("loading");
@@ -145,10 +146,12 @@ export function useTemplateLibrary(
       onBusyChange?.(true);
       setCreating(true);
       let outcome: CreateOutcome;
+      let bookId: BookId;
       try {
         if (intent.current?.entry !== entry) {
           intent.current = { entry, intent: newIntent(entry) };
         }
+        bookId = intent.current.intent.ids.book;
         outcome = await createFromEntry(intent.current.intent, name);
       } finally {
         // Released on a throw too: this picker never unmounts, so a stuck
@@ -159,7 +162,7 @@ export function useTemplateLibrary(
       }
       if (outcome.ok) {
         intent.current = null;
-        onCreated();
+        onCreated(bookId);
       }
       return outcome;
     },

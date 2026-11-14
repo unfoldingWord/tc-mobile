@@ -28,7 +28,7 @@ import type { TakeCapStatus } from "@/lib/audio/take-cap";
  *
  * **Not an O4 workbench state.** `docs/design/o4-design-system.md`'s screen
  * map (09 Recording) names no near-limit variant, and #1005 scoped drawing
- * this marker as separate UI work after the O4 Recorder lane, without
+ * this marker as separate UI work after the Recorder lane, without
  * settling its look. This is a proposal for the requirements owner, not a
  * spec the workbench already signed off — see the PR body.
  *

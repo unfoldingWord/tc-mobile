@@ -705,13 +705,40 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
    * Wait for the newer copy's open, but never hang the suite on it: while this
    * copy holds its connection the open cannot finish, and "it did not finish"
    * is exactly what one of these cases asserts.
+   *
+   * A 200 ms bound (`WAITING_BOUND`) is right for "it is still waiting" (a stalled
+   * process can only make that answer more likely, so it cannot fail a case)
+   * but wrong for "it opened": fake-indexeddb hops its work through
+   * `setImmediate`, and an expired timer runs before the next hop, so a
+   * process stall past the bound reports "waiting" for an open that was about
+   * to land. A case that expects the open to GO THROUGH passes `OPEN_HANG_GUARD`
+   * instead, a hang guard set below vitest's 5 s test timeout so a real
+   * stranded copy still fails on this assertion and not on the timeout (#1912).
    */
-  function raceOpen(newer: ReturnType<typeof openNewerCopy>): Promise<string> {
-    return Promise.race<string>([
-      newer.db.then(() => "opened"),
-      delay(200).then(() => "waiting"),
-    ]);
+  function raceOpen(
+    newer: ReturnType<typeof openNewerCopy>,
+    boundMs: number
+  ): Promise<string> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waiting = new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve("waiting"), boundMs);
+    });
+    // The open loses the race in every "waiting" case, and may reject later
+    // (the test closes its connection); that rejection must not go unhandled.
+    const opened = newer.db.then(() => "opened");
+    opened.catch(() => undefined);
+    // Clear the timer when the open wins, so a 3 s guard does not outlive its
+    // case. `finally` also runs when the open rejects.
+    return Promise.race<string>([opened, waiting]).finally(() =>
+      clearTimeout(timer)
+    );
   }
+
+  /** The bound for a case that expects the newer copy's open to stay waiting. */
+  const WAITING_BOUND = 200;
+
+  /** The hang guard for a case that expects the newer copy's open to land. */
+  const OPEN_HANG_GUARD = 3000;
 
   /** Let go of this copy's connection and tidy the newer one away. */
   async function release(
@@ -747,7 +774,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
       expect(closedBeforeTheHandlerReturned).toBe(true);
       expect(newer.wasBlocked()).toBe(false);
       expect(app.onYielded).toHaveBeenCalledTimes(1);
@@ -765,7 +792,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       // The upgrade waits. That is a wait for one person; yielding here would
       // close the only connection that could ever store the take this copy is
       // holding, which is a loss for another.
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
       expect(app.holdsUnsavedWork).toHaveBeenCalled();
       expect(newer.wasBlocked()).toBe(true);
       expect(app.onYielded).not.toHaveBeenCalled();
@@ -786,7 +813,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
     } finally {
       await release(newer);
@@ -815,7 +842,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     const escaped = await collectUncaught(async () => {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
     });
 
     try {
@@ -844,7 +871,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
 
       // The take is saved and the recorder closed. No second `versionchange`
@@ -853,7 +880,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
       holding = false;
       yieldDeferredUpgrade();
 
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
       expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);
@@ -872,7 +899,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
 
       forceCloseDatabase(unwrap(db) as never);
@@ -952,13 +979,13 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
 
       // What the hook's effect cleanup does, in the order it does it.
       yieldDeferredUpgrade();
       setUpgradeCoordinator(null);
 
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
     } finally {
       await release(newer);
     }
@@ -987,13 +1014,13 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
 
       // Released the way the app releases it: the samples are let go of, and the
       // hook hands the refused upgrade on.
       yieldDeferredUpgrade();
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
       expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);
@@ -1023,7 +1050,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
     } finally {
       await release(newer);
@@ -1046,12 +1073,12 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("waiting");
+      expect(await raceOpen(newer, WAITING_BOUND)).toBe("waiting");
       expect(app.onYielded).not.toHaveBeenCalled();
 
       clipboard = null; // backToBooks / openChapter, chapter-scoped (G3)
       yieldDeferredUpgrade();
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
       expect(app.onYielded).toHaveBeenCalledTimes(1);
     } finally {
       await release(newer);
@@ -1075,7 +1102,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
       const newer = openNewerCopy();
       try {
-        expect(await raceOpen(newer)).toBe("opened");
+        expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
         expect(app.onYielded).toHaveBeenCalledTimes(1);
 
         // What the sweep does when its encode finishes, after all that.
@@ -1158,7 +1185,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
     await getDb();
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
       expect(status).toBe("reloadNeeded");
 
       // A late caller the panel could not stop asks for the database. It is
@@ -1198,7 +1225,7 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
 
     const newer = openNewerCopy();
     try {
-      expect(await raceOpen(newer)).toBe("opened");
+      expect(await raceOpen(newer, OPEN_HANG_GUARD)).toBe("opened");
       expect(newer.wasBlocked()).toBe(false);
     } finally {
       await release(newer);

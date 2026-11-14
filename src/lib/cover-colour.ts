@@ -49,7 +49,7 @@ import type { Book } from "@/types/domain";
  * The ten final keys (#937 D8b, decided 2026-09-25).
  *
  * The Books lane (#942) calls {@link resolveCoverKey} and
- * {@link coverColourHex}; the O4 book menu (#949) mounts the picker.
+ * {@link coverColourHex}; the book menu (#949) mounts the picker.
  */
 export type CoverColourKey =
   | "amber"

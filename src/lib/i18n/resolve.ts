@@ -13,6 +13,9 @@
  *   `pt-BR` and `pt-PT` are `pt` (#357 Ask 2, "Region variants fall back to
  *   the base language").
  * - The legacy tag `in` is Indonesian, `id`.
+ * - `fil` (Filipino, the tag Android and iOS report for it) is the Tagalog
+ *   entry, `tl`: CLDR's Filipino plural rules are the ones the `tl` table
+ *   is written for, and the two are one written language here.
  * - Every Chinese tag, Traditional script and regions included, is the
  *   Simplified entry (R19, "default to simplified text on Chinese phones").
  *   That follows from comparing the base only: `zh-Hans`'s base is `zh`.
@@ -29,12 +32,20 @@ const TAG = /^[a-z0-9]+([-_][a-z0-9]+)*$/i;
 /** Retired language subtags still reported by older platforms. */
 const LEGACY_BASE: Readonly<Record<string, string>> = { in: "id" };
 
+/**
+ * Current platform tags for a language the app names by another tag. `fil` is
+ * what Android and iOS report for Filipino today; the app's table for the same
+ * written language is `tl`. Not a retired tag, so it is kept apart from
+ * `LEGACY_BASE`.
+ */
+const PLATFORM_ALIAS_BASE: Readonly<Record<string, string>> = { fil: "tl" };
+
 function baseOf(tag: unknown): string | undefined {
   if (typeof tag !== "string") return undefined;
   const trimmed = tag.trim();
   if (!TAG.test(trimmed)) return undefined;
   const base = (trimmed.split(/[-_]/)[0] ?? "").toLowerCase();
-  return LEGACY_BASE[base] ?? base;
+  return LEGACY_BASE[base] ?? PLATFORM_ALIAS_BASE[base] ?? base;
 }
 
 /**

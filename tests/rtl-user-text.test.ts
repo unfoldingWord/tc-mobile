@@ -5,16 +5,16 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { NameEdit } from "@/components/name-edit";
-import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
-import { O4BookHead } from "@/components/o4-book-menu";
-import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
+import { BookDeleteAsk } from "@/components/book-delete-ask";
+import { BookHead } from "@/components/book-menu";
+import { Crumbs, SheetHead } from "@/components/crumbs";
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsHead } from "@/components/segments-head";
 import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import { one, render } from "./render";
-import { areaScope, areaSelector } from "./o4-area-css";
+import { areaScope } from "./area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -25,8 +25,8 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  *
  * This file renders the pieces that can be rendered alone. The three screens
  * (Books, the chapter screen, the recorder) are asserted where they are
- * already mounted: `tests/books-o4.test.ts`, `tests/o4-header-crumbs.test.ts`
- * and `tests/o4-menus-chapter-segment.test.ts`.
+ * already mounted: `tests/books-screen.test.ts`, `tests/header-crumbs.test.ts`
+ * and `tests/menus-chapter-segment.test.ts`.
  *
  * What it does not cover: bidi layout. jsdom computes no boxes and no bidi
  * resolution, so that `auto` resolves an Arabic or Hebrew name to rtl, puts
@@ -69,13 +69,13 @@ function renderRow(over: Partial<Row>) {
 describe("the O4 crumbs (#1267)", () => {
   it("sets each name chip's own direction, and leaves the segment number's alone", () => {
     const root = render(
-      createElement(O4Crumbs, {
+      createElement(Crumbs, {
         book: HEBREW,
         chapter: ARABIC,
         segment: { ordinal: 2, state: "empty" },
       })
     );
-    const spans = [...root.querySelectorAll(".o4-crumb > span")];
+    const spans = [...root.querySelectorAll(".crumb > span")];
     expect(spans.map((el) => el.textContent)).toEqual([HEBREW, ARABIC, "2"]);
     expect(spans.map((el) => el.getAttribute("dir"))).toEqual([
       "auto",
@@ -85,26 +85,23 @@ describe("the O4 crumbs (#1267)", () => {
   });
 
   it("puts the direction on the text span the ellipsis is drawn on, not on the clipped chip", () => {
-    const root = render(createElement(O4Crumbs, { book: HEBREW }));
-    // `o4/menus.css` sets text-overflow on `.o4-crumb > span`; that element's
+    const root = render(createElement(Crumbs, { book: HEBREW }));
+    // `3-components/menus.css` sets text-overflow on `.crumb > span`; that element's
     // own direction is what picks the end the "…" lands on.
-    const chip = one(root, ".o4-crumb");
+    const chip = one(root, ".crumb");
     expect(chip.hasAttribute("dir")).toBe(false);
     expect(one(chip, "span").getAttribute("dir")).toBe("auto");
-    const rule = cssRule(
-      areaScope("menus"),
-      areaSelector("menus", ".o4-crumb > span")
-    );
+    const rule = cssRule(areaScope("menus"), ".crumb > span");
     expect(declarationValue(rule, "text-overflow")).toBe("ellipsis");
   });
 
   it("sets the spoken place line's direction and the sheet head's chips", () => {
     const root = render(
-      createElement(O4SheetHead, { book: HEBREW, chapter: ARABIC })
+      createElement(SheetHead, { book: HEBREW, chapter: ARABIC })
     );
-    expect(one(root, ".o4-sheet-place").getAttribute("dir")).toBe("auto");
+    expect(one(root, ".sheet-place").getAttribute("dir")).toBe("auto");
     expect(
-      [...root.querySelectorAll(".o4-sheet-head .o4-crumb > span")].map((el) =>
+      [...root.querySelectorAll(".sheet-head .crumb > span")].map((el) =>
         el.getAttribute("dir")
       )
     ).toEqual(["auto", "auto"]);
@@ -114,14 +111,14 @@ describe("the O4 crumbs (#1267)", () => {
 describe("book sheet heads (#1267)", () => {
   it("the book menu's head name", () => {
     const root = render(
-      createElement(O4BookHead, { name: HEBREW, coverHex: "#11796d" })
+      createElement(BookHead, { name: HEBREW, coverHex: "#11796d" })
     );
     expect(one(root, ".books-sheet-name").getAttribute("dir")).toBe("auto");
   });
 
   it("the delete ask's book name, and not its UI strings", () => {
     const root = render(
-      createElement(O4BookDeleteAsk, {
+      createElement(BookDeleteAsk, {
         name: ARABIC,
         coverHex: "#11796d",
         busy: false,

@@ -11,6 +11,555 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-13 (Mac device session) — the Android device run on 1.2.2 for #974 and #1486; the schema-9 upgrade row not reached
+
+One Mac session driving a phone over adb with the DRI beside it, from the coordinator session's runbook. This entry records the device run only. The coordinator session posted the results and filed the follow-ups; its own entry is the record of that work.
+
+**Phone and build:** Samsung SM-A176B (Galaxy A17), Android 16 (SDK 36), WebView 157.0.8103.38, 3.5 GB RAM, not a low-end or Go phone. `tester-build-v1.2.2`, footer stamp `v1.2.2 · 24b144d`, already installed. Nothing was installed, uninstalled, cleared or downgraded. Role: the DRI (developer). Every recording, edit, delete, reorder and share ran in books made for the run.
+
+### What was run
+
+- **#974, Android rows:** the O4 look and the device-only checks, plus the two rows the runbook added (#1969, #1960). Results: https://github.com/unfoldingWord/tc-mobile/issues/974#issuecomment-6861576987 and the comments above it.
+- **#1486, F1 to F4:** https://github.com/unfoldingWord/tc-mobile/issues/1486#issuecomment-6861316370
+- **#1464, the 1.0.1 (schema 9) → 1.2.2 row:** `couldn't reach`. The phone was already on 1.2.2 and the runbook forbids uninstalling. https://github.com/unfoldingWord/tc-mobile/issues/1464#issuecomment-6861316962
+
+### Results on #974
+
+- **Passed:** O1 to O4, O7 (partly checked), O9 to O12, R1, R3, R5, R6, R8, R10 to R12, S1 (phone side), S4, P1. L1: Share Chapter on a 5-minute chapter took 21.7 s from tap to share sheet.
+- **Failed:** O8, the phone's status-bar icons and navigation buttons are nearly invisible in the light theme. R9, a tap on a control right after dragging a menu closed is lost for about half a second: 8 of 8 with adb touches, and the DRI needed a second tap every time by hand.
+- **Found:** two takes recorded in a quiet room sealed themselves at 00:08. The app's failure log has two `recorder-capture-stalled` rows, "The level tap read exact silence for 5000 ms … the take was sealed and saved (#1294)". Takes with speech, up to 5 minutes, did not seal.
+- **Not as written:** R2. A banner alarm did not interrupt capture on this phone, so neither the row's pass nor its fail occurred.
+- **Observed for #1969:** a segment in a book made from the Open Bible Stories template shows Move up, Move down and Delete, all enabled.
+- **Couldn't reach:** N, O5, R4, R7 (not a Moto G), R13, S5, S6, L2 to L5, P2 as written (a running Phone check cannot be left), S3 (cannot-tell), and the receiving side of the shares.
+- **TalkBack (O6's spoken half and #1960): not run.** TalkBack was switched on, Samsung's first-run screens came up, and the DRI called it off: "ok we are not shipping this feature soon, please skip these tests". What stands is the accessibility-tree reading only: Move up and Move down are exposed; the recorder's and the segment menu's Done tile has no node.
+
+### Results on #1486 (one mid-range Android phone)
+
+| Phone            | OS         | Script                                                                                                                                               | Result                                                          |
+| ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Samsung SM-A176B | Android 16 | Latin with accents, Arabic, Devanagari, Han (Simplified), Cyrillic, Ethiopic, Bengali, Myanmar, Lao, Thai; Latin, Arabic-Indic and Devanagari digits | rendered, in the app's Script samples and on the fixture page   |
+| Samsung SM-A176B | Android 16 | Vietnamese                                                                                                                                           | rendered on the fixture page; not a line in the app's samples   |
+| Samsung SM-A176B | Android 16 | Urdu (Arabic script)                                                                                                                                 | partial: joined and right-to-left, drawn in Naskh, not Nastaliq |
+
+- App UI text, with the app's language set over adb (the per-app language): es, fr, hi, id, pt, ru, sw and zh-Hans switched and drew. **Arabic stayed in English.** `vi` is not in 1.2.2.
+- `navigator.languages` with a per-app language: the per-app tag comes first without its script subtag (`zh`, then `en-US`; `ar`, then `en-US`).
+- **Unverified:** iPhone, any low-end or Go Android phone, `vi` in the app UI, and the phone-language route (the sheet's F2 through the phone's own language list was not run).
+
+### Follow-ups, as read from GitHub at the end of the session
+
+- Issues filed from this run: #1972 (the quiet-room seal), #1973 (light-theme system bars), #1974 (the lost tap), #1975 (smaller observations), #1979 (Delete on template segments).
+- PRs: #1970 (hide segment Move in template books), #1976 (seal on 30 s of exact silence, not 5 s) and #1977 (system bars follow the theme) are merged to develop. #1978 (keep the tap after a sheet is flicked closed) is open. None of these four has been run on a phone by this session.
+
+### Still open on a device
+
+- **#1464's schema-9 start:** needs a phone with no tC Mobile, or one on 1.0.x with throwaway data.
+- Every iPhone row on #974, #1464 and #1486, and the web two-copy row.
+- On Android: TalkBack for #1960, a low-end phone for #1486 and the timing rows, and the rows listed above as couldn't reach.
+
+---
+
+## 2026-11-12 — Sprint 6 day 11: status of the 1.2 device checks, one wave of five lanes, 4 PRs merged, the v15 schema step held for the cut
+
+One orchestrator session: start of day, the Items Needing Attention, one wave of five lanes, and two scouts.
+
+### Decisions (DRI)
+
+- **Merging (11-12):** "approved to merge on clean green".
+- **Sprint 7 work before the v1.3.0 cut:** "Build now, hold S7 merges (Recommended)". Sprint 7 lanes are built and reviewed now, and merge from 11-16, after the cut.
+
+### Status of the 1.2 device checks
+
+The project manager asked about the three checks the 11-15 promotion depends on. Read from the issues today:
+
+- **#974:** not run. The Android run sheet has been ready since 11-02.
+- **#1464:** Android passed on 11-03. The iPhone and web two-copy rows are open.
+- **#1486:** not run.
+
+The DRI replied directly.
+
+### Merged to develop (4)
+
+- #1961: `vitest` pinned exactly to 5.1.0, to match `@vitest/coverage-v8` (#1954).
+- #1962: the test-hygiene Lows from #1946, #1948, #1949 and #1950 (#1954).
+- #1963: the old-WebView check is pinned to the iOS 15.4 floor without a build. A `toSorted` row added as a mutation made the new test fail. `targetChrome()` now reads `build.target`, and the insecure-origin limit is written in the comment (#1954 items 1–4). On item 5, the four calls before the `#root` throw write nothing to IndexedDB. The rest of the import graph was not read.
+- #1964: `tl.ts` provenance docblock (closes #1923).
+
+Each merged at a head where Frank and George were both clean in round 1 and CI was green, with a triage comment posted. Develop CI passed on all four merge commits. Every reviewer Low is recorded on #1954.
+
+### Held
+
+- **#1965, #1925's v15 card-store schema step** (DB_VERSION 14 → 15: a `location` on clip metadata, a `cardReleases` store, a release record on every delete path). Frank and George were both clean in round 1 and CI is green. Its body opens with a HOLD line: it merges after the v1.3.0 develop → staging cut. George's two follow-ups are on #1925: a card-located transcode test, and one predicate at the release write. Both must land before any real card location is written. The v14 → v15 upgrade has not been opened on a real engine; it needs a row on the v1.4.0 device sheet.
+
+### Filed and closed
+
+- Filed #1960: the Android accessibility tree, as read by uiautomator, was missing the recorder's Done tile and the chapter menu's Move up and Move down (a side finding from the #1464 run). A lane checked desktop Chromium's tree and found every tile exposed as a named button. Done's accessible name is "Mark segment N done", so a search of the dump for "Done" would miss it (inference). That does not explain Move up and Move down. TalkBack on a phone is still owed.
+- Closed #1957: George's round-1 rows on #1550 now have dispositions on that PR (4 fixed, 6 refuted, none open). Three of the citations were checked against develop.
+- Closed #1923 (by #1964).
+
+### Open, and where each stands
+
+- **Nothing else is buildable before Sprint 7.** Two scouts went through Sprint 6, Sprint 7 and the Backlog. #1455 and #1452 have no code left to write. #1233's 10-19 plan has been carried out. The one marginal item is #1233 item 35: the failure-log cap may push out the first playback rows. That is an inference, and the fix needs a design pick, so it waits on the DRI.
+- **Owed before the 11-15 promotion and cut, all on a device:**
+  - #974, #1464 (iPhone row) and #1486;
+  - Capacitor 8.6.0 on both phones (#1951);
+  - the WebView 91 emulator run (#1944);
+  - #1945, #1940, #1936 and #1941;
+  - TalkBack for #1960.
+- **After the cut:** merge #1965, if its head has not moved.
+- **Process notes:**
+  - The pipeline playbook's PR template failed `check:pr-body`. Lanes now use the repo's `.github/pull_request_template.md`.
+  - One lane again kept waking on leftover background work after its PR merged, and was stopped.
+
+---
+
+## 2026-11-06 to 2026-11-11 — Sprint 6 days 5–10: #1921 results checked, two waves of seven lanes merged, Capacitor 8.6.0, an update screen for old WebViews, #1935 confirmed on a real burst, 8 PRs merged
+
+One orchestrator session: start of day on 11-06, the #1921 check and a sprint read, the wave plan on 11-09, and both waves built, reviewed and merged on 11-10.
+
+### Decisions (DRI)
+
+- **Waves (11-09):** "Both waves (Recommended)".
+- **#1944, the old-WebView blank screen:** "Plain error screen (Recommended)". The build target stays at Chrome 111.
+- **Sprint 7 work before the cut:** "No, wait for 11-16 (Recommended)". The v1.3.0 cut carries Sprint 6 work only.
+- **Merging (11-10):** "You can start another wave asynchronously if we have some disjoint issues available and approved to merge on clean and green."
+
+### Checked
+
+- **#1921, the Capacitor vs Expo simulator runs (11-05):** the results comment's write ratios (42×, 37×, 4.0×), the A6 card-pull results and the Expo crash trace match the raw files in the run folder. The `Object.hasOwn` blank-screen error is in the comment only; no saved log holds it. #1921 is still open; closing it waits on the DRI.
+- **Sprint pace (11-06):** 38 of Sprint 6's 65 issues closed with 4 of 14 days gone, at about 20 PRs a day, the same rate as Sprint 5. v2-required: 21 open, 7 closed in the 14 days to 11-06, so 3.5 a week against 2.7 a week needed for the end of 2026. The site's Health page had shown 7.5 a week on 11-04; why the two differ was not found.
+
+### Merged to develop (8)
+
+- **Dependencies:**
+  - #1942: `ruby/setup-ruby` v1.336.0. Its pinned SHA was checked against the upstream tag.
+  - #1951: the npm minor/patch group with **Capacitor 8.6.0**, plus the iOS Swift package pin. It supersedes Dependabot's #1943, whose only red check was that pin. No native build has run.
+- **App:** #1952, Part of #1944. On an Android WebView below the build's floor, a plain screen with a picture says to update Android System WebView, instead of an empty page. A bundle scan found no unguarded built-in newer than Chrome 93, and a new `test:dist` check keeps that true. The old engine was simulated in desktop Chromium only.
+- **Follow-ups and tests:**
+  - #1946: Tok Pisin share-sentence pins (#1934).
+  - #1947: `Number.isFinite` on the refused-take sample count (#1927). Both reviewers agreed it changes no output, so there is no red-first test.
+  - #1948: normalize pins (#1928).
+  - #1949: `ios-sim` refuses an ambiguous `--device` name (#1899).
+  - #1950: test hygiene (#1932). It also closed #1912 as never reproduced, following the #1780 precedent.
+
+Every PR merged at a head where Frank and George were both clean in round 1 and CI was green, with a triage comment posted. George's one Medium (#1952: an insecure LAN origin still goes blank) was refuted on the PR: no served or shipped origin is insecure. Every Low went to #1954.
+
+Closed: #1899, #1912, #1927, #1928, #1932, #1934, #1935, and Dependabot's PR #1943.
+
+### CI (#1935)
+
+The seven merges on 11-10 landed about a minute apart, and each merge commit got its own develop `push` run, all successful and none cancelled. #1935 is closed with the table.
+
+### Filed
+
+- #1944: old Android WebView opens to an empty screen (Sprint 6). Stays open for the WebView 91 run.
+- #1945: `pending-take-write` UnknownError when backgrounding mid-take on the iOS Simulator (Backlog). A lane read the write path and found no read outside its transaction; findings are on the issue. It needs a Simulator re-run.
+- #1953: the update screen's sentence is English only (Backlog, waits on a DRI pick).
+- #1954: the reviewer Lows from #1946–#1952 (Backlog). Item 1 pins the old-WebView check to iOS 15.4, so a future feature can't put the Android message on iPhones.
+
+### Open, and where each stands
+
+- **No PRs are in flight** except the two standing drafts, #1612 and #1532.
+- **Nothing else is buildable today:** two sweeps of Sprint 6 and the Backlog found every remaining item waiting on a phone, a decision or a native-speaker review. Sprint 7 starts 11-16.
+- **Owed before the 11-15 cut, all on a device:**
+  - Capacitor 8.6.0 on an Android phone and an iPhone (#1951);
+  - the WebView 91 emulator run (#1944);
+  - the #1945 Simulator re-run;
+  - #1464, #974, #1486, #1940, #1936 and #1941.
+- **Process notes:**
+  - Spawning four worktree lanes at once raced once; the harness refused one worktree, and a single retry worked.
+  - Two lanes kept waking on leftover background work after handing back, and were stopped once their PR heads were confirmed unchanged.
+  - One lane's push again fired no `pull_request` run; close and reopen started CI.
+
+---
+
+## 2026-11-05 (day) — Sprint 6 day 4: Tok Pisin drafted, Capacitor-or-Expo reopened on users and maintainability, develop CI keeps one run per merge, 13 PRs merged
+
+The orchestrator session: start of day, then four waves of lanes through the review bench, and two follow-up lanes.
+
+### Decisions (DRI)
+
+- **#1914, an outside PR on #1911:** "Close politely, we fix #1911 (Recommended)". Closed with a thank-you comment; its workflows were never approved.
+- **Waves:** "Run as planned (Recommended)". **#357, the next language:** "Tok Pisin (tpi)".
+- **#1456, the card schema step:** "Scope today, build after 11-15 (Recommended)", so it is not in the v1.3.0 cut. Then on #1925: O1 "Build in Sprint 7 (Recommended)", and O2–O4 "Take all three (Recommended)".
+- **Capacitor or Expo (ADR 0016):**
+  - The DRI's frame: "the Expo rewrite is pretty inconsequential with our agentic tools, so we don't need to make that part of the equation. Keep that as a non-factor."
+  - The goal: "what is the best end product for users and maintainability".
+  - The ADR's amendment is held: "lets do some tests, also waiting for tim to chime in".
+  - The requirements owner's v3 scope, given in the team chat, is recorded on #1915: BT Servant chat or QR preload, microSD project files, Bluetooth, email attachments.
+- **#1780:** "Close as unobserved (Recommended)". **#575:** "Close it, fix AGENTS.md (Recommended)".
+- **#1933, the load-failed panel:** "Try again first, Reset as fallback (Recommended)". **#1935:** "Lane now (Recommended)".
+- **Language reach:** the DRI asked for a USB Android test: "can we test it on our local android device (dev) usb connected now - just a gh isue and prompt please" (#1936).
+- **#1930:** "approved to merge today on clean and green".
+- **The five small follow-ups:** "One batch, next session (Recommended)".
+
+### Merged to develop (13)
+
+- **Languages:**
+  - #1930 Tok Pisin (tpi), an AI draft and a level-3 language. Part of #357. Round 1 found two Mediums: a contradictory share sentence (fixed, with a new test), and a `loadFailedBody` pointer to Reset that was refuted for tpi because it mirrors the English, then became #1933.
+  - #1917 lists the least-certain Tagalog cells (#1900).
+- **Copy:** #1938 makes the load-failed panel offer Try again first and Reset only as the fallback, in English and all 13 locale tables (#1933). The translations are AI drafts.
+- **CI:** #1937 gives push runs on develop, staging and main a per-commit concurrency group (Part of #1935). Before it, a newer _pending_ run cancelled the older one, so 6 of the day's first 11 merge commits got no run of their own, and #1929's got none at all.
+- **Storage:** #1919 adds a negative-sample-count guard on the refused-take log (#1901). #1867 was found already finished by #1894 and closed.
+- **Tests:**
+  - #1918: the trademark sentence pin (#1909).
+  - #1920: the normalize pin is order-independent (#1903).
+  - #1922: the share-incomplete guard throws on missing fixtures (#1905).
+  - #1924: db-open "opened" waits are bounded by a hang guard (Part of #1912; the flake was not reproduced).
+  - #1931: locale-sweep openers are found by test id after the language switch (#1904).
+- **Docs:**
+  - #1916: ADR 0013 wording (#1911).
+  - #1926: the facilitator runbook matches 1.2.2, the 11-15 production build (Part of #248). Round 1 found a Medium, "the problem report appears once the app has recorded something"; the real condition is "while the failure log is non-empty". The bench fixed it.
+  - #1929: AGENTS.md records the #575 sweep as finished.
+
+Closed: #575, #1780, #1867, #1900, #1901, #1903, #1904, #1905, #1909, #1911, #1933.
+
+### Filed
+
+- **Decisions and research:**
+  - #1915, v3: linking to BT Servant. No ADR 0016 trigger fires. Any link needs a server holding the worker key, plus identity and ADR 0012 opt-in.
+  - #1921: Capacitor vs Expo on the iOS Simulator and Android emulator (duplex audio, writes to internal storage and a card). Prompt: `/workspace/temp/tc-mobile/sim-compare-1921/PROMPT.md`.
+  - #1925: the card schema v15 scope (Sprint 7).
+  - #1936: can an Android phone reach Tok Pisin and Filipino? The manifest declares no `android:localeConfig`. Prompt: `/workspace/temp/tc-mobile/lang-reach-1936/PROMPT.md`.
+- **Follow-ups (reviewer Lows):** #1923, #1927, #1928, #1932 and #1934.
+
+### Open, and where each stands
+
+- **No PRs are in flight.** The drafts #1612 and #1532 stay open, per the DRI on 30 Oct.
+- **#1935:** owed a post-merge check. After the next burst of develop merges, `gh run list --branch develop --event push` should show one completed run per merge commit.
+- **#1912:** stays open in case the flake recurs.
+- **Before the 11-15 cut:**
+  - device runs #1464, #974 and #1486;
+  - the compressor listening check;
+  - Filipino and Tok Pisin language selection (#1936 for Android; iPhone still owed).
+- **ADR 0016:** waits on the #1921 runs and the requirements owner.
+- **Process note:** two lanes repeated their hand-back until stopped. GitHub twice refused a push with "fatal error in commit_refs_rules", and the accepted retry fired no `pull_request` run; closing and reopening #1930 started CI.
+
+---
+
+## 2026-11-04 (day) — Sprint 6 day 3: ADR 0016 accepted (stay on Capacitor), 25-second save bar, ADR 0013 accepted, Tagalog drafted, the trademark notice fixed, 14 PRs merged
+
+The orchestrator session: start of day, then waves of 3–5 disjoint lanes through the review bench.
+
+### Decisions (DRI)
+
+- **#357, the next language:** "Tagalog (tl) (Recommended)".
+- **ADR 0016 (#1520):** "Accept middle path (Recommended)". Stay on Capacitor with targeted card and audio plugins; move to Expo only on the named triggers.
+- **The save bar:** first "20 seconds (Recommended)". After the real-phone card run, the DRI said "15-23s is acceptable", then picked "25 seconds (Recommended)", which supersedes 20 s everywhere (#1472).
+- **Reading the card run's save time:** "Not a trigger yet (Recommended)". The current inference, untested, is that the base64 bridge limits save speed, not the card (ADR 0013). Re-measure with the native plugin on phone (a) and an older phone (b).
+- **ADR 0013, the card store (#1473):** "accept S1 - we have run card test with a real phone and card, find these results and make sure they are linked". Where a held take lives: "Phone storage, as today (Recommended)".
+- **The trademark notice (#1608):** use ® on unfoldingWord, citing the live USPTO registration (serial 90561833). Permission requests go to the website's contact page.
+- **Waveform (#1201 item 3)** and **the offline-ready sign (#161):** "Ask Tim (Recommended)". Item 3 turned out to be already answered on the site on 10-19 ("fine"). #161 is Round 10 on the Review page.
+- **Branches:** GitHub's auto-delete of a merged PR's branch: "Turn it on (Recommended)". It is on: the repo's `delete_branch_on_merge` reads `true`.
+- **Zulip:** the old key file is retired and deleted. The hosted Zulip MCP is read-only by design. Write access was researched and parked ("we can skip it for now"), so the DRI posts drafts.
+
+### Merged to develop (14)
+
+- **Native direction:** #1906 ADR 0016 accepted with the 25-second bar, the plugin hold lifted, #1520 closed. #1910 ADR 0013 accepted: it links the #1472 results, keeps held takes on the phone, requires closing card files on the first write error, and says no text (utf8) write is allowed for clip bytes. #1473 stays open for phone (b) and criterion 2. Follow-up: #1911, an ADR 0013 wording pass.
+- **Languages:** #1889 Tagalog (tl), an AI draft and a level-3 language. #1898 fixes "complete chapters not included" wording in id, ms, pt, sw and vi (#1897). The sw and vi wording still needs a native read.
+- **Audio:** #1886 compressor follow-ups (#1879).
+- **Storage:** #1894 guards non-finite rates in the refused-take length text (#1867).
+- **Legal:** #1908 restores unfoldingWord® and points permission requests at the contact page (#1608). George's Low follow-up is #1909.
+- **Tests and harness:**
+  - #1890: the O4 naming gate walks the tree once, from 12.7 s to 2.5 s (#1887).
+  - #1895: the compressor refusal latch is cleared between tests (#1892).
+  - #1888: Settings e2e hygiene and a tile-menu comment fix (#1880, #1883).
+  - #1902: the locale sweep's ≡ opener after the switch (#1893).
+  - #1885, #1896: iOS Simulator harness follow-ups (#1857, #1891).
+- **Docs:** #1907, the card spike findings tracker entry (from the device session).
+
+Closed: #1520, #1608, #1857, #1879, #1880, #1883, #1887, #1891, #1892, #1893, #1897.
+
+### Artifacts
+
+- **Project site v35:** every page is refreshed for today's decisions, the card results and Round 10 (#161). https://claude.ai/artifact/Fx2ZuoxfYQiQoB3CvhHTBx
+  - **New Health page** (`#health`, with a strip on Home): each state shows its numbers and method. At the 22:06Z snapshot:
+    - **Sprint 6:** Ahead, 29 of 51 issues closed (57%) with 21% of the sprint gone.
+    - **15 Nov promotion:** Not yet clear; device runs #974, #1464 and #1486 are open.
+    - **v2 by end of 2026:** Ahead on count. 20 v2-required issues are open, so we need 2.5 a week, against 7.5 a week closed over the last 14 days. This counts issues, not their size.
+    - **Quality:** Healthy, 19 of the last 20 develop CI runs passed, with 6 open bugs.
+  - **Snapshot routine:** it now fetches its script from the site database (`tools/snapshot`, checked by sha256) instead of carrying it inline.
+- **Zulip:** the Round 10 note to the requirements owner is posted (637640584, "tC Mobile v2").
+
+### Open, and where each stands
+
+- **No ready PRs are in flight;** the merge queue is empty.
+- **Draft spike PRs:** #1612 (the Expo proof, Part of the now-closed #1520) and #1532 (the microSD probe, Part of #1472). Both stay open as drafts, per the DRI on 30 Oct: "Keep both open".
+- **Before the v1.2 promotion and the v1.3.0 tester cut (11-15):** device runs #1464 (iPhone row), #974 and #1486, the Moto G re-test (#1201 item 4), the compressor listening check, and Filipino `lproj` selection on an iPhone.
+- **Card plugin (#1456):** re-measure the 20-minute save natively on phone (a) and an older Android 7–10 phone (b), against the 25-second bar.
+- **Follow-ups:** #1909 (pin the restored trademark sentence in the test) and #1911 (ADR 0013 wording pass).
+- **CI flake, observed once:** #1912. `tests/db-open.test.ts:961` failed in this entry's own pre-push hook, then passed alone and on the next full run.
+
+---
+
+## 2026-11-04 — device session: #1472 card spike findings posted (run 2026-11-02, Galaxy A17)
+
+Records a run from 2026-11-02 that had no GitHub record until today. It supersedes the "findings are not posted yet" line in the 2026-11-02 (evening) entry.
+
+- **What ran:** the #1472 microSD run sheet (P1 to P9 and P11; optional P10 skipped).
+- **On:** Samsung SM-A176B, Android 16 (SDK 36), one 128 GB exFAT card, build `e1aacfdf` (`spike/card-store`), with a two-line probe patch from the P5 rerun onward.
+- **Save time:** 5 of 12 20-minute saves took more than the 20-second threshold the DRI set on 2026-11-04 (15.7 to 23.2 s, median 18.7 s). The cause of the spread is not established.
+- **Card pull mid-save:** the app was killed by Android while a card file stayed open. Closing the file on the first write error fixed it on this phone, so the real card store has to do the same.
+- **Not settled:** O2's acceptance criterion needs an Android 7 to 10 phone and the slowest phone's time. No such phone, no-slot phone, FAT32 card or second card was run.
+- **Open:** the probe patch is still uncommitted in its local worktree. Whether the slow runs fire ADR 0016's trigger 2 (#1520) is the DRI's reading.
+- **Findings:** [#1472 comment](https://github.com/unfoldingWord/tc-mobile/issues/1472#issuecomment-6639193400).
+- **Later the same day:** ADR 0013 (the card store, #1473) moved from Proposed to Accepted, with these findings linked and the owed lines they answer rewritten; phone (b) and the rest stay owed. [ADR 0013](decisions/0013-card-store.md); [decision record](https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6639160618).
+
+---
+
+## 2026-11-03 (day) — Sprint 6 day 2: Malay and Arabic drafts, refused takes dropped at refusal, compressor behind a switch, Settings moves into ≡, #954 closed, 17 PRs merged
+
+The orchestrator session: the start-of-day INAs, then waves of lanes on the review bench.
+
+### Decisions (DRI)
+
+- **#1836:** "Unpark and merge whole (Recommended)". **Stale branches:** "Delete all four (Recommended)".
+- **#1562, a refused take's audio:** the DRI asked whether a refused recording should simply be deleted, so small phones don't fill up. Pick: "Delete it at the refusal, log it (Recommended)".
+- **#357, the next language:** "Indonesian-adjacent: ms". **#1321:** "Defer to Backlog (Recommended)".
+- **Compressor:** "Yes, port it from the note (Recommended)". **Arabic:** "Draft now, gate go-live". **Picker O9:** "Yes, build the prototype (Recommended)".
+- **Books header:** "≡ only; Settings is a tile (Recommended)". The DRI raised it: a gear and a ≡ on the same header is one control too many.
+
+### Merged to develop (17)
+
+- **Storage (refused takes, #1562):**
+  - #1859: a refused replayed take is dropped instead of kept.
+  - #1862: the drop is logged only after it commits.
+  - #1865: one failure row when the drop itself fails, plus the sample-rate guard.
+- **Languages:**
+  - #1858: Malay (ms), an AI draft. It goes live when complete, by the standing rule.
+  - #1870, #1874, #1875: Arabic (ar), parts 1–3, complete and held by `GO_LIVE_HELD` until the RTL device pass (#1538) and a native review.
+- **Audio:**
+  - #1872: the speech compressor kernel.
+  - #1877: the compressor runs on Finished behind a Settings switch that starts off. Testers get it only after a listening check on a phone (device-pass row 6.4).
+- **Books:** #1878 removes the header gear; Settings is now the first ≡ tile (#1871).
+- **#954 O4 cleanup, finished:** #1864 (PR 8), #1876 (PR 9) and #1882 (PR 10, the prose pass and the AGENTS.md line for `src/app/styles/3-components/`).
+- **Docs:** #1836 (Android run sheets for #1464, #1486, #974), and #1866 and #1869 (the knip namespace-import blind spot in AGENTS.md).
+- **#1881:** repaired develop. #1877 and #1878 were each green on their own base, but together they left three Settings tests clicking the removed gear.
+
+Closed: #954, #1562, #1871, #1873, #1860, #1863, #1868, #246.
+
+### Artifacts
+
+- **Template Library prototype** (picker O9): https://claude.ai/artifact/LoRDaiZVqu4rzmF5CPSxVD
+- **v2 Workbench, Round 1:** a copy of the O4 workbench, kept separate from the Template prototype, and shared with the requirements owner today. https://claude.ai/artifact/9eDVBQepJSBZBLELy1w7Zm
+
+### Open, and where each stands
+
+- **Follow-ups from today's reviews, all non-blocking:**
+  - #1879: the compressor error-name comment, the per-clip refusal dedupe, and the error class out of the DSP module.
+  - #1880: Settings e2e hygiene.
+  - #1883: a one-word comment in `tile-menu.tsx`.
+- **Arabic go-live:** the hold-lift checklist is on #1458.
+- **Compressor:** the switch stays off for testers until the phone listening check.
+- **Zulip:** the Template prototype note to "tC Mobile v2" is not posted. The posting key gave "Invalid API key", and the claude.ai Zulip connector needs a login.
+- **Device runs before the v1.2 promotion and the v1.3.0 tester cut (11-15):** #1464 (iPhone row), #974 and #1486.
+- **CI flake, observed once:** on #1882, Code Quality failed on a 5 s timeout in `tests/ios-workflow-gates.test.ts:254`. That PR does not touch the file, and the next head passed. No issue is filed.
+
+---
+
+## 2026-11-02 (evening) to 2026-11-03 — device session: iOS Simulator harness merged, #1251 not reproduced in the Simulator, #1464 Android upgrade passes on a real phone
+
+The DRI's own device session, the one the 2026-11-02 entry leaves #1840 and the device runs with. It drove the iOS Simulator and a locally attached Android phone (Galaxy A17 5G, Android 16) over adb, and the DRI listened by ear.
+
+### Decisions (DRI)
+
+- **#1854 round-3 lows:** "Defer to an issue" (filed as #1857). **#1854:** "Merge it".
+- **#1251:** "Yes, start #1251", then "Yes, post it" for the Simulator findings.
+- **#1464:** "Yes, download both" (the 1.1.x and 1.2.2 APKs), then "Post it" for the run comment.
+
+### Merged to develop (1)
+
+- #1854, the iOS Simulator harness driven from the shell (#1840 phase 1).
+
+### Device runs
+
+- **#1251 (iOS lock/unlock audio stall):** in the Simulator, the stall did not reproduce on rc.2 or on the current build ([comment](https://github.com/unfoldingWord/tc-mobile/issues/1251#issuecomment-6589271974)). The Simulator cannot settle it. It still needs a real iPhone on a build that has #1261.
+- **#1464 (upgrade over existing data), Android:** 1.1.0 (`e3a4313`, DB_VERSION 11) to 1.2.2 (`24b144d`, DB_VERSION 14) over disposable data.
+  - Every row from S0 to U4 passes: books, chapters, names, the renamed segment, Done marks and all four recordings survive, the last checked by ear.
+  - After the upgrade, recording, delete, Done, add chapter and Share Chapter all work, and logcat shows no app errors.
+  - The run used 1.1.0, not 1.1.1, because no 1.1.1 APK exists.
+  - App data size before and after is cannot-tell.
+  - [Run comment](https://github.com/unfoldingWord/tc-mobile/issues/1464#issuecomment-6611988281).
+
+### Open, and where each stands
+
+- **#1464:** open for the iPhone (TestFlight) row, the web two-copy row, and any start below schema 11.
+- **Accessibility, inferred only:** some menu tiles are missing from the Android accessibility tree in both 1.1.0 and 1.2.2: the recorder's Done tile, and Move up and Move down in the Books chapter menu. This comes from uiautomator alone and has not been checked with TalkBack. No issue is filed yet.
+- **#1857:** the harness follow-ups from #1854's review.
+- **#1472 card spike:** the findings are not posted yet, and its probe patch is uncommitted in its own worktree.
+- **iPhone:** it showed offline to Xcode, so no iPhone run happened this session.
+
+---
+
+## 2026-11-02 — Sprint 6 day 1: Vietnamese (the first level-3 language), #954 PRs 5–7 and #460 closed, the failure-context gate, device run sheets at round 5, 32 PRs merged
+
+One coordinator session. It ran lanes of 4–7 in waves, as plain background agents in their own worktrees. Every develop merge passed `merge_gate.py`: both bench lenses clean at the exact head SHA and CI green. #1826 is the exception. It merged directly past its cap on the DRI's stop rule. The DRI's own session ran 1.2.2 (`2eb33b3`) on a local Android device and the iOS Simulator; its issues (#1840, PR #1854) and the device-run issues stay with that session.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **#1415 lockfile gate:** "No gate, close #1415 (Recommended)".
+- **Progress-ring track (#1469):** "Decorative (Recommended)".
+- **#1823 origin rule:** "Record neither (Recommended)".
+- **#954 after PR 5 hit its stop rule:** "All ten in one PR (Recommended)".
+- **Level-3 pilot:** "Yes, Vietnamese".
+- **Card spike (#1472):** "draft a run sheet - i have an android device connected and will get a separate session to run it".
+- **Tester versions:** "Plain X.Y.Z only (Recommended)". After a no-go, the next go: "Always cut a patch bump".
+- **#1826 at the cap:** "One restructure round (Recommended)", then "Apply stop rule: merge (Recommended)".
+- **Requirements-owner round:** "Post the round now (Recommended)". **Device runs:** "Yes, all three (Recommended)". **Sprint 6 scope:** "Keep as is (Recommended)".
+- **#1608 permission contact:** "The DRI (you)", then "support@unfoldingword.org (Recommended)".
+- **Next wave:** "Device bugs + #460 next (Recommended)".
+- **#460:** "Name them as tokens (Recommended)", then "Close, record the 5 (Recommended)".
+- **#1836 at the cap:** "Round 5 + stop rule (Recommended)". The judgment sheet is on the PR.
+- **Standing:** product questions that block a lane go to the requirements owner as a Review-round card on the project site, with a Zulip note (DRI: "we can also ask questions to tim in the artifact as needed to unblick. just need to let him know in zulip").
+
+### Merged to develop (32)
+
+- **Languages:** #1830 Vietnamese (vi), the first level-3 AI draft; #1833 records that the other six level-3 languages are not in the app; #1827 adds the level-3 Latin-script glossary columns; #1843 drops stray plural `one` keys in vi, id and zh-Hans and gates them.
+- **Styles (#954, #460):** #1831 flattens `:root` out of all ten area files (PRs 5 and 6); #1852 retires the o4 class names from tiles, errors, storage and menus (PR 7); #1855 names the recurring spacing values as component tokens.
+- **Export and templates:** #1828 and #1847 make the web build's Export project point to the installed app; #1825 and #1841 show a template-created book on the shelf.
+- **Failure log:** #1845 classifies every failure-log context for the Books ≡ marker (gate test); #1849 names the omitted contexts in AGENTS.md.
+- **Release and ops:** #1821, #1829 (tc-release skill version rules); #1823 and #1846 (the rollback read compares origins and the whole deploy record); #1832 (build:templates through a node wrapper); #1834 and #1853 (facilitator runbook matches 1.2.2, and its source markers no longer cite closed issues as open); #1848 (tester-install link); #1839 (trademark notice and permission contact in MIT.txt).
+- **ADR 0013:** #1826 and #1835 close its named residuals. It stays Proposed.
+- **Tests and deps:** #1816, #1817, #1819 (deps, with the oxc runtime pinned to 0.156.0); #1822 and #1850 (the oxc pin gate); #1824 (ring track decorative); #1842 (use-theme through the hook); #1844 (stale no-jsdom claims).
+
+### Issues closed
+
+#174, #460, #1415, #1469, #1804, #1809, #1820, #1837, #1838, #1851.
+
+### Open, and where each stands
+
+- **#1836, the Android run sheets for #974, #1464 and #1486.** Round 5 is at `f66af8f1`, past the cap on the DRI's pick. Each round tightened the same data-safety gate around real recordings: Route B's rescue copy, the throwaway-book rule, the share notice for partial chapters, and one before-inventory. The stop rule: merge if round 5 has no new UNSAFE/P1/P2; otherwise park it and split the #1464 sheet out. Until it merges, the sheets in the PR are the only version, and none has been run on a device.
+- **#954 PR 7 (#1852) merged with one done-when row unmet.** No style-diff comparison exists for it: only the base capture finished. The method defect it exposed is recorded on #954. PR 8 (`refactor/954-retire-o4-crumbs-sheets`) is next, and it runs with no other lane on `books-screen.tsx` and `recorder.tsx`.
+- **The requirements owner.** Round 9 (Y1, #246: after a template creates a book, show it on the shelf or open it) went up today, with a Zulip note. Round 7's W1 and W2 and Round 8's X1 and X2 are still open.
+- **The DRI.** ADR 0016 (Capacitor or Expo) and ADR 0013 are both still Proposed. ADR 0016's 20-minute save threshold is open.
+
+### Notes for the next session
+
+- A scout read a stale develop: two of its slices (#460's About panel, #1473's ADR text) had already merged. Fetch develop before scouting, and have each lane check its slice is still open before it builds.
+- The project site was refreshed (version 28): home, v2, review intros, sprints, decisions, board and checks. 28 `lanes/*` records were rewritten to their real GitHub states. They had shown "in-review" or "building" since 19 Oct; the other five were already marked merged. A new record tracks #1836.
+
+---
+
+## 2026-10-30 — Sprint 5 day 12: tester-build-v1.2.2 published (Play draft and TestFlight group still the DRI's), the milestones retitled and Sprint 5 closed out, 7 PRs merged
+
+One coordinator session. It started with the v1.2.2 native lanes stuck, published the tester build, and then ran one wave of five lanes. Every merge to develop met the DRI's rule for this session, verbatim: "you're permitted to merge on clean and green". So both bench lenses were clean at the exact head and every check was green (`merge_gate.py`).
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Tester builds:** "Only v1.2.2 (Recommended)". No tester pre-release for 1.2.0 or 1.2.1.
+- **Spike PRs #1612 and #1532:** "Keep both open".
+- **Milestone titles:** "Staging-cut rule, shift all", then "Always YYYY-MM-DD". The title's version is the minor cut for testers at that sprint's end.
+- **Sprint 5 close-out:** "Apply as proposed (Recommended)".
+- **"Pulled in":** "Planned or started (Recommended)".
+- **A `staging -> main` no-go:** "Carry it forward (Recommended)".
+- **Merging:** "you're permitted to merge on clean and green".
+- **Publish:** "yes lets publish."
+
+The last four picks before the merge rule are encoded in AGENTS.md "Versions and milestones" by #1813.
+
+### Completed
+
+- **v1.2.2 native lanes unstuck:**
+  - The 1.2.0 APK and TestFlight runs (40754572234, 40754572181) were still waiting for signing approval. They held each lane's concurrency group (`cancel-in-progress: false`), so the 1.2.2 runs sat pending behind them. The 1.2.1 runs had been cancelled when 1.2.2's arrived.
+  - The DRI cancelled the 1.2.0 runs and approved the 1.2.2 runs. APK 40945854843 and TestFlight 40945854707 both succeeded at `PROMO_SHA` `24b144d7c66e1af6bb24da4ac65a5239c7377440`.
+- **APK checks (`tc-release` §6):**
+  - Signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, equal to `tester-build-v1.1.0`'s. It was read from the v2 signing block with a stdlib reader that first reproduced v1.1.0's recorded certificate and hash.
+  - Embedded `version.json` reads `1.2.2` and `shaFull` `24b144d7…`.
+  - APK SHA-256 `5092fcfea1163eb80853f95d671dfc38a654876c0ccf9f78d7ec1889a0955744`.
+  - TestFlight build `1793374291` (`MARKETING_VERSION` 1.2.2).
+- **Published `tester-build-v1.2.2`** at `PROMO_SHA` (https://github.com/unfoldingWord/tc-mobile/releases/tag/tester-build-v1.2.2), with the APK and a QR code decoded back to the download URL before publishing. The download-back hash equals the recorded hash, and the tag reads back at `PROMO_SHA`.
+  - The notes add a summary of 1.2.0's tester-facing changes and the one-way `DB_VERSION` 11 → 14 warning, because testers last had 1.1.0.
+  - Publish record, with both store blurbs: https://github.com/unfoldingWord/tc-mobile/pull/1803#issuecomment-6529559432
+- **Play:** run 40945854656 uploaded 1.2.2 to the internal track as a draft (`release_status` draft, from the run log).
+- **Store blurbs:** a Play "What's new" (446 of 500 characters) and a TestFlight "What to Test" were drafted, and the `tc-release` skill gained §7a "Store blurbs" (#1807).
+- **Milestones:** Sprints 1–9 retitled with full dates and staging-cut versions (`Sprint 5 (2026-10-19 → 2026-11-01) — v1.2.0` … `Sprint 9 (2026-12-14 → 2026-12-27) — v1.6.0`). Each description states the rule.
+- **Sprint 5 close-out:** 11 issues and the spike PRs #1612 and #1532 moved to Sprint 6. #1433, #1233, #1201, #1028 and #249 moved to Backlog. Each issue has a reason comment.
+- **Merged to develop (7):** #1807, #1808, #1810, #1811, #1812, #1813 (closes #1421), #1814 (#954 PR 4).
+- **#954 PR 4 is #1814** (`src/app/styles/o4/` → `src/app/styles/3-components/`, sentinel `--o4-scope` → `--c-components-last`). The lane reports the built CSS byte-identical to develop once the sentinel is renamed back, and a style diff of base vs head with 0 differences over 4,852 states. That style-diff run's own verdict prints "not clean" only because a test in the Playwright spec `e2e/browser-boundary-smoke.spec.ts` fails inside its captures, base included (recorded on #954). The spec name is not a GitHub check, and the style diff is a lane run. All six GitHub checks at #1814's merged head `03c70748` were success: Build, Code Quality, Commit Messages, Headless-Chromium Smoke, PR Body and Secret Scan. Run record: https://github.com/unfoldingWord/tc-mobile/pull/1814#issuecomment-6531697122.
+- **Project site:** every tab refreshed to 30 Oct and republished (version 24), with a snapshot regenerated at 19:11Z.
+- **Issue hygiene:**
+  - The pick dates stamped "2026-10-30" were corrected to 2026-10-29 in `scripts/bake-template-packages.mjs` (#1808), #1797's body and the #1450 pick comment.
+  - #1809 was filed to re-version the `tc-release` skill.
+  - Per-item audits were posted on #1747 (30 of 42 shipped) and #1421 (27 of 36 shipped). #1421's last four rows were disposed: C8 is pinned by `tests/ios-deployment-target.test.ts:77`, C9 is #1281, O4 needs no action, and O5 was decided above.
+
+### Not run
+
+- **Nothing in 1.2.2 has been run on a phone by this session.** The QR code was decoded, not scanned with a phone, and the one-way `DB_VERSION` 11 → 14 migration has not been exercised on a device holding a v11 database.
+- The Play internal draft has not been rolled out, and the TestFlight build has not been assigned to the testers' group.
+- **Not observed on a device:** that a sideloaded APK can update from Play without an uninstall. The Play lane in `fastlane/Fastfile` says Play re-signs with the same key; that is the lane's claim, and no signer from a Play-delivered APK is recorded here.
+
+### Blockers (DRI only)
+
+- **Play:** paste the Play blurb into the 1.2.2 internal draft and roll it out.
+- **TestFlight:** paste the "What to Test" text into build `1793374291` and assign the testers' group.
+- **Release page:** scan the QR code on the release page with a phone, and post the announcement.
+
+### Next steps
+
+- **Sprint 5 ends 2026-11-01. Sprint 6 starts 2026-11-02** with 23 open items, most of them device runs or DRI steps (#974, #1251, #1486, #1281, #1295, #1324).
+- **#954:** PR 5 (`:root` flatten), then #1747's CSS items and #1804's mic-shake pin and `:is()` gate item.
+- **#1804:** the remaining deferred bench items.
+
+---
+
+## 2026-10-29 — Sprint 5 day 11: v1.2.2 promoted to staging, a provisional Titus template on web staging, a clean #954 self-compare, ADR 0013 proposed, 26 PRs merged
+
+One coordinator session in orchestrator mode, resumed from the 10-28 usage-limit stop. Every merge to develop met the standing rule: both bench lenses clean at the exact head and every check green, or a DRI pick at the cap. The merged list below uses the window from #1777's merge (2026-10-28T23:11Z) to 2026-10-29T20:06Z. Several of this session's notes and issue comments stamp its DRI picks "2026-10-30"; every pick below was made on 2026-10-29.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **#954, the states that can never settle:** "Named tolerated list (Recommended)" (https://github.com/unfoldingWord/tc-mobile/issues/954#issuecomment-6495213341).
+- **#1450 (Bible-book templates):** "Scope now, build later (Recommended)", then on the scope's questions: gate "Start test-only tasks now", O1 "Write once, never refresh (Recommended)", O10 "Wire it in with #1450 (Recommended)" (https://github.com/unfoldingWord/tc-mobile/issues/1450#issuecomment-6495872995).
+- **Titus timeline:** "Test build now, titles later (Recommended)" (https://github.com/unfoldingWord/tc-mobile/issues/1450#issuecomment-6499164094; the comment's own stamp says 10-30). Later, on showing a segment's verse range: "Wait for headings" (https://github.com/unfoldingWord/tc-mobile/issues/1450#issuecomment-6507329485).
+- **#1798 at the cap:** "Merge now; fix the guard before the variable (Recommended)".
+- **#1785 at the cap:** "One more round, with a stop rule (Recommended)". The stop rule fired in round 5 and it merged.
+- **#575:** "Leave round citations (Recommended)".
+- **Release:** "Prepare v1.2.2 now (Recommended)", the red team's F1 "Web staging only (Recommended)" and F2 "4th residual on #1473 (Recommended)", then the go/no-go "Go (Recommended)" (https://github.com/unfoldingWord/tc-mobile/pull/1803#issuecomment-6507023658).
+- **The dataset repo:** "Other session keeps BP" and "No, I merge BP". This session runs no lanes there.
+
+### Completed
+
+- **v1.2.2 release:**
+  - Cut at `CUT_SHA` `d54012e103fadb17f40dd720c8b492bb7c91ddf7` (#1802, v1.2.2). Develop merges were held from the cut until the promotion merged.
+  - Release red team on `f761cd59..d54012e1`: risk register 0 BLOCK, 2 FIX-BEFORE-PUBLISH (both picked, above), 19 NOTE. The claim check of #1802's body found 1 FALSE (the PR count: 48, not 47), corrected in #1803's body with the other findings (https://github.com/unfoldingWord/tc-mobile/pull/1803#issuecomment-6506453636).
+  - Promoted to staging by #1803, merged with a merge commit, `PROMO_SHA` `24b144d7c66e1af6bb24da4ac65a5239c7377440` (parents `f761cd59`, `d54012e1`).
+  - `npm run check:deploy`: `Deployed: version=1.2.2 sha=24b144d builtAt=2026-10-29T20:06:13.420Z` / `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.`
+  - Native lanes on `PROMO_SHA`: Play 40945854656 succeeded. TestFlight 40945854707 and APK 40945854843 are waiting on the DRI's signing approval.
+- **Provisional Titus template, web staging only:**
+  - The bake step (#1798, #1450 tasks 5–6), the guard that bakes a provisional package only on a named non-`main` branch (#1799, from #1797), and the picker's Bible-book row with its e2e test (#1800, task 7). #1791 (tasks 1–2) pinned the real Titus package in tests first.
+  - The DRI set `TC_BAKE_PROVISIONAL_TEMPLATES=1` on tc-mobile-staging as a build variable. That Worker serves static assets only and refuses runtime variables.
+  - Titus observed in the served staging chunk `assets/baked-template-packages-BGu52XHt.js` (`id:"bible-passages:TIT"`, `version:"0.0.0"`), read from the live origin (https://github.com/unfoldingWord/tc-mobile/issues/1797#issuecomment-6507130472). The variable has not been seen in a build log.
+  - The coordinator reports a fresh headless Chromium run with Playwright against staging listing the Templates rows `["Open Bible Stories","Titus"]`, and the DRI reports seeing Titus on their own device after the update from 1.2.1. Neither run's output is posted on an issue.
+  - Not in the native builds: no native lane sets the variable (F1).
+- **#954 (O4 fold):** the style-diff self-compare reads **clean**: R1 vs R2 and R1 vs R3 each 0 distinct differences, 0 unmatched states, 0 capture errors, only tolerated states unsettled (https://github.com/unfoldingWord/tc-mobile/pull/1805#issuecomment-6506524829). That came through PR 1 (#1778), PR 3 (#1776), 1b (#1779), 1c (#1781), the playhead fix (#1782), 1d (#1783), 1e's tolerated list (#1795), 1f (#1796), #1801 (#1780's settle decision) and #1805.
+- **ADR 0013** (how recordings live on the card) merged as Proposed (#1785). Its residuals are on #1473, the 4th added from the red team's F2 (https://github.com/unfoldingWord/tc-mobile/issues/1473#issuecomment-6506384641).
+- **Merged to develop besides the release PRs (24):** #1776, #1778, #1779, #1781, #1782, #1783, #1784, #1785, #1786, #1787, #1788, #1789, #1790, #1791, #1792, #1793, #1794, #1795, #1796, #1798, #1799, #1800, #1801 and #1805.
+- **Issue close-out pass:** #91, #1674 and #169 closed. #1747 has a per-item status (https://github.com/unfoldingWord/tc-mobile/issues/1747#issuecomment-6495625519).
+
+### Not run
+
+- **Nothing merged this session was run on a phone by this session.** The DRI's Titus sighting above is the only device report, and it fills no device-pass row.
+- **v1.2.2 on the native lanes:** only Play has run.
+
+### Blockers (DRI only)
+
+- **Signing runs:** approve TestFlight 40945854707 and APK 40945854843.
+- Then the coordinator checks the APK's signer certificate and `version.json`, hands over the `tester-build-v1.2.2` pre-release command, and the DRI assigns the TestFlight tester group and posts the announcement (the draft is in #1803's body).
+
+### Next steps
+
+- **Titus headings** wait on the dataset's English title table (#1450 tasks 3–4).
+- **#954 PRs 4–10**, one at a time.
+- **#1804:** the v1.2.2 red-team follow-ups, including the sweep of this session's "2026-10-30" stamps.
+- **Sprint 5 ends 2026-11-01**, with housekeeping: every item still open in it moves explicitly to Sprint 6 or Backlog.
+
+---
+
 ## 2026-10-27 → 2026-10-28 — Sprint 5 days 9–10: v1.2.0 cut and promoted to staging, the v1.2.1 Play-lane hotfix, production moved to Sprint 6 end, 29 PRs merged
 
 One coordinator session in orchestrator mode. Every merge to develop met the standing rule: both bench lenses clean at the exact head and every check green. No device results reached this session.

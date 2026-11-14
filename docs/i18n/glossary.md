@@ -8,7 +8,9 @@ terms, in the words Bible translators already use.
 **Status of this file.** The wording in section 5 is an AI-drafted proposal. No
 human has reviewed it, and no native reader has been asked. It is a starting
 point for the drafting lanes, not a reviewed lexicon. Where a cell comes from
-somewhere other than the proposal, section 5 says so.
+somewhere other than the proposal, section 5 says so. The seven level-3
+Latin-script columns of section 5 are AI drafts of the same kind, written under
+#357; no native speaker has reviewed any of them.
 
 ## 1. Decisions this file follows
 
@@ -37,8 +39,23 @@ Ten columns, matching the epic's list of what a translator can do when it
 ships: Arabic, English, French, Hindi, Indonesian, Mandarin (Simplified),
 Portuguese, Russian, Spanish and Swahili. English is the source and the
 reference column. The 16 level-3 languages follow later; section 5 carries
-empty columns for the seven Latin-script ones (below), and the other level-3
-languages are not in this file.
+AI-draft columns for the seven Latin-script ones (below), and the other level-3
+languages are not in this file. Of the seven, Vietnamese (`vi`) is in the app
+as a complete AI-draft locale (#1830), the DRI's pilot pick on #357 ("Yes,
+Vietnamese",
+<https://github.com/unfoldingWord/tc-mobile/issues/357#issuecomment-6580657589>),
+and so are Malay (`ms`), the DRI's pick on 2026-11-03 ("Indonesian-adjacent:
+ms"), Tagalog (`tl`), the DRI's pick on 2026-11-04 ("Tagalog (tl)
+(Recommended)"), and Tok Pisin (`tpi`), the DRI's pick on 2026-11-05 ("Tok
+Pisin (tpi)"); the other three level-3 languages are not in the app.
+
+Arabic (`ar`) is an AI draft, awaiting native-speaker review: its table is
+complete (parts 1 to 3 of #1458), and nothing of it is on the pending list. It
+is held off anyway (`GO_LIVE_HELD` in
+`src/lib/i18n/locales.ts`) until the right-to-left device pass clears it, the
+DRI's pick on #1458 of 2026-11-03: "Draft now, gate go-live". Its count
+wording follows one plural model (`counted` in `src/lib/i18n/ar.ts`), and a
+native speaker's review of that model is a condition of lifting the hold.
 
 | Code      | Language              | Script     | Direction     |
 | --------- | --------------------- | ---------- | ------------- |
@@ -58,15 +75,21 @@ reference site below tags its Portuguese as Brazilian and its Spanish as
 Latin-American. This file follows that, and it is not a decision anyone has
 recorded for the app.
 
-**Level-3 Latin-script languages (columns awaiting a draft).** The plan's
+**Level-3 Latin-script languages (AI-draft columns, awaiting native-speaker
+review).** The seven match the recorded list: #357's 2026-10-08 comment (the
+table of the 26 from the DRI's CSV export) has exactly seven level-3 rows with
+script `Latn`: `ha`, `ln`, `ms`, `tl`, `tpi`, `tr`, `vi`. The plan's
 language list (`docs/design/v2-plan.md`, columns "Level, Language, BCP 47,
 Script") has exactly seven level-3 rows with a Latin script, quoted from it as
 "| 3 | Hausa | ha | Latin" (and likewise Lingala `ln`, Malay `ms`,
 Tagalog `tl`, Tok Pisin `tpi`, Turkish `tr`, Vietnamese `vi`). The requirements
 owner's R8-level3 decision (#1458) is "After 2.0.0", with the note "the 16
 level-3 languages are v2-desired (will become v3-required if they miss the v2
-launch)". Their cells in section 5 are left empty and marked "to draft": no
-proposal has been written for them, no human has reviewed any, and no native
+launch)". Because of that, these columns sit under their own level-3 headings
+in section 5. Only `vi` (the DRI's pilot pick on #357, #1830), `ms` (the
+DRI's pick on #357, 2026-11-03), `tl` (the DRI's pick on #357, 2026-11-04)
+and `tpi` (the DRI's pick on #357, 2026-11-05) are in the app; the other
+three are not. Their cells are AI proposals under Q1 and Q3: no human has reviewed any, and no native
 reader has been asked.
 
 The two level-3 tables carry an `English` column beside `#`, copied from the
@@ -268,74 +291,79 @@ the site uses (section 3).
 | 26  | licença            | лицензия          | leseni           | 许可证    | AI proposal                                                                                                                           |
 | 27  | Sobre o aplicativo | О приложении      | Kuhusu programu  | 关于      | AI proposal. The site's nav label "About us" is a different thing (the organisation).                                                 |
 
-**Hausa, Lingala, Malay, Tagalog (level 3, Latin script, to draft)**
+**Hausa, Lingala, Malay, Tagalog (level 3, Latin script, AI draft awaiting native-speaker review)**
 
-| #   | English              | `ha`     | `ln`     | `ms`     | `tl`     | Source   |
-| --- | -------------------- | -------- | -------- | -------- | -------- | -------- |
-| 1   | Book                 | to draft | to draft | to draft | to draft | none yet |
-| 2   | Chapter              | to draft | to draft | to draft | to draft | none yet |
-| 3   | Segment              | to draft | to draft | to draft | to draft | none yet |
-| 4   | Recording (noun)     | to draft | to draft | to draft | to draft | none yet |
-| 5   | Record               | to draft | to draft | to draft | to draft | none yet |
-| 6   | Stop recording       | to draft | to draft | to draft | to draft | none yet |
-| 7   | Play                 | to draft | to draft | to draft | to draft | none yet |
-| 8   | Pause                | to draft | to draft | to draft | to draft | none yet |
-| 9   | Share                | to draft | to draft | to draft | to draft | none yet |
-| 10  | Done                 | to draft | to draft | to draft | to draft | none yet |
-| 11  | Reset recording      | to draft | to draft | to draft | to draft | none yet |
-| 12  | Delete               | to draft | to draft | to draft | to draft | none yet |
-| 13  | Rename               | to draft | to draft | to draft | to draft | none yet |
-| 14  | Cancel               | to draft | to draft | to draft | to draft | none yet |
-| 15  | Edit                 | to draft | to draft | to draft | to draft | none yet |
-| 16  | Undo                 | to draft | to draft | to draft | to draft | none yet |
-| 17  | Menu                 | to draft | to draft | to draft | to draft | none yet |
-| 18  | Close                | to draft | to draft | to draft | to draft | none yet |
-| 19  | Back / Go back       | to draft | to draft | to draft | to draft | none yet |
-| 20  | Try again            | to draft | to draft | to draft | to draft | none yet |
-| 21  | Save                 | to draft | to draft | to draft | to draft | none yet |
-| 22  | Name                 | to draft | to draft | to draft | to draft | none yet |
-| 23  | Microphone           | to draft | to draft | to draft | to draft | none yet |
-| 24  | Phone                | to draft | to draft | to draft | to draft | none yet |
-| 25  | Space (on the phone) | to draft | to draft | to draft | to draft | none yet |
-| 26  | Licence              | to draft | to draft | to draft | to draft | none yet |
-| 27  | About                | to draft | to draft | to draft | to draft | none yet |
+| #   | English              | `ha`                  | `ln`                 | `ms`                    | `tl`                  | Source                                                                                                                                                                                                                                |
+| --- | -------------------- | --------------------- | -------------------- | ----------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Book                 | littafi               | buku                 | buku                    | aklat                 | AI draft, no native review.                                                                                                                                                                                                           |
+| 2   | Chapter              | babi                  | mokapo               | bab                     | kabanata              | AI draft, no native review. `ha`, `ln`, `tpi`, `tr`: the chapter word these languages' Bibles are recalled to use ("babi", "mokapo", "sapta", "bölüm"); recalled from general knowledge, not checked against a text here. Verify.     |
+| 3   | Segment              | sashe                 | eteni                | bahagian                | bahagi                | AI draft, no native review. `tr`: "bölüm" is the chapter word (row 2), so Segment takes "parça". `ms` "bahagian" and `tl` "bahagi" are the plain word for a part. Verify.                                                             |
+| 4   | Recording (noun)     | naɗi                  | rekodi               | rakaman                 | recording             | AI draft, no native review. `tl`: the noun is the English word, a loan Filipino phones use, so it is the same as the English. Verify. `ha`, `ln`, `ms`, `tpi`: the noun may be a loan in daily use. Verify.                           |
+| 5   | Record               | Naɗa                  | Rekoda               | Rakam                   | I-record              | AI draft, no native review. `tr`: "Kaydet" is Save (row 21), so Record takes "Kaydı başlat", longer than one word. `ln` "Rekoda" is an imperative built on the loan. Verify.                                                          |
+| 6   | Stop recording       | Dakatar da naɗi       | Tika rekodi          | Henti rakaman           | Ihinto ang recording  | AI draft, no native review. `ln` "Tika" means leave off; verify it reads as stop here.                                                                                                                                                |
+| 7   | Play                 | Kunna                 | Yoka                 | Main                    | I-play                | AI draft, no native review.                                                                                                                                                                                                           |
+| 8   | Pause                | Ɗan dakata            | Zela                 | Jeda                    | I-pause               | AI draft, no native review. `ha`: "Dakata" alone reads as Stop, so the draft is the two-word "Ɗan dakata" (a short stop). `tpi` "Wet" is wait. Verify.                                                                                |
+| 9   | Share                | Raba                  | Kabola               | Kongsi                  | Ibahagi               | AI draft, no native review.                                                                                                                                                                                                           |
+| 10  | Done                 | An gama               | Esili                | Selesai                 | Tapos na              | AI draft, no native review. `tr`: "Bitti" (finished). "Tamam" is the word for OK, so it is not used. Verify.                                                                                                                          |
+| 11  | Reset recording      | Sake saita naɗi       | Banda rekodi lisusu  | Tetapkan semula rakaman | I-reset ang recording | AI draft, no native review. Same warning as the first table: keep the meaning "clear this recording, keep the segment", not a settings reset. The `ha`, `ln`, `tl` and `tpi` cells are the least certain in this table. Verify first. |
+| 12  | Delete               | Share                 | Longola              | Padam                   | Burahin               | AI draft, no native review. `ha`: "Share" is a Hausa word meaning to wipe off, and is spelled like the English word Share (a coincidence); it is not row 9's cell. Verify.                                                            |
+| 13  | Rename               | Sake suna             | Bongola nkombo       | Namakan semula          | Palitan ang pangalan  | AI draft, no native review.                                                                                                                                                                                                           |
+| 14  | Cancel               | Soke                  | Boya                 | Batal                   | Kanselahin            | AI draft, no native review. `ln` "Boya" (refuse) is a guess at the plain word. Verify.                                                                                                                                                |
+| 15  | Edit                 | Gyara                 | Bongisa              | Sunting                 | I-edit                | AI draft, no native review.                                                                                                                                                                                                           |
+| 16  | Undo                 | Warware               | Zongisa              | Buat asal               | Ibalik                | AI draft, no native review. `ln` "Zongisa" (bring back) and `tpi` "Tanim bek" (turn back). Verify.                                                                                                                                    |
+| 17  | Menu                 | Menu                  | Menu                 | Menu                    | Menu                  | AI draft, no native review. The same as the English in `ha`, `ln`, `ms`, `tl`, `tpi` and `vi`: a Verify question (section 9, item 5). `tr` is "Menü".                                                                                 |
+| 18  | Close                | Rufe                  | Kanga                | Tutup                   | Isara                 | AI draft, no native review.                                                                                                                                                                                                           |
+| 19  | Back / Go back       | Koma baya             | Zonga                | Kembali                 | Bumalik               | AI draft, no native review.                                                                                                                                                                                                           |
+| 20  | Try again            | Sake gwadawa          | Meka lisusu          | Cuba lagi               | Subukan muli          | AI draft, no native review.                                                                                                                                                                                                           |
+| 21  | Save                 | Ajiye                 | Bomba                | Simpan                  | I-save                | AI draft, no native review. `tl`, `tpi`: "I-save" and "Sevim" are loans in use on phones. `tr`: see row 5.                                                                                                                            |
+| 22  | Name                 | Suna                  | Nkombo               | Nama                    | Pangalan              | AI draft, no native review. `tr`: "Ad" is the word for a given name; the sense here is a title. Verify.                                                                                                                               |
+| 23  | Microphone           | makirufo              | mikrofɔ              | mikrofon                | mikropono             | AI draft, no native review. `ln`: "mikrofɔ" uses the open o (ɔ) of Lingala spelling. Verify.                                                                                                                                          |
+| 24  | Phone                | waya                  | telefɔni             | telefon                 | telepono              | AI draft, no native review.                                                                                                                                                                                                           |
+| 25  | Space (on the phone) | sarari                | esika                | ruang                   | espasyo               | AI draft, no native review. `vi`: "dung lượng" is storage capacity, which the screens never say; "chỗ trống" is free room. `tr`: "depolama" is storage and is not used.                                                               |
+| 26  | Licence              | lasisi                | lisansi              | lesen                   | lisensya              | AI draft, no native review.                                                                                                                                                                                                           |
+| 27  | About                | Game da aikace-aikace | Makambo ya aplikasyo | Perihal aplikasi        | Tungkol sa app        | AI draft, no native review. `ln` and `tpi` are the least certain cells in this table. Verify.                                                                                                                                         |
 
-**Tok Pisin, Turkish, Vietnamese (level 3, Latin script, to draft)**
+**Tok Pisin, Turkish, Vietnamese (level 3, Latin script, AI draft awaiting native-speaker review)**
 
-| #   | English              | `tpi`    | `tr`     | `vi`     | Source   |
-| --- | -------------------- | -------- | -------- | -------- | -------- |
-| 1   | Book                 | to draft | to draft | to draft | none yet |
-| 2   | Chapter              | to draft | to draft | to draft | none yet |
-| 3   | Segment              | to draft | to draft | to draft | none yet |
-| 4   | Recording (noun)     | to draft | to draft | to draft | none yet |
-| 5   | Record               | to draft | to draft | to draft | none yet |
-| 6   | Stop recording       | to draft | to draft | to draft | none yet |
-| 7   | Play                 | to draft | to draft | to draft | none yet |
-| 8   | Pause                | to draft | to draft | to draft | none yet |
-| 9   | Share                | to draft | to draft | to draft | none yet |
-| 10  | Done                 | to draft | to draft | to draft | none yet |
-| 11  | Reset recording      | to draft | to draft | to draft | none yet |
-| 12  | Delete               | to draft | to draft | to draft | none yet |
-| 13  | Rename               | to draft | to draft | to draft | none yet |
-| 14  | Cancel               | to draft | to draft | to draft | none yet |
-| 15  | Edit                 | to draft | to draft | to draft | none yet |
-| 16  | Undo                 | to draft | to draft | to draft | none yet |
-| 17  | Menu                 | to draft | to draft | to draft | none yet |
-| 18  | Close                | to draft | to draft | to draft | none yet |
-| 19  | Back / Go back       | to draft | to draft | to draft | none yet |
-| 20  | Try again            | to draft | to draft | to draft | none yet |
-| 21  | Save                 | to draft | to draft | to draft | none yet |
-| 22  | Name                 | to draft | to draft | to draft | none yet |
-| 23  | Microphone           | to draft | to draft | to draft | none yet |
-| 24  | Phone                | to draft | to draft | to draft | none yet |
-| 25  | Space (on the phone) | to draft | to draft | to draft | none yet |
-| 26  | Licence              | to draft | to draft | to draft | none yet |
-| 27  | About                | to draft | to draft | to draft | none yet |
+| #   | English              | `tpi`               | `tr`              | `vi`                | Source                                                                                                                                                                                                                                |
+| --- | -------------------- | ------------------- | ----------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Book                 | buk                 | kitap             | sách                | AI draft, no native review.                                                                                                                                                                                                           |
+| 2   | Chapter              | sapta               | bölüm             | chương              | AI draft, no native review. `ha`, `ln`, `tpi`, `tr`: the chapter word these languages' Bibles are recalled to use ("babi", "mokapo", "sapta", "bölüm"); recalled from general knowledge, not checked against a text here. Verify.     |
+| 3   | Segment              | hap                 | parça             | đoạn                | AI draft, no native review. `tr`: "bölüm" is the chapter word (row 2), so Segment takes "parça". `ms` "bahagian" and `tl` "bahagi" are the plain word for a part. Verify.                                                             |
+| 4   | Recording (noun)     | rekod               | kayıt             | bản ghi âm          | AI draft, no native review. `tl`: the noun is the English word, a loan Filipino phones use, so it is the same as the English. Verify. `ha`, `ln`, `ms`, `tpi`: the noun may be a loan in daily use. Verify.                           |
+| 5   | Record               | Rekodim             | Kaydı başlat      | Ghi âm              | AI draft, no native review. `tr`: "Kaydet" is Save (row 21), so Record takes "Kaydı başlat", longer than one word. `ln` "Rekoda" is an imperative built on the loan. Verify.                                                          |
+| 6   | Stop recording       | Stopim rekod        | Kaydı durdur      | Dừng ghi âm         | AI draft, no native review. `ln` "Tika" means leave off; verify it reads as stop here.                                                                                                                                                |
+| 7   | Play                 | Pleim               | Oynat             | Phát                | AI draft, no native review.                                                                                                                                                                                                           |
+| 8   | Pause                | Wet                 | Duraklat          | Tạm dừng            | AI draft, no native review. `ha`: "Dakata" alone reads as Stop, so the draft is the two-word "Ɗan dakata" (a short stop). `tpi` "Wet" is wait. Verify.                                                                                |
+| 9   | Share                | Serim               | Paylaş            | Chia sẻ             | AI draft, no native review.                                                                                                                                                                                                           |
+| 10  | Done                 | Pinis               | Bitti             | Xong                | AI draft, no native review. `tr`: "Bitti" (finished). "Tamam" is the word for OK, so it is not used. Verify.                                                                                                                          |
+| 11  | Reset recording      | Stat gen long rekod | Kaydı sıfırla     | Đặt lại bản ghi âm  | AI draft, no native review. Same warning as the first table: keep the meaning "clear this recording, keep the segment", not a settings reset. The `ha`, `ln`, `tl` and `tpi` cells are the least certain in this table. Verify first. |
+| 12  | Delete               | Rausim              | Sil               | Xóa                 | AI draft, no native review. `ha`: "Share" is a Hausa word meaning to wipe off, and is spelled like the English word Share (a coincidence); it is not row 9's cell. Verify.                                                            |
+| 13  | Rename               | Senisim nem         | Yeniden adlandır  | Đổi tên             | AI draft, no native review.                                                                                                                                                                                                           |
+| 14  | Cancel               | Lusim               | İptal             | Hủy                 | AI draft, no native review. `ln` "Boya" (refuse) is a guess at the plain word. Verify.                                                                                                                                                |
+| 15  | Edit                 | Stretim             | Düzenle           | Chỉnh sửa           | AI draft, no native review.                                                                                                                                                                                                           |
+| 16  | Undo                 | Tanim bek           | Geri al           | Hoàn tác            | AI draft, no native review. `ln` "Zongisa" (bring back) and `tpi` "Tanim bek" (turn back). Verify.                                                                                                                                    |
+| 17  | Menu                 | Menu                | Menü              | Menu                | AI draft, no native review. The same as the English in `ha`, `ln`, `ms`, `tl`, `tpi` and `vi`: a Verify question (section 9, item 5). `tr` is "Menü".                                                                                 |
+| 18  | Close                | Pasim               | Kapat             | Đóng                | AI draft, no native review.                                                                                                                                                                                                           |
+| 19  | Back / Go back       | Go bek              | Geri              | Quay lại            | AI draft, no native review.                                                                                                                                                                                                           |
+| 20  | Try again            | Traim gen           | Tekrar dene       | Thử lại             | AI draft, no native review.                                                                                                                                                                                                           |
+| 21  | Save                 | Sevim               | Kaydet            | Lưu                 | AI draft, no native review. `tl`, `tpi`: "I-save" and "Sevim" are loans in use on phones. `tr`: see row 5.                                                                                                                            |
+| 22  | Name                 | Nem                 | Ad                | Tên                 | AI draft, no native review. `tr`: "Ad" is the word for a given name; the sense here is a title. Verify.                                                                                                                               |
+| 23  | Microphone           | maikrofon           | mikrofon          | micrô               | AI draft, no native review. `ln`: "mikrofɔ" uses the open o (ɔ) of Lingala spelling. Verify.                                                                                                                                          |
+| 24  | Phone                | fon                 | telefon           | điện thoại          | AI draft, no native review.                                                                                                                                                                                                           |
+| 25  | Space (on the phone) | ples                | yer               | chỗ trống           | AI draft, no native review. `vi`: "dung lượng" is storage capacity, which the screens never say; "chỗ trống" is free room. `tr`: "depolama" is storage and is not used.                                                               |
+| 26  | Licence              | laisens             | lisans            | giấy phép           | AI draft, no native review.                                                                                                                                                                                                           |
+| 27  | About                | Long dispela app    | Uygulama hakkında | Giới thiệu ứng dụng | AI draft, no native review. `ln` and `tpi` are the least certain cells in this table. Verify.                                                                                                                                         |
 
-Every cell in these two tables is empty on purpose: "to draft" is a placeholder,
-not a proposal. A drafting lane fills a cell from the row's English and its Note
-in the first table, and returns it as an AI proposal like the others; nothing
-here has been read by a native speaker.
+Every cell in these two tables is an AI draft written from the row's English
+and its Note in the first table, under Q1 and Q3. **They are awaiting
+native-speaker review: nobody who speaks these languages has read them.** The
+drafter worked from general knowledge of each language, with no corpus, no
+Bible text and no reviewer to hand, so some cells are guesses; the Source
+column names the ones that are most uncertain. The Hausa, Lingala and Tok
+Pisin cells are the weakest, and the Lingala and Tok Pisin ones should be read
+first. A native reader's change replaces a cell and removes its "AI draft"
+mark in the same edit.
 
 Rows 5 to 8 and 10 to 16 are button and menu captions, so a lane may shorten
 the cell to a single word where the language allows it, and must then use that
@@ -385,10 +413,37 @@ out") uses `"=1"`; `one` in Russian also selects 21 and 31.
 | Swahili              | one, other                       |
 | English              | one, other                       |
 | Mandarin, Indonesian | other only                       |
+| Turkish              | one, other                       |
+| Hausa                | one, other                       |
+| Lingala              | one, other                       |
+| Tagalog              | one, other                       |
+| Malay                | other only                       |
+| Vietnamese           | other only                       |
+| Tok Pisin            | other only                       |
 
 These were read from `Intl.PluralRules(...).resolvedOptions().pluralCategories`
 on Node 22 with ICU 78.2, on 2026-10-19. That is a Node run, not a phone's
 engine; a phone's ICU may differ.
+
+**Level-3 plural categories.** The seven rows added above were read on
+2026-11-02 from `Intl.PluralRules(<tag>).resolvedOptions().pluralCategories` on
+Node 22.22.2 (ICU 78.2, CLDR 48.0, Unicode 17.0), with the tags `tr`, `vi`,
+`ms`, `tl`, `ha`, `ln` and `tpi`. The source is the CLDR plural rules as
+bundled in that ICU; no CLDR file was opened. Notes the table does not
+show:
+
+- `tl`: Node resolves the tag to `fil` (the CLDR locale for Filipino); CLDR
+  has no plural rule under `tl`. `one` there selects 0 to 3, 5, 7, 8, 10 to 13
+  and so on, and not 4, 6, 9, 14, 16, 19 (read for 0 to 20). It does not
+  mean "exactly one", so exact-one wording uses `"=1"`, as for Russian.
+- `ln`: `one` selects 0 and 1 (read: 0 and 1 gave `one`, 2 and 1.5 gave
+  `other`), so a count of zero takes the `one` form. A table for exact-one
+  wording uses `"=1"`.
+- `tr` and `ha`: `one` selects 1 only; 0 and 1.5 gave `other`.
+- `tpi`: Node accepts the tag and returns `other` only. That is what was
+  observed; why (whether CLDR lists the language with no count forms or ICU
+  has a fallback) was not checked, and a phone's engine may differ. It is a
+  Node run, not a phone's engine.
 
 **When `many` selects (French, Spanish, Portuguese).** In these three languages
 CLDR's `many` is the category for a whole number of millions: a count that is a
@@ -415,7 +470,13 @@ and does not need a native reader to check it. This is a Node run, not a
 phone's engine.
 
 **Digits (R19).** "Use Arabic numerals". Every number the interface shows is
-written 0 to 9, in every language including Arabic and Hindi. A draft never
+written 0 to 9, in every language including Arabic and Hindi, and in the seven
+level-3 Latin-script ones (Turkish, Vietnamese, Malay, Tagalog, Hausa, Lingala
+and Tok Pisin). R19-digits is recorded in `docs/design/v2-plan.md` (item 19 of
+its Round 2 list), on #357's Round 2 comment (2026-10-19, quoting PR #1441) and
+in #1458. Those seven languages write 0 to 9 natively, so the rule changes
+nothing for them. A level-3 draft follows it all the same: a number is the
+digit, never a word. A draft never
 writes a number as Arabic-Indic or Devanagari digits and never spells one out
 in words where the English has a digit. This agrees with the epic's own note
 that the numbers lane "ships all-Western first". Right-to-left text keeps
@@ -478,7 +539,9 @@ What a lane must have in hand, and where each piece comes from.
    (`{n}` and each named slot such as `{name}`) are the slot, not stray Latin,
    in every language: an Arabic catalog value `"{n}"` plus Arabic words
    passes, and removing the `n` fails section 6. For a Latin-script language
-   (`es`, `fr`, `id`, `pt`, `sw`) Latin letters are its own script, not stray;
+   (`es`, `fr`, `id`, `pt`, `sw`, and the level-3 `ha`, `ln`, `ms`, `tl`, `tpi`,
+   `tr`, `vi`) Latin letters are its own script, not stray, and so are that
+   language's marked letters (such as `ɗ` in `ha` and `ɔ` in `ln`);
    the length stays within the ratio the test records; no `{`, `}` or
    `undefined` in the rendered text, after the slots are filled (section 6:
    the drafted value keeps `{n}` and every named slot).

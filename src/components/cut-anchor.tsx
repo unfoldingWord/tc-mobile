@@ -21,7 +21,7 @@ interface CutAnchorProps {
  * Extracted out of `recorder.tsx`'s JSX (the same move #513 made for
  * `CenterlineOverlay`) so one thing both calls the pure percentage
  * ({@link cutAnchorPercent}) and owns the element it positions — a render
- * test can assert the actual `--o4-cut-left` the wrapper carries, not just the
+ * test can assert the actual `--c-cut-left` the wrapper carries, not just the
  * source text of the call.
  *
  * With no selection, renders `children` unwrapped: the bin (#862) shares
@@ -29,8 +29,8 @@ interface CutAnchorProps {
  * `.recorder-cut`'s own `justify-content: center` (3-components.css) still
  * centers it at the stage — unchanged from before #1102.
  *
- * The actual positioning is CSS (`o4/recorder.css`): this component sets
- * `--o4-cut-left` whenever there is a selection.
+ * The actual positioning is CSS (`3-components/recorder.css`): this component sets
+ * `--c-cut-left` whenever there is a selection.
  */
 export function CutAnchor({ selection, win, children }: CutAnchorProps) {
   const percent = cutAnchorPercent(selection, win);
@@ -39,7 +39,7 @@ export function CutAnchor({ selection, win, children }: CutAnchorProps) {
   return (
     <div
       className="cut-anchor"
-      style={{ "--o4-cut-left": `${percent}%` } as CSSProperties}
+      style={{ "--c-cut-left": `${percent}%` } as CSSProperties}
     >
       {children}
     </div>

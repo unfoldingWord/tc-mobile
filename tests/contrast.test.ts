@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { areaScope, areaSelector, selectorDeclarations } from "./o4-area-css";
+import { areaScope, selectorDeclarations } from "./area-css";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -262,7 +262,7 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
     });
 
     it(`${theme}: the ring cannot live INSIDE O4's green Confirm — the reason it is outset (#943)`, () => {
-      // o4/sheets.css paints the name sheet's commit control on --s-done and
+      // 3-components/sheets.css paints the name sheet's commit control on --s-done and
       // outsets its guide ring onto the sheet's --s-surface, for the same
       // reason the record button's is outset. If a future accent clears the
       // floor on --s-done, that exception can go.
@@ -292,8 +292,10 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
 
 describe("the O4 roles clear the floors the workbench claimed for them (round 4, G9)", () => {
   // Computed from token values only, like the rest of this file. These are
-  // the O4 pairs that carry an icon, text or a control's boundary; decorative
-  // marks (`--s-mark-empty`) are deliberately not gated here.
+  // the pairs that carry an icon, text or a control's boundary; decorative
+  // marks (`--s-mark-empty`) are deliberately not gated here. The DRI decided
+  // the ring track is decorative (#1469, "Decorative (Recommended)"):
+  // https://github.com/unfoldingWord/tc-mobile/issues/1469#issuecomment-6578909918
   const tileFills = ["--s-edit", "--s-name", "--s-send"] as const;
   const coverFills = [
     "--s-cover-amber",
@@ -371,12 +373,14 @@ describe("the O4 roles clear the floors the workbench claimed for them (round 4,
 describe("the chapter-play ring fill clears the non-text floor (#1469)", () => {
   // The ring is the control's progress mark, so its FILL takes 3:1 on both
   // grounds a chapter row can sit on. The TRACK (`--s-mark-empty`) is not
-  // gated here: it is read as decorative, which is a pending decision, not a
-  // pinned one — nothing below asserts its ratio either way.
+  // gated here: the DRI decided it is decorative (#1469, "Decorative
+  // (Recommended)"), so it stays ungated by the 3:1 rule and nothing below
+  // asserts its ratio:
+  // https://github.com/unfoldingWord/tc-mobile/issues/1469#issuecomment-6578909918
   const booksCss = areaScope("books");
 
   it("the ring paints its fill with --s-voice, so this pin scores the real paint", () => {
-    const ring = cssRule(booksCss, areaSelector("books", ".books-play-ring"));
+    const ring = cssRule(booksCss, ".books-play-ring");
     const background = declarationValue(ring, "background");
     expect(background).toMatch(/^conic-gradient\(\s*var\(--s-voice\)\s+calc\(/);
   });
@@ -476,8 +480,8 @@ describe("a Finished segment's green reads on the recorder stage (#926)", () => 
 });
 
 describe("the SaveFailed armed Restart glyph reads on its own fill (#1088 S9)", () => {
-  // The fix for S9 ("reads red on blue"): `.o4-err-wide--armed`
-  // (o4/errors.css) swaps the wide guide button's fill from `--s-guide` to
+  // The fix for S9 ("reads red on blue"): `.err-wide--armed`
+  // (3-components/errors.css) swaps the wide guide button's fill from `--s-guide` to
   // `--s-live`/`--s-live-ink` while armed, instead of layering red TEXT on
   // top of the still-blue fill. The glyph is a non-text mark (an icon, no
   // label), so it takes the same floor `--s-done-ink` on `--s-done` does
@@ -651,10 +655,7 @@ describe("the trim selection has its own blue, --s-select (#1471)", () => {
     const recorder = areaScope("recorder");
     const band = cssRule(components, ".selection-band");
     const stem = cssRule(components, ".selection-stem");
-    const knob = cssRule(
-      recorder,
-      areaSelector("recorder", ".selection-handle::after")
-    );
+    const knob = cssRule(recorder, ".selection-handle::after");
 
     it("the band fill is a 20% wash of --s-select", () => {
       expect(declarationValue(band, "background")).toBe(
@@ -678,7 +679,7 @@ describe("the trim selection has its own blue, --s-select (#1471)", () => {
       // of recorder.css is read, every nested block included.
       const knobs = selectorDeclarations(
         "recorder",
-        areaSelector("recorder", ".selection-handle::after")
+        ".selection-handle::after"
       ).map(([property, value]) => `${property}: ${value}`);
       for (const rule of [band, stem, ...knobs]) {
         expect(stripCssComments(rule)).not.toMatch(

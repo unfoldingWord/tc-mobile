@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "./support/test";
 
 /**
- * The O4 name sheet's Confirm commits under Apple WebKit's focus rule (#1099).
+ * The name sheet's Confirm commits under Apple WebKit's focus rule (#1099).
  *
  * THE RULE. In Safari and in the iOS WebView a `<button>` is not
  * mouse-focusable: a press on one does not move focus to it, it clears focus,
@@ -13,7 +13,7 @@ import { expect, test, type Page } from "./support/test";
  * the native focus move. It is a model of the rule, not Safari, so a green run
  * here is not an iPhone run.
  *
- * WHY IT MATTERS HERE. `o4/sheets.css` docks the sheet at the top while
+ * WHY IT MATTERS HERE. `3-components/sheets.css` docks the sheet at the top while
  * `.name-edit:focus-within` holds and at the bottom otherwise. Under the rule
  * above, pressing Confirm emptied `:focus-within`, the sheet dropped to the
  * bottom between `mousedown` and `mouseup`, the `mouseup` landed on the scrim,

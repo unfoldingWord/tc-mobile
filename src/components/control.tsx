@@ -19,6 +19,11 @@ interface ControlProps {
   size?: number;
   className?: string;
   /**
+   * A stable `data-testid` for an e2e locator that must survive a language
+   * switch, where the accessible name is translated. Not for styling.
+   */
+  testId?: string;
+  /**
    * Take focus on mount. For a control that *is* the screen — the recovery
    * overlay — where landing anywhere else is landing nowhere; or for one that
    * has just BECOME the primary action of an already-focused surface, where the
@@ -91,10 +96,10 @@ interface ControlProps {
    */
   guided?: boolean;
   /**
-   * A short word shown with the glyph — the O4 tile and pill shapes (#941,
-   * `o4-tile-menu.tsx`, `o4-controls.tsx`). Shown, never announced: `label`
+   * A short word shown with the glyph — the tile and pill shapes (#941,
+   * `tile-menu.tsx`, `shape-buttons.tsx`). Shown, never announced: `label`
    * stays the entire accessible name, so a control that gains a caption in
-   * the O4 look keeps the name it has in the current one. An omitted caption
+   * the tile layout keeps the name it had without one. An omitted caption
    * renders nothing, so no existing call site's markup changes.
    */
   caption?: string;
@@ -135,6 +140,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
       disabled,
       size,
       className,
+      testId,
       autoFocus,
       busy,
       hint,
@@ -173,6 +179,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
         aria-pressed={pressed}
         autoFocus={autoFocus}
         aria-label={name}
+        data-testid={testId}
         aria-describedby={describedBy}
         title={name}
         className={cn(

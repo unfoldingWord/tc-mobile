@@ -11,7 +11,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
 
 /**
  * The shelf carries each book's stored cover key through to its card (#942),
- * so the O4 cover can resolve it with `resolveCoverKey` (#957) instead of
+ * so the cover can resolve it with `resolveCoverKey` (#957) instead of
  * only ever seeing the id-derived fallback. The hook is mounted for real over
  * fake-indexeddb — the harness `tests/use-books-failure-key.test.ts` uses —
  * so the load path (`loadBookCard`) is the real code.

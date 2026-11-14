@@ -7,7 +7,7 @@ import { blankGradleSwiftComments, stripHtmlComments } from "./support";
 
 /**
  * #1052/#1017: the DRI raised the iOS floor to 15.4 so a phone below that
- * version can no longer install a build whose O4 CSS relies on `:has()`
+ * version can no longer install a build whose CSS relies on `:has()`
  * (Safari shipped `:has()` in 15.4, not 15.0 — see #1051, which pins the WEB
  * build's `esbuild.target` at `ios15.4`). This suite pins the NATIVE app's
  * own floor to the same version everywhere it is declared, so the two halves

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { Icon } from "../src/components/icon";
 
-import { AREA_DIR, areaSelector, type Area } from "./o4-area-css";
+import { AREA_DIR, type Area } from "./area-css";
 import { one, render } from "./render";
 import {
   cssRule,
@@ -34,7 +34,7 @@ const read = (rel: string) => readFileSync(path.join(root, rel), "utf8");
 
 const COMPONENTS = "src/app/styles/3-components.css";
 /** An area file's path as `walk` below spells it, from the one folder
- *  constant in `o4-area-css.ts`. */
+ *  constant in `area-css.ts`. */
 const area = (name: Area) =>
   path.relative(root, path.join(AREA_DIR, `${name}.css`));
 const MENUS = area("menus");
@@ -50,7 +50,7 @@ describe("converted rules read logically", () => {
   }> = [
     {
       file: MENUS,
-      selector: areaSelector("menus", ".o4-crumb"),
+      selector: ".crumb",
       logical: {
         "margin-inline-start": "-6px",
         "padding-inline": "24px 20px",
@@ -59,7 +59,7 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: areaSelector("menus", ".o4-crumb:first-child"),
+      selector: ".crumb:first-child",
       logical: {
         "margin-inline-start": "0",
         "padding-inline-start": "12px",
@@ -70,25 +70,25 @@ describe("converted rules read logically", () => {
     },
     {
       file: MENUS,
-      selector: areaSelector("menus", ".o4-menu-preview"),
+      selector: ".menu-preview",
       logical: { "padding-inline": "10px 8px" },
       gone: ["padding"],
     },
     {
       file: RECORDER,
-      selector: areaSelector("recorder", ".recorder-status"),
+      selector: ".recorder-status",
       logical: { "inset-inline-start": "18px" },
       gone: ["left"],
     },
     {
       file: RECORDER,
-      selector: areaSelector("recorder", ".recorder-stamp"),
+      selector: ".recorder-stamp",
       logical: { "inset-inline-end": "18px" },
       gone: ["right"],
     },
     {
       file: RECORDER,
-      selector: areaSelector("recorder", ".recorder-editing"),
+      selector: ".recorder-editing",
       logical: { "inset-inline-end": "18px" },
       gone: ["right"],
     },
@@ -118,37 +118,37 @@ describe("converted rules read logically", () => {
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-header"),
+      selector: ".books-header",
       logical: { "padding-inline": "10px 12px" },
       gone: ["padding"],
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-card-hit"),
+      selector: ".books-card-hit",
       logical: { "text-align": "start" },
       gone: [],
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-chapter"),
+      selector: ".books-chapter",
       logical: { "text-align": "start", "padding-inline": "12px 16px" },
       gone: ["padding"],
     },
     {
       file: BOOKS,
-      selector: areaSelector("books", ".books-cover::before"),
+      selector: ".books-cover::before",
       logical: { "inset-inline-start": "0" },
       gone: ["inset"],
     },
     {
       file: area("dialogs"),
-      selector: areaSelector("dialogs", ".confirm-preview"),
+      selector: ".confirm-preview",
       logical: { "padding-inline": "14px 10px" },
       gone: ["padding"],
     },
     {
       file: area("segments"),
-      selector: areaSelector("segments", ".row"),
+      selector: ".row",
       logical: { "padding-inline": "10px 6px" },
       gone: ["padding"],
     },
@@ -169,12 +169,12 @@ describe("converted rules read logically", () => {
 
   it("mirrors the crumb chevron under dir=rtl", () => {
     const css = read(MENUS);
-    const base = cssRule(css, ':root[dir="rtl"] .o4-crumb');
-    const first = cssRule(css, ':root[dir="rtl"] .o4-crumb:first-child');
+    const base = cssRule(css, ':root[dir="rtl"] .crumb');
+    const first = cssRule(css, ':root[dir="rtl"] .crumb:first-child');
     // The tip points at the end edge in both directions: at rtl the polygon's
     // tip is on the left (x = 0).
-    expect(declarationValue(base, "--o4-crumb-shape")).toMatch(/0 50%/);
-    expect(declarationValue(first, "--o4-crumb-shape")).toMatch(/0 50%/);
+    expect(declarationValue(base, "--c-crumb-shape")).toMatch(/0 50%/);
+    expect(declarationValue(first, "--c-crumb-shape")).toMatch(/0 50%/);
   });
 
   it("flips a direction-bearing glyph only at rtl", () => {

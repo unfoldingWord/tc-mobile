@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NORMALIZE_STAGES, normalizePcm } from "@/lib/audio/loudness";
 import { speechLikePcm } from "@/lib/phone-check/speech";
-import type { ClipProcessing } from "@/types/audio";
+import type { ClipProcessing, NormalizeOptions } from "@/types/audio";
 
 /**
  * The Finished chain's WIRE (#1433 step 3), both ends, in Node.
@@ -68,9 +68,11 @@ const RECORD: ClipProcessing = {
 type Codec = typeof import("@/hooks/mp3-codec");
 let codecModule: Codec;
 
-function normalize(samples: Int16Array) {
+function normalize(samples: Int16Array, options?: NormalizeOptions) {
   const settled = codecModule
-    .withEncoder(undefined, (codec) => codec.normalizePcm!(samples, 44_100))
+    .withEncoder(undefined, (codec) =>
+      codec.normalizePcm!(samples, 44_100, undefined, options)
+    )
     .then(
       (value) => value,
       (error: unknown) => error
@@ -104,6 +106,7 @@ describe("codec.normalizePcm — the client half (#1433)", () => {
       v: 1,
       kind: "normalize",
       sampleRate: 44_100,
+      compress: false,
       buffer,
       byteOffset: 0,
       length: 3,
@@ -152,6 +155,31 @@ describe("codec.normalizePcm — the client half (#1433)", () => {
       codecModule.ENCODER_SILENCE_TIMEOUT_MS + 1
     );
     expect(await settled).toBeInstanceOf(codecModule.EncoderStalledError);
+  });
+
+  it("asks the worker to compress only when told to (#1873)", async () => {
+    void normalize(Int16Array.of(1), { compress: true });
+    await microtasks();
+    expect(live().posted[0]!.message).toMatchObject({ compress: true });
+  });
+
+  it("a compressor refusal is the compressor's error, not the encoder failing (#1873)", async () => {
+    const { CompressorRangeError } =
+      await import("@/lib/audio/compressor-error");
+    // More refusals than the encoder's failure threshold: none may count.
+    for (let i = 0; i <= codecModule.ENCODER_FAILURE_THRESHOLD; i++) {
+      const settled = normalize(Int16Array.of(1), { compress: true });
+      await microtasks();
+      live().emit({
+        kind: "error",
+        stage: "compressor",
+        message: "compressor: chunk holds a non-finite sample",
+      });
+      const error = await settled;
+      expect(error).toBeInstanceOf(CompressorRangeError);
+      expect((error as Error).message).toContain("non-finite sample");
+    }
+    expect(codecModule.encoderHealth()).toBe("ok");
   });
 
   it("a normalize answered with an MP3 is a typed encoder failure", async () => {
@@ -234,5 +262,94 @@ describe("mp3.worker — the normalize half (#1433)", () => {
     expect(posted).toEqual([
       { kind: "error", message: expect.stringMatching(/version: 2/) },
     ]);
+  });
+});
+
+describe("mp3.worker — the compressor in the chain (#1873)", () => {
+  let handler: (event: { data: unknown }) => void;
+  let posted: Array<{ kind: string } & Record<string, unknown>>;
+
+  async function loadWorker() {
+    posted = [];
+    vi.stubGlobal(
+      "addEventListener",
+      (_: string, fn: (event: { data: unknown }) => void) => (handler = fn)
+    );
+    vi.stubGlobal("postMessage", (message: never) => posted.push(message));
+    await import("@/hooks/mp3.worker");
+    posted.length = 0; // the module's own `ready`
+  }
+
+  const request = (samples: Int16Array, compress?: boolean) => ({
+    data: {
+      v: 1,
+      kind: "normalize",
+      sampleRate: 44_100,
+      ...(compress === undefined ? {} : { compress }),
+      buffer: samples.buffer,
+      byteOffset: 0,
+      length: samples.length,
+    },
+  });
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.doUnmock("@/lib/audio/loudness");
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("runs the compressor when asked, and records it", async () => {
+    await loadWorker();
+    const samples = speechLikePcm(2, 44_100);
+    const expected = Int16Array.from(samples);
+    handler(request(samples, true));
+    const answer = posted.find((m) => m.kind === "normalized") as unknown as {
+      processing: ClipProcessing;
+    };
+    expect(answer.processing).toEqual(
+      normalizePcm(expected, 44_100, undefined, { compress: true })
+    );
+    expect(answer.processing.stages.map((s) => s.id)).toContain("compressor");
+  });
+
+  it("an older request with no compress field runs the chain without it", async () => {
+    await loadWorker();
+    handler(request(speechLikePcm(1, 44_100)));
+    const answer = posted.find((m) => m.kind === "normalized") as unknown as {
+      processing: ClipProcessing;
+    };
+    expect(answer.processing.stages).toEqual(NORMALIZE_STAGES);
+  });
+
+  it("answers a compressor refusal as an error naming the compressor", async () => {
+    vi.doMock("@/lib/audio/loudness", async () => {
+      const { CompressorRangeError } =
+        await import("@/lib/audio/compressor-error");
+      return {
+        normalizePcm: () => {
+          throw new CompressorRangeError("compressor: refused");
+        },
+      };
+    });
+    await loadWorker();
+    handler(request(Int16Array.of(1, 2), true));
+    expect(posted).toEqual([
+      { kind: "error", stage: "compressor", message: "compressor: refused" },
+    ]);
+  });
+
+  it("any other chain failure is a plain error, with no stage", async () => {
+    vi.doMock("@/lib/audio/loudness", () => ({
+      normalizePcm: () => {
+        throw new RangeError("not the compressor");
+      },
+    }));
+    await loadWorker();
+    handler(request(Int16Array.of(1, 2), true));
+    expect(posted).toEqual([{ kind: "error", message: "not the compressor" }]);
   });
 });

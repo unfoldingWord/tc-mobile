@@ -50,7 +50,10 @@
  * And `normalize` (#1433 step 3): the Finished chain over a clip's PCM, in
  * place, with the same heartbeat, answered with `normalized` carrying the
  * processed PCM back (transferred) and the record of what ran. The client
- * then encodes that PCM with an ordinary whole encode.
+ * then encodes that PCM with an ordinary whole encode. With `compress` it
+ * runs the speech compressor too (#1873); a refusal by the compressor is an
+ * `error` answer carrying `stage: "compressor"`, so the client can keep it
+ * out of the encoder's health and the sweep can name it.
  */
 
 import {
@@ -59,6 +62,7 @@ import {
   encodeMp3,
 } from "@/lib/audio/mp3";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { CompressorRangeError } from "@/lib/audio/compressor-error";
 import { normalizePcm } from "@/lib/audio/loudness";
 import { errorMessage } from "@/lib/failure-text";
 import { runDspBench } from "@/lib/phone-check/dsp-bench";
@@ -204,7 +208,8 @@ function answer(request: EncodeRequest): Answer {
       const processing = normalizePcm(
         new Int16Array(request.buffer, request.byteOffset, request.length),
         request.sampleRate,
-        heartbeat()
+        heartbeat(),
+        { compress: request.compress === true }
       );
       const { buffer, byteOffset, length } = request;
       return {
@@ -238,7 +243,10 @@ addEventListener("message", (event: MessageEvent<EncodeRequest>) => {
     // Surfaced as data, not thrown: an uncaught throw here reaches the client
     // only as an opaque `ErrorEvent`, and the caller needs the reason.
     reply = {
-      response: { kind: "error", message: errorMessage(cause) },
+      response:
+        cause instanceof CompressorRangeError
+          ? { kind: "error", stage: "compressor", message: errorMessage(cause) }
+          : { kind: "error", message: errorMessage(cause) },
       transfer: [],
     };
   }

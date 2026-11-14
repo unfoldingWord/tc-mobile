@@ -49,6 +49,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "正在加载模板。",
   settingsChapterNumbers: "始终显示章序号",
   settingsNormalizeOnFinished: "标记完成时均衡音量",
+  settingsCompressOnFinished: "标记完成时柔化响亮的部分",
   booksEmpty: "开始你的第一本书",
   booksEmptyTeach: "书里存放你录下的各章。",
   loadingBooks: "正在加载你的书。",
@@ -160,7 +161,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   recorderSaving: "正在保存…",
   takeCapWarning: (n: number): string => plural(n, { other: "还剩 {n} 分钟" }),
   loadFailedTitle: "未能打开这段录音",
-  loadFailedBody: "你的录音是安全的。请重试，或返回后在列表中重置它。",
+  loadFailedBody:
+    "你的录音是安全的。请重试。如果仍然打不开，你可以在列表中重置它。",
   loadRetry: "重试",
   loadBack: "返回",
   loadRetrying: "正在打开你的录音…",
@@ -211,6 +213,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "没有录到声音。请重试。",
   captureUndecodable: "这台设备无法读取这段录音。",
   captureUnfinished: "未能完成这段录音。",
+  captureStoppedSilent:
+    "录音已停止，因为麦克风只听到了静音。已录下的内容已保存。",
   blockedByTake: "要保存录音，请先点“关闭菜单”，再点“关闭录音机”。",
   micStarting: "麦克风还在启动。",
   nothingRecorded: "还没有录音。",
@@ -337,6 +341,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "导出项目",
   tileExport: "导出",
   exportProjectPreparing: "正在准备要导出的项目。",
+  exportProjectWebPointer:
+    "导出功能仅在已安装的应用中可用。请打开应用来导出此项目。",
   exportProjectSuffix: "项目",
   exportProjectFilename(
     this: Strings,
@@ -354,7 +360,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNoMatch: "没有找到语言。请输入其他名称或代码。",
   languageNarrow: "请多输入几个字，以查看其他语言。",
   languageCount: (n: number): string =>
-    plural(n, { one: "{n} 种语言匹配。", other: "{n} 种语言匹配。" }),
+    plural(n, { other: "{n} 种语言匹配。" }),
   languageCountMore: (n: number, shown: number): string =>
     plural(n, {
       other: `{n} 种语言匹配。显示前 ${shown} 种。请多输入几个字，缩小搜索范围。`,

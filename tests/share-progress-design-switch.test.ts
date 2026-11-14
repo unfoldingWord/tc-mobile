@@ -7,15 +7,15 @@ import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress
 
 /**
  * The ONE call site that hands the share overlay its circle (#947):
- * `share-progress.tsx` passes `shareO4View(progress, scope, items)` to its
- * panel. `tests/share-progress-o4-render.test.ts` renders the panel with a
+ * `share-progress.tsx` passes `shareView(progress, scope, items)` to its
+ * panel. `tests/share-progress-render.test.ts` renders the panel with a
  * given view, but the panel alone cannot show that `ShareProgress` builds
  * that view from its own props, and `ShareProgress` itself portals to
  * `document.body`, which `tests/render.ts`'s server renderer cannot render.
  * So this mounts the real component with `createRoot` and `act` in a manual
  * jsdom and reads the portalled panel out of the document.
  *
- * (The file name is from when this also proved the O4 design switch picked
+ * (The file name is from when this also proved the old design switch picked
  * the view; #954 deleted the switch.)
  *
  * A named origin, a fresh module per test and the stubbed globals keep each
@@ -81,11 +81,9 @@ async function mount(progress: ShareProgressState, items = ALL_GO) {
 describe("ShareProgress draws the O4 circle from its own props (#947)", () => {
   it("draws the O4 circle, its ring and its chips, and no plain glyph", async () => {
     const panel = await mount(BUSY);
-    expect(
-      panel.querySelector(".share-o4-frame .share-o4-core")
-    ).not.toBeNull();
-    expect(panel.querySelector(".share-o4-ring")).not.toBeNull();
-    expect(panel.querySelectorAll(".share-o4-chip")).toHaveLength(4);
+    expect(panel.querySelector(".share-frame .share-core")).not.toBeNull();
+    expect(panel.querySelector(".share-ring")).not.toBeNull();
+    expect(panel.querySelectorAll(".share-chip")).toHaveLength(4);
     expect(
       panel.querySelector("[role='progressbar']")?.getAttribute("aria-valuenow")
     ).toBe("50");
@@ -104,7 +102,7 @@ describe("ShareProgress draws the O4 circle from its own props (#947)", () => {
         { label: 4, goesOut: false, key: "c4" },
       ]
     );
-    const chips = [...panel.querySelectorAll(".share-o4-chip")];
+    const chips = [...panel.querySelectorAll(".share-chip")];
     expect(chips.map((c) => c.getAttribute("data-chip"))).toEqual([
       "finished",
       "current",
@@ -112,7 +110,7 @@ describe("ShareProgress draws the O4 circle from its own props (#947)", () => {
       "stays",
     ]);
     // Same class, same content shape (its number, no check): the stylesheet
-    // names neither state (tests/share-o4-circle-css.test.ts), so both draw
+    // names neither state (tests/share-circle-css.test.ts), so both draw
     // as the base grey chip.
     expect(chips[2]!.getAttribute("class")).toBe(
       chips[3]!.getAttribute("class")
@@ -123,7 +121,7 @@ describe("ShareProgress draws the O4 circle from its own props (#947)", () => {
 
   it("once handed over (sent), the core stays a progress bar at 100 (Q3, vShare's system phase)", async () => {
     const panel = await mount({ phase: "outcome", settled: "sent", since: 0 });
-    const bar = panel.querySelector(".share-o4-core[role='progressbar']");
+    const bar = panel.querySelector(".share-core[role='progressbar']");
     expect(bar, "the handed-over core is not a progress bar").not.toBeNull();
     expect(bar!.getAttribute("aria-valuenow")).toBe("100");
     expect(bar!.getAttribute("aria-valuemax")).toBe("100");
@@ -135,7 +133,7 @@ describe("ShareProgress draws the O4 circle from its own props (#947)", () => {
       settled: "failed",
       since: 0,
     });
-    expect(panel.querySelector(".share-o4-core")).not.toBeNull();
+    expect(panel.querySelector(".share-core")).not.toBeNull();
     expect(panel.querySelector("[role='progressbar']")).toBeNull();
   });
 });

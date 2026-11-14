@@ -1826,7 +1826,7 @@ describe("centerlineOverlayShown", () => {
  * same percentage coordinate space `SelectionOverlay` draws the band and
  * handles in (`sampleToViewportX(sample, 100, win)`), not the stage's fixed
  * centre. `tests/cut-anchor.test.ts` pins the same table one layer up, at the
- * `CutAnchor` component's actual rendered `--o4-cut-left`.
+ * `CutAnchor` component's actual rendered `--c-cut-left`.
  */
 describe("cutAnchorPercent", () => {
   // The #705 fixture `tests/selection-overlay-hit.test.ts` already uses: L =

@@ -86,8 +86,8 @@ export interface FocusRestore {
  * The decision it delegates to is table-tested (`tests/focus-restore.test.ts`).
  * The DOM around it — reading `document.activeElement` at tap time,
  * `.focus()`, and the layout-effect ordering — runs in the jsdom client mounts
- * of the screens that call it: `tests/books-menus-tiles-o4.test.ts` and
- * `tests/o4-menus-chapter-segment.test.ts` return focus to the ⋮ on Escape
+ * of the screens that call it: `tests/books-menus-tiles.test.ts` and
+ * `tests/menus-chapter-segment.test.ts` return focus to the ⋮ on Escape
  * through this hook. What jsdom does not model is `inert` itself (it neither
  * blurs a newly inert subtree nor refuses `.focus()` inside one), so the
  * `inert` half of the contract, and what a screen reader or switch user

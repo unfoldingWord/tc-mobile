@@ -1,0 +1,203 @@
+/* Segments (05, 06, G10). Owner: #944. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
+
+   Values are the design reference's (docs/design/o4-design-system.md, §2 and
+   §3). Type sizes and radii are literal px until #939 lands its primitives;
+   each one is marked for that swap. Colour comes only from layer-2 roles.
+
+   The row transport below styles the existing row controls in place. The
+   shared control wrappers #941 is building can replace these rules once they
+   land; nothing here is meant as a second copy of a shared primitive.
+
+   Not restyled here, so 3-components.css's rules stand: the guide ring
+   (#604, #834), and the finished row's wash, green wave and green play (#81).
+   The ordinal on every row (#591) is carried in the badge. */
+@layer components {
+  /* --- the chapter head (05, 06) ----------------------------------------- */
+  .segments-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-inline: 18px;
+  }
+  .segments-title {
+    margin: 0;
+    height: 46px;
+    line-height: 46px;
+    font-size: 22px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    color: var(--s-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .segments-progress {
+    display: flex;
+    gap: 6px;
+    height: 8px;
+  }
+  .segments-mark {
+    display: block;
+    flex: 1;
+    border-radius: 4px; /* #939 token */
+    background: var(--s-mark-empty);
+  }
+  .segments-mark[data-state="recorded"] {
+    background: var(--s-voice);
+  }
+  .segments-mark[data-state="finished"] {
+    background: var(--s-done);
+  }
+
+  /* --- the empty chapter (05) -------------------------------------------- */
+  .segments-body .t-title {
+    font-size: 21px; /* #939 token */
+    font-weight: 700; /* #939 token */
+  }
+  .segments-body .control--primary {
+    width: 104px;
+    height: 104px;
+    background: var(--s-surface);
+    color: var(--s-ink);
+  }
+
+  /* --- adding a segment (G10): the header + as a square button ------------
+     `.control` names the button: it also wears `.control--quiet`, whose
+     `:hover` would otherwise outweigh a lone class here (#954). */
+  .control.segments-add {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px; /* #939 token */
+    background: var(--s-well);
+    color: var(--s-ink);
+  }
+
+  /* --- the list and its rows (06) ---------------------------------------- */
+  .segments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* The row's `--s-surface` ground is layer 3's own `.row` background, left
+     alone here so a finished row keeps its wash (#81). */
+  .row {
+    min-height: 90px;
+    border-radius: 16px; /* #939 token */
+    padding-block: 0;
+    padding-inline: 10px 6px;
+    gap: 8px;
+  }
+  .row:not(.row--finished) {
+    border-color: var(--s-card-edge);
+  }
+  /* The row whose menu is open. */
+  .row--selected {
+    outline: 2px solid var(--s-guide);
+    outline-offset: 0;
+  }
+  .row-badge {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 17px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    font-variant-numeric: tabular-nums;
+  }
+  .row--finished .row-badge {
+    background: var(--s-done-quiet); /* D19: the pale wash */
+    color: var(--s-done-text);
+  }
+  .row-mid {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    align-self: stretch;
+  }
+  .row-title {
+    display: block;
+    height: 22px;
+    line-height: 22px;
+    font-size: 16px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    color: var(--s-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Play keeps `--s-voice` and record `--s-live` from layer 3; the design round only makes
+     them 72 circles. */
+  .row .control--play,
+  .row .control--record,
+  .row .control--mic {
+    width: 72px;
+    height: 72px;
+  }
+  /* While a row plays, the wave past the playhead drops to `--s-voice-dim`.
+     The canvas paints one stroke colour, so this masks it: a mask reads only
+     the gradient's alpha, and `--s-voice-dim` is `--s-voice` at reduced alpha
+     in both themes, so masked voice bars paint exactly that role. */
+  .scrub--playing canvas {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black var(--row-played),
+      var(--s-voice-dim) var(--row-played)
+    );
+    mask-image: linear-gradient(
+      to right,
+      black var(--row-played),
+      var(--s-voice-dim) var(--row-played)
+    );
+  }
+
+  /* --- press-and-hold reorder (#953, §3 lifted row, §4 reorder) ----------
+     The hold area is the badge (the open button) and the title line. A long
+     press there must not select text or raise the phone's callout. */
+  .row-open[data-reorder-handle],
+  .row-title[data-reorder-handle] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* While a row is lifted, every row reads its offset from --reorder-y, set
+     inline by the screen: the lifted row's follows the finger, and the rows
+     between its slot and the target slide one slot to make room. */
+  .segments-list[data-reordering] > li {
+    transform: translateY(var(--reorder-y, 0px));
+    transition: transform 160ms ease;
+  }
+  .segments-list[data-reordering] > .segments-item--lifted {
+    position: relative;
+    z-index: 8;
+    transform: translateY(var(--reorder-y, 0px)) scale(1.03);
+    transition: none;
+  }
+  /* The design reference's lift shadow, as dialogs.css carries its own: a
+     black shadow in both themes, so no layer-2 role applies to it. A lifted
+     segment row keeps its --s-surface ground (§3 gives --s-raised to a
+     lifted chapter row only). The Books screen's lifted chapter item shares
+     this one rule (#953 PR2b), and so does a lifted book card (#338):
+     3-components/books.css keeps colour literals out. */
+  .segments-item--lifted > .row,
+  .books-lifted,
+  .books-card-lifted {
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
+  }
+
+  /* The neighbours jump rather than slide under reduced motion. The lift's
+     scale is a state, not a movement, so it stays. */
+  @media (prefers-reduced-motion: reduce) {
+    .segments-list[data-reordering] > li {
+      transition: none;
+    }
+  }
+}

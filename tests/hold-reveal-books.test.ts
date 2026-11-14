@@ -12,7 +12,7 @@ import type { BookCard, ChapterRow } from "@/types/view";
 /**
  * Hold-to-reveal on the Books screen (S14, #1284), wired: the real
  * `BooksScreen` with `useBooks` replaced at its boundary (the
- * `books-reorder-o4` pattern). These cases are about the one rule that keeps
+ * `books-reorder` pattern). These cases are about the one rule that keeps
  * the reveal from fighting the reorder hold (#953, #338): a press on a name is
  * claimed only when that name is cut off, so a name that fits still lifts its
  * row or its book exactly as before.

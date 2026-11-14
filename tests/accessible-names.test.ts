@@ -13,9 +13,9 @@ import { LanguageAsk } from "@/components/language-ask";
 import { LicenceAsk } from "@/components/licence-ask";
 import { Menu } from "@/components/menu";
 import { NameEdit } from "@/components/name-edit";
-import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
-import { CoverTile, LicenceTile, O4CoverPick } from "@/components/o4-book-menu";
-import { Tile, TileGrid } from "@/components/o4-tile-menu";
+import { BookDeleteAsk } from "@/components/book-delete-ask";
+import { CoverTile, LicenceTile, CoverPick } from "@/components/book-menu";
+import { Tile, TileGrid } from "@/components/tile-menu";
 import { PermissionPanel } from "@/components/permission-panel";
 import { RecorderMenu } from "@/components/recorder-menu";
 import { RecorderToolbar } from "@/components/recorder-toolbars";
@@ -56,7 +56,7 @@ import { render } from "./render";
  * Scope is the surfaces listed in `SURFACES`, not a tree sweep. A surface this
  * does not list is not covered; adding one is one entry.
  *
- * Covered: Control, SettingRow, TemplateList, LicenceAsk, O4BookDeleteAsk,
+ * Covered: Control, SettingRow, TemplateList, LicenceAsk, BookDeleteAsk,
  * ChapterPlayControl, CoverPicker, LanguageAsk, SelectionOverlay,
  * ShareProgressPanel, EraseConfirm, SettingsPanel, Menu, the book menu's
  * Cover colour tile and cover pick, Tile and TileGrid, RecorderMenu,
@@ -418,9 +418,9 @@ const SURFACES: Surface[] = [
     ],
   },
   {
-    name: "O4BookDeleteAsk",
+    name: "BookDeleteAsk",
     build: () => [
-      createElement(O4BookDeleteAsk, {
+      createElement(BookDeleteAsk, {
         name: "Mark",
         coverHex: "#2a9d8f",
         busy: false,
@@ -509,7 +509,7 @@ const SURFACES: Surface[] = [
       createElement(ShareProgressPanel, {
         role: "status",
         text: "Preparing the chapter to share",
-        o4: {
+        view: {
           icon: "share",
           ring: 0.5,
           meter: { now: 50 },
@@ -583,7 +583,7 @@ const SURFACES: Surface[] = [
         createElement(CoverTile, { coverHex: "#2a9d8f", onClick: noop }),
         createElement(LicenceTile, { onClick: noop })
       ),
-      createElement(O4CoverPick, {
+      createElement(CoverPick, {
         selected: "teal",
         onSelect: noop,
         error: null,
@@ -591,7 +591,7 @@ const SURFACES: Surface[] = [
     ],
   },
   {
-    name: "O4TileMenu Tile",
+    name: "TileMenu Tile",
     build: () => [
       createElement(
         TileGrid,

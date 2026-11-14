@@ -12,8 +12,8 @@ import { rowHint } from "./menu-row-state";
 import { NameEdit } from "./name-edit";
 import { NameReveal } from "./name-reveal";
 import { Notice } from "./notice";
-import { O4SheetHead } from "./o4-crumbs";
-import { MoveTiles, Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { SheetHead } from "./crumbs";
+import { MoveTiles, Tile, TileGrid, TileSpacer } from "./tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
 import { useHoldReveal } from "@/hooks/use-hold-reveal";
@@ -66,8 +66,11 @@ interface SegmentRowProps {
    * owns the confirm and the store op. Unlike `onErase`, offered on EVERY
    * row, recorded or not — deleting the row is exactly what an accidentally
    * added, never-recorded segment needs (#590's own field-tester ask).
+   * Omitted for a segment the template made (`SegmentRow.fromTemplate`), whose
+   * slot is the template's: the tile is then not rendered (#1979). A segment
+   * the user added to a template chapter keeps it.
    */
-  onDeleteSegment: () => void;
+  onDeleteSegment?: () => void;
   /**
    * Commit a typed label (#591), resolving `true` once it has landed. The store
    * normalises it (trim, blank ⇒ `null`); the row only keeps its field up on
@@ -120,7 +123,7 @@ interface SegmentRowProps {
    * `segments-screen.tsx` resolves it once, the same way `books-screen.tsx`
    * resolves the shelf's own covers, and passes it to every row so no row
    * repeats that lookup. Absent, the head's cover square is left out (see
-   * `O4SheetHead`'s own docblock).
+   * `SheetHead`'s own docblock).
    */
   bookCoverHex?: string;
   /**
@@ -493,7 +496,7 @@ export function SegmentRow({
   // when there is no title.
   const titled = row.label != null && row.label !== "";
   const waveHeight = titled ? 36 : 56;
-  // The hold area's handler and marker (#953 PR2a). `o4/segments.css` reads
+  // The hold area's handler and marker (#953 PR2a). `3-components/segments.css` reads
   // `data-reorder-handle` to keep a long press from selecting text or
   // raising a callout.
   const holdArea = onHoldStart
@@ -521,7 +524,7 @@ export function SegmentRow({
       onKeyDown={onKeyDown}
       className={cn("scrub min-w-0", playing && "scrub--playing")}
       // The part past the playhead paints in `--s-voice-dim` while playing:
-      // `o4/segments.css` masks the canvas from this fraction on.
+      // `3-components/segments.css` masks the canvas from this fraction on.
       style={
         playing
           ? ({ "--row-played": `${fraction * 100}%` } as React.CSSProperties)
@@ -684,8 +687,8 @@ export function SegmentRow({
           // segment, recorded or not), not #997's narrower empty-only one,
           // which remains a separate, deferred, unbuilt action.
           <>
-            <div className="o4-sheet-bar">
-              <O4SheetHead
+            <div className="sheet-bar">
+              <SheetHead
                 book={bookName}
                 bookCoverHex={bookCoverHex}
                 chapter={chapterHeading}
@@ -696,21 +699,21 @@ export function SegmentRow({
                 icon="pencil"
                 label={strings.renameSegment}
                 size={24}
-                className="o4-head-pen"
+                className="head-pen"
                 onClick={() => setRenaming(true)}
               />
             </div>
-            <div className="o4-menu-preview" data-state={state}>
+            <div className="menu-preview" data-state={state}>
               <span
-                className="o4-menu-badge"
+                className="menu-badge"
                 data-state={state}
                 aria-hidden="true"
               >
                 {ordinal}
               </span>
-              <span className="o4-menu-preview-mid" aria-hidden="true">
+              <span className="menu-preview-mid" aria-hidden="true">
                 {titled && (
-                  <span className="o4-menu-title" dir="auto">
+                  <span className="menu-title" dir="auto">
                     {row.label}
                   </span>
                 )}
@@ -734,7 +737,7 @@ export function SegmentRow({
                   }
                   variant="play"
                   size={26}
-                  className="o4-menu-play"
+                  className="menu-play"
                   disabled={busy}
                   onClick={() =>
                     onPlay(playOffsetSeconds(fraction, durationMs))
@@ -745,13 +748,13 @@ export function SegmentRow({
             {/* `hasClip` puts FOUR real tiles in this row (Done, Edit,
                 Clear, Delete) — the case that does not fit the pinned 76 ×
                 76 token at 320-360px (#1119 round 5, George Medium 1;
-                `o4-tiles--compact` in `o4/menus.css` has the arithmetic).
+                `tiles--compact` in `3-components/menus.css` has the arithmetic).
                 Compact there, and drop the spacer: with no room to push
                 Clear/Delete to the far end, the four tiles simply run
                 left-to-right in order. The three-tile case (no stored clip:
                 Done, Edit, then Delete past the spacer) keeps the
                 spacer-pushed layout at full size. */}
-            <TileGrid className={hasClip ? "o4-tiles--compact" : undefined}>
+            <TileGrid className={hasClip ? "tiles--compact" : undefined}>
               <Tile
                 tone={row.finished ? "done" : "doneoff"}
                 icon="check"
@@ -803,23 +806,26 @@ export function SegmentRow({
                   }}
                 />
               )}
-              {/* Delete is unconditional: reachable on a never-recorded row,
+              {/* Delete is offered whenever the screen passes a handler (a
+                  template book passes none, #1979); otherwise unconditional: reachable on a never-recorded row,
                   unlike Clear just before it (#590's own field-tester ask).
                   Last in both rows. On the 3-tile (no-clip) row the spacer
                   above pushes it to the far end; on the 4-tile (hasClip) row
                   there is no spacer and it follows Clear. */}
-              <Tile
-                tone="erase"
-                icon="trash"
-                label={strings.deleteSegment}
-                caption={strings.tileDelete}
-                onClick={() => {
-                  // Delete first, then close: the same 1 -> 2 -> 1 layer
-                  // interleave as Clear above (#452 PR3).
-                  onDeleteSegment();
-                  closeMenu();
-                }}
-              />
+              {onDeleteSegment && (
+                <Tile
+                  tone="erase"
+                  icon="trash"
+                  label={strings.deleteSegment}
+                  caption={strings.tileDelete}
+                  onClick={() => {
+                    // Delete first, then close: the same 1 -> 2 -> 1 layer
+                    // interleave as Clear above (#452 PR3).
+                    onDeleteSegment();
+                    closeMenu();
+                  }}
+                />
+              )}
             </TileGrid>
             {onMove && (
               // Move up / Move down (#1344): their own row under the

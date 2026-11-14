@@ -5,15 +5,15 @@ import { expect, test, type Page } from "./support/test";
 import { seedToSegments } from "./support/seed";
 
 /**
- * The new-look (O4) Books chapter row with MANY segments, and with every dot
+ * The Books chapter row with MANY segments, and with every dot
  * state, against the shipped `dist/` build (#1229, #1233).
  *
- * Every O4 chapter row draws a title line since #1219, so its dots get the
+ * Every chapter row draws a title line since #1219, so its dots get the
  * room under that line. At the smallest dot step that room holds three rows
  * of dots; a chapter with more segments than that must still show the whole
  * title line and every dot inside the row, so the green share the row shows
  * is the chapter's real share. jsdom computes no boxes, so this is the layout
- * half of `tests/books-o4.test.ts`'s arithmetic and of
+ * half of `tests/books-screen.test.ts`'s arithmetic and of
  * `tests/books-chapter-dots-room.test.ts`'s declared values.
  *
  * The fake media device is for the dot-state case only: a recorded or
@@ -35,7 +35,7 @@ test.use({
   },
 });
 
-/** The design's row height, 12 + 44 + 12 (`o4/books.css`). */
+/** The design's row height, 12 + 44 + 12 (`3-components/books.css`). */
 const ROW_HEIGHT = 68;
 /**
  * Three rows of 16 dots, what the 320px phone's 110px column holds at the 5/2
@@ -114,7 +114,7 @@ for (const width of [320, 360]) {
 
     const measured = await measureRow(page);
     expect(measured.titleText).toBe("Chapter 1");
-    // The title line's own 20px (`o4/books.css`), not a squashed share of it.
+    // The title line's own 20px (`3-components/books.css`), not a squashed share of it.
     // Sub-pixel layout can land a hair off, so the bound is half a pixel.
     expect(Math.abs(measured.titleHeight - 20)).toBeLessThan(0.5);
     expect(measured.titleInRow).toBe(true);

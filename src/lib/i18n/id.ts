@@ -38,6 +38,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Memuat templat.",
   settingsChapterNumbers: "Selalu tampilkan nomor pasal",
   settingsNormalizeOnFinished: "Ratakan volume saat selesai",
+  settingsCompressOnFinished: "Lembutkan bagian yang keras saat selesai",
   booksEmpty: "Mulai buku pertamamu",
   booksEmptyTeach: "Satu buku berisi pasal-pasal yang kamu rekam.",
   loadingBooks: "Memuat bukumu.",
@@ -151,7 +152,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   takeCapWarning: (n: number): string => plural(n, { other: "Sisa {n} mnt" }),
   loadFailedTitle: "Rekaman ini tidak dapat dibuka",
   loadFailedBody:
-    "Rekamanmu aman. Coba lagi, atau kembali untuk menyetel ulang dari daftar.",
+    "Rekamanmu aman. Coba lagi. Jika masih tidak terbuka, kamu bisa menyetel ulang dari daftar.",
   loadRetry: "Coba lagi",
   loadBack: "Kembali",
   loadRetrying: "Membuka rekamanmu…",
@@ -204,6 +205,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Tidak ada suara yang terekam. Coba lagi.",
   captureUndecodable: "Rekaman tidak dapat dibaca di perangkat ini.",
   captureUnfinished: "Rekaman ini tidak dapat diselesaikan.",
+  captureStoppedSilent:
+    "Perekaman berhenti karena mikrofon hanya menangkap keheningan. Yang sudah kamu rekam tersimpan.",
   blockedByTake:
     'Pilih "Tutup menu", lalu "Tutup perekam" untuk menyimpan rekaman.',
   micStarting: "Mikrofon masih mulai menyala.",
@@ -291,6 +294,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Ekspor proyek",
   tileExport: "Ekspor",
   exportProjectPreparing: "Menyiapkan proyek untuk diekspor.",
+  exportProjectWebPointer:
+    "Ekspor berfungsi di aplikasi yang terpasang. Buka aplikasi untuk mengekspor proyek ini.",
   languageAskTitle: "Bahasa buku ini",
   languageAskLead:
     "Rekaman ini dalam bahasa apa? Kamu memilihnya sekali, dan setiap ekspor buku ini memakainya.",
@@ -301,7 +306,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   languageNoMatch: "Tidak ada bahasa yang cocok. Coba nama atau kode lain.",
   languageNarrow: "Ketik lagi untuk melihat bahasa lain.",
   languageCount: (n: number): string =>
-    plural(n, { one: "{n} bahasa cocok.", other: "{n} bahasa cocok." }),
+    plural(n, { other: "{n} bahasa cocok." }),
   languageCountMore: (n: number, shown: number): string =>
     plural(n, {
       other: `{n} bahasa cocok. Menampilkan ${shown} yang pertama. Ketik lagi untuk mempersempit pencarian.`,
@@ -478,7 +483,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   shareAllMissing: (n: number): string =>
     plural(n, { other: "{n} buku tidak dapat disertakan." }),
   shareAllIncomplete: (n: number): string =>
-    plural(n, { other: "{n} pasal lengkap tidak dapat disertakan." }),
+    plural(n, { other: "{n} pasal tidak dapat disertakan seluruhnya." }),
   shareAllFilename: "Pekerjaanku.zip",
   shareAllFolder(book: string): string {
     return filenameSafe(book) || this.shareNameFallback;

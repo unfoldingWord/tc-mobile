@@ -55,7 +55,8 @@ type StoredClipSource = Pick<
  * rest: `kept` (this take's row is already there), `kept-foreign` (another
  * take's row holds the segment, so this take has no safety copy),
  * `segment-gone`, `discarded` (requested in this copy, or recorded), `saved`
- * (the commit already landed) or `given-up` (dropped for quota on purpose).
+ * (the commit already landed), `given-up` (dropped for quota on purpose) or
+ * `refused` (a replay refused it and dropped its audio, #1562 item 2).
  */
 export type HoldOutcome =
   | "written"
@@ -64,7 +65,8 @@ export type HoldOutcome =
   | "segment-gone"
   | "discarded"
   | "saved"
-  | "given-up";
+  | "given-up"
+  | "refused";
 
 type PendingWriteResult =
   | { readonly ok: true; readonly outcome: HoldOutcome }
@@ -288,10 +290,10 @@ async function checkedSource(
 /**
  * Whether a base clip is on disk exactly as a row or a source names it: PCM,
  * at that `generation` and `frameCount`, with that many frames of bytes. The
- * one check the hold (before it writes a `stored` base), the recipe read and
- * a replay's keep (before it frees the slot) all make.
+ * one check the hold (before it writes a `stored` base) and the recipe read
+ * both make.
  */
-export function baseClipIntact(
+function baseClipIntact(
   meta: ClipMeta | undefined,
   data: ArrayBuffer | undefined,
   want: { readonly generation: number; readonly frameCount: number }

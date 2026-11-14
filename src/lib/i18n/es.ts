@@ -34,6 +34,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Cargando las plantillas.",
   settingsChapterNumbers: "Mostrar siempre el número de capítulo",
   settingsNormalizeOnFinished: "Igualar el volumen al marcar como hecho",
+  settingsCompressOnFinished:
+    "Suavizar las partes fuertes al marcar como hecho",
   booksEmpty: "Empieza tu primer libro",
   booksEmptyTeach: "Un libro contiene los capítulos que grabas.",
   loadingBooks: "Cargando tus libros.",
@@ -161,7 +163,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "No se pudo abrir esta grabación",
   loadFailedBody:
-    "Tu grabación está segura. Intenta de nuevo, o vuelve para restablecerla desde la lista.",
+    "Tu grabación está segura. Intenta de nuevo. Si aún no se abre, puedes restablecerla desde la lista.",
   loadRetry: "Intentar de nuevo",
   loadBack: "Volver",
   loadRetrying: "Abriendo tu grabación…",
@@ -220,6 +222,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "No se grabó ningún sonido. Intenta de nuevo.",
   captureUndecodable: "No se pudo leer la grabación en este dispositivo.",
   captureUnfinished: "No se pudo terminar esta grabación.",
+  captureStoppedSilent:
+    "La grabación se detuvo porque el micrófono solo captó silencio. Lo que grabaste está guardado.",
   blockedByTake:
     'Usa "Cerrar menú" y luego "Cerrar grabadora" para guardar la grabación.',
   micStarting: "El micrófono todavía se está iniciando.",
@@ -318,6 +322,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Exportar proyecto",
   tileExport: "Exportar",
   exportProjectPreparing: "Preparando el proyecto para exportar.",
+  exportProjectWebPointer:
+    "Exportar funciona en la app instalada. Abre la app para exportar este proyecto.",
   languageAskTitle: "Idioma de este libro",
   languageAskLead:
     "¿En qué idioma están las grabaciones? Lo eliges una vez y cada exportación de este libro lo usa.",

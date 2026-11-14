@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { expect, test } from "./support/test";
+import { asInstalledApp } from "./support/installed-app";
 
 /**
  * A lazy chunk that will not load reloads the page once, then fails (#1421
@@ -30,6 +31,7 @@ test.use({
 test("a missing lazy chunk reloads once, then fails without reloading (#1421)", async ({
   page,
 }) => {
+  await asInstalledApp(page);
   await page.route(/language-list-[\w-]+\.js$/, (route) =>
     route.fulfill({
       status: 200,

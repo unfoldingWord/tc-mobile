@@ -69,7 +69,7 @@ test("a segment's label shows as the row's title and in its name, clears back to
   const sheet = page.getByRole("dialog", { name: "Recorder" });
   // The header's crumbs: book, chapter, and this segment's ordinal as the
   // current place. The label is not one of them.
-  const crumbs = sheet.locator("header .o4-crumbs .o4-crumb");
+  const crumbs = sheet.locator("header .crumbs .crumb");
   await expect(crumbs).toHaveText(["Book 001", "Chapter 1", "1"]);
   await expect(crumbs.nth(2)).toHaveAttribute("aria-current", "page");
   await page.getByRole("button", { name: "Close recorder" }).click();

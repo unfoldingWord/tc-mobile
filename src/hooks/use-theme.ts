@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { reportFailure } from "./report-failure";
+import { applySystemBarsStyle } from "./system-bars";
 import {
   THEME_STORAGE_KEY,
   nextTheme,
@@ -28,9 +29,14 @@ import {
  *     theme whose WRITE THROWS still survives a Books → chapter → Books round
  *     trip AND lands one row in the durable failure log, asserted through the
  *     ≡ control's name and mark rather than inferred from the throw.
- *   - NOT COVERED: `readTheme`'s catch path (an accessor that throws on READ,
- *     as opposed to on write), and `applyTheme`'s empty-`--s-floor` early
- *     return. Both are engine-specific states this suite cannot produce.
+ *   - COVERED in jsdom through the hook (`tests/use-theme.test.ts`, #1837):
+ *     `setLiveTheme` applies the attribute before it notifies a subscriber, a
+ *     throwing `setItem` keeps the live theme across unmount and remount,
+ *     `readTheme`'s catch (a throwing `getItem`) falls back to the default
+ *     without a failure row, and the `theme-color` meta follows `--s-floor`,
+ *     including `applyTheme`'s empty-`--s-floor` early return. jsdom resolves
+ *     `--s-floor` from a stylesheet that test writes, not from the app's
+ *     cascade.
  *   - NOT COVERED, and not coverable here: any of it on a phone.
  *     `lib/theme.ts`'s Node table remains what pins the decision.
  *     Device evidence: `docs/progress_tracker.md` and #245.
@@ -174,6 +180,10 @@ function applyTheme(theme: Theme): void {
       "content",
       theme === "light" ? "default" : "black-translucent"
     );
+  // The native shell's own status and navigation bars (#1973). The metas above
+  // are read by browsers; the WebView inside the Capacitor shell ignores them,
+  // so the bars there are styled through the core plugin. A no-op on the web.
+  applySystemBarsStyle(theme);
   const floor = getComputedStyle(root).getPropertyValue("--s-floor").trim();
   if (floor === "") return;
   const meta = document.querySelector('meta[name="theme-color"]');

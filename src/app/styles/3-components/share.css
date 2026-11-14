@@ -1,0 +1,157 @@
+/* Share (14, 15, G7). Owner: #947. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file.
+ *
+ * THE SHARE CIRCLE, ITS FILLING RING AND ITS CHIPS (#947, D13 to D16, D21).
+ * The share overlay's panel (share-progress-panel.tsx) draws the
+ * workbench's 140 core inside a 176 frame, with the filling ring while a prepare reports a count, and the
+ * numbered chips above it, one per item in order (share-view.ts decides
+ * what is drawn; this file only colours and sizes it).
+ *
+ * Values are the workbench's (states 15 and G7, vShare with its bigshare and
+ * schips rules): core 140, frame 176, ring radius 84 with a 7px stroke on a
+ * well track, turned to start at twelve o'clock. Chips are 38px circles,
+ * 10px apart, wrapping (capped at three rows that scroll, DRI pick (a) on
+ * #1023), 800-weight 15px numbers: grey (well, faint ink) for
+ * an item that does not go out and, while packing, for one still waiting;
+ * send with white ink and a check for a finished one; voice for the one in
+ * progress (D21 as corrected on #947). Outcome looks are D14 (handed over: check
+ * on the send core, full send-ring ring) and D16's table. Layer-2 roles
+ * only.
+ */
+@layer components {
+  /* --- the circle (D12 geometry, D14, D15) ------------------------------ */
+  .share-frame {
+    position: relative;
+    width: 176px;
+    height: 176px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  .share-core {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--s-send);
+  }
+  .share-glyph {
+    color: var(--s-tile-ink);
+  }
+
+  /* --- the filling ring (D13, D15) ------------------------------------- */
+  .share-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    pointer-events: none;
+  }
+  .share-track {
+    fill: none;
+    stroke: var(--s-well);
+    stroke-width: 7;
+  }
+  .share-fill {
+    fill: none;
+    stroke: var(--s-send-ring);
+    stroke-width: 7;
+    stroke-linecap: round;
+  }
+  /* The joined-chapter read (#1078): a thin arc on the track, so it never
+     reads as the count's own fill. */
+  .share-read {
+    fill: none;
+    stroke: var(--s-send-ring);
+    stroke-width: 3;
+    stroke-linecap: round;
+  }
+
+  /* --- outcomes (D14, D16) --------------------------------------------- */
+  .share-scrim[data-outcome="sent"] .share-frame {
+    box-shadow: inset 0 0 0 7px var(--s-send-ring);
+  }
+  .share-scrim[data-outcome="partial"] .share-frame {
+    box-shadow: inset 0 0 0 3px var(--s-warn);
+  }
+  .share-scrim[data-outcome="nothing"] .share-core,
+  .share-scrim[data-outcome="failed"] .share-core,
+  .share-scrim[data-outcome="encoder"] .share-core {
+    background: var(--s-live);
+  }
+  .share-scrim[data-outcome="nothing"] .share-glyph,
+  .share-scrim[data-outcome="failed"] .share-glyph,
+  .share-scrim[data-outcome="encoder"] .share-glyph {
+    color: var(--s-live-ink);
+  }
+  .share-scrim[data-outcome="dismissed"] .share-core,
+  .share-scrim[data-outcome="unproven"] .share-core {
+    background: var(--s-well);
+  }
+  .share-scrim[data-outcome="dismissed"] .share-glyph,
+  .share-scrim[data-outcome="unproven"] .share-glyph {
+    color: var(--s-ink-muted);
+  }
+
+  /* --- one numbered chip per item (D21) ------------------------------- */
+  /* BOUNDED, SCROLLS (DRI pick (a) on #1023): a long book (Psalms, 150
+     chapters) would otherwise wrap about 25 rows above the circle and push it
+     and the status line out of the fixed scrim. The row is capped at three
+     rows (3 x 38px chips + 2 x 10px gaps = 134px) and scrolls inside; every
+     chip is kept, and use-keep-in-view.ts keeps the current one visible. It is
+     the one child of the panel that may shrink (min-height 0), and the panel
+     never grows past the scrim, so on a short screen the row gives up height
+     before the circle or the text does. position: relative makes the row the
+     chips' offset parent, which the hook measures from. */
+  .share-progress {
+    max-height: 100%;
+  }
+  .share-progress-text {
+    flex: none;
+  }
+  .share-chips {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 134px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Keeping the current chip in view glides only when motion is welcome;
+     under reduced motion the row jumps. */
+  @media (prefers-reduced-motion: no-preference) {
+    .share-chips {
+      scroll-behavior: smooth;
+    }
+  }
+  /* The resting chip: an item that does not go out, or, while packing, one
+     that goes out and is still waiting. Grey, its number (vShare). */
+  .share-chip {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 15px;
+    background: var(--s-well);
+    color: var(--s-ink-faint);
+  }
+  .share-chip[data-chip="finished"] {
+    background: var(--s-send);
+    color: var(--s-tile-ink);
+  }
+  .share-chip[data-chip="current"] {
+    background: var(--s-voice);
+    color: var(--s-voice-ink);
+  }
+}

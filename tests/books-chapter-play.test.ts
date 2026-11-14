@@ -11,12 +11,7 @@ import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
 import { idleChapterAudio } from "./chapter-audio";
-import {
-  areaScope,
-  areaSelector,
-  fileRules,
-  selectorDeclarations,
-} from "./o4-area-css";
+import { areaScope, fileRules, selectorDeclarations } from "./area-css";
 import { cssRule, declarationValue } from "./support";
 
 /**
@@ -510,22 +505,18 @@ describe("the ring's loop", () => {
 
 describe("the stylesheet's promises (#1469)", () => {
   const css = areaScope("books");
-  const sel = (selector: string) => areaSelector("books", selector);
   const value = (selector: string, property: string) =>
     declarationValue(cssRule(css, selector), property);
 
   it("fills the ring in the voice role over the empty-mark track", () => {
-    const ring = value(sel(".books-play-ring"), "background");
+    const ring = value(".books-play-ring", "background");
     expect(ring).toContain("var(--s-voice)");
     expect(ring).toContain("var(--s-mark-empty)");
   });
 
   it("marks a failed play in the warn role", () => {
     expect(
-      value(
-        sel('.books-play[data-status="failed"] .books-play-ring'),
-        "background"
-      )
+      value('.books-play[data-status="failed"] .books-play-ring', "background")
     ).toBe("var(--s-warn)");
   });
 
@@ -544,13 +535,13 @@ describe("the stylesheet's promises (#1469)", () => {
   });
 
   it("places the control with logical properties and gives it 44px", () => {
-    const box = cssRule(css, sel(".books-play"));
+    const box = cssRule(css, ".books-play");
     expect(declarationValue(box, "inset-inline-end")).toMatch(/px$/);
     expect(declarationValue(box, "width")).toBe("44px");
     expect(declarationValue(box, "height")).toBe("44px");
     expect(declarationValue(box, "position")).toBe("absolute");
     // No physical side on the control, in any block of the file.
-    for (const [property] of selectorDeclarations("books", sel(".books-play")))
+    for (const [property] of selectorDeclarations("books", ".books-play"))
       expect(property).not.toMatch(/\b(left|right)$/);
   });
 });

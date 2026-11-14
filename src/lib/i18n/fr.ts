@@ -36,6 +36,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Chargement des modèles.",
   settingsChapterNumbers: "Toujours afficher le numéro de chapitre",
   settingsNormalizeOnFinished: "Égaliser le volume une fois terminé",
+  settingsCompressOnFinished: "Adoucir les passages forts une fois terminé",
   booksEmpty: "Commencez votre premier livre",
   booksEmptyTeach: "Un livre contient les chapitres que vous enregistrez.",
   loadingBooks: "Chargement de vos livres.",
@@ -163,7 +164,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "Cet enregistrement n'a pas pu s'ouvrir",
   loadFailedBody:
-    "Votre enregistrement est en sécurité. Réessayez, ou retournez à la liste pour le réinitialiser.",
+    "Votre enregistrement est en sécurité. Réessayez. S'il ne s'ouvre toujours pas, vous pouvez le réinitialiser depuis la liste.",
   loadRetry: "Réessayer",
   loadBack: "Retour",
   loadRetrying: "Ouverture de votre enregistrement…",
@@ -222,6 +223,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Aucun son n'a été enregistré. Réessayez.",
   captureUndecodable: "L'enregistrement n'a pas pu être lu sur cet appareil.",
   captureUnfinished: "Cet enregistrement n'a pas pu être terminé.",
+  captureStoppedSilent:
+    "L'enregistrement s'est arrêté, car le microphone n'a capté que du silence. Ce que vous avez enregistré est sauvegardé.",
   blockedByTake:
     "Utilisez « Fermer le menu » puis « Fermer l'enregistreur » pour sauvegarder l'enregistrement.",
   micStarting: "Le microphone démarre encore.",
@@ -319,6 +322,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Exporter le projet",
   tileExport: "Exporter",
   exportProjectPreparing: "Préparation du projet à exporter.",
+  exportProjectWebPointer:
+    "L'exportation fonctionne dans l'application installée. Ouvre l'application pour exporter ce projet.",
   languageAskTitle: "Langue de ce livre",
   languageAskLead:
     "Dans quelle langue sont les enregistrements ? Vous la choisissez une fois, et chaque exportation de ce livre l’utilise.",

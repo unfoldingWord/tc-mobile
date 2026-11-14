@@ -137,7 +137,7 @@ export function shareErrorText(
 }
 
 /**
- * The library scope (#1045): what Share your work (#987, the O4 storage
+ * The library scope (#1045): what Share your work (#987, the storage
  * banner's button, #983) says, in the banner and under the share overlay's
  * glyph. Its own functions rather than a third arm of the scope parameter
  * above, because wording is not all that differs: the library share adds a

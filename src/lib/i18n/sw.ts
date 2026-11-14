@@ -46,6 +46,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Inapakia violezo.",
   settingsChapterNumbers: "Onyesha daima nambari ya sura",
   settingsNormalizeOnFinished: "Sawazisha sauti ikimalizika",
+  settingsCompressOnFinished: "Lainisha sehemu zenye sauti kubwa ikimalizika",
   booksEmpty: "Anza kitabu chako cha kwanza",
   booksEmptyTeach: "Kitabu kina sura unazorekodi.",
   loadingBooks: "Inapakia vitabu vyako.",
@@ -173,7 +174,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "Rekodi hii haikuweza kufunguliwa",
   loadFailedBody:
-    "Rekodi yako iko salama. Jaribu tena, au rudi ili uiweke upya kutoka kwenye orodha.",
+    "Rekodi yako iko salama. Jaribu tena. Ikiwa bado haifunguki, unaweza kuiweka upya kutoka kwenye orodha.",
   loadRetry: "Jaribu tena",
   loadBack: "Rudi",
   loadRetrying: "Inafungua rekodi yako…",
@@ -227,6 +228,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Hakuna sauti iliyorekodiwa. Jaribu tena.",
   captureUndecodable: "Rekodi haikuweza kusomwa kwenye kifaa hiki.",
   captureUnfinished: "Rekodi hii haikuweza kukamilishwa.",
+  captureStoppedSilent:
+    "Kurekodi kumesimama kwa sababu maikrofoni ilisikia kimya tu. Ulichorekodi kimehifadhiwa.",
   blockedByTake:
     'Chagua "Funga menyu", kisha "Funga kirekodi" ili kuhifadhi rekodi.',
   micStarting: "Maikrofoni bado inaanza kuwaka.",
@@ -321,6 +324,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Hamisha mradi",
   tileExport: "Hamisha",
   exportProjectPreparing: "Inaandaa mradi ili uhamishwe.",
+  exportProjectWebPointer:
+    "Uhamishaji hufanya kazi katika programu iliyosakinishwa. Fungua programu ili kuhamisha mradi huu.",
   exportProjectSuffix: "mradi",
   exportProjectFilename(
     this: Strings,
@@ -524,8 +529,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   shareAllIncomplete: (n: number): string =>
     plural(n, {
-      one: "Sura {n} kamili haikuweza kujumuishwa.",
-      other: "Sura {n} kamili hazikuweza kujumuishwa.",
+      one: "Sura {n} haikuweza kujumuishwa kikamilifu.",
+      other: "Sura {n} hazikuweza kujumuishwa kikamilifu.",
     }),
   shareAllFilename: "Kazi yangu.zip",
   shareAllFolder(book: string): string {

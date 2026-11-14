@@ -20,7 +20,7 @@ import type { BookCard } from "@/types/view";
  * file already prepared.
  *
  * The whole screen is mounted with react-dom + `act()` in jsdom, with the
- * data hooks mocked the way `tests/books-menus-tiles-o4.test.ts` mocks them.
+ * data hooks mocked the way `tests/books-menus-tiles.test.ts` mocks them.
  * What this cannot show: the cascade, layout, or a real tap on a phone.
  */
 
@@ -30,6 +30,12 @@ const share = vi.hoisted(() => ({
   kind: "zip" as "zip" | "project",
   prepareProject: null as unknown as ReturnType<typeof vi.fn>,
   prepare: null as unknown as ReturnType<typeof vi.fn>,
+}));
+// Export runs in the installed app only (#1457, R3): this file is about the
+// tile's state while Share prepares, so it stands in for that shell.
+vi.mock("@/hooks/share-target", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/share-target")>()),
+  isNativeShell: () => true,
 }));
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({

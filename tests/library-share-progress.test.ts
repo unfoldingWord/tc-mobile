@@ -19,7 +19,7 @@ import type { AudioCodec } from "@/types/audio";
 import { clearAllStores, testCodec } from "./support";
 
 /**
- * #1045: the O4 storage banner's "Share your work" drives the same
+ * #1045: the storage banner's "Share your work" drives the same
  * full-screen share overlay Share Book does, and the Books shelf is inert
  * while that timeline owns the screen (Frank's exit condition on #1038:
  * busy, dismissed, sent and partial, with cancel and dismiss connected).
@@ -30,7 +30,7 @@ import { clearAllStores, testCodec } from "./support";
  * the encoder lane (the Node codec, no Worker), the failure sink, the OS
  * share sheet (`navigator.share`, resolved or rejected per case) — plus the
  * data hooks the shelf itself reads, mocked the way
- * `tests/storage-banner-o4.test.ts` mocks them.
+ * `tests/storage-banner.test.ts` mocks them.
  *
  * What this does NOT cover: layout and the cascade (jsdom has neither), a
  * real share sheet, the native route, or focus under a real `inert`
@@ -117,7 +117,7 @@ let codec: ReturnType<typeof testCodec>;
 let share: ReturnType<typeof vi.fn>;
 let estimate: ReturnType<typeof vi.fn>;
 // The layer stack, standing in for `useNavStack` the way
-// `tests/books-delete-in-sheet-o4.test.ts` does — module-scoped so a test can
+// `tests/books-delete-in-sheet.test.ts` does — module-scoped so a test can
 // inspect it after mounting, not just hand it to `pushLayer`/`popLayer`.
 const layers = new Map<string, Layer>();
 
@@ -190,7 +190,7 @@ async function mountBooks(): Promise<HTMLElement> {
 
 /**
  * A system Back, run the way `use-nav-stack.ts`'s adapter runs one (the same
- * helper `tests/books-delete-in-sheet-o4.test.ts` uses): refuse when the top
+ * helper `tests/books-delete-in-sheet.test.ts` uses): refuse when the top
  * layer is busy, otherwise `dismiss()` it and pop it.
  */
 async function systemBack(): Promise<string> {
@@ -211,7 +211,7 @@ const scrim = () => document.body.querySelector<HTMLElement>(".share-scrim");
 const overlayText = () =>
   scrim()?.querySelector(".share-progress-text")?.textContent ?? null;
 const bannerButton = () =>
-  document.querySelector<HTMLButtonElement>("button.o4-storage-share")!;
+  document.querySelector<HTMLButtonElement>("button.storage-share")!;
 
 /** Real timers: the flow's busy and outcome holds are the production ones. */
 async function until(check: () => boolean, what: string): Promise<void> {

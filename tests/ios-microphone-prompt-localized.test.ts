@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { GO_LIVE_HELD } from "../src/lib/i18n/locales";
 import { PENDING } from "../src/lib/i18n/pending";
 
 import { blankGradleSwiftComments, stripHtmlComments } from "./support";
@@ -21,9 +22,10 @@ import { blankGradleSwiftComments, stripHtmlComments } from "./support";
  *
  * The languages checked are derived, not listed: English is the Info.plist
  * default, and every other language whose pending list in `pending.ts` is
- * empty is complete and must have a prompt. Arabic is `"all"` there until its
- * right-to-left device pass, so it is outside the set today and joins it, and
- * this test, the moment it is complete (DRI rule, 2026-10-21).
+ * empty, and which is not on the go-live hold (`GO_LIVE_HELD`), ships and must
+ * have a prompt. Arabic is held until its right-to-left device pass (DRI rule,
+ * 2026-10-21; #1458, "Draft now, gate go-live"), so it is outside the set
+ * however complete its table is, and joins it when the hold is lifted.
  *
  * This reads files only. It cannot show the text on an iPhone, and the prompts
  * are drafts that no reader of the language has checked.
@@ -38,9 +40,30 @@ const pbxproj = blankGradleSwiftComments(
   read("ios/App/App.xcodeproj/project.pbxproj")
 );
 
-const completeLocales = Object.entries(PENDING)
-  .filter(([, pending]) => Array.isArray(pending) && pending.length === 0)
-  .map(([tag]) => tag);
+/**
+ * The languages that ship: pending list empty and not on the go-live hold. A
+ * held language is complete but never shown, and iOS would show its
+ * `InfoPlist.strings` whatever the hold says, so it gets no prompt yet (#1458).
+ */
+function liveLocales(
+  pending: Readonly<Record<string, readonly string[] | "all">>,
+  held: readonly string[] = GO_LIVE_HELD
+): string[] {
+  return Object.entries(pending)
+    .filter(([, keys]) => Array.isArray(keys) && keys.length === 0)
+    .map(([tag]) => tag)
+    .filter((tag) => !held.includes(tag));
+}
+
+/**
+ * iOS names Filipino \`fil\`, and the app's Tagalog entry is \`tl\`, so a live
+ * \`tl\` ships both lprojs (#357). Which one a Filipino iPhone selects is not
+ * verified on a device.
+ */
+const IOS_ALIASES: Readonly<Record<string, string>> = { tl: "fil" };
+const completeLocales = liveLocales(PENDING).flatMap((tag) =>
+  IOS_ALIASES[tag] ? [tag, IOS_ALIASES[tag]] : [tag]
+);
 
 const stringsPath = (tag: string) =>
   `ios/App/App/${tag}.lproj/InfoPlist.strings`;
@@ -73,12 +96,26 @@ describe("iOS microphone prompt, one per complete app language", () => {
     expect(completeLocales).not.toContain("ar");
   });
 
+  it("leaves out a held language even when its pending list is empty", () => {
+    expect(GO_LIVE_HELD).toContain("ar");
+    expect(liveLocales({ ar: [], es: [] })).toEqual(["es"]);
+  });
+
+  it("takes the same language in once the hold is lifted", () => {
+    expect(liveLocales({ ar: [], es: [] }, [])).toEqual(["ar", "es"]);
+  });
+
   it.each(completeLocales)(
     "%s: a non-empty prompt in its own .lproj",
     (tag) => {
       expect(promptOf(tag).trim().length).toBeGreaterThan(0);
     }
   );
+
+  it("fil.lproj carries the same prompt as tl.lproj", () => {
+    expect(promptOf("tl").length).toBeGreaterThan(0);
+    expect(promptOf("fil")).toBe(promptOf("tl"));
+  });
 
   it.each(completeLocales)("%s: the prompt is not the English line", (tag) => {
     // A copied English sentence is a defect, not a draft.

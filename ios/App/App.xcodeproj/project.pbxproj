@@ -41,6 +41,11 @@
 		A1C000060000000000000006 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A1C000070000000000000007 /* sw */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sw; path = sw.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A1C000080000000000000008 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = zh-Hans.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1C000090000000000000009 /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1C0000A000000000000000A /* ms */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ms; path = ms.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1C0000B000000000000000B /* tl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tl; path = tl.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1C0000C000000000000000C /* fil */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fil; path = fil.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1C0000D000000000000000D /* tpi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tpi; path = tpi.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,9 +145,14 @@
 				fr,
 				hi,
 				id,
+				ms,
 				pt,
 				ru,
 				sw,
+				tl,
+				fil,
+				tpi,
+				vi,
 				"zh-Hans",
 			);
 			mainGroup = 504EC2FB1FED79650016851F;
@@ -216,6 +226,11 @@
 				A1C000060000000000000006 /* ru */,
 				A1C000070000000000000007 /* sw */,
 				A1C000080000000000000008 /* zh-Hans */,
+				A1C000090000000000000009 /* vi */,
+				A1C0000A000000000000000A /* ms */,
+				A1C0000B000000000000000B /* tl */,
+				A1C0000C000000000000000C /* fil */,
+				A1C0000D000000000000000D /* tpi */,
 			);
 			name = InfoPlist.strings;
 			sourceTree = "<group>";
@@ -345,7 +360,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.2;
+				MARKETING_VERSION = 1.3.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = org.unfoldingword.tcmobile;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -367,7 +382,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.2;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.unfoldingword.tcmobile;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

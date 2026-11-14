@@ -16,9 +16,8 @@ import { strings, stringsEn } from "@/lib/strings";
 /**
  * The runtime locale installer and follower (#1538, ADR 0015 (b), (e), (g)).
  *
- * No language but English has a translation yet, so the French and Arabic
- * tables here are injected: the registry's own `fr` and `ar` modules are
- * replaced by objects each case fills or empties. The phone's language list
+ * The French and Arabic tables here are injected: the registry's own `fr`
+ * and `ar` modules are replaced by objects each case fills or empties. The phone's language list
  * is injected through `navigator.languages`.
  *
  * What this does NOT establish: the first frames on a right-to-left phone
@@ -32,6 +31,21 @@ const tables = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/i18n/fr", () => ({ table: tables.fr }));
 vi.mock("@/lib/i18n/ar", () => ({ table: tables.ar }));
+
+/**
+ * Arabic is on the go-live hold (`GO_LIVE_HELD`, #1458), so a complete `ar`
+ * table is not a candidate. The right-to-left cases lift the hold through
+ * this flag; every other case runs with the real hold.
+ */
+const hold = vi.hoisted(() => ({ lifted: false }));
+vi.mock("@/lib/i18n/locales", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/i18n/locales")>();
+  return {
+    ...original,
+    completeLocales: (held?: readonly string[]) =>
+      original.completeLocales(held ?? (hold.lifted ? [] : undefined)),
+  };
+});
 
 /** Every English entry, text entries prefixed, so the table is complete. */
 function fill(target: Record<string, unknown>, prefix: string): void {
@@ -54,6 +68,7 @@ beforeEach(() => {
   });
   fill(tables.fr, "FR ");
   fill(tables.ar, "AR ");
+  hold.lifted = false;
   installLocale(SHIPPED_LOCALE);
   document.documentElement.lang = "en";
   document.documentElement.dir = "ltr";
@@ -76,7 +91,15 @@ describe("applyPhoneLocale, at launch", () => {
     expect(document.documentElement.dir).toBe("ltr");
   });
 
-  it("sets dir from the locale entry, rtl for Arabic", () => {
+  it("keeps a complete Arabic table off while Arabic is held", () => {
+    expect(applyPhoneLocale(["ar-EG"])).toBe(false);
+    expect(word()).toBe("Menu");
+    expect(activeLocale()).toBe(SHIPPED_LOCALE);
+    expect(document.documentElement.dir).toBe("ltr");
+  });
+
+  it("sets dir from the locale entry, rtl for Arabic off the hold", () => {
+    hold.lifted = true;
     applyPhoneLocale(["ar-EG"]);
     expect(word()).toBe("AR Menu");
     expect(document.documentElement.lang).toBe("ar");
@@ -99,6 +122,7 @@ describe("applyPhoneLocale, at launch", () => {
   });
 
   it("walks past an incomplete locale to the next complete one", () => {
+    hold.lifted = true;
     delete tables.fr.menuTitle;
     applyPhoneLocale(["fr", "ar"]);
     expect(activeLocale().tag).toBe("ar");

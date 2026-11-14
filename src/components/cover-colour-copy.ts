@@ -16,7 +16,7 @@ import { strings } from "@/lib/strings";
 import type { CoverColourKey } from "@/lib/cover-colour";
 
 /**
- * Read by `components/cover-picker.tsx`, which the O4 book menu mounts
+ * Read by `components/cover-picker.tsx`, which the book menu mounts
  * (#949).
  */
 export function coverColourName(key: CoverColourKey): string {

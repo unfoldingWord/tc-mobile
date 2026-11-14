@@ -38,6 +38,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Carregando os modelos.",
   settingsChapterNumbers: "Mostrar sempre o número do capítulo",
   settingsNormalizeOnFinished: "Igualar o volume ao concluir",
+  settingsCompressOnFinished: "Suavizar as partes altas ao concluir",
   booksEmpty: "Comece seu primeiro livro",
   booksEmptyTeach: "Um livro contém os capítulos que você grava.",
   loadingBooks: "Carregando seus livros.",
@@ -168,7 +169,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "Não foi possível abrir esta gravação",
   loadFailedBody:
-    "Sua gravação está segura. Tente novamente, ou volte para redefini-la a partir da lista.",
+    "Sua gravação está segura. Tente novamente. Se ainda não abrir, você pode redefini-la a partir da lista.",
   loadRetry: "Tentar novamente",
   loadBack: "Voltar",
   loadRetrying: "Abrindo sua gravação…",
@@ -227,6 +228,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Nenhum som foi gravado. Tente novamente.",
   captureUndecodable: "Não foi possível ler a gravação neste aparelho.",
   captureUnfinished: "Não foi possível concluir esta gravação.",
+  captureStoppedSilent:
+    "A gravação parou porque o microfone só captou silêncio. O que você gravou está salvo.",
   blockedByTake:
     'Use "Fechar menu" e depois "Fechar gravador" para salvar a gravação.',
   micStarting: "O microfone ainda está iniciando.",
@@ -325,6 +328,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Exportar projeto",
   tileExport: "Exportar",
   exportProjectPreparing: "Preparando o projeto para exportar.",
+  exportProjectWebPointer:
+    "A exportação funciona no app instalado. Abra o app para exportar este projeto.",
   languageAskTitle: "Idioma deste livro",
   languageAskLead:
     "Em que idioma estão as gravações? Você escolhe uma vez, e cada exportação deste livro usa esse idioma.",
@@ -535,9 +540,9 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   shareAllIncomplete: (n: number): string =>
     plural(n, {
-      one: "Não foi possível incluir {n} capítulo completo.",
-      many: "Não foi possível incluir {n} capítulos completos.",
-      other: "Não foi possível incluir {n} capítulos completos.",
+      one: "Não foi possível incluir {n} capítulo por inteiro.",
+      many: "Não foi possível incluir {n} capítulos por inteiro.",
+      other: "Não foi possível incluir {n} capítulos por inteiro.",
     }),
   shareAllFilename: "Meu trabalho.zip",
   shareAllFolder(book: string): string {

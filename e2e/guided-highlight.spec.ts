@@ -58,7 +58,7 @@ async function ringOf(page: Page): Promise<string> {
 test("the ring moves through the chain and marks exactly one control at a time", async ({
   page,
 }) => {
-  // The ring at rest. The guide pulse (`o4/motion.css`, #950) animates the
+  // The ring at rest. The guide pulse (`3-components/motion.css`, #950) animates the
   // ring's shadow, so a computed read mid-pulse catches an interpolated
   // colour; reduced motion is the app's own still frame of the same ring.
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -307,7 +307,7 @@ test.describe("disabled recorder guide", () => {
             });
         };
       });
-      // The ring at rest. The guide pulse (`o4/motion.css`, #950) animates the
+      // The ring at rest. The guide pulse (`3-components/motion.css`, #950) animates the
       // ring's shadow, so a computed read mid-pulse catches an interpolated
       // colour; reduced motion is the app's own still frame of the same ring.
       await page.emulateMedia({ reducedMotion: "reduce" });

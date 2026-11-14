@@ -167,6 +167,14 @@ export interface StopResult {
    * bytes to the share sheet so the recording leaves the phone in some form.
    */
   readonly blob: Blob | null;
+  /**
+   * Set when the take this stop ends was sealed by the level tap's silent-
+   * capture report (#1294's R13, `onCaptureSilent`), so the sheet can show
+   * that the recording stopped (#1986). Absent on every other stop: a Stop
+   * tap, an interruption, the length cap, a `pagehide`. It says only why the
+   * take ended; what was kept is `samples` and `blob`, exactly as without it.
+   */
+  readonly silenceSealed?: true;
 }
 
 /** The outcome of re-decoding a held take's container bytes (#165). */
@@ -383,6 +391,12 @@ export function useRecorder(): UseRecorder {
    * freeze before its commit starts, which is the window `seal()` must keep.
    */
   const takeOpenRef = useRef(false);
+  /**
+   * The open take was sealed by `onCaptureSilent` (#1986). Set there, cleared
+   * at each new take's recording edge, and read once by the `stop()` that
+   * ends the take, which hands it on as `StopResult.silenceSealed`.
+   */
+  const silenceSealedRef = useRef(false);
 
   const supported = isRecordingSupported();
 
@@ -545,7 +559,7 @@ export function useRecorder(): UseRecorder {
       seal();
       reportFailure(
         new Error(
-          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed and saved (#1005)`
+          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed; saving it comes after this row (#1005)`
         ),
         "recorder-take-cap"
       );
@@ -829,16 +843,19 @@ export function useRecorder(): UseRecorder {
         // what was captured"): exact zeros on a moving clock, which is the
         // flat line an alarm left on the screen. That take is sealed the way
         // the length cap seals it — `seal()` freezes, the sheet's commit
-        // saves it, Record is back at rest — and one row says so. Generation-
+        // saves it, Record is back at rest — and one row says so. The stop
+        // that ends it carries `silenceSealed`, so the sheet can say on screen
+        // that the recording stopped (#1986). Generation-
         // guarded like `onInterrupted`; `seal()`'s freeze clears
         // `recordingRef`, so a second report writes nothing. A meterless take
         // has no tap and so no such seal.
         const onCaptureSilent = () => {
           if (generation !== generationRef.current) return;
           if (!recordingRef.current || !seal()) return;
+          silenceSealedRef.current = true;
           reportFailure(
             new Error(
-              `The level tap read exact silence for ${CAPTURE_SILENCE_MS} ms on a running clock with no track or recorder event; the take was sealed and saved (#1294)`
+              `The level tap read exact silence for ${CAPTURE_SILENCE_MS} ms on a running clock with no track or recorder event; the take was sealed, and saving it comes after this row (#1294)`
             ),
             "recorder-capture-stalled"
           );
@@ -859,6 +876,7 @@ export function useRecorder(): UseRecorder {
         // The ring may advance from the next rAF on — set before the state edge.
         recordingRef.current = true;
         takeOpenRef.current = true;
+        silenceSealedRef.current = false;
         setState("recording");
 
         startTick();
@@ -1205,6 +1223,19 @@ export function useRecorder(): UseRecorder {
     }
   }, [abandonStream, clearTick, setState]);
 
+  /**
+   * `stop`, plus why the take ended when the tap's silent-capture report
+   * sealed it (#1986). This is what the hook returns as `stop`. Read before
+   * the first await, like everything else a stop needs, and consumed here so
+   * a later stop cannot repeat it.
+   */
+  const stopTake = useCallback(async (): Promise<StopResult> => {
+    const silenceSealed = silenceSealedRef.current;
+    silenceSealedRef.current = false;
+    const result = await stop();
+    return silenceSealed ? { ...result, silenceSealed: true } : result;
+  }, [stop]);
+
   const retryDecode = useCallback(
     async (blob: Blob): Promise<RetryDecodeResult> => {
       // Resume synchronously in the gesture that called this, BEFORE the decode's
@@ -1292,7 +1323,7 @@ export function useRecorder(): UseRecorder {
     elapsedMs,
     error,
     start,
-    stop,
+    stop: stopTake,
     retryDecode,
     cancel,
     seal,

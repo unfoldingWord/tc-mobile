@@ -13,7 +13,7 @@ import { restingErase } from "./support";
 /**
  * The recorder screen hands its view's book name and the chapter's resolved
  * name (`strings.chapterHeading`, #1230; this view has no typed name, so the
- * default "Chapter 4") to the ⋮ menu's sheet head (#949 G3). `tests/recorder-menu-head-o4.test.ts`
+ * default "Chapter 4") to the ⋮ menu's sheet head (#949 G3). `tests/recorder-menu-head.test.ts`
  * covers the head given those props; this file covers the one link it cannot
  * see, the `recorder.tsx` call site, by opening the menu on the real sheet.
  *
@@ -144,7 +144,7 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
   it("crumbs the view's book, chapter and segment, the segment tinted done", async () => {
     const panel = await openMenu();
     expect(
-      [...panel.querySelectorAll(".o4-sheet-head .o4-crumb")].map((c) => [
+      [...panel.querySelectorAll(".sheet-head .crumb")].map((c) => [
         c.textContent,
         c.getAttribute("data-state"),
       ])
@@ -158,7 +158,7 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
   it("carries the view's cover colour to the head's square (#949, #957)", async () => {
     const panel = await openMenu();
     const cover = panel.querySelector(
-      ".o4-sheet-head .books-cover.is-sm"
+      ".sheet-head .books-cover.is-sm"
     ) as HTMLElement | null;
     expect(cover).not.toBeNull();
     expect(cover!.style.getPropertyValue("--book-cover")).toBe("#11796d");
@@ -169,7 +169,7 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
     view.chapterName = NAME;
     try {
       const panel = await openMenu();
-      expect(panel.querySelector(".o4-sheet-name")?.textContent).toBe(NAME);
+      expect(panel.querySelector(".sheet-name")?.textContent).toBe(NAME);
     } finally {
       view.chapterName = null;
     }

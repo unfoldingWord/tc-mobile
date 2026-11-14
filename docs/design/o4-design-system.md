@@ -14,7 +14,7 @@ Where the values live:
   carry an icon, text or a control's boundary, and pins the two colour values
   #937 changed (`--s-edit`, the light `--s-send-ring`).
 - **Type, radius, ambient motion:** layer 1, added by #967 (#939);
-  `tests/o4-primitives.test.ts` pins them.
+  `tests/structural-primitives.test.ts` pins them.
 - **Geometry, icons, screen states:** this file and the workbench; they are
   not primitives.
 
@@ -277,7 +277,7 @@ Round 1 was answered by the requirements owner
 
 - **Book delete asks in place (G6).** The book menu sheet's actions swap to
   Keep and Delete, with the book's small cover and name in the header
-  (`o4-book-delete-ask.tsx`, #980). Under O4 the book-delete path no longer
+  (`book-delete-ask.tsx`, #980). Under O4 the book-delete path no longer
   uses the floating `EraseConfirm` card; with the switch off it still does.
   At rest the sheet is state 04 on tiles (Share, Cover colour, Delete),
   with Rename as the head's pencil. The #949 comment labels

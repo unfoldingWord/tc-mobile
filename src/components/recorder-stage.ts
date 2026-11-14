@@ -1177,7 +1177,7 @@ export function selectionReseed(input: {
  * The midpoint can fall outside the visible window — a zoom-fitted selection
  * wider than the viewport, or one panned partway off screen — so the raw
  * percentage is clamped to `[0, 100]` here, the viewport's own edges. That is
- * a COARSER clamp than the CSS `clamp()` in `o4/recorder.css`, which further
+ * a COARSER clamp than the CSS `clamp()` in `3-components/recorder.css`, which further
  * narrows it to keep the button's own half-width on screen; the two compose
  * rather than duplicate — this one is what a render test can assert without a
  * browser's layout engine, that one is what a phone actually draws.

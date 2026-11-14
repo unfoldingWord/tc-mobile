@@ -45,7 +45,7 @@
   --color-done: var(--s-done);
   --color-live: var(--s-live);
   --color-warn: var(--s-warn);
-  /* O4 roles (workbench round 4). */
+  /* Design-round roles (workbench round 4). */
   --color-well: var(--s-well);
   --color-mark-empty: var(--s-mark-empty);
   --color-card-edge: var(--s-card-edge);

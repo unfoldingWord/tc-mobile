@@ -3,7 +3,7 @@ import "fake-indexeddb/auto";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { shareO4View } from "@/components/share-o4-view";
+import { shareView } from "@/components/share-view";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
 import { readReporter, stepReporter } from "@/hooks/share-flow";
 import {
@@ -272,7 +272,7 @@ describe("the share circle draws the read apart from the count (#1078)", () => {
   it("draws the read fraction, no count ring and an unvalued meter, before any step", () => {
     const state = reduceShareProgress(prepare(), read(1, 4));
     if (state.phase === "hidden") throw new Error("expected busy");
-    const view = shareO4View(state, "chapter");
+    const view = shareView(state, "chapter");
     expect(view.read).toBe(0.25);
     expect(view.ring).toBeNull();
     expect(view.meter).toEqual({ now: null });
@@ -287,7 +287,7 @@ describe("the share circle draws the read apart from the count (#1078)", () => {
       items: 3,
     });
     if (state.phase === "hidden") throw new Error("expected busy");
-    const view = shareO4View(state, "chapter");
+    const view = shareView(state, "chapter");
     expect(view.read).toBeUndefined();
     expect(view.ring).toBe(0);
   });
@@ -299,21 +299,21 @@ describe("the share circle draws the read apart from the count (#1078)", () => {
       createElement(ShareProgressPanel, {
         role: "status",
         text: "status",
-        o4: shareO4View(state, "chapter"),
+        view: shareView(state, "chapter"),
       })
     );
-    const arc = withRead.querySelector(".share-o4-read");
+    const arc = withRead.querySelector(".share-read");
     expect(arc).not.toBeNull();
     expect(arc?.closest("svg")?.getAttribute("aria-hidden")).toBe("true");
-    expect(withRead.querySelector(".share-o4-fill")).toBeNull();
+    expect(withRead.querySelector(".share-fill")).toBeNull();
     const without = render(
       createElement(ShareProgressPanel, {
         role: "status",
         text: "status",
-        o4: shareO4View(busy(prepare()), "chapter"),
+        view: shareView(busy(prepare()), "chapter"),
       })
     );
-    expect(without.querySelector(".share-o4-read")).toBeNull();
-    expect(without.querySelector(".share-o4-ring")).toBeNull();
+    expect(without.querySelector(".share-read")).toBeNull();
+    expect(without.querySelector(".share-ring")).toBeNull();
   });
 });
