@@ -7,28 +7,9 @@ its body and empties it.
 
 ## Added
 
-- Tok Pisin: a phone set to Tok Pisin now opens tC Mobile in Tok Pisin, including the iPhone microphone prompt. This first draft is machine-written and no Tok Pisin speaker has read it yet.
-- Tagalog: a phone set to Tagalog now opens tC Mobile in Tagalog, including the iPhone microphone prompt. This first draft is machine-written and no Tagalog speaker has read it yet.
-- Malay: a phone set to Malay now opens tC Mobile in Malay, including the iPhone microphone prompt. This first draft is machine-written and no Malay speaker has read it yet.
-- Vietnamese: a phone set to Vietnamese now opens tC Mobile in Vietnamese, including the iPhone microphone prompt. This first draft is machine-written and no Vietnamese speaker has read it yet.
-- In a web browser, Export project now says that export works in the installed app, instead of trying to run (#1457).
-- Settings has a new switch, "Soften loud parts when done", under "Even out the volume when done" and shown only while that one is on. It starts off; please leave it off until it has been listened to on a phone (#1873).
-
 ## Changed
 
-- In a book made from a template, segments can no longer be moved (their order is the template's) (#1969).
-- In a book made from a template, the segments the template made can no longer be deleted; a segment you add yourself still can (#1979).
-- A book made from the Template Library now scrolls into view on the Books shelf and takes focus, the way a New Book does.
-- About & licenses now shows the translationCore trademark notice after the licence text, with the web address of unfoldingWord's contact page to ask for permission (#1608).
-- The Books screen has one menu button: the gear is gone, and Settings is now the first tile in the ≡ menu (#1871).
-- When a recording will not open, the message now says to try again first, and to reset it from the list only if it still won't open, in every language (#1933).
-
 ## Fixed
-
-- In a quiet room, a pause of a few seconds no longer stops the recording; only 30 seconds of complete silence does (#1972).
-- On an Android phone whose Android System WebView is too old, the app now shows a picture and one English sentence saying to update it, instead of an empty page (#1944).
-- After a menu is dragged closed, the next tap works the first time (#1974). Not yet checked on a phone.
-- On Android, the phone's status-bar and navigation-bar icons are now dark on the light theme, so they can be seen (#1973). Not yet checked on a phone.
 
 ## Removed
 
