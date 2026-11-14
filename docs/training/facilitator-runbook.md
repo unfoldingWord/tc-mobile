@@ -578,7 +578,7 @@ src/lib/storage/db.ts on origin/staging); docs/progress_tracker.md 2026-11-02
   1.3.0 it waits for 30 seconds of it, not a few, and then shows a calm notice
   that the recording stopped and what was recorded is saved; the next Record
   clears it (#1972, #1986). Write down any time it stops a recording while
-  someone was speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS; the no-zeros-in-a-pause assumption is checked by the #1294 device sheet); §5 -->
+  someone was speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS; CAPTURE_SILENCE_MS = 30_000 since #1976); #1972 (an Android phone read a quiet room as exact zeros); #1988 (the info-tone notice, not run on a phone); §5 -->
 - **A recording waiting at launch is saved quietly.** If the app closed while a
   recording was waiting to be saved, the next launch saves it, with no screen,
   if its saved copy is intact. It writes one line in the problem record that
