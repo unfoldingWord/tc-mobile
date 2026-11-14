@@ -518,10 +518,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * A recording that could not be decoded (round 4). Distinct from a permission
      * miss: the take is unrecoverable, and re-recording is the only recovery, so
      * it shows as a toolbar Notice with Record live — not the permission panel.
-     * The same slot says that a take the level tap sealed on silence stopped
-     * (#1986); that take was saved, and the next Record clears it like the rest.
      */
     const [stopError, setStopError] = useState<string | null>(null);
+    /**
+     * The last take was sealed by the level tap on exact silence (#1294's R13)
+     * and saved, so the sheet says the recording stopped (#1986). In the same
+     * place as `stopError`, but on the `info` tone, because nothing failed (the
+     * DRI's pick, "Calmer info look"). The next Record clears it.
+     */
+    const [silenceStopped, setSilenceStopped] = useState(false);
     // A take whose decode failed on Stop, held as its raw container bytes so it is
     // NOT lost (#165). While set, the recovery panel owns the body: Try again
     // re-decodes on a fresh gesture, Share hands the bytes to the OS. There is no
@@ -1511,9 +1516,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           }
           // A take the level tap sealed on exact silence (#1294's R13) was
           // saved above like any other; nobody tapped Stop, so the sheet says
-          // the recording stopped (#1986). The same Notice slot a failed
-          // capture uses, cleared by the next Record like that one.
-          if (result.silenceSealed) setStopError(strings.captureStoppedSilent);
+          // the recording stopped (#1986), cleared by the next Record.
+          if (result.silenceSealed) setSilenceStopped(true);
           // The line comes to rest at the END of what was just recorded, so
           // "keep going" needs no drag: tap Record again and it continues
           // where this take stopped. `panAfterCommit` holds the rule, the F7
@@ -1640,6 +1644,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // (F9). It is an offset into the WORKING buffer, which is also the take's
         // splice base when it commits.
         setStopError(null);
+        setSilenceStopped(false);
         insertionOffset.current = win.centerlineSample;
         setCaptureContext(
           buildCaptureContext(
@@ -3787,6 +3792,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {stopError && (
                 <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
                   <Notice>{stopError}</Notice>
+                </div>
+              )}
+              {silenceStopped && (
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
+                  <Notice tone="info">{strings.captureStoppedSilent}</Notice>
                 </div>
               )}
               {editor.error && (

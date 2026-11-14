@@ -682,13 +682,18 @@ describe("the sheet: a take whose capture goes silent with no event (R13)", () =
     expect(stallRows()).toHaveLength(1);
   });
 
-  /** The Notice the sheet shows after a silence seal, or null. */
-  function stoppedNotice(): Element | null {
+  /** The Notice whose text is `text`, whatever its tone, or null. */
+  function noticeSaying(text: string): Element | null {
     return (
-      [...container.querySelectorAll('[role="alert"]')].find(
-        (node) => node.textContent === strings.captureStoppedSilent
+      [...container.querySelectorAll(".notice")].find(
+        (node) => node.textContent === text
       ) ?? null
     );
+  }
+
+  /** The Notice the sheet shows after a silence seal, or null. */
+  function stoppedNotice(): Element | null {
+    return noticeSaying(strings.captureStoppedSilent);
   }
 
   function buttonNamed(name: string): HTMLButtonElement {
@@ -731,7 +736,12 @@ describe("the sheet: a take whose capture goes silent with no event (R13)", () =
 
     expect(saveRecording).toHaveBeenCalledOnce();
     expect(ref.current?.audio.recorderState).toBe("idle");
-    expect(stoppedNotice()).not.toBeNull();
+    // Nothing failed, so it wears the calm info tone, announced politely —
+    // not the failure tone (the DRI's pick on #1988, "Calmer info look").
+    const notice = stoppedNotice();
+    expect(notice).not.toBeNull();
+    expect(notice!.getAttribute("data-tone")).toBe("info");
+    expect(notice!.getAttribute("role")).toBe("status");
 
     // Starting a new recording is what clears it.
     await act(async () => {
@@ -757,6 +767,30 @@ describe("the sheet: a take whose capture goes silent with no event (R13)", () =
 
     expect(saveRecording).toHaveBeenCalledOnce();
     expect(ref.current?.audio.recorderState).toBe("idle");
+    expect(stoppedNotice()).toBeNull();
+  });
+
+  it("keeps a failed capture's Notice on the alert tone, beside the info one", async () => {
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Screen, { ref }));
+    });
+    // A capture that decodes to nothing: the "silence" failure code.
+    mocks.decodeToCanonical.mockResolvedValue(new Int16Array(0));
+
+    await recordATake(async () => {
+      await act(async () => {
+        buttonNamed(strings.stop).click();
+        await settle();
+      });
+    });
+
+    expect(saveRecording).not.toHaveBeenCalled();
+    expect(ref.current?.audio.recorderState).toBe("idle");
+    const failed = noticeSaying(strings.captureSilence);
+    expect(failed).not.toBeNull();
+    expect(failed!.getAttribute("data-tone")).toBe("alert");
+    expect(failed!.getAttribute("role")).toBe("alert");
     expect(stoppedNotice()).toBeNull();
   });
 });
