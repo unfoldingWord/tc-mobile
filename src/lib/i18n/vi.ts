@@ -206,6 +206,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Không ghi được âm thanh nào. Hãy thử lại.",
   captureUndecodable: "Thiết bị này không đọc được bản ghi âm.",
   captureUnfinished: "Không hoàn tất được bản ghi âm này.",
+  captureStoppedSilent:
+    "Đã dừng ghi âm vì micrô chỉ nghe thấy im lặng. Phần bạn đã ghi âm đã được lưu.",
   blockedByTake: 'Chọn "Đóng menu", rồi "Đóng trình ghi âm" để lưu bản ghi âm.',
   micStarting: "Micrô vẫn đang khởi động.",
   nothingRecorded: "Chưa ghi âm gì cả.",

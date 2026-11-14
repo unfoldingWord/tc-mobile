@@ -227,6 +227,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "कोई आवाज़ रिकॉर्ड नहीं हुई। फिर से कोशिश करें।",
   captureUndecodable: "इस डिवाइस पर रिकॉर्डिंग पढ़ी नहीं जा सकी।",
   captureUnfinished: "यह रिकॉर्डिंग पूरी नहीं हो सकी।",
+  captureStoppedSilent:
+    "रिकॉर्डिंग रुक गई, क्योंकि माइक्रोफ़ोन ने सिर्फ़ खामोशी सुनी। आपने जो रिकॉर्ड किया, वह सहेजा गया है।",
   blockedByTake:
     'रिकॉर्डिंग सहेजने के लिए "मेनू बंद करें", फिर "रिकॉर्डर बंद करें" चुनें।',
   micStarting: "माइक्रोफ़ोन अभी चालू हो रहा है।",

@@ -218,6 +218,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Tiada bunyi yang dirakam. Cuba lagi.",
   captureUndecodable: "Rakaman tidak dapat dibaca pada peranti ini.",
   captureUnfinished: "Rakaman ini tidak dapat diselesaikan.",
+  captureStoppedSilent:
+    "Rakaman berhenti kerana mikrofon hanya menangkap kesunyian. Apa yang anda rakam telah disimpan.",
   blockedByTake:
     'Pilih "Tutup menu", kemudian "Tutup perakam" untuk menyimpan rakaman.',
   micStarting: "Mikrofon masih dihidupkan.",

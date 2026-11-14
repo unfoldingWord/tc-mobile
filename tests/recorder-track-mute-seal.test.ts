@@ -15,7 +15,11 @@ import {
   useAudioSession,
   type UseAudioSession,
 } from "@/hooks/use-audio-session";
-import { useRecorder, type UseRecorder } from "@/hooks/use-recorder";
+import {
+  useRecorder,
+  type StopResult,
+  type UseRecorder,
+} from "@/hooks/use-recorder";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 
@@ -543,6 +547,41 @@ describe("the recorder hook: capture goes silent with no event (R13)", () => {
     expect(stallRows()).toHaveLength(1);
   });
 
+  it("tells the stop that ends a silence-sealed take why it ended, and no later stop (#1986)", async () => {
+    const ref = await startATake();
+    const recorder = FakeMediaRecorder.last!;
+    recorder.slice("one");
+    await act(async () => {
+      tapReadsSilence();
+    });
+
+    let sealed: StopResult | undefined;
+    await act(async () => {
+      const stopping = ref.current!.recorder.stop();
+      recorder.deliverFinal();
+      sealed = await stopping;
+    });
+    expect(sealed?.silenceSealed).toBe(true);
+    // What is kept is unchanged by the flag: the take's samples, as on a Stop.
+    expect(sealed?.samples).toBe(captured);
+
+    // The next take, ended by a Stop, carries no such reason.
+    await act(async () => {
+      await ref.current?.recorder.start();
+      await settle();
+    });
+    const next = FakeMediaRecorder.last!;
+    next.slice("two");
+    let stopped: StopResult | undefined;
+    await act(async () => {
+      const stopping = ref.current!.recorder.stop();
+      next.deliverFinal();
+      stopped = await stopping;
+    });
+    expect(stopped?.samples).toBe(captured);
+    expect(stopped?.silenceSealed).toBeUndefined();
+  });
+
   it("a report from a cancelled take's tap changes nothing", async () => {
     const ref = await startATake();
     await act(async () => {
@@ -641,5 +680,83 @@ describe("the sheet: a take whose capture goes silent with no event (R13)", () =
     expect(track.stopped).toBe(true);
     expect(ref.current?.audio.recorderState).toBe("idle");
     expect(stallRows()).toHaveLength(1);
+  });
+
+  /** The Notice the sheet shows after a silence seal, or null. */
+  function stoppedNotice(): Element | null {
+    return (
+      [...container.querySelectorAll('[role="alert"]')].find(
+        (node) => node.textContent === strings.captureStoppedSilent
+      ) ?? null
+    );
+  }
+
+  function buttonNamed(name: string): HTMLButtonElement {
+    const button = [...document.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === name
+    );
+    if (!button) throw new Error(`no button named ${name}`);
+    return button;
+  }
+
+  /** Tap Record, capture a slice, end the take with `end`, and let it commit. */
+  async function recordATake(end: () => Promise<void>): Promise<void> {
+    await act(async () => {
+      buttonNamed(strings.record).click();
+      await settle();
+    });
+    const recorder = FakeMediaRecorder.last!;
+    recorder.slice("one");
+    await end();
+    await act(async () => {
+      recorder.deliverFinal();
+      await settle();
+    });
+    await drain();
+  }
+
+  it("says in place that the recording stopped, and the next Record clears it (#1986)", async () => {
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Screen, { ref }));
+    });
+    expect(stoppedNotice()).toBeNull();
+
+    await recordATake(async () => {
+      await act(async () => {
+        tapReadsSilence();
+        await settle();
+      });
+    });
+
+    expect(saveRecording).toHaveBeenCalledOnce();
+    expect(ref.current?.audio.recorderState).toBe("idle");
+    expect(stoppedNotice()).not.toBeNull();
+
+    // Starting a new recording is what clears it.
+    await act(async () => {
+      buttonNamed(strings.record).click();
+      await settle();
+    });
+    expect(ref.current?.audio.recorderState).toBe("recording");
+    expect(stoppedNotice()).toBeNull();
+  });
+
+  it("does not say it after a take the person stopped themselves", async () => {
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Screen, { ref }));
+    });
+
+    await recordATake(async () => {
+      await act(async () => {
+        buttonNamed(strings.stop).click();
+        await settle();
+      });
+    });
+
+    expect(saveRecording).toHaveBeenCalledOnce();
+    expect(ref.current?.audio.recorderState).toBe("idle");
+    expect(stoppedNotice()).toBeNull();
   });
 });

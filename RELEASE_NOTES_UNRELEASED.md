@@ -11,6 +11,8 @@ its body and empties it.
 
 ## Fixed
 
+- If a recording stops because the microphone heard only silence for 30 seconds, the recorder now says the recording stopped; what was recorded is kept (#1986). Not yet checked on a phone.
+
 ## Removed
 
 ## Security
