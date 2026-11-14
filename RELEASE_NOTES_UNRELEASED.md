@@ -9,11 +9,7 @@ its body and empties it.
 
 ## Changed
 
-- In a book made from a template, chapters can no longer be moved (their order is the template's) (#1985).
-
 ## Fixed
-
-- If a recording stops because the microphone heard only silence for 30 seconds, the recorder now says the recording stopped; what was recorded is kept (#1986). Not yet checked on a phone.
 
 ## Removed
 
