@@ -228,6 +228,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Hakuna sauti iliyorekodiwa. Jaribu tena.",
   captureUndecodable: "Rekodi haikuweza kusomwa kwenye kifaa hiki.",
   captureUnfinished: "Rekodi hii haikuweza kukamilishwa.",
+  captureStoppedSilent:
+    "Kurekodi kumesimama kwa sababu maikrofoni ilisikia kimya tu. Ulichorekodi kimehifadhiwa.",
   blockedByTake:
     'Chagua "Funga menyu", kisha "Funga kirekodi" ili kuhifadhi rekodi.',
   micStarting: "Maikrofoni bado inaanza kuwaka.",

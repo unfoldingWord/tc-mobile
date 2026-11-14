@@ -242,6 +242,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Звук не записан. Повторите попытку.",
   captureUndecodable: "Не удалось прочитать запись на этом устройстве.",
   captureUnfinished: "Не удалось завершить эту запись.",
+  captureStoppedSilent:
+    "Запись остановлена: микрофон слышал только тишину. Записанное сохранено.",
   blockedByTake:
     "Чтобы сохранить запись, нажмите «Закрыть меню», затем «Закрыть диктофон».",
   micStarting: "Микрофон ещё запускается.",
