@@ -248,6 +248,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Walang tunog na na-record. Subukan muli.",
   captureUndecodable: "Hindi mabasa ang recording sa device na ito.",
   captureUnfinished: "Hindi matapos ang recording na ito.",
+  captureStoppedSilent:
+    "Huminto ang recording dahil katahimikan lang ang narinig ng mikropono. Naka-save ang na-record mo.",
   blockedByTake:
     'Piliin ang "Isara ang menu", saka "Isara ang recorder" para ma-save ang recording.',
   micStarting: "Ino-on pa ang mikropono.",
