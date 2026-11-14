@@ -560,7 +560,7 @@ src/lib/storage/db.ts on origin/staging); docs/progress_tracker.md 2026-11-02
   chapter on the Books screen has a **⋮**; a book's menu and a segment's menu
   have Move up and Move down. Each moves the row one place and is greyed on the
   first or last. In a book made from a template, chapters and segments have
-  no Move, because their order is the template's (#1985, #1969). On a chapter with many segments the progress dots may look a
+  no Move (and no chapter ⋮), because their order is the template's (#1985, #1969); the segments the template made cannot be deleted either, though one you add yourself can (#1979). On a chapter with many segments the progress dots may look a
   little smaller. <!-- source: tester-build-v1.2.2 notes ("Move a chapter without press-and-hold", "Move up and Move down"); not run on a phone -->
 - **Hold a cut-off name to read it whole** on the Books, Segments and recorder
   screens (§4). <!-- source: tester-build-v1.2.2 notes -->
@@ -573,11 +573,12 @@ src/lib/storage/db.ts on origin/staging); docs/progress_tracker.md 2026-11-02
   same name as another is refused. <!-- source: tester-build-v1.2.2 notes ("Changed") -->
 - **The recorder stops by itself after a long stretch of exact silence** and
   saves what it captured. This is for a microphone that goes dead without
-  telling the app. It reacts only to exact digital silence (every sample zero),
-  not to a quiet pause, which still carries the microphone's noise. That a
-  phone never sends exact silence during a real pause has not been checked on
-  a phone, so write down any time it stops a recording while someone was
-  speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS; the no-zeros-in-a-pause assumption is checked by the #1294 device sheet); §5 -->
+  telling the app. It reacts only to exact digital silence (every sample zero).
+  On at least one Android phone a quiet room reads as exact silence, so since
+  1.3.0 it waits for 30 seconds of it, not a few, and then shows a calm notice
+  that the recording stopped and what was recorded is saved; the next Record
+  clears it (#1972, #1986). Write down any time it stops a recording while
+  someone was speaking or pausing (§5, `recorder-capture-stalled`). <!-- source: tester-build-v1.2.2 notes ("Changed"); src/lib/audio/capture-silence.ts (isDigitalSilence: every sample exactly zero; CAPTURE_SILENCE_MS; the no-zeros-in-a-pause assumption is checked by the #1294 device sheet); §5 -->
 - **A recording waiting at launch is saved quietly.** If the app closed while a
   recording was waiting to be saved, the next launch saves it, with no screen,
   if its saved copy is intact. It writes one line in the problem record that
@@ -872,6 +873,9 @@ use-template-library.ts, replay-pending-takes.ts), not by running anything -->
 - A book's menu that could not read whether the book came from a template
   (`book-provenance-read`): the Licence tile stays hidden and the next open reads
   again.
+- The phone's top and bottom bars not taking the light or dark look
+  (`system-bars-style`, installed apps only): written once per page; the bars
+  keep their previous look and nothing is lost.
 
 <!-- source: src/lib/failure-marker.ts (INFORMATIONAL_CONTEXTS, ROUTINE_RECOVERABLE_CONTEXTS, RESUME_CONTEXTS: everything not in those sets lights the mark); the DRI's picks "Log it, don't light ≡ (Recommended)" (#1076), "Log only, no ≡ (Recommended)" (https://github.com/unfoldingWord/tc-mobile/pull/1692#issuecomment-6421765458) and "A: one text round + log row (Recommended)" (https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6425490363); the silence stop is the requirements owner's R13 decision on gh issue #1294; inferred from the code, not run on a phone -->
 
