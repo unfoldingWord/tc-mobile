@@ -7,7 +7,7 @@ import { expect, test } from "./support/test";
  * page (#1944).
  *
  * Against the shipped `dist/` build in headless desktop Chromium. The old
- * engine is simulated, not run: an init script deletes the two built-ins the
+ * engine is simulated, not run: an init script deletes the built-ins the
  * check looks for before any page script runs, which is what an Android
  * System WebView 91 lacks. Covered: the check in `index.html` shows the
  * screen, removes the app's mount point, and stays out of the way when the

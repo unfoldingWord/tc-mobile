@@ -257,11 +257,12 @@ describe("ci.yml: run-level concurrency (#1935)", () => {
     ).toThrow(/unmodelled token/);
   });
 
-  it("the evaluator refuses an inherited key such as toString", () => {
-    for (const token of ["toString", "constructor", "hasOwnProperty"]) {
+  it.each(["toString", "constructor", "hasOwnProperty"])(
+    "the evaluator refuses the inherited key %s",
+    (token) => {
       expect(() => evalExpression(token, push("develop", "a"))).toThrow(
         /unmodelled token/
       );
     }
-  });
+  );
 });

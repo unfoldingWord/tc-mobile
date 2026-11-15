@@ -100,7 +100,7 @@ afterEach(() => {
 });
 
 describe("createLevelTap — onCaptureSilent (#1294, R13)", () => {
-  it("is called once by the live scope's pull after five seconds of exact zeros, and writes no row itself", async () => {
+  it("is called once by the live scope's pull after the silence window of exact zeros, and writes no row itself", async () => {
     const { createLevelTap, CAPTURE_SILENCE_MS } = await loadAudioIo();
     const onCaptureSilent = vi.fn();
     const tap = createLevelTap(fakeStream, { onCaptureSilent });

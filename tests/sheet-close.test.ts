@@ -287,6 +287,42 @@ describe("drag down to close (#1268 item 1)", () => {
     expect(p.getAttribute("data-sheet-drag")).toBe("settling");
   });
 
+  // #1974: a drag's touch moves are cancelled, so the browser reads no
+  // fling from the release and the next tap still clicks. What jsdom cannot
+  // show is that fling; `e2e/sheet-drag-tap-after.spec.ts` drives it.
+  describe("a drag cancels its own touch moves (#1974)", () => {
+    const touchMove = (el: Element) => {
+      const ev = new m.dom.window.Event("touchmove", {
+        bubbles: true,
+        cancelable: true,
+      });
+      el.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    };
+
+    it.each([
+      ["the grip", ".menu-grip"],
+      ["the sheet head", ".menu-head"],
+    ])("on %s, only while the drag is in progress", async (_, selector) => {
+      const p = await mountMenu();
+      const from = one(p, selector);
+      expect(touchMove(from)).toBe(false);
+      await act(async () => pointer(from, "pointerdown", 100));
+      expect(touchMove(from)).toBe(true);
+      await act(async () => pointer(from, "pointermove", 110));
+      expect(touchMove(from)).toBe(true);
+      await act(async () => pointer(from, "pointerup", 110));
+      expect(touchMove(from)).toBe(false);
+    });
+
+    it("not on the ✕, which never starts a drag", async () => {
+      await mountMenu();
+      const close = named(strings.menuClose);
+      await act(async () => pointer(close, "pointerdown", 100));
+      expect(touchMove(close)).toBe(false);
+    });
+  });
+
   // jsdom synthesises no click from pointer events, so the click that a real
   // tap would produce is dispatched by hand after the pointer sequence.
   it("a press that starts on the ✕ never starts a drag, and its click still closes once", async () => {

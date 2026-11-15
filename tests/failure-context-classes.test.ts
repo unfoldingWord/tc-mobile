@@ -328,6 +328,7 @@ const CLASSES: Readonly<Record<string, Class>> = {
   "stale-chunk": "lights",
   "stale-chunk-reload": "logged only",
   "storage-pressure-bump": "lights",
+  "system-bars-style": "logged only",
   "template-create": "lights",
   "template-load": "lights",
   "transcode-compressor": "lights",

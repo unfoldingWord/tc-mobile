@@ -92,6 +92,12 @@ export interface BookCard {
    * already has (`setBookLanguageOnce`).
    */
   readonly languageCode?: string | null;
+  /**
+   * True when the book was made from a template (`Book.provenance.kind`), so
+   * its chapter order is the template's and a chapter has no Move (#1985).
+   * Optional so a test fixture can omit it; a card without it is hand-made.
+   */
+  readonly fromTemplate?: boolean;
 }
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────
@@ -105,6 +111,11 @@ export interface SegmentRow {
    * through `strings.segmentHeading`, or `null` ⇒ the ordinal alone.
    */
   readonly label: string | null;
+  /**
+   * = `Segment.templateKey != null` (#1979): a template made this segment, as
+   * opposed to the user adding it; absent reads as false. Only this row's Delete is withheld.
+   */
+  readonly fromTemplate?: boolean;
   /**
    * Playable audio is present — derived from
    * `resolveSegmentAudio(...).kind === "resolved"`, NOT from

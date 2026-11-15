@@ -21,7 +21,7 @@
  */
 
 /** Exact silence for this long, on a moving clock, means capture stopped. */
-export const CAPTURE_SILENCE_MS = 5000;
+export const CAPTURE_SILENCE_MS = 30_000;
 
 /**
  * True when every sample of a non-empty frame is exactly zero. `NaN` is not

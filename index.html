@@ -312,8 +312,10 @@
       post-Chrome-85 built-ins and fails when one is used that is not listed.
       A built-in the bundle uses that iOS 15.4 lacks is not listed here.
       `crypto.randomUUID` exists only in a secure context, so it is required
-      only where the page is one (a plain-http LAN page is not a WebView
-      problem).
+      only where the page is one. On an insecure origin (a plain-http LAN
+      page) it is absent, the check passes, and the page still throws on its
+      own: no supported origin is insecure (the web origins are https and the
+      Capacitor shells serve a secure context), so no screen is shown there.
 
       The sentence is English only. This runs before any app code, so it
       cannot read `lib/strings.ts` or the locale tables, and no translation

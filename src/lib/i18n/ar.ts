@@ -240,6 +240,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "لم يُسجَّل أي صوت. حاول مرة أخرى.",
   captureUndecodable: "تعذّرت قراءة التسجيل على هذا الجهاز.",
   captureUnfinished: "تعذّر إنهاء هذا التسجيل.",
+  captureStoppedSilent:
+    "توقّف التسجيل لأن الميكروفون لم يلتقط سوى الصمت. ما سجّلته محفوظ.",
   blockedByTake: "اختر «إغلاق القائمة»، ثم «إغلاق المسجّل»، لحفظ التسجيل.",
   micStarting: "الميكروفون ما زال قيد التشغيل.",
   nothingRecorded: "لم يُسجَّل شيء بعد.",

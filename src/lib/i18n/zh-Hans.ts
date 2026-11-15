@@ -213,6 +213,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "没有录到声音。请重试。",
   captureUndecodable: "这台设备无法读取这段录音。",
   captureUnfinished: "未能完成这段录音。",
+  captureStoppedSilent:
+    "录音已停止，因为麦克风只听到了静音。已录下的内容已保存。",
   blockedByTake: "要保存录音，请先点“关闭菜单”，再点“关闭录音机”。",
   micStarting: "麦克风还在启动。",
   nothingRecorded: "还没有录音。",

@@ -11,6 +11,107 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-13 (Mac device session) — the Android device run on 1.2.2 for #974 and #1486; the schema-9 upgrade row not reached
+
+One Mac session driving a phone over adb with the DRI beside it, from the coordinator session's runbook. This entry records the device run only. The coordinator session posted the results and filed the follow-ups; its own entry is the record of that work.
+
+**Phone and build:** Samsung SM-A176B (Galaxy A17), Android 16 (SDK 36), WebView 157.0.8103.38, 3.5 GB RAM, not a low-end or Go phone. `tester-build-v1.2.2`, footer stamp `v1.2.2 · 24b144d`, already installed. Nothing was installed, uninstalled, cleared or downgraded. Role: the DRI (developer). Every recording, edit, delete, reorder and share ran in books made for the run.
+
+### What was run
+
+- **#974, Android rows:** the O4 look and the device-only checks, plus the two rows the runbook added (#1969, #1960). Results: https://github.com/unfoldingWord/tc-mobile/issues/974#issuecomment-6861576987 and the comments above it.
+- **#1486, F1 to F4:** https://github.com/unfoldingWord/tc-mobile/issues/1486#issuecomment-6861316370
+- **#1464, the 1.0.1 (schema 9) → 1.2.2 row:** `couldn't reach`. The phone was already on 1.2.2 and the runbook forbids uninstalling. https://github.com/unfoldingWord/tc-mobile/issues/1464#issuecomment-6861316962
+
+### Results on #974
+
+- **Passed:** O1 to O4, O7 (partly checked), O9 to O12, R1, R3, R5, R6, R8, R10 to R12, S1 (phone side), S4, P1. L1: Share Chapter on a 5-minute chapter took 21.7 s from tap to share sheet.
+- **Failed:** O8, the phone's status-bar icons and navigation buttons are nearly invisible in the light theme. R9, a tap on a control right after dragging a menu closed is lost for about half a second: 8 of 8 with adb touches, and the DRI needed a second tap every time by hand.
+- **Found:** two takes recorded in a quiet room sealed themselves at 00:08. The app's failure log has two `recorder-capture-stalled` rows, "The level tap read exact silence for 5000 ms … the take was sealed and saved (#1294)". Takes with speech, up to 5 minutes, did not seal.
+- **Not as written:** R2. A banner alarm did not interrupt capture on this phone, so neither the row's pass nor its fail occurred.
+- **Observed for #1969:** a segment in a book made from the Open Bible Stories template shows Move up, Move down and Delete, all enabled.
+- **Couldn't reach:** N, O5, R4, R7 (not a Moto G), R13, S5, S6, L2 to L5, P2 as written (a running Phone check cannot be left), S3 (cannot-tell), and the receiving side of the shares.
+- **TalkBack (O6's spoken half and #1960): not run.** TalkBack was switched on, Samsung's first-run screens came up, and the DRI called it off: "ok we are not shipping this feature soon, please skip these tests". What stands is the accessibility-tree reading only: Move up and Move down are exposed; the recorder's and the segment menu's Done tile has no node.
+
+### Results on #1486 (one mid-range Android phone)
+
+| Phone            | OS         | Script                                                                                                                                               | Result                                                          |
+| ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Samsung SM-A176B | Android 16 | Latin with accents, Arabic, Devanagari, Han (Simplified), Cyrillic, Ethiopic, Bengali, Myanmar, Lao, Thai; Latin, Arabic-Indic and Devanagari digits | rendered, in the app's Script samples and on the fixture page   |
+| Samsung SM-A176B | Android 16 | Vietnamese                                                                                                                                           | rendered on the fixture page; not a line in the app's samples   |
+| Samsung SM-A176B | Android 16 | Urdu (Arabic script)                                                                                                                                 | partial: joined and right-to-left, drawn in Naskh, not Nastaliq |
+
+- App UI text, with the app's language set over adb (the per-app language): es, fr, hi, id, pt, ru, sw and zh-Hans switched and drew. **Arabic stayed in English.** `vi` is not in 1.2.2.
+- `navigator.languages` with a per-app language: the per-app tag comes first without its script subtag (`zh`, then `en-US`; `ar`, then `en-US`).
+- **Unverified:** iPhone, any low-end or Go Android phone, `vi` in the app UI, and the phone-language route (the sheet's F2 through the phone's own language list was not run).
+
+### Follow-ups, as read from GitHub at the end of the session
+
+- Issues filed from this run: #1972 (the quiet-room seal), #1973 (light-theme system bars), #1974 (the lost tap), #1975 (smaller observations), #1979 (Delete on template segments).
+- PRs: #1970 (hide segment Move in template books), #1976 (seal on 30 s of exact silence, not 5 s) and #1977 (system bars follow the theme) are merged to develop. #1978 (keep the tap after a sheet is flicked closed) is open. None of these four has been run on a phone by this session.
+
+### Still open on a device
+
+- **#1464's schema-9 start:** needs a phone with no tC Mobile, or one on 1.0.x with throwaway data.
+- Every iPhone row on #974, #1464 and #1486, and the web two-copy row.
+- On Android: TalkBack for #1960, a low-end phone for #1486 and the timing rows, and the rows listed above as couldn't reach.
+
+---
+
+## 2026-11-12 — Sprint 6 day 11: status of the 1.2 device checks, one wave of five lanes, 4 PRs merged, the v15 schema step held for the cut
+
+One orchestrator session: start of day, the Items Needing Attention, one wave of five lanes, and two scouts.
+
+### Decisions (DRI)
+
+- **Merging (11-12):** "approved to merge on clean green".
+- **Sprint 7 work before the v1.3.0 cut:** "Build now, hold S7 merges (Recommended)". Sprint 7 lanes are built and reviewed now, and merge from 11-16, after the cut.
+
+### Status of the 1.2 device checks
+
+The project manager asked about the three checks the 11-15 promotion depends on. Read from the issues today:
+
+- **#974:** not run. The Android run sheet has been ready since 11-02.
+- **#1464:** Android passed on 11-03. The iPhone and web two-copy rows are open.
+- **#1486:** not run.
+
+The DRI replied directly.
+
+### Merged to develop (4)
+
+- #1961: `vitest` pinned exactly to 5.1.0, to match `@vitest/coverage-v8` (#1954).
+- #1962: the test-hygiene Lows from #1946, #1948, #1949 and #1950 (#1954).
+- #1963: the old-WebView check is pinned to the iOS 15.4 floor without a build. A `toSorted` row added as a mutation made the new test fail. `targetChrome()` now reads `build.target`, and the insecure-origin limit is written in the comment (#1954 items 1–4). On item 5, the four calls before the `#root` throw write nothing to IndexedDB. The rest of the import graph was not read.
+- #1964: `tl.ts` provenance docblock (closes #1923).
+
+Each merged at a head where Frank and George were both clean in round 1 and CI was green, with a triage comment posted. Develop CI passed on all four merge commits. Every reviewer Low is recorded on #1954.
+
+### Held
+
+- **#1965, #1925's v15 card-store schema step** (DB_VERSION 14 → 15: a `location` on clip metadata, a `cardReleases` store, a release record on every delete path). Frank and George were both clean in round 1 and CI is green. Its body opens with a HOLD line: it merges after the v1.3.0 develop → staging cut. George's two follow-ups are on #1925: a card-located transcode test, and one predicate at the release write. Both must land before any real card location is written. The v14 → v15 upgrade has not been opened on a real engine; it needs a row on the v1.4.0 device sheet.
+
+### Filed and closed
+
+- Filed #1960: the Android accessibility tree, as read by uiautomator, was missing the recorder's Done tile and the chapter menu's Move up and Move down (a side finding from the #1464 run). A lane checked desktop Chromium's tree and found every tile exposed as a named button. Done's accessible name is "Mark segment N done", so a search of the dump for "Done" would miss it (inference). That does not explain Move up and Move down. TalkBack on a phone is still owed.
+- Closed #1957: George's round-1 rows on #1550 now have dispositions on that PR (4 fixed, 6 refuted, none open). Three of the citations were checked against develop.
+- Closed #1923 (by #1964).
+
+### Open, and where each stands
+
+- **Nothing else is buildable before Sprint 7.** Two scouts went through Sprint 6, Sprint 7 and the Backlog. #1455 and #1452 have no code left to write. #1233's 10-19 plan has been carried out. The one marginal item is #1233 item 35: the failure-log cap may push out the first playback rows. That is an inference, and the fix needs a design pick, so it waits on the DRI.
+- **Owed before the 11-15 promotion and cut, all on a device:**
+  - #974, #1464 (iPhone row) and #1486;
+  - Capacitor 8.6.0 on both phones (#1951);
+  - the WebView 91 emulator run (#1944);
+  - #1945, #1940, #1936 and #1941;
+  - TalkBack for #1960.
+- **After the cut:** merge #1965, if its head has not moved.
+- **Process notes:**
+  - The pipeline playbook's PR template failed `check:pr-body`. Lanes now use the repo's `.github/pull_request_template.md`.
+  - One lane again kept waking on leftover background work after its PR merged, and was stopped.
+
+---
+
 ## 2026-11-06 to 2026-11-11 — Sprint 6 days 5–10: #1921 results checked, two waves of seven lanes merged, Capacitor 8.6.0, an update screen for old WebViews, #1935 confirmed on a real burst, 8 PRs merged
 
 One orchestrator session: start of day on 11-06, the #1921 check and a sprint read, the wave plan on 11-09, and both waves built, reviewed and merged on 11-10.

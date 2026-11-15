@@ -4,7 +4,7 @@ import path from "node:path";
 import { Linter } from "eslint";
 import { describe, expect, it } from "vitest";
 
-import { stripHtmlComments } from "./support";
+import { stripComments, stripHtmlComments } from "./support";
 
 /**
  * The old-engine check in `index.html` (#1944) stays tied to the build target.
@@ -18,7 +18,7 @@ import { stripHtmlComments } from "./support";
  * `build.target`, so whoever raises the target is brought here to review the
  * list.
  *
- * Not covered: that every built-in the bundle needs is listed. Only the two
+ * Not covered: that every built-in the bundle needs is listed. Only the ones
  * known to be used are, and `e2e/old-webview-screen.spec.ts` drives the
  * behaviour.
  */
@@ -35,7 +35,13 @@ function checkSource(): string {
 }
 
 function targetChrome(): number {
-  const m = /^\s*target:\s*\[([^\]]*)\]/m.exec(CONFIG);
+  // Anchored on the `build:` block, so a `target: [` elsewhere in the file
+  // cannot be read in its place. Comments are stripped first: the prose
+  // around the setting names `build.target` too.
+  const code = stripComments(CONFIG);
+  const build = /\bbuild:\s*\{/.exec(code);
+  if (!build) throw new Error("vite.config.ts has no build block");
+  const m = /^\s*target:\s*\[([^\]]*)\]/m.exec(code.slice(build.index));
   if (!m?.[1]) throw new Error("vite.config.ts has no build.target array");
   const chrome = /"chrome(\d+)"/.exec(m[1]);
   if (!chrome?.[1]) throw new Error("build.target has no chrome entry");
@@ -79,6 +85,22 @@ describe("the old-engine check (#1944)", () => {
     for (const f of list) {
       expect(f.since, f.name).toBeLessThanOrEqual(targetChrome());
     }
+  });
+
+  it("lists only built-ins Safari/iOS 15.4 also has", () => {
+    // The target's other floor is iOS 15.4 (`safari15.4`, `ios15.4`). The
+    // check shows "Update Android System WebView", so a row for a built-in
+    // Safari 15.4 lacks would put that screen on a supported iPhone. This
+    // runs without a build; `tests/dist-old-webview-features.test.ts` only
+    // asks "listed or exempt", which cannot catch it. Adding a name here is a
+    // claim that iOS 15.4 has it: check MDN or caniuse first.
+    const IN_SAFARI_15_4 = new Set([
+      "Object.hasOwn",
+      "crypto.randomUUID",
+      "String.prototype.replaceAll",
+    ]);
+    const names = features().map((f) => f.name);
+    expect(names.filter((n) => !IN_SAFARI_15_4.has(n))).toEqual([]);
   });
 
   it("runs before the module bundle, and the module tag is untouched", () => {

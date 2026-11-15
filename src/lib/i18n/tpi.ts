@@ -71,6 +71,9 @@ import { filenameSafe } from "@/lib/utils";
  *   (#1933), so it names "stat gen", the Reset word; a reader should confirm
  *   that does not contradict "i stap gut", and that "Sapos yu no inap opim
  *   yet" reads as "if it still won't open" rather than "before you open it".
+ * - `captureStoppedSilent` (#1986): "harim tasol nogat nois" (heard only no
+ *   sound) stands for "heard only silence", and "i stap gut" (as in
+ *   `loadFailedBody`) for "is saved"; a reader should confirm both.
  *
  * Entries that only arrange other entries (`trail`, `sentences`, the filename
  * builders) reuse the English logic through the merged table, so the licence
@@ -263,6 +266,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "I no gat nois i rekod. Traim gen.",
   captureUndecodable: "Dispela fon i no inap ritim rekod.",
   captureUnfinished: "I no inap pinisim dispela rekod.",
+  captureStoppedSilent:
+    "Rekod i stop, long wanem maikrofon i harim tasol nogat nois. Samting yu rekodim i stap gut.",
   blockedByTake:
     'Presim "Pasim menu", na "Pasim masin rekod", long sevim rekod.',
   micStarting: "Maikrofon i wok long kirap yet.",

@@ -669,6 +669,13 @@ export const stringsEn = {
   // sheet offers next after this code is `planClose`'s `stay`, which leaves the
   // recorder open with this Notice in place, not a named remedy.
   captureUnfinished: "Could not finish this recording.",
+  // Not a failure code: the take WAS saved. The level tap read exact silence
+  // on a running clock and sealed the take (#1294's R13, requirements owner:
+  // "A visible “recording stopped” state that saves what was captured"), so
+  // this says it stopped and that what was recorded is kept (#1986). It
+  // names no duration, so it cannot drift from `CAPTURE_SILENCE_MS`.
+  captureStoppedSilent:
+    "Recording stopped because the microphone heard only silence. What you recorded is saved.",
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ⋮-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by

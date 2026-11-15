@@ -74,6 +74,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     createdAt: book.createdAt,
     licence: book.licence,
     languageCode: book.languageCode,
+    fromTemplate: book.provenance.kind === "template",
   };
 }
 
@@ -651,6 +652,7 @@ export function useBooks() {
             createdAt: book.createdAt,
             licence: book.licence,
             languageCode: book.languageCode,
+            fromTemplate: book.provenance.kind === "template",
           },
           ...prev,
         ]);

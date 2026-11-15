@@ -222,6 +222,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "No se grabó ningún sonido. Intenta de nuevo.",
   captureUndecodable: "No se pudo leer la grabación en este dispositivo.",
   captureUnfinished: "No se pudo terminar esta grabación.",
+  captureStoppedSilent:
+    "La grabación se detuvo porque el micrófono solo captó silencio. Lo que grabaste está guardado.",
   blockedByTake:
     'Usa "Cerrar menú" y luego "Cerrar grabadora" para guardar la grabación.',
   micStarting: "El micrófono todavía se está iniciando.",
