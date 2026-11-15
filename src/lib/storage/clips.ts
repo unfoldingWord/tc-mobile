@@ -56,6 +56,9 @@ export function buildClipMeta(
     transcodeStallCount: 0,
     peaks: null,
     processing: null,
+    // Every clip written here is in IndexedDB (v15, #1925): a card location
+    // is set only by the commit-protocol child (ADR 0013 §2).
+    location: { kind: "idb" },
   };
 }
 
@@ -90,7 +93,7 @@ export async function getClip(id: ClipId): Promise<Clip | undefined> {
 /** The smallest transaction the clip-use check runs on. */
 function openClipUseTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
-    withClipBytes(["takes", "pendingTakes", "clipMeta"]),
+    withClipBytes(["takes", "pendingTakes", "clipMeta", "cardReleases"]),
     "readwrite",
     { durability: "strict" }
   );
@@ -98,7 +101,10 @@ function openClipUseTx(db: IDBPDatabase<TcMobileDb>) {
 
 /**
  * Any readwrite transaction whose scope includes `takes`, `pendingTakes`,
- * `clipMeta` and `clipData`: what the clip-use check reads and deletes. The
+ * `clipMeta`, `cardReleases` (v15, #1925) and `clipData`: what the clip-use
+ * check reads, deletes and records. The type does not hold the scope to that
+ * list (a missing store throws `NotFoundError` only at the first card-located
+ * delete), so `tests/card-release.test.ts` runs every path on a card row. The
  * mode is read off a real readwrite transaction, so it is the same type under
  * the DOM-free `typecheck:lib` as under the app's.
  */
@@ -145,6 +151,11 @@ async function clipInUse(
  * that releases many clips in one transaction and has deleted every take row
  * it is going to (the book delete): one read of `takes` instead of one per
  * clip. The pending-row count is still made per clip.
+ *
+ * A card-located row (v15, #1925) leaves a release record naming its volume
+ * and file, `put` on this same transaction before the row goes, so the record
+ * and the delete land together or not at all (ADR 0013 §2). Without it a kill
+ * between the row delete and the file delete would leave a file no row names.
  */
 export async function deleteClipIfUnreferenced(
   tx: ClipUseTx,
@@ -152,6 +163,17 @@ export async function deleteClipIfUnreferenced(
   takeClips?: ReadonlySet<ClipId>
 ): Promise<void> {
   if (await clipInUse(tx, clipId, takeClips)) return;
+  const meta = await tx.objectStore("clipMeta").get(clipId);
+  if (meta?.location.kind === "card") {
+    const { volumeId, fileName, crc32 } = meta.location;
+    await tx.objectStore("cardReleases").put({
+      volumeId,
+      fileName,
+      clipId,
+      byteLength: meta.byteLength,
+      crc32,
+    });
+  }
   await tx.objectStore("clipMeta").delete(clipId);
   await clipBytes.delete(tx, clipId);
 }

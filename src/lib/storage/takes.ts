@@ -69,6 +69,9 @@ function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
       "books",
       "pendingTakes",
       "takeDispositions",
+      // v15 (#1925): a replaced, erased or discarded card-located clip leaves
+      // its release record here.
+      "cardReleases",
     ]),
     "readwrite",
     // Strict durability: this transaction creates the ONLY copy of a recording,

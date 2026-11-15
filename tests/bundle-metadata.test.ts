@@ -75,6 +75,7 @@ function clip(
     transcodeStallCount: 0,
     peaks: null,
     processing: null,
+    location: { kind: "idb" },
   };
 }
 

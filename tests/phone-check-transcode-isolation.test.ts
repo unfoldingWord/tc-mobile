@@ -76,6 +76,7 @@ function resolvedPcm(segmentId: SegmentId, clipId: ClipId): SegmentAudio<Clip> {
         transcodeStallCount: 0,
         peaks: null,
         processing: null,
+        location: { kind: "idb" },
       },
       samples,
     },

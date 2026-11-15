@@ -66,6 +66,7 @@ function meta(processing: ClipProcessing | null): ClipMeta {
     transcodeStallCount: 0,
     peaks: null,
     processing,
+    location: { kind: "idb" },
   };
 }
 

@@ -797,10 +797,10 @@ describe("every interleaving of the pending-take writers keeps every take's last
   it("runs two connections to one database", async () => {
     const a = await copies.A.db.getDb();
     const b = await copies.B.db.getDb();
-    // Two module instances, so two connections, both on the v14 database.
+    // Two module instances, so two connections, both on the current database.
     expect(Object.is(copies.A.db, copies.B.db)).toBe(false);
     expect(Object.is(a, b)).toBe(false);
-    expect([a.version, b.version]).toEqual([14, 14]);
+    expect([a.version, b.version]).toEqual([15, 15]);
   });
 
   it.each(SCENARIOS)("$name", async (scenario) => {

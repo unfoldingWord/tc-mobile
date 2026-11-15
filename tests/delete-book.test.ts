@@ -76,6 +76,7 @@ const ALL_STORES = [
   "tombstones",
   "pendingTakes",
   "takeDispositions",
+  "cardReleases",
 ] as const;
 
 type StoreCounts = Record<(typeof ALL_STORES)[number], number>;
@@ -94,6 +95,7 @@ async function countAll(): Promise<StoreCounts> {
     tombstones,
     pendingTakes,
     takeDispositions,
+    cardReleases,
   ] = await Promise.all([
     tx.objectStore("books").count(),
     tx.objectStore("chapters").count(),
@@ -105,6 +107,7 @@ async function countAll(): Promise<StoreCounts> {
     tx.objectStore("tombstones").count(),
     tx.objectStore("pendingTakes").count(),
     tx.objectStore("takeDispositions").count(),
+    tx.objectStore("cardReleases").count(),
   ]);
   await tx.done;
   // Every store the schema declares is covered: a delete that leaked into one
@@ -123,6 +126,7 @@ async function countAll(): Promise<StoreCounts> {
     tombstones,
     pendingTakes,
     takeDispositions,
+    cardReleases,
   };
 }
 
@@ -203,6 +207,7 @@ describe("deleteBook", () => {
       pendingTakes: 0,
       // The records of the deleted takes go with their segments (v13, #38).
       takeDispositions: 0,
+      cardReleases: 0,
     });
   });
 
@@ -240,6 +245,8 @@ describe("deleteBook", () => {
       tombstones: before.tombstones + 1,
       pendingTakes: before.pendingTakes,
       takeDispositions: before.takeDispositions - 3,
+      // Every clip here is in IndexedDB, so no release record.
+      cardReleases: before.cardReleases,
     });
   });
 
@@ -375,6 +382,7 @@ describe("deleteBook", () => {
       tombstones: 1,
       pendingTakes: 0,
       takeDispositions: 0,
+      cardReleases: 0,
     });
   });
 
@@ -459,6 +467,7 @@ describe("deleteBook", () => {
       tombstones: 1,
       pendingTakes: 0,
       takeDispositions: 0,
+      cardReleases: 0,
     });
   });
 
@@ -537,6 +546,7 @@ describe("deleteBook", () => {
       tombstones: 0,
       pendingTakes: 0,
       takeDispositions: 0,
+      cardReleases: 0,
     });
   });
 });

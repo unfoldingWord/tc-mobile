@@ -35,6 +35,43 @@ import type { ClipId } from "./domain";
  */
 type ClipEncoding = "pcm" | "mp3";
 
+/**
+ * Where a clip's bytes live (v15, #1925, ADR 0013 §2): the `clipData` store,
+ * or one file on a removable card. Every row from before v15 reads as
+ * IndexedDB, and nothing in this slice writes a card location: that writer is
+ * the commit-protocol child of #1456, which changes a row's location only in
+ * the transaction that makes its take current.
+ */
+type ClipLocation =
+  | { readonly kind: "idb" }
+  | {
+      readonly kind: "card";
+      /** The card's volume id as the plugin reports it. Opaque to `lib/`. */
+      readonly volumeId: string;
+      /** Exactly `<clipId>.<n>.<pcm|mp3>` (ADR 0013 §3): the whole name, not `<n>`. */
+      readonly fileName: string;
+      /**
+       * CRC-32/ISO-HDLC of the file's bytes, unsigned: an integer from 0 to
+       * 0xFFFFFFFF. Never `| 0`, which would store the upper half negative.
+       */
+      readonly crc32: number;
+    };
+
+/**
+ * A card file the app has let go of (v15, #1925; ADR 0013 §3, case (d)),
+ * written in the transaction that deletes its card-located `clipMeta` row.
+ * Keyed by `[volumeId, fileName]`: a file name is never reused, so a pair is
+ * released once and a re-run `put` writes the same row.
+ */
+export interface CardRelease {
+  readonly volumeId: string;
+  readonly fileName: string;
+  readonly clipId: ClipId;
+  /** The released row's `byteLength` and `crc32`: what the file was expected to hold. */
+  readonly byteLength: number;
+  readonly crc32: number;
+}
+
 /** Stored audio, addressed by `ClipId`. Samples live separately from metadata. */
 export interface ClipMeta {
   readonly id: ClipId;
@@ -52,8 +89,13 @@ export interface ClipMeta {
    * clip's count (an edit starts from decoded audio); an erase resets it.
    */
   readonly generation: number;
-  /** Bytes held in `clipData` — PCM frames × 2, or the MP3's length. */
+  /**
+   * Bytes of the stored form, wherever {@link ClipMeta.location} says it is:
+   * PCM frames × 2, or the MP3's length.
+   */
   readonly byteLength: number;
+  /** Where the bytes are (v15, #1925). */
+  readonly location: ClipLocation;
   /**
    * How many times a transcode of this clip ended in an encoder stall.
    *

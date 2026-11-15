@@ -150,6 +150,20 @@
  * segment's active clip that is still PCM (its transcode was owed at the
  * upgrade) gets `stages: []`, so it is encoded as it was; every other clip
  * gets `null`. A clip finished before v14 is never normalized (U6c).
+ *
+ * ── v15 (#1925): where a clip's audio lives — append-only ──
+ *
+ * ADR 0013 §2. `ClipMeta` gained `location`: IndexedDB, or a card file named
+ * by volume and file name with the file's unsigned CRC32. One new store,
+ * `cardReleases` (keyPath `[volumeId, fileName]`, no index), created beside
+ * v13's before any await: the record a card-located row leaves when it is
+ * deleted, written in that delete's transaction. The step gives every clip
+ * row without a `location` `{ kind: "idb" }`, keyed on absence, so a row that
+ * has one is kept and a re-run writes nothing. It reads no clock and no
+ * `clipData`, moves no bytes, and awaits IndexedDB requests only.
+ *
+ * Roll forward only: a phone that has opened v15 cannot be opened by a build
+ * at 14 or lower (`DatabaseDowngradeError`).
  */
 
 import {
@@ -173,11 +187,11 @@ import type {
   TakeDisposition,
   Tombstone,
 } from "@/types/domain";
-import type { ClipMeta } from "@/types/audio";
+import type { CardRelease, ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 
 /**
  * What the v12 step adds to a row that lacks it, per store. Plain data and no
@@ -296,6 +310,8 @@ export interface TcMobileDb extends DBSchema {
     value: TakeDisposition;
     indexes: { bySegment: SegmentId };
   };
+  /** v15: the card files the app let go of, keyPath `[volumeId, fileName]`. */
+  cardReleases: { key: [string, string]; value: CardRelease };
 }
 
 /**
@@ -676,6 +692,14 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           );
         }
 
+        // v15 (#1925): the release-record store, before any await like the
+        // creates above.
+        if (oldVersion < 15) {
+          db.createObjectStore("cardReleases", {
+            keyPath: ["volumeId", "fileName"],
+          });
+        }
+
         // v4 (B8): stamp every pre-existing clip as the PCM it is. Additive — the
         // rows and the audio behind them are kept. On a fresh install, or straight
         // after the v3 recreate above, the store is empty and this loops zero
@@ -687,7 +711,9 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           while (cursor) {
             const legacy = cursor.value as ClipMetaV3;
             if (legacy.encoding === undefined) {
-              const stamped: ClipMeta = {
+              // Frozen at its own shape: v15 classifies the location below,
+              // so the typed store's v15 row is cast away here, as v12's is.
+              const stamped: Omit<ClipMeta, "location"> = {
                 id: legacy.id,
                 sampleRate: legacy.sampleRate,
                 frameCount: legacy.frameCount,
@@ -700,7 +726,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                 peaks: null,
                 processing: null,
               };
-              await cursor.update(stamped);
+              await cursor.update(stamped as never);
             }
             cursor = await cursor.continue();
           }
@@ -924,6 +950,21 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
                     }
                   : null,
               });
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v15 (#1925): every clip row from before v15 is in IndexedDB (ADR
+        // 0013 §2: "every existing row reads as IndexedDB, and no bytes move").
+        // Keyed on absence, so a location a newer build wrote is kept and a
+        // re-run writes nothing. `clipData` is not read.
+        if (oldVersion < 15) {
+          let cursor = await tx.objectStore("clipMeta").openCursor();
+          while (cursor) {
+            const row: Omit<ClipMeta, "location"> = cursor.value;
+            if (!("location" in row)) {
+              await cursor.update({ ...row, location: { kind: "idb" } });
             }
             cursor = await cursor.continue();
           }
