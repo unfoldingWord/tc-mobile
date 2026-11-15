@@ -33,9 +33,10 @@ import {
  * earlier draft of this header said it was covered "nowhere", which was wrong
  * in the same PR that added that spec (QA review, #457).
  *
- * What genuinely remains uncovered is narrower: `readTheme`'s throw-on-READ
- * catch, `applyTheme`'s empty-token early return, and everything about a real
- * phone (#245). See that hook's own docblock, which splits the three.
+ * The hook's behaviour (apply-before-notify, the failed-write survival, the
+ * throw-on-READ catch, the `theme-color` repaint) is driven in jsdom by
+ * `tests/use-theme.test.ts` (#1837). What remains uncovered is the real
+ * cascade and a real phone (#245); see the hook's own docblock.
  */
 describe("readStoredTheme (#171)", () => {
   it("returns the stored theme when it is one this app has", () => {
@@ -354,15 +355,16 @@ describe("the light theme is reachable (#171)", () => {
     expect(render).toBeGreaterThan(install);
   });
 
-  it("the theme-color meta is repainted from the token, not a second hex", () => {
+  it("use-theme.ts holds no second copy of the floor hex", () => {
     // `index.html` hard-coded `#0b0f14` — which had ALREADY drifted from
     // `--s-floor` (#0b1016) — so a light-theme user kept a dark status bar over
     // a white screen. Reading the computed token is what keeps the OS chrome
     // and the body the same colour by construction.
+    // That the meta FOLLOWS the computed `--s-floor` is observed through the
+    // hook in `tests/use-theme.test.ts` (#1837); what a runtime read cannot
+    // see is a hex literal sitting in the code, so that stays a source pin.
     const hook = code("src/hooks/use-theme.ts");
-    expect(hook).toMatch(/getPropertyValue\(["']--s-floor["']\)/);
-    expect(hook).toMatch(/meta\[name="theme-color"\]/);
-    // And no second copy of a floor hex in the CODE to drift out of step. The
+    // No second copy of a floor hex in the CODE to drift out of step. The
     // comments name the old drifted pair on purpose, as the record of why this
     // reads a token — so they are stripped rather than matched.
     expect(hook).not.toMatch(/#[0-9a-f]{6}/i);
@@ -407,51 +409,6 @@ describe("the light theme is reachable (#171)", () => {
     expect((meta?.[1] ?? "").toLowerCase()).toBe(
       (floor?.[1] ?? "").toLowerCase()
     );
-  });
-
-  it("the toggle applies the theme IN the gesture, before any subscriber renders", () => {
-    // `toggle` moves the live store first and React re-renders in the click:
-    // the control already shows the moon and the "dark screen" label. If
-    // `applyTheme` ran only in `useEffect`, the browser could paint one frame
-    // of the new chrome on the still-dark `data-theme` — the same flash class
-    // `installStoredTheme` refuses on launch, now on the gesture the light
-    // theme exists for (George R2 P2 on #457). So the attribute and the store
-    // must move together: `setLiveTheme` applies BEFORE it notifies, and the
-    // effect is left as a mount-time reconcile only.
-    //
-    // Source-shape, not behaviour: the render harness (#197) renders once,
-    // after `setLiveTheme` returns, so it has no way to observe the attribute
-    // between the store write and the subscriber's render mid-call.
-    // `e2e/theme-toggle.spec.ts` waits on the attribute, so it cannot see an
-    // intermediate frame either.
-    const hook = code("src/hooks/use-theme.ts");
-    const setter = /function setLiveTheme\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(
-      hook
-    );
-    expect(setter?.[1], "no setLiveTheme in use-theme.ts").toBeTruthy();
-    const body = setter?.[1] ?? "";
-    const apply = body.indexOf("applyTheme(");
-    const notify = body.indexOf("listener()");
-    expect(apply, "setLiveTheme does not call applyTheme").toBeGreaterThan(-1);
-    expect(notify, "setLiveTheme does not notify listeners").toBeGreaterThan(
-      -1
-    );
-    expect(
-      apply,
-      "applyTheme runs after the listeners are notified"
-    ).toBeLessThan(notify);
-    // Ordering alone is not enough: an `applyTheme(next)` that appears before
-    // the loop but is DEFERRED — wrapped in `queueMicrotask`, `setTimeout`,
-    // `requestAnimationFrame` or a `.then` — passes the index check above and
-    // still lets the subscriber render on the old attribute. So the call must
-    // be a bare, synchronous statement of the setter's body: the line is
-    // nothing but `applyTheme(next);` (panel P3 on #457).
-    expect(
-      body,
-      "applyTheme(next) is not a bare synchronous statement in setLiveTheme"
-    ).toMatch(/^\s*applyTheme\(next\);\s*$/m);
-    // And the toggle still goes through that setter, not around it.
-    expect(hook).toMatch(/setLiveTheme\(next\)/);
   });
 
   it("both canvases re-draw on a theme change, not only on their own props", () => {

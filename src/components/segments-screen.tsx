@@ -15,8 +15,8 @@ import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { LicenceAsk } from "./licence-ask";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
-import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
-import { Tile } from "./o4-tile-menu";
+import { Crumbs, SheetHead } from "./crumbs";
+import { Tile } from "./tile-menu";
 import { Notice } from "./notice";
 import { NOTHING_FAILED_TONE } from "./notice-tone";
 import { SegmentRow } from "./segment-row";
@@ -24,7 +24,7 @@ import { SegmentsHead } from "./segments-head";
 import { segmentsListInert } from "./segments-inert";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
-import { chapterShareItems } from "./share-o4-view";
+import { chapterShareItems } from "./share-view";
 import { ShareProgress } from "./share-progress";
 import { strings } from "@/lib/strings";
 import { useChapterHeading } from "@/hooks/use-settings";
@@ -163,6 +163,7 @@ export const SegmentsScreen = forwardRef<
     bookName,
     bookCoverHex,
     bookLicence,
+    bookFromTemplate,
     chapterNumber,
     chapterTemplateNumber,
     chapterName,
@@ -1257,7 +1258,12 @@ export const SegmentsScreen = forwardRef<
     commitSegmentMove(row, toIndex);
   };
   const reorder = useReorderGesture<SegmentId>({
-    enabled: !listInert && !refreshing && !loading && !staleTarget,
+    enabled:
+      !bookFromTemplate &&
+      !listInert &&
+      !refreshing &&
+      !loading &&
+      !staleTarget,
     ids: rows.map((row) => row.segmentId),
     nodeFor: rowReveal.nodeFor,
     scrollRef,
@@ -1341,7 +1347,7 @@ export const SegmentsScreen = forwardRef<
   return (
     <div className="flex h-full flex-col gap-[var(--c-gap-items)]">
       <header
-        className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[2px]"
+        className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[var(--c-header-pad-y)]"
         inert={listInert || undefined}
       >
         <Control
@@ -1363,8 +1369,8 @@ export const SegmentsScreen = forwardRef<
              exposed, which is what names the chapter to assistive tech.
              The chapter menu's and each row menu's sheet heads keep the
              same chip text (#1230) and stay decoration. */}
-        <div className="o4-crumbs-bar">
-          <O4Crumbs
+        <div className="crumbs-bar">
+          <Crumbs
             className="min-w-0"
             book={bookName}
             chapter={chapterHeading}
@@ -1483,15 +1489,25 @@ export const SegmentsScreen = forwardRef<
                     guide.segmentId === row.segmentId
                   }
                   onErase={() => armErase(row.segmentId)}
-                  onDeleteSegment={() => armDelete(row.segmentId, row.ordinal)}
+                  onDeleteSegment={
+                    row.fromTemplate
+                      ? undefined
+                      : () => armDelete(row.segmentId, row.ordinal)
+                  }
                   onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
                   bookName={bookName}
                   bookCoverHex={bookCoverHex ?? undefined}
                   chapterHeading={chapterHeading}
-                  onHoldStart={reorder.holdStart(index)}
-                  onMove={(step) => moveFromMenu(index, step)}
+                  onHoldStart={
+                    bookFromTemplate ? undefined : reorder.holdStart(index)
+                  }
+                  onMove={
+                    bookFromTemplate
+                      ? undefined
+                      : (step) => moveFromMenu(index, step)
+                  }
                   isFirst={index === 0}
                   isLast={index === rows.length - 1}
                 />
@@ -1645,7 +1661,7 @@ export const SegmentsScreen = forwardRef<
           // workbench's header pencil because a header control ahead of the
           // grid would be a second first-focus candidate.
           <>
-            <O4SheetHead
+            <SheetHead
               book={bookName}
               bookCoverHex={bookCoverHex ?? undefined}
               chapter={chapterHeading}

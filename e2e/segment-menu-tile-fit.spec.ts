@@ -3,13 +3,13 @@ import { existsSync } from "node:fs";
 import { expect, test, type Page } from "./support/test";
 
 /**
- * The segment ≡ menu's O4 tile grid, at phone width, when it holds FOUR real
+ * The segment ≡ menu's tile grid, at phone width, when it holds FOUR real
  * tiles (Done, Edit, Clear, Delete) — the row's `hasClip` state, against the
  * shipped `dist/` build.
  *
  * #1119 round 5 (George Medium 1): the row's last tile was clipped past the
  * panel edge at 320px. This spec asserts that every tile's centre lands
- * inside the viewport. `o4-tiles--compact` (`src/app/styles/o4/menus.css`)
+ * inside the viewport. `tiles--compact` (`src/app/styles/3-components/menus.css`)
  * is the fix: it applies only to this four-tile row (`segment-row.tsx`'s
  * `hasClip` branch), not to every `TileGrid` — the three-tile row (no stored
  * clip, Clear absent) keeps the pinned size.
@@ -70,7 +70,7 @@ const WIDTHS = [320, 360];
 // The four tiles this row draws once it has a clip, left to right, in the
 // DRI's 2026-09-28 order (Done, Edit, Clear, Delete) — this spec does not
 // re-check the order (the render tests in
-// `tests/o4-menus-chapter-segment.test.ts` pin it), only that each one's
+// `tests/menus-chapter-segment.test.ts` pin it), only that each one's
 // centre lands inside the viewport it was rendered at.
 const TILE_LABELS = [
   "Mark segment 1 done",

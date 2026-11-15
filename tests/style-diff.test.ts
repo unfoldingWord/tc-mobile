@@ -1,4 +1,11 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,7 +20,9 @@ import {
   SETTLE_QUIET_MS,
   settleVerdict,
   SKIP,
+  trackNesting,
   unsettledReasons,
+  writeCaptureTest,
 } from "../e2e/style-diff/capture";
 import {
   ABSENT,
@@ -228,7 +237,7 @@ describe("diffRuns", () => {
   });
 
   it("maps a renamed custom property to no difference with --rename-prop, and reports it without", () => {
-    const a = run({ h1: { color: "red", "--o4-scope": "1" } }, [
+    const a = run({ h1: { color: "red", "--old-scope": "1" } }, [
       test([state("001 p0 end", { html: "h1" })]),
     ]);
     const b = run({ h2: { color: "red", "--c-components-last": "1" } }, [
@@ -239,17 +248,17 @@ describe("diffRuns", () => {
       without.differences.map((d) => [d.property, d.before, d.after])
     ).toEqual([
       ["--c-components-last", ABSENT, "1"],
-      ["--o4-scope", "1", ABSENT],
+      ["--old-scope", "1", ABSENT],
     ]);
     const { options } = parseArgs([
       "A",
       "B",
       "--rename-prop",
-      "--o4-scope=--c-components-last",
+      "--old-scope=--c-components-last",
     ]);
     const mapped = diffRuns(a, b, options);
     expect(mapped.differences).toEqual([]);
-    expect(mapped.renamed).toEqual({ "--o4-scope": "--c-components-last" });
+    expect(mapped.renamed).toEqual({ "--old-scope": "--c-components-last" });
   });
 
   it("groups one change across states and elements into one entry with a count", () => {
@@ -443,7 +452,7 @@ describe("roundValue", () => {
 
 describe("diffRuns and rounding", () => {
   const cut = (left: string) =>
-    run({ h: { ...card, "--o4-cut-left": left } }, [
+    run({ h: { ...card, "--c-cut-left": left } }, [
       test([state("001 p0 end", { [BOOKS_CARD]: "h" })]),
     ]);
 
@@ -475,7 +484,7 @@ describe("diffRuns and rounding", () => {
     const report = diffRuns(cut("37.375%"), cut("37.376%"));
     expect(
       report.differences.map((d) => [d.property, d.before, d.after])
-    ).toEqual([["--o4-cut-left", "37.375%", "37.376%"]]);
+    ).toEqual([["--c-cut-left", "37.375%", "37.376%"]]);
   });
 });
 
@@ -864,7 +873,7 @@ describe("formatReport", () => {
 
 describe("parseArgs", () => {
   it("refuses a malformed --rename-prop, an unknown option and a missing directory", () => {
-    expect(() => parseArgs(["A", "B", "--rename-prop", "--o4-scope"])).toThrow(
+    expect(() => parseArgs(["A", "B", "--rename-prop", "--old-scope"])).toThrow(
       /old=new/
     );
     expect(() => parseArgs(["A", "B", "--bogus"])).toThrow(/unknown option/);
@@ -950,7 +959,136 @@ describe("the capture config's projects", () => {
       captureProjects([
         at("chromium-template-packages", 4302),
         at("chromium-shipped-build", 4301),
-      ])
-    ).toEqual([at("chromium-shipped-build", 4341)]);
+      ]).map((p) => [p.name, p.use.baseURL])
+    ).toEqual([["chromium-shipped-build", "http://127.0.0.1:4341"]]);
+  });
+
+  /**
+   * A spec that navigates the page on purpose in the middle of an action
+   * destroys the capture's read of that state, which counts as a capture
+   * error and fails every verdict. Such a spec is left out by file name, so
+   * the verdict's own rule (any capture error fails) stays as it is.
+   */
+  const ignores = (project: { testIgnore?: unknown }, file: string): boolean =>
+    [project.testIgnore]
+      .flat()
+      .some((p) => p instanceof RegExp && p.test(file));
+
+  it("leaves the stale-chunk reload spec out of every captured project by file name, and no other spec", async () => {
+    const config = await captureConfig();
+    const e2e = join(process.cwd(), "e2e");
+    const projects = config.projects ?? [];
+    expect(projects.length).toBeGreaterThan(0);
+    for (const project of projects) {
+      expect(ignores(project, join(e2e, "stale-chunk-reload.spec.ts"))).toBe(
+        true
+      );
+      expect(ignores(project, join(e2e, "books-chapter-play.spec.ts"))).toBe(
+        false
+      );
+      expect(ignores(project, join(e2e, "x-stale-chunk-reload.spec.ts"))).toBe(
+        false
+      );
+    }
+  });
+
+  it("names only spec files that exist, each with a reason", async () => {
+    const { NOT_CAPTURED_SPECS } =
+      await import("../playwright.style-diff.config");
+    expect(NOT_CAPTURED_SPECS.map((s) => s.spec)).toEqual([
+      "stale-chunk-reload.spec.ts",
+    ]);
+    for (const { spec, reason } of NOT_CAPTURED_SPECS) {
+      expect(existsSync(join(process.cwd(), "e2e", spec))).toBe(true);
+      expect(reason).toMatch(/^\S.*\S$/);
+    }
+  });
+});
+
+/**
+ * Leaving a spec out of the capture is the config's job, not the verdict's:
+ * a capture error from any test the capture did run, named or not, still
+ * fails.
+ */
+describe("a capture error in the verdict", () => {
+  it("fails whichever test it came from", () => {
+    for (const id of [
+      "chromium-shipped-build | a missing lazy chunk reloads once, then fails without reloading (#1421)",
+      "shipped | books › a card",
+    ]) {
+      const a = run({ h: { color: "red" } }, [
+        test([state("001 p0 end", { html: "h" })]),
+      ]);
+      const b = run({ h: { color: "red" } }, [
+        test([state("001 p0 end", { html: "h" })], {
+          id,
+          captureErrors: 1,
+          errorSamples: [
+            "7 locator.click: Error: page.evaluate: Execution context was destroyed, most likely because of a navigation.",
+          ],
+        }),
+      ]);
+      expect(verdict(diffRuns(a, b, { tolerated: TOLERATED }))).toContain(
+        "capture errors (A 0 / B 1)"
+      );
+    }
+  });
+});
+
+/**
+ * The tolerated list as it stands (#954): each entry's key and how often it
+ * settles, so a change to either is a visible edit here.
+ */
+describe("the tolerated list's entries", () => {
+  it("holds the measured states, each with how often it settles", () => {
+    expect(
+      TOLERATED.map((t) => [t.test.split(" | ")[0], t.state, t.settles])
+    ).toEqual([
+      ["chromium-shipped-build", "012 p0 locator.click", "never"],
+      ["chromium-shipped-build", "016 p0 locator.click", "never"],
+      ["chromium-shipped-build", "135 p0 locator.click", "never"],
+      ["chromium-shipped-build", "014 p0 locator.click", "never"],
+      ["chromium-back-navigation", "010 p0 locator.click", "sometimes"],
+      ["chromium-back-navigation", "011 p0 page.goForward", "sometimes"],
+      ["chromium-shipped-build", "006 p0 mouse.up", "sometimes"],
+    ]);
+  });
+});
+
+/**
+ * The capture's nesting tracker and test-file writer (#1804, from #1778's
+ * review).
+ */
+describe("trackNesting", () => {
+  it("takes a nested action as its caller's and two concurrent top-level actions as two", async () => {
+    const run = trackNesting();
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const outer = await run(async () => {
+      const inner = await run(async () => "inner");
+      await wait(5);
+      return inner;
+    });
+    expect(outer.topLevel).toBe(true);
+    expect(outer.value.topLevel).toBe(false);
+    const both = await Promise.all([run(() => wait(20)), run(() => wait(5))]);
+    expect(both.map((r) => r.topLevel)).toEqual([true, true]);
+  });
+});
+
+describe("writeCaptureTest", () => {
+  let dir = "";
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = "";
+  });
+
+  it("refuses a second test with the same id instead of overwriting the first", () => {
+    dir = mkdtempSync(join(tmpdir(), "style-diff-"));
+    const testsDir = join(dir, "tests");
+    writeCaptureTest(testsDir, test([]));
+    expect(() =>
+      writeCaptureTest(testsDir, test([], { spec: "other.spec.ts" }))
+    ).toThrow(/capture id collision: shipped \| books › a card/);
+    expect(readdirSync(testsDir)).toHaveLength(1);
   });
 });

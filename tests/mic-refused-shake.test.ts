@@ -9,7 +9,7 @@ import {
 } from "@/lib/audio/mic-retry";
 import { strings } from "@/lib/strings";
 
-import { areaRule, areaScope, areaSelector } from "./o4-area-css";
+import { areaRule, areaScope } from "./area-css";
 import { one, render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -19,12 +19,9 @@ import { cssRule, declarationValue } from "./support";
  * hook; the stylesheet reads show the rule and its reduced-motion off switch.
  * Nothing here runs an animation in a browser.
  */
-const SELECTOR = areaSelector("motion", ".o4-err-body[data-refused]");
+const SELECTOR = ".err-body[data-refused]";
 /** The delete ask's head shakes on the same rule (#1089 reused it). */
-const DELETE_HEAD = areaSelector(
-  "motion",
-  ".books-delete-ask > .o4-sheet-head"
-);
+const DELETE_HEAD = ".books-delete-ask > .sheet-head";
 const REDUCED = "@media (prefers-reduced-motion: reduce)";
 
 const panel = (settingsPlatform: "android-app" | "ios-app" | null) =>
@@ -39,7 +36,7 @@ const panel = (settingsPlatform: "android-app" | "ios-app" | null) =>
 
 describe("the shake hook is on the panel only while refused (#1089)", () => {
   it("is absent on the first refusal", () => {
-    expect(one(panel(null), ".o4-err-body").hasAttribute("data-refused")).toBe(
+    expect(one(panel(null), ".err-body").hasAttribute("data-refused")).toBe(
       false
     );
   });
@@ -48,7 +45,7 @@ describe("the shake hook is on the panel only while refused (#1089)", () => {
     "is present with the %s settings steps",
     (platform) => {
       expect(
-        one(panel(platform), ".o4-err-body").getAttribute("data-refused")
+        one(panel(platform), ".err-body").getAttribute("data-refused")
       ).toBe("true");
     }
   );

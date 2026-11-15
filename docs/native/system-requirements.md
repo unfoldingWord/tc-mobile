@@ -113,8 +113,8 @@ guard.
 
 ### CSS: `:has()` needs 15.4 — resolved by raising the floor to match (#1052)
 
-`src/app/styles/o4/menus.css` and `src/app/styles/o4/sheets.css` (and
-`src/app/styles/o4/motion.css`) use the `:has()` selector, which reaches
+`src/app/styles/3-components/menus.css` and `src/app/styles/3-components/sheets.css` (and
+`src/app/styles/3-components/motion.css`) use the `:has()` selector, which reaches
 `dist/assets/*.css` today (verified directly: `grep -c ":has(" dist/assets/*.css`
 found one occurrence, expanding to twelve rules across the menu/sheet
 component — #1052 counts 13 across all three source files). Per caniuse-lite's
@@ -216,12 +216,22 @@ says so. Nothing in this section was measured on a phone.
 | Android          | Android 7.0 (API 24)                           | `android/variables.gradle` `minSdkVersion = 24`                                                                                                                                                                                         |
 | Android target   | API 36 (`compileSdkVersion` is also 36)        | `android/variables.gradle` `targetSdkVersion = 36`                                                                                                                                                                                      |
 | iPhone           | iOS 15.4; iPhone only                          | `ios/App/App.xcodeproj/project.pbxproj` `IPHONEOS_DEPLOYMENT_TARGET = 15.4` (four occurrences) and `TARGETED_DEVICE_FAMILY = 1` (both app-target configurations, #1289); `ios/App/CapApp-SPM/Package.swift` `platforms: [.iOS("15.4")]` |
-| Native shell     | Capacitor 8.5.3                                | `package.json` (`@capacitor/core`, `@capacitor/android`, `@capacitor/ios`)                                                                                                                                                              |
+| Native shell     | Capacitor 8.6.0                                | `package.json` (`@capacitor/core`, `@capacitor/android`, `@capacitor/ios`)                                                                                                                                                              |
 | Web build target | Chrome 111, Edge 111, Firefox 114, Safari 15.4 | `vite.config.ts` `build.target`                                                                                                                                                                                                         |
 
 There is no `ios/App/Podfile` in the tree; the iOS project uses Swift Package
 Manager (`ios/App/CapApp-SPM/Package.swift`), so the Xcode setting and that file
 are the two iOS floors.
+
+**An Android System WebView below the floor shows a plain update screen** (#1944).
+`index.html` carries a small classic script, `#old-webview-check`, that runs
+before the app bundle and feature-detects `Object.hasOwn`, `crypto.randomUUID` and
+`String.prototype.replaceAll`. When one is missing it shows a picture and one
+English sentence telling the person to update Android System WebView, and the
+app does not start. Before it, WebView 91 opened to an empty page. The build
+target did not change. The check is pinned to it by
+`tests/old-webview-check.test.ts`. Not run on a real WebView 91 yet: that
+emulator run is owed on #1944.
 
 **The iOS app is iPhone-only as of 1.0.1** (#1289, DRI pick 2026-10-01,
 verbatim: "iPhone only for now (Recommended)"): `TARGETED_DEVICE_FAMILY = 1`

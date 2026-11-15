@@ -223,13 +223,13 @@ describe("the chapter menu's Move up / Move down (#1730)", () => {
     const sheet = dialog();
     expect(sheet).not.toBeNull();
     const tiles = [
-      ...sheet!.querySelectorAll<HTMLButtonElement>(".o4-tiles button"),
+      ...sheet!.querySelectorAll<HTMLButtonElement>(".tiles button"),
     ];
     expect(tiles.map((t) => t.getAttribute("aria-label"))).toEqual([
       strings.moveUp,
       strings.moveDown,
     ]);
-    expect(tiles[0]!.closest(".o4-tiles")).toBe(tiles[1]!.closest(".o4-tiles"));
+    expect(tiles[0]!.closest(".tiles")).toBe(tiles[1]!.closest(".tiles"));
     for (const tile of tiles) {
       expect(tile.querySelector(".control-caption")?.textContent).toBe(
         tile.getAttribute("aria-label")

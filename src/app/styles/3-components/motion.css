@@ -1,0 +1,155 @@
+/* Ambient motion, with a reduced-motion guard. Owner: #950. Selectors carry no `:root` prefix (#954); see 3-components/index.css's header before editing this file. */
+
+/*
+ * The design reference's section 4 loops, on the targets that exist today:
+ * the guide pulse on the guided record control (#604's outset ring), the
+ * recorder stage's live edge, the recording dot's blink (#945's states), and
+ * the refusal shake on the book delete ask's head (#1030's markup) and on the
+ * mic-refused card (#1089: `data-refused` on the permission panel's body, set
+ * while Retry has come back refused and dropped at the next Retry tap, so each
+ * refusal replays it). The mic pulse and the audible ping land with the
+ * screens that carry them (2026-09-26 remainder audit, issue #950).
+ *
+ * Each keyframe is the workbench's own, recoloured through layer-2 roles.
+ * Each duration reads #967's ambient primitive, with the design value as the
+ * fallback until that primitive exists. The design reference
+ * (docs/design/o4-design-system.md §4) settles shake's duration (0.35s),
+ * iteration count (×2) and trigger ("refused action") but does not transcribe
+ * a transform amplitude from the workbench source — that value is parked:
+ * the keyframe below reuses the existing `--p-space-1` structural primitive
+ * (4px, as a literal, matching how this file's other keyframes hardcode their
+ * geometry) rather than inventing a new number, and is flagged here as an
+ * inference, not a workbench value.
+ *
+ * OFF SWITCHES. Every loop is matched, selector for selector, by an
+ * `animation: none` in the reduced-motion block at the end of this file:
+ * same specificity, later in the same layer, so it wins. The app has no
+ * Remove-animations setting of its own; the existing animations in
+ * 3-components.css honour prefers-reduced-motion only, and this file does
+ * the same. tests/ambient-motion.test.ts holds the pairing.
+ *
+ * An animation outranks every normal declaration, so the base ring's own
+ * exceptions have to be restated here as stops: the inert rule (a mark
+ * behind a scrim never shows) and the focus separation globals.css makes
+ * for the outset ring, which the pulse would otherwise grow into.
+ */
+@layer components {
+  /* --- guidePulse: the guide ring on the next action -------------------- */
+  .control--record.is-guided,
+  .control--mic.is-guided,
+  .record-guide.is-guided {
+    animation: guidePulse var(--p-ambient-guide-pulse, 1.8s) ease-in-out
+      infinite;
+  }
+  [inert] .is-guided,
+  .is-guided[inert],
+  .control--record.is-guided:focus-visible,
+  .control--mic.is-guided:focus-visible,
+  .record-guide.is-guided:has(> .control:focus-visible) {
+    animation: none;
+  }
+  @keyframes guidePulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 5px var(--s-floor),
+        0 0 0 8px var(--s-guide);
+    }
+    50% {
+      box-shadow:
+        0 0 0 5px var(--s-floor),
+        0 0 0 14px color-mix(in srgb, var(--s-guide) 30%, transparent);
+    }
+  }
+
+  /* --- armedPulse: the Share now tile once the file is ready (#1087) ----- */
+  /* Derived from the share's `status === "ready"` (share-menu-section.tsx
+     adds `is-armed` to the ready tile), not from a progress phase: the menu,
+     not the overlay, is on screen while the file waits for its second tap.
+     Stops while the menu is inert (the overlay covers it) and while the tile
+     has keyboard focus, where globals.css pushes the focus outline out past
+     the pulse's ring (autoFocus lands focus here as the tile appears). */
+  .tile--send.is-armed {
+    animation: armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite;
+  }
+  [inert] .tile--send.is-armed,
+  .tile--send.is-armed[inert],
+  .tile--send.is-armed:focus-visible {
+    animation: none;
+  }
+  @keyframes armedPulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 var(--s-send-ring);
+    }
+    50% {
+      box-shadow: 0 0 0 6px
+        color-mix(in srgb, var(--s-send-ring) 35%, transparent);
+    }
+  }
+
+  /* --- liveEdge: the recorder stage edge while recording ---------------- */
+  /* On recorder.css's edge layer, which draws above the canvas. */
+  .recorder-stage[data-look="recording"]::after {
+    animation: liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite;
+  }
+  @keyframes liveEdge {
+    0%,
+    100% {
+      box-shadow: inset 0 0 0 2px var(--s-live);
+    }
+    50% {
+      box-shadow: inset 0 0 0 2px transparent;
+    }
+  }
+
+  /* --- blink: the recording dot beside the timer ------------------------ */
+  /* Replaces 3-components.css's slower fade on the same dot. */
+  .recorder-status .rec-dot {
+    animation: blink var(--p-ambient-blink, 1s) steps(2) infinite;
+  }
+  @keyframes blink {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+
+  /* --- shake: the book delete ask's head, on a refused/asked action ------ */
+  /* #1030 (merged) renders the head inside `.books-delete-ask` only while
+     the ask is up (components/book-delete-ask.tsx), so this rule fires on
+     mount rather than needing a trigger class of its own — the hook posted
+     on #950 (2026-09-26). */
+  .books-delete-ask > .sheet-head,
+  .err-body[data-refused] {
+    animation: shake var(--p-ambient-shake, 0.35s) ease-in-out 2;
+  }
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-4px);
+    }
+    75% {
+      transform: translateX(4px);
+    }
+  }
+
+  /* --- the off switch --------------------------------------------------- */
+  @media (prefers-reduced-motion: reduce) {
+    .control--record.is-guided,
+    .control--mic.is-guided,
+    .record-guide.is-guided,
+    .tile--send.is-armed,
+    .recorder-stage[data-look="recording"]::after,
+    .recorder-status .rec-dot,
+    .books-delete-ask > .sheet-head,
+    .err-body[data-refused] {
+      animation: none;
+    }
+  }
+}

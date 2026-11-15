@@ -14,16 +14,16 @@ import {
 import { closeDb, getDb } from "@/lib/storage/db";
 
 /**
- * The last named build gap on #949: the O4 chapter/segment/recorder menus'
+ * The last named build gap on #949: the chapter/segment/recorder menus'
  * book crumb draws no cover-colour square, because neither view that feeds
- * `O4SheetHead` carried the book's colour (`o4-crumbs.tsx`'s own docblock,
+ * `SheetHead` carried the book's colour (`crumbs.tsx`'s own docblock,
  * before this PR). This is the data half — `loadChapterView` (the chapter
  * menu and, through `segments-screen.tsx`, the segment-row menu) and
  * `loadRecorderSegmentView` (the recorder menu, once `recorder.tsx` — owned
  * by the concurrent #1074/#590 PR2 lane, out of scope here — threads it
- * through). `tests/o4-menus-chapter-segment.test.ts` and
- * `tests/recorder-menu-head-o4.test.ts` cover the component half: that
- * `O4SheetHead` actually draws the square from this value.
+ * through). `tests/menus-chapter-segment.test.ts` and
+ * `tests/recorder-menu-head.test.ts` cover the component half: that
+ * `SheetHead` actually draws the square from this value.
  *
  * `resolveCoverKey` (#957) never returns "no colour" for a real book: an
  * unset `coverColourKey` resolves to a stable id-derived fallback, the same

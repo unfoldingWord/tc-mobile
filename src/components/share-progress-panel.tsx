@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 
 import { Icon } from "./icon";
-import type { ShareO4View } from "./share-o4-view";
+import type { ShareView } from "./share-view";
 import { useKeepInView } from "@/hooks/use-keep-in-view";
 import { strings } from "@/lib/strings";
 
@@ -16,9 +16,9 @@ interface ShareProgressPanelProps {
   text: string | null;
   /**
    * What the circle, its filling ring and its numbered chips draw
-   * (`shareO4View`, #947).
+   * (`shareView`, #947).
    */
-  o4: ShareO4View;
+  view: ShareView;
 }
 
 /**
@@ -43,11 +43,11 @@ interface ShareProgressPanelProps {
 export const ShareProgressPanel = forwardRef<
   HTMLDivElement,
   ShareProgressPanelProps
->(function ShareProgressPanel({ role, text, o4 }, ref) {
+>(function ShareProgressPanel({ role, text, view }, ref) {
   return (
     <div ref={ref} tabIndex={-1} role={role} className="share-progress">
-      {o4.chips.length > 0 && <O4Chips chips={o4.chips} />}
-      <O4Circle view={o4} status={text} />
+      {view.chips.length > 0 && <ShareChips chips={view.chips} />}
+      <ShareCircle view={view} status={text} />
       <span className="share-progress-text">{text}</span>
     </div>
   );
@@ -60,10 +60,10 @@ export const ShareProgressPanel = forwardRef<
  * out" and each chip inside it is `aria-hidden`: the chips are decorative
  * (D22), and the label says what they add.
  */
-function O4Chips({ chips }: { chips: ShareO4View["chips"] }) {
+function ShareChips({ chips }: { chips: ShareView["chips"] }) {
   const out = chips.filter((c) => c.state !== "stays").length;
   // A long book's row is capped at about three rows and scrolls inside
-  // (`o4/share.css`, DRI pick (a) on #1023); this keeps the current chip in
+  // (`3-components/share.css`, DRI pick (a) on #1023); this keeps the current chip in
   // view as the count moves.
   const rowRef = useKeepInView<HTMLSpanElement>(
     chips.findIndex((c) => c.state === "current")
@@ -71,14 +71,14 @@ function O4Chips({ chips }: { chips: ShareO4View["chips"] }) {
   return (
     <span
       ref={rowRef}
-      className="share-o4-chips"
+      className="share-chips"
       role="img"
       aria-label={strings.shareItemsGoOut(out, chips.length)}
     >
       {chips.map((chip, i) => (
         <span
           key={i}
-          className="share-o4-chip"
+          className="share-chip"
           data-chip={chip.state}
           aria-hidden="true"
         >
@@ -97,9 +97,9 @@ const RING_RADIUS = 84;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
 /**
- * The O4 140-in-176 circle (#947): the filling ring, when there is a count
+ * The 140-in-176 circle (#947): the filling ring, when there is a count
  * to fill it by, around the core that holds the glyph. Its colours, and the
- * outcome rings D14 and D16 draw, are `o4/share.css`'s, keyed on the scrim's
+ * outcome rings D14 and D16 draw, are `3-components/share.css`'s, keyed on the scrim's
  * `data-outcome`. The ring is `aria-hidden`. The core is a progress bar
  * while the view gives it a meter (D22), labelled from `strings.ts` and
  * valued 0 to 100, with no value before the first count and 100 once
@@ -111,11 +111,11 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
  * same words the line under the circle shows at that moment (DRI pick (c)
  * on #1023, "Follow the visible status"), so no new copy is needed.
  */
-function O4Circle({
+function ShareCircle({
   view,
   status,
 }: {
-  view: ShareO4View;
+  view: ShareView;
   status: string | null;
 }) {
   const meter = view.meter;
@@ -124,13 +124,13 @@ function O4Circle({
       ? status
       : strings.sharePreparingLabel;
   return (
-    <span className="share-o4-frame">
+    <span className="share-frame">
       {(view.ring !== null || view.read !== undefined) && (
-        <svg className="share-o4-ring" viewBox="0 0 176 176" aria-hidden="true">
-          <circle className="share-o4-track" cx="88" cy="88" r={RING_RADIUS} />
+        <svg className="share-ring" viewBox="0 0 176 176" aria-hidden="true">
+          <circle className="share-track" cx="88" cy="88" r={RING_RADIUS} />
           {view.ring !== null && (
             <circle
-              className="share-o4-fill"
+              className="share-fill"
               cx="88"
               cy="88"
               r={RING_RADIUS}
@@ -142,7 +142,7 @@ function O4Circle({
               count's fill, so the count can start from empty after it. */}
           {view.read !== undefined && (
             <circle
-              className="share-o4-read"
+              className="share-read"
               cx="88"
               cy="88"
               r={RING_RADIUS}
@@ -153,7 +153,7 @@ function O4Circle({
         </svg>
       )}
       <span
-        className="share-o4-core"
+        className="share-core"
         {...(meter === null
           ? {}
           : {
@@ -164,7 +164,7 @@ function O4Circle({
               ...(meter.now === null ? {} : { "aria-valuenow": meter.now }),
             })}
       >
-        <Icon name={view.icon} size={52} className="share-o4-glyph" />
+        <Icon name={view.icon} size={52} className="share-glyph" />
       </span>
     </span>
   );

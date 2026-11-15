@@ -117,6 +117,38 @@ const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
     shareBookFilename:
       "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
   },
+  tl: {
+    menuTitle:
+      "The Tagalog word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+  },
+  tpi: {
+    menuTitle:
+      "The Tok Pisin word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+  },
+  vi: {
+    menuTitle:
+      "The Vietnamese word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+  },
+  ms: {
+    menuTitle:
+      "The Malay word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+  },
   pt: {
     menuTitle:
       "The Portuguese word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
@@ -143,9 +175,13 @@ const SCRIPT_BY_TAG: Readonly<Record<string, string>> = {
   fr: "Latin",
   hi: "Devanagari",
   id: "Latin",
+  ms: "Latin",
   pt: "Latin",
   ru: "Cyrillic",
   sw: "Latin",
+  tl: "Latin",
+  tpi: "Latin",
+  vi: "Latin",
   "zh-Hans": "Han",
 };
 
@@ -520,6 +556,24 @@ describe("i18n draft quality gates (#1485)", () => {
     for (const tag of TAGS) {
       it(`${tag} has no draft-quality problems`, () => {
         expect(tableProblems(tag, LOCALE_OVERRIDES[tag] ?? {})).toEqual([]);
+      });
+
+      it(`${tag} carries only plural categories its language selects`, () => {
+        // `plural()` ignores a category the locale never selects, so a stray
+        // one is dead wording that reads as a distinction the language does
+        // not make (#1830 review). Source-level read: the tables hold
+        // functions, so the keys are only visible in the file.
+        const source = readFileSync(
+          path.resolve(import.meta.dirname, "../src/lib/i18n", `${tag}.ts`),
+          "utf8"
+        );
+        const own: readonly string[] = new Intl.PluralRules(tag, {
+          type: "cardinal",
+        }).resolvedOptions().pluralCategories;
+        const used = [
+          ...source.matchAll(/[{,]\s*(zero|one|two|few|many):\s*["`]/g),
+        ].map((m) => m[1] ?? "");
+        expect(used.filter((c) => !own.includes(c))).toEqual([]);
       });
     }
   });

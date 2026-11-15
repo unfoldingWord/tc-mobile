@@ -103,14 +103,14 @@ export function StoragePressureBanner({
   };
 
   return (
-    <div className="o4-storage" data-tone={notice.tone}>
-      <div className="o4-storage-row">
-        <span className="o4-storage-icon" aria-hidden="true">
+    <div className="storage" data-tone={notice.tone}>
+      <div className="storage-row">
+        <span className="storage-icon" aria-hidden="true">
           <Icon name="phone" size={34} />
         </span>
-        <span className="o4-storage-words" role={role}>
-          <span className="o4-storage-title">{strings.storageShareSoon}</span>
-          <span className="o4-storage-why">{notice.text}</span>
+        <span className="storage-words" role={role}>
+          <span className="storage-title">{strings.storageShareSoon}</span>
+          <span className="storage-why">{notice.text}</span>
         </span>
         {/* The same two gestures as the ⋮ menus' Share (ShareMenuSection):
             tap 1 builds the archive, tap 2 hands it to the sheet in a fresh
@@ -134,8 +134,8 @@ export function StoragePressureBanner({
             size={34}
             className={
               affordance.className
-                ? `o4-storage-share ${affordance.className}`
-                : "o4-storage-share"
+                ? `storage-share ${affordance.className}`
+                : "storage-share"
             }
             autoFocus
             onClick={onSend}
@@ -153,7 +153,7 @@ export function StoragePressureBanner({
                   : strings.shareAll
             }
             size={34}
-            className="o4-storage-share"
+            className="storage-share"
             busy={affordance.busy}
             onClick={onPrepare}
           />

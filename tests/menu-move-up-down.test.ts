@@ -257,12 +257,14 @@ const hinted = (label: string, reason: string) => `${label}. ${reason}`;
 
 /** The menu's Move tiles, by name, in document order. */
 function moveTiles(sheet: HTMLElement): HTMLButtonElement[] {
-  return [
-    ...sheet.querySelectorAll<HTMLButtonElement>(".o4-tiles button"),
-  ].filter((b) => {
-    const name = b.getAttribute("aria-label") ?? "";
-    return name.startsWith(strings.moveUp) || name.startsWith(strings.moveDown);
-  });
+  return [...sheet.querySelectorAll<HTMLButtonElement>(".tiles button")].filter(
+    (b) => {
+      const name = b.getAttribute("aria-label") ?? "";
+      return (
+        name.startsWith(strings.moveUp) || name.startsWith(strings.moveDown)
+      );
+    }
+  );
 }
 
 describe("the book menu's Move up / Move down (#1344)", () => {
@@ -277,11 +279,11 @@ describe("the book menu's Move up / Move down (#1344)", () => {
     ]);
     // A row of their own, after the action row, so the four action tiles
     // keep their compact fit at 360 px.
-    const grid = tiles[0]!.closest(".o4-tiles");
-    expect(grid).toBe(tiles[1]!.closest(".o4-tiles"));
+    const grid = tiles[0]!.closest(".tiles");
+    expect(grid).toBe(tiles[1]!.closest(".tiles"));
     expect(grid!.querySelectorAll("button")).toHaveLength(2);
     for (const tile of tiles) {
-      expect(tile.classList).toContain("o4-tile");
+      expect(tile.classList).toContain("tile");
       expect(tile.querySelector(".control-caption")?.textContent).toBe(
         tile.getAttribute("aria-label")
       );
@@ -355,8 +357,8 @@ describe("the segment menu's Move up / Move down (#1344)", () => {
       expect(tiles[1]!.getAttribute("aria-label")).toMatch(
         new RegExp(`^${strings.moveDown}`)
       );
-      const grid = tiles[0]!.closest(".o4-tiles");
-      expect(grid).toBe(tiles[1]!.closest(".o4-tiles"));
+      const grid = tiles[0]!.closest(".tiles");
+      expect(grid).toBe(tiles[1]!.closest(".tiles"));
       expect(grid!.querySelectorAll("button")).toHaveLength(2);
       for (const tile of tiles) {
         expect(tile.querySelector(".control-caption")?.textContent).toBe(

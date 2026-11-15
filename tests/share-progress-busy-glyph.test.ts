@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { shareOverlayGlyph } from "@/components/share-overlay-glyph";
-import { shareO4View } from "@/components/share-o4-view";
+import { shareView } from "@/components/share-view";
 import { shareSettledGlyph } from "@/components/share-outcome-glyph";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
 import {
@@ -27,8 +27,8 @@ import { one, render } from "./render";
  * render-testable — the same reason `RecorderStatus` exists as its own
  * component.
  *
- * The panel draws `shareO4View`'s glyph in its core, and while busy that is
- * the share glyph (D15, `tests/share-o4-view.test.ts`); the busy entry's
+ * The panel draws `shareView`'s glyph in its core, and while busy that is
+ * the share glyph (D15, `tests/share-view.test.ts`); the busy entry's
  * TONE sets the panel's role.
  */
 /** The panel as `ShareProgress` draws it for `progress`: the view's glyph in the core. */
@@ -41,7 +41,7 @@ function panelFor(
     createElement(ShareProgressPanel, {
       role,
       text,
-      o4: shareO4View(progress, "chapter", []),
+      view: shareView(progress, "chapter", []),
     })
   );
 }

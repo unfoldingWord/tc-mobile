@@ -112,6 +112,40 @@ describe("completeLocales and the English-only keys", () => {
     expect(resolveLocale(["ru", "es"], completeLocales()).tag).toBe("ru");
   });
 
+  it("counts vi complete, and resolves a Vietnamese phone to vi (#357, level 3)", () => {
+    expect(tags()).toContain("vi");
+    const vi = LOCALE_OVERRIDES.vi as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(vi, key)).toBe(false);
+    expect(resolveLocale(["vi-VN"], completeLocales()).tag).toBe("vi");
+    expect(resolveLocale(["vi", "es"], completeLocales()).tag).toBe("vi");
+  });
+
+  it("counts ms complete, and resolves a Malay phone to ms (#357, level 3)", () => {
+    expect(tags()).toContain("ms");
+    const ms = LOCALE_OVERRIDES.ms as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(ms, key)).toBe(false);
+    expect(resolveLocale(["ms-MY"], completeLocales()).tag).toBe("ms");
+    expect(resolveLocale(["ms", "es"], completeLocales()).tag).toBe("ms");
+  });
+
+  it("counts tl complete, and resolves a Tagalog phone to tl (#357, level 3)", () => {
+    expect(tags()).toContain("tl");
+    const tl = LOCALE_OVERRIDES.tl as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(tl, key)).toBe(false);
+    expect(resolveLocale(["tl-PH"], completeLocales()).tag).toBe("tl");
+    expect(resolveLocale(["fil"], completeLocales()).tag).toBe("tl");
+    expect(resolveLocale(["fil-PH", "es"], completeLocales()).tag).toBe("tl");
+    expect(resolveLocale(["tl", "es"], completeLocales()).tag).toBe("tl");
+  });
+
+  it("counts tpi complete, and resolves a Tok Pisin phone to tpi (#357, level 3)", () => {
+    expect(tags()).toContain("tpi");
+    const tpi = LOCALE_OVERRIDES.tpi as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(tpi, key)).toBe(false);
+    expect(resolveLocale(["tpi-PG"], completeLocales()).tag).toBe("tpi");
+    expect(resolveLocale(["tpi", "es"], completeLocales()).tag).toBe("tpi");
+  });
+
   it("counts zh-Hans complete, and resolves every Chinese phone to it (#1458, R19)", () => {
     expect(tags()).toContain("zh-Hans");
     const zh = LOCALE_OVERRIDES["zh-Hans"] as Record<string, unknown>;

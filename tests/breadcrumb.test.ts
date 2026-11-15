@@ -35,10 +35,10 @@ import { stripComments } from "./support";
  * renamed (#264) showed its label on the Segments screen and the default name
  * one tap deeper, on the surface a translator spends the session inside.
  *
- * Since #954 both headers draw crumb chips (`o4-crumbs.tsx`) rather than a
+ * Since #954 both headers draw crumb chips (`crumbs.tsx`) rather than a
  * text trail, and the trail survives only as the menus' spoken place line in
- * `O4SheetHead`. That the headers SHOW a renamed chapter's name is rendered
- * in `tests/o4-header-crumbs.test.ts` (#1230); the source checks below pin
+ * `SheetHead`. That the headers SHOW a renamed chapter's name is rendered
+ * in `tests/header-crumbs.test.ts` (#1230); the source checks below pin
  * where the trail is built and where the recorder resolves the name.
  *
  * WHY SOME ASSERTIONS READ SOURCE. A duplicate and an alias produce identical
@@ -174,7 +174,7 @@ describe("the default chapter name is written once", () => {
 
 describe("the trail and the heading are read from the table", () => {
   it("the one place that draws the trail calls the table instead of assembling JSX", () => {
-    const crumbs = source("src/components/o4-crumbs.tsx");
+    const crumbs = source("src/components/crumbs.tsx");
     expect(crumbs.length, "no crumbs module to read").toBeGreaterThan(1000);
     expect(crumbs).toContain("strings.chapterBreadcrumb(");
     expect(crumbs).toContain("strings.recorderBreadcrumb(");

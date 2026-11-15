@@ -44,13 +44,15 @@ const GATE = resolveDistGate(
   "dist/assets/*.js and dist/index.html"
 );
 
-/** One per DSP piece: the meter, the shared chunk check, the normalizer and
- *  the whole-take normalizer. */
+/** One per DSP piece: the meter, the shared chunk check, the normalizer,
+ *  the whole-take normalizer and the speech compressor (#1873; its error
+ *  CLASS is imported on the main thread, its arithmetic must not be). */
 const DSP_MARKERS = [
   "LoudnessMeter: already finished",
   "chunk holds a non-finite sample",
   "LoudnessNormalizer: empty flush buffer",
   "normalizePcm: wrote",
+  "compressor: kneeDb must not be negative",
 ] as const;
 
 const WORKER_CHUNK = /^mp3\.worker-[\w-]+\.js$/;

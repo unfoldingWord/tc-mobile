@@ -7,7 +7,7 @@ import {
   libraryShareGapText,
   libraryShareProgressText,
 } from "@/components/share-error-copy";
-import { shareO4View } from "@/components/share-o4-view";
+import { shareView } from "@/components/share-view";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
 import type { ShareProgress, ShareSettled } from "@/hooks/share-progress";
 import type { LibraryShareProgress } from "@/hooks/use-library-share";
@@ -16,8 +16,8 @@ import { strings } from "@/lib/strings";
 import { one, render } from "./render";
 
 /**
- * The library scope's words and O4 look (#1045): what Share your work says
- * under the share overlay's glyph, phase by phase, and what the O4 circle
+ * The library scope's words and look (#1045): what Share your work says
+ * under the share overlay's glyph, phase by phase, and what the circle
  * draws for it. Pure functions, plus one props-to-markup render of the panel
  * through `tests/render.ts`. The overlay's wiring into the Books screen is
  * `tests/library-share-progress.test.ts`'s.
@@ -176,7 +176,7 @@ describe("libraryShareErrorText", () => {
   });
 });
 
-/** A library prepare as the O4 view receives it: busy, with no count. */
+/** A library prepare as the view receives it: busy, with no count. */
 const PACKING: ShareProgress = {
   phase: "busy",
   work: "prepare",
@@ -186,7 +186,7 @@ const PACKING: ShareProgress = {
 
 describe("the O4 circle for the library scope", () => {
   it("while packing: the share glyph, an unvalued meter, no ring and no chips", () => {
-    expect(shareO4View(PACKING, "library")).toEqual({
+    expect(shareView(PACKING, "library")).toEqual({
       icon: "share",
       ring: null,
       meter: { now: null },
@@ -195,7 +195,7 @@ describe("the O4 circle for the library scope", () => {
   });
 
   it("handed over: the workbench's check at 100, and still no chips", () => {
-    const view = shareO4View(
+    const view = shareView(
       { phase: "outcome", settled: "sent", since: 0 },
       "library"
     );
@@ -209,15 +209,15 @@ describe("the O4 circle for the library scope", () => {
       createElement(ShareProgressPanel, {
         role: "status",
         text: libraryShareProgressText(busy("prepare"), null),
-        o4: shareO4View(PACKING, "library"),
+        view: shareView(PACKING, "library"),
       })
     );
     expect(one(container, ".share-progress-text").textContent).toBe(
       strings.shareAllPreparing
     );
-    expect(container.querySelector(".share-o4-chips")).toBeNull();
+    expect(container.querySelector(".share-chips")).toBeNull();
     expect(
-      one(container, ".share-o4-core").getAttribute("aria-valuenow")
+      one(container, ".share-core").getAttribute("aria-valuenow")
     ).toBeNull();
   });
 });

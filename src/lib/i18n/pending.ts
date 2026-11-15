@@ -14,14 +14,18 @@
  * it rewrites this file from the tables and nothing else.
  */
 export const PENDING: Readonly<Record<string, readonly string[] | "all">> = {
-  ar: "all",
+  ar: [],
   es: [],
   fr: [],
   hi: [],
   id: [],
+  ms: [],
   pt: [],
   ru: [],
   sw: [],
+  tl: [],
+  tpi: [],
+  vi: [],
   "zh-Hans": [],
 };
 

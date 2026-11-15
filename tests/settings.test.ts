@@ -7,7 +7,9 @@ import { one, render } from "./render";
 import {
   chapterNameShown,
   readStoredAlwaysChapterNumber,
+  readStoredCompressOnFinished,
   readStoredNormalizeOnFinished,
+  storeCompressOnFinished,
   storeAlwaysChapterNumber,
 } from "@/lib/settings";
 import { strings } from "@/lib/strings";
@@ -56,6 +58,23 @@ describe("the normalize-on-Finished preference (#1433, U6b)", () => {
     expect(readStoredNormalizeOnFinished("")).toBe(false);
     expect(readStoredNormalizeOnFinished("0")).toBe(false);
     expect(readStoredNormalizeOnFinished("1")).toBe(true);
+  });
+});
+
+describe("the compressor preference (#1873)", () => {
+  it("is off when nothing is stored, and on only for an explicit on", () => {
+    // The requirements owner's `compressor-off` pick on #1433.
+    expect(readStoredCompressOnFinished(null)).toBe(false);
+    expect(readStoredCompressOnFinished("")).toBe(false);
+    expect(readStoredCompressOnFinished("0")).toBe(false);
+    expect(readStoredCompressOnFinished("true")).toBe(false);
+    expect(readStoredCompressOnFinished("1")).toBe(true);
+    expect(readStoredCompressOnFinished(storeCompressOnFinished(true))).toBe(
+      true
+    );
+    expect(readStoredCompressOnFinished(storeCompressOnFinished(false))).toBe(
+      false
+    );
   });
 });
 

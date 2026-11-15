@@ -520,6 +520,7 @@ the same way on `https://tcmobile.app` and
 (
   set -o pipefail
   rc=0
+  seen=
   for origin in https://tcmobile.app https://tc-mobile.unfoldingword.workers.dev; do
     if ! body=$(curl -fsS --connect-timeout 10 --max-time 30 "$origin/version.json?t=$(date +%s)"); then
       echo "FAIL: $origin did not answer with a 2xx"
@@ -527,6 +528,12 @@ the same way on `https://tcmobile.app` and
     elif rec=$(printf '%s' "$body" |
       jq -enr 'input | select([.sha, .version] | all(type=="string" and length>0 and (test("[[:cntrl:][:space:]\u200e\u200f\u202a-\u202e\u2066-\u2069]")|not))) | "sha=\(.sha) version=\(.version)"'); then
       echo "OK: $origin $rec"
+      if [ -z "$seen" ]; then
+        seen=$rec
+      elif [ "$seen" != "$rec" ]; then
+        echo "FAIL: the two origins serve different builds ($seen, then $rec); record neither"
+        rc=1
+      fi
     else
       echo "FAIL: $origin answered but the body is not a deploy record"
       rc=1
@@ -551,7 +558,13 @@ character (CR, LF, ESC) or a bidi control, so a value cannot shift the fields
 or print a second `OK:` line. Read every line, because `FAIL:` goes to stdout
 beside `OK:`. The timeouts make a silent origin fail instead of hanging.
 `jq -en 'input | …'` exits non-zero on an empty body, where plain `jq -e`
-exits 0. [`tests/rollback-read-block.test.ts`](../../tests/rollback-read-block.test.ts)
+exits 0. The two origins must serve the same build: when both answer with a
+valid record but the records differ (a different `sha` or a different
+`version`), the block prints
+`FAIL: the two origins serve different builds` naming both and exits 1.
+That is not a choice between them. Record neither, wait a few minutes and run
+it again (a deploy may be mid-rollout), and if the two still differ, stop and
+tell the DRI before any promotion or rollback. [`tests/rollback-read-block.test.ts`](../../tests/rollback-read-block.test.ts)
 runs this block against local servers in both states.
 A read that prints `FAIL:` is not a deploy record, so do
 not write it down as the rollback target. Do not take it from the bare

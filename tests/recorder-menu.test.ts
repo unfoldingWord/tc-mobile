@@ -21,7 +21,7 @@ import { stripComments } from "./support";
  * reaching it meant mounting the whole recorder with a mocked audio session.
  * As a component whose every input is a derived value, it is a props → rows
  * question, which is what these ask. The tile grid's own layout, tones and
- * gating are `tests/recorder-menu-o4.test.ts`'s.
+ * gating are `tests/recorder-menu-tiles.test.ts`'s.
  *
  * `Menu` portals to `<body>`, so the queries go through `document`, not the
  * container.

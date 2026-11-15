@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type ElementHandle, type Page } from "./support/test";
+import { expect, test, type Page } from "./support/test";
+import { asInstalledApp } from "./support/installed-app";
 
 import { editRecordingButton } from "./recorder-fixtures";
 import { seedToRecorder, seedToSegments } from "./support/seed";
@@ -10,7 +11,7 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  * against the shipped `dist/` build: for the screens a translator meets first
  * (the Books shelf with a book, the book's ⋮ menu, the Segments screen, the
  * recorder's controls, the recorder's ≡ menu tiles over a recorded take,
- * Settings, the Templates picker, the licence ask at Share
+ * the Books ≡ menu's tiles, Settings, the Templates picker, the licence ask at Share
  * Book and the Export project language ask), in English and every language
  * whose table is complete (`tests/locale-fit-sweep-list.test.ts` fails when
  * `LOCALES` and the complete languages differ), no control's label spills out of its own box, no control is
@@ -25,8 +26,9 @@ import { seedToRecorder, seedToSegments } from "./support/seed";
  * `navigator.languages` and firing `languagechange` while idle
  * (`hooks/phone-locale.ts`), after the walk that seeds the book has used the
  * English labels, the same way `mic-refusal-card-fit.spec.ts` does. The
- * control that opens a screen is held as a handle before the switch so the
- * click does not depend on a translated name.
+ * control that opens a screen is located after the switch by a test id, so the
+ * click does not depend on a translated name or on a handle that a re-render
+ * could detach.
  *
  * What counts as a fit failure, for every visible control in the screen (or
  * the top dialog) and for every element inside one:
@@ -63,9 +65,13 @@ const LOCALES = [
   "fr",
   "hi",
   "id",
+  "ms",
   "pt",
   "ru",
   "sw",
+  "tl",
+  "tpi",
+  "vi",
   "zh-Hans",
 ] as const;
 
@@ -75,6 +81,7 @@ const SCREENS = [
   "segments",
   "recorder",
   "recorder-menu",
+  "app-menu",
   "settings",
   "templates",
   "licence-ask",
@@ -85,13 +92,13 @@ type Screen = (typeof SCREENS)[number];
 /**
  * The nodes that show a name the translator typed. The design cuts these with
  * an ellipsis on purpose; they are data, not translated labels. Every selector
- * here sets `text-overflow: ellipsis` in `src/app/styles/o4/`.
+ * here sets `text-overflow: ellipsis` in `src/app/styles/3-components/`.
  */
 const NAME_NODES = [
   ".segments-title",
   ".row-title",
   ".menu-panel:has(.name-edit) .t-title",
-  ".o4-crumb > span",
+  ".crumb > span",
   ".books-name",
   ".books-chapter-title",
 ].join(", ");
@@ -185,7 +192,7 @@ async function measure(
           // A tile's caption is deliberately wider than its 64 or 76 px
           // tile and centred under it; its fit is the caption-collision check
           // below, not this one.
-          const inTile = el.closest(".o4-tile") !== null;
+          const inTile = el.closest(".tile") !== null;
           if (
             !inTile &&
             el.scrollWidth > el.clientWidth + 1 &&
@@ -221,7 +228,7 @@ async function measure(
       // can run into each other or off the screen. Measure the words (a
       // Range), not the caption's grid cell.
       const words = Array.from(
-        root.querySelectorAll<HTMLElement>(".o4-tile > .control-caption")
+        root.querySelectorAll<HTMLElement>(".tile > .control-caption")
       )
         .filter(visible)
         .map((el) => {
@@ -259,6 +266,21 @@ async function measure(
   );
 }
 
+/**
+ * An opener, found by a test id because its name is translated. Every opener
+ * is located AFTER a language switch, as a lazy locator, so a re-render on the
+ * switch cannot leave a detached handle behind (#1893, #1904). It must also
+ * carry a name once translated: an unnamed opener is a defect the sweep would
+ * otherwise click straight through.
+ */
+const opener = (page: Page, testId: string) => page.getByTestId(testId).first();
+
+async function clickNamedOpener(page: Page, testId: string) {
+  const button = opener(page, testId);
+  await expect(button).toHaveAccessibleName(/.+/);
+  await button.click();
+}
+
 /** The recorder's ≡ sheet, told apart from the recorder dialog under it. */
 const RECORDER_MENU = ".menu-panel:has(.recorder-menu-tile)";
 
@@ -275,17 +297,6 @@ async function settled(page: Page, selector: string) {
         .map((a) => a.finished.catch(() => undefined))
     ).then(() => undefined);
   }, selector);
-}
-
-async function handle(
-  page: Page,
-  role: "button",
-  name: string | RegExp,
-  exact?: boolean
-): Promise<ElementHandle> {
-  const h = await page.getByRole(role, { name, exact }).first().elementHandle();
-  expect(h, `no ${String(name)} to hold before the switch`).not.toBeNull();
-  return h!;
 }
 
 /** In an open recorder, record a short take from the synthetic microphone. */
@@ -314,16 +325,17 @@ async function recordOneSegment(page: Page): Promise<void> {
 }
 
 /**
- * Open the book's menu in English, hold the control that starts an ask,
- * switch the language with the menu open, then take that control.
+ * Open the book's menu in English, switch the language with the menu open,
+ * then take the tile that starts an ask, located after the switch by its test
+ * id (#1904).
  */
-async function openAsk(page: Page, tag: string, name: string) {
+async function openAsk(page: Page, tag: string, tileTestId: string) {
   await recordOneSegment(page);
-  await page.getByRole("button", { name: /^More actions for/ }).click();
+  await opener(page, "book-menu-open").click();
   await settled(page, '[role="dialog"]');
-  const start = await handle(page, "button", name, true);
+  await expect(opener(page, tileTestId)).toBeVisible();
   await switchLanguage(page, tag);
-  await start.click();
+  await clickNamedOpener(page, tileTestId);
 }
 
 /** Walk to `screen` in English, switch to `tag`, and return what overflows. */
@@ -335,8 +347,9 @@ export async function sweep(
   switch (screen) {
     case "books": {
       await seedToSegments(page);
-      const back = await handle(page, "button", "Back to books", true);
-      await back.click();
+      await page
+        .getByRole("button", { name: "Back to books", exact: true })
+        .click();
       await expect(
         page.getByRole("button", { name: "New book" })
       ).toBeVisible();
@@ -348,12 +361,12 @@ export async function sweep(
       await page
         .getByRole("button", { name: "Back to books", exact: true })
         .click();
-      const more = await handle(page, "button", /^More actions for/);
+      await expect(opener(page, "book-menu-open")).toBeVisible();
       await switchLanguage(page, tag);
-      await more.click();
+      await clickNamedOpener(page, "book-menu-open");
       // The Licence tile (#1455) appears once the book's provenance is read, so
       // the five-tile row is the one measured.
-      await expect(page.locator(".o4-tile--licence")).toBeVisible();
+      await expect(page.locator(".tile--licence")).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }
@@ -373,18 +386,44 @@ export async function sweep(
       // is live, as a translator meets it.
       await seedToRecorder(page);
       await recordTake(page);
-      const more = await handle(page, "button", "More actions", true);
+      await expect(opener(page, "recorder-menu-open")).toBeVisible();
       await switchLanguage(page, tag);
-      await more.click();
+      await clickNamedOpener(page, "recorder-menu-open");
       await expect(page.locator(".recorder-menu-tile")).toHaveCount(2);
       await settled(page, RECORDER_MENU);
       return measure(page, RECORDER_MENU);
     }
-    case "settings": {
+    case "app-menu": {
+      // The Books ≡ menu's tiles: Settings, Templates, About (#1871).
       await page.goto("/");
-      const gear = await handle(page, "button", "Settings", true);
+      await expect(page.locator("#launch-intro")).toBeHidden({
+        timeout: 10_000,
+      });
       await switchLanguage(page, tag);
-      await gear.click();
+      await clickNamedOpener(page, "books-menu");
+      await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
+        3
+      );
+      await settled(page, '[role="dialog"]');
+      return measure(page, '[role="dialog"]');
+    }
+    case "settings": {
+      // Settings is the first tile in the ≡ menu (#1871). Switch first, then
+      // open, as the app-menu case does (#1880): the localized tile name is
+      // not known here, so the tile is taken by position, and Settings has
+      // opened once the tile grid is gone from the dialog.
+      await page.goto("/");
+      await expect(page.locator("#launch-intro")).toBeHidden({
+        timeout: 10_000,
+      });
+      await switchLanguage(page, tag);
+      await clickNamedOpener(page, "books-menu");
+      await expect(page.locator('[role="dialog"] .tiles button')).toHaveCount(
+        3
+      );
+      await settled(page, '[role="dialog"]');
+      await page.locator('[role="dialog"] .tiles button').first().click();
+      await expect(page.locator('[role="dialog"] .tiles')).toHaveCount(0);
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }
@@ -393,11 +432,11 @@ export async function sweep(
       await expect(page.locator("#launch-intro")).toBeHidden({
         timeout: 10_000,
       });
-      await page.getByRole("button", { name: /^Open menu/ }).click();
+      await opener(page, "books-menu").click();
       await settled(page, '[role="dialog"]');
-      const tile = await handle(page, "button", "Templates", true);
+      await expect(opener(page, "menu-templates")).toBeVisible();
       await switchLanguage(page, tag);
-      await tile.click();
+      await clickNamedOpener(page, "menu-templates");
       // The picker lists the bundled package and its thumbnail.
       await expect(page.locator('[role="dialog"] img').first()).toBeVisible();
       await settled(page, '[role="dialog"]');
@@ -405,14 +444,16 @@ export async function sweep(
     }
     case "licence-ask": {
       // A new book has no licence, so Share book asks first (#1455).
-      await openAsk(page, tag, "Share book");
+      await openAsk(page, tag, "tile-share-book");
       await expect(page.locator('[role="radiogroup"]')).toBeVisible();
       await settled(page, '[role="dialog"]');
       return measure(page, '[role="dialog"]');
     }
     case "language-ask": {
-      // A book with no language asks first on Export project (#1492).
-      await openAsk(page, tag, "Export project");
+      // A book with no language asks first on Export project (#1492), in the
+      // installed app: a browser gets the pointer instead (#1457).
+      await asInstalledApp(page);
+      await openAsk(page, tag, "tile-export-project");
       await expect(page.locator('input[type="search"]')).toBeVisible();
       await expect(
         page
@@ -483,7 +524,7 @@ test("the sweep reports tile captions that run into each other (mutation guard)"
   // Undo the wrap and make the captions long enough to meet.
   await page.addStyleTag({
     content:
-      ".o4-tile > .control-caption { white-space: nowrap !important; max-width: none !important; hyphens: none !important; overflow-wrap: normal !important; font-size: 22px !important; }",
+      ".tile > .control-caption { white-space: nowrap !important; max-width: none !important; hyphens: none !important; overflow-wrap: normal !important; font-size: 22px !important; }",
   });
   const findings = await measure(page, '[role="dialog"]');
   expect(findings.map((f) => f.what)).toContain(
@@ -495,6 +536,7 @@ test("the sweep still reports a translated label cut with an ellipsis, and exemp
   page,
 }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /^Open menu/ }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(dialog).toBeVisible();

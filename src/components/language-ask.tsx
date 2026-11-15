@@ -4,7 +4,7 @@ import type { LanguageListState } from "@/hooks/use-language-ask";
 import { searchLanguages } from "@/lib/languages/list";
 import { strings } from "@/lib/strings";
 import { Notice } from "./notice";
-import { TileGrid } from "./o4-tile-menu";
+import { TileGrid } from "./tile-menu";
 
 /** Rows drawn at once; more matches ask for a longer query instead. */
 const SHOWN = 50;

@@ -33,7 +33,7 @@ export function RecorderStatus({
   const status = recorderStatusKind(state, isClosing);
   if (!status) return null;
   return (
-    <div className="px-[12px] pt-[var(--p-space-3)]">
+    <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
       <Notice tone="busy">{strings.recorderSaving}</Notice>
     </div>
   );

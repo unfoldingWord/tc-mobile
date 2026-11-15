@@ -56,8 +56,13 @@
  * Pure arithmetic: no DOM, Web Audio or Worker globals, and no clock.
  */
 
+import { SpeechCompressor } from "./compressor";
 import { INT16_MAX, int16ToFloatInto } from "./format";
-import type { ClipProcessing, ProcessingStage } from "@/types/audio";
+import type {
+  ClipProcessing,
+  NormalizeOptions,
+  ProcessingStage,
+} from "@/types/audio";
 
 /** BS.1770's loudness offset, in dB. */
 const LOUDNESS_OFFSET_DB = -0.691;
@@ -378,8 +383,16 @@ export class LoudnessMeter {
   private truePeak = 0;
   private result: LoudnessMeasurement | null = null;
 
-  /** `maxChunk` is the longest chunk {@link push} will be given, in samples. */
-  constructor(sampleRate: number, maxChunk: number) {
+  /**
+   * `maxChunk` is the longest chunk {@link push} will be given, in samples.
+   * A `compressor` runs on each chunk after the high-pass, so the take is
+   * measured as it will be encoded (#1873); it is this take's own.
+   */
+  constructor(
+    sampleRate: number,
+    maxChunk: number,
+    private readonly compressor?: SpeechCompressor
+  ) {
     requireSampleRate(sampleRate);
     requireFinite("maxChunk", maxChunk);
     const arena = new Arena();
@@ -405,6 +418,7 @@ export class LoudnessMeter {
     requireFiniteSamples(x, n);
     this.highPass.process(x, n);
     lap?.("highPass");
+    this.compressor?.process(x, n);
     const w = this.weighted;
     w.set(x.subarray(0, n));
     this.shelf.process(w, n);
@@ -545,6 +559,8 @@ export interface LoudnessNormalizerOptions {
   readonly gainDb: number;
   /** The limiter's true-peak ceiling; the plan's -1.5 dBTP by default. */
   readonly ceilingDbtp?: number;
+  /** Runs after the high-pass, before the gain (#1873); this take's own. */
+  readonly compressor?: SpeechCompressor;
 }
 
 /**
@@ -558,6 +574,7 @@ export class LoudnessNormalizer {
   /** Bytes of every buffer this normalizer allocated; fixed for any take length. */
   readonly workingSetBytes: number;
   private readonly highPass: Biquad;
+  private readonly compressor: SpeechCompressor | undefined;
   private readonly gain: number;
   private readonly limiter: Limiter;
   private toTrim: number;
@@ -570,6 +587,7 @@ export class LoudnessNormalizer {
     requireFinite("ceilingDbtp", ceilingDbtp);
     const arena = new Arena();
     this.highPass = rumbleHighPass(options.sampleRate);
+    this.compressor = options.compressor;
     this.gain = 10 ** (options.gainDb / 20);
     this.limiter = new Limiter(arena, options.sampleRate, ceilingDbtp);
     this.toTrim = this.limiter.latency;
@@ -591,6 +609,7 @@ export class LoudnessNormalizer {
     requireFiniteSamples(x, n);
     this.highPass.process(x, n);
     lap?.("highPass");
+    this.compressor?.process(x, n);
     const g = this.gain;
     for (let i = 0; i < n; i++) x[i] = x[i]! * g;
     lap?.("gain");
@@ -635,12 +654,24 @@ export class LoudnessNormalizer {
  * The stages {@link normalizePcm} runs, in order, as each clip records them
  * (#1433). Bump a stage's `version` whenever its output changes, so a clip's
  * record still says exactly what processed it. Not a registry yet: the chain
- * is these three, always together.
+ * is these three, always together, plus the compressor when its switch is on.
  */
 export const NORMALIZE_STAGES: readonly ProcessingStage[] = [
   { id: "hpf", version: 1 },
   { id: "loudness", version: 1 },
   { id: "limiter", version: 1 },
+];
+
+/**
+ * The chain with the speech compressor (#1873): after the high-pass, so
+ * rumble does not drive it, and before the loudness stage, because it has no
+ * makeup gain and the static gain must be measured on what is encoded. The
+ * order of Seth Stoll's research, without its optional denoise and expander.
+ */
+const COMPRESSED_STAGES: readonly ProcessingStage[] = [
+  NORMALIZE_STAGES[0]!,
+  { id: "compressor", version: 1 },
+  ...NORMALIZE_STAGES.slice(1),
 ];
 
 /**
@@ -668,11 +699,17 @@ const NORMALIZE_CHUNK = 44_100;
  *
  * `onChunk` hears the fraction done after each chunk of either pass, so the
  * worker can keep its heartbeat going through a long take.
+ *
+ * With `compress`, each pass builds its own {@link SpeechCompressor} here:
+ * one has no reset, so pass 2 must start from rest exactly as pass 1 did,
+ * and no take may inherit another's release tail (#1873). A refusal from it
+ * is a `CompressorRangeError`, thrown on.
  */
 export function normalizePcm(
   samples: Int16Array,
   sampleRate: number,
-  onChunk?: (fraction: number) => void
+  onChunk?: (fraction: number) => void,
+  options: NormalizeOptions = {}
 ): ClipProcessing {
   const total = samples.length;
   const work = new Float32Array(Math.min(NORMALIZE_CHUNK, Math.max(1, total)));
@@ -680,7 +717,11 @@ export function normalizePcm(
   const beat = (pass: number, chunk: number) =>
     onChunk?.((pass * chunks + chunk + 1) / (2 * chunks));
 
-  const meter = new LoudnessMeter(sampleRate, work.length);
+  const compress = options.compress === true;
+  const compressor = () =>
+    compress ? new SpeechCompressor(sampleRate) : undefined;
+
+  const meter = new LoudnessMeter(sampleRate, work.length, compressor());
   for (let c = 0; c < chunks; c++) {
     meter.push(work, int16ToFloatInto(samples, work, c * work.length));
     beat(0, c);
@@ -688,7 +729,11 @@ export function normalizePcm(
   const { integratedLufs, truePeakDbtp } = meter.finish();
   const gainDb = normalizationGainDb(integratedLufs);
 
-  const normalizer = new LoudnessNormalizer({ sampleRate, gainDb });
+  const normalizer = new LoudnessNormalizer({
+    sampleRate,
+    gainDb,
+    compressor: compressor(),
+  });
   let written = 0;
   const emit = (n: number) => {
     for (let i = 0; i < n; i++) {
@@ -715,7 +760,7 @@ export function normalizePcm(
     );
 
   return {
-    stages: NORMALIZE_STAGES,
+    stages: compress ? COMPRESSED_STAGES : NORMALIZE_STAGES,
     measuredLufs: integratedLufs,
     measuredTruePeakDbtp: truePeakDbtp,
     appliedGainDb: gainDb,

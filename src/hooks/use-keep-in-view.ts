@@ -2,7 +2,7 @@ import { useEffect, useRef, type RefObject } from "react";
 
 /**
  * Keep one child of a scrolling box in view (#947, DRI pick (a) on #1023,
- * "Bounded, scrolls"): the O4 share overlay caps its chip row at about three
+ * "Bounded, scrolls"): the share overlay caps its chip row at about three
  * rows and scrolls inside it, and this moves the row so the current chip is
  * visible whenever the current index changes. Returns the ref to put on the
  * box.
@@ -14,7 +14,7 @@ import { useEffect, useRef, type RefObject } from "react";
  * every render.
  *
  * Motion is the stylesheet's, not this hook's: assigning `scrollTop` follows
- * the box's computed `scroll-behavior`, which `o4/share.css` sets to `smooth`
+ * the box's computed `scroll-behavior`, which `3-components/share.css` sets to `smooth`
  * only under `prefers-reduced-motion: no-preference`. Under reduced motion
  * the jump is instant.
  *

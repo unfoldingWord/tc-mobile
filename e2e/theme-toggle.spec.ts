@@ -98,8 +98,9 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     expect(await statusBarStyle(page)).toBe("black-translucent");
 
     // --- 2. the toggle is where a translator can find it -------------------
-    // The Settings screen's first row (#1575): the gear in the Books header
-    // opens it. The ≡ menu no longer holds the toggle.
+    // The Settings screen's first row (#1575): the Settings tile in the Books
+    // ≡ menu opens it (#1871). The ≡ menu itself no longer holds the toggle.
+    await page.getByRole("button", { name: /^Open menu/ }).click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const menu = page.getByRole("dialog", { name: "Settings", exact: true });
     await expect(menu).toBeVisible();
@@ -169,6 +170,7 @@ test.describe("the light theme is reachable and sticks (#171)", () => {
     // this reads INK as well as the floor, in the shipped cascade, rather than
     // trusting that one attribute selected the whole block.
     await page.goto("/");
+    await page.getByRole("button", { name: /^Open menu/ }).click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page
       .getByRole("dialog", { name: "Settings", exact: true })
@@ -246,6 +248,7 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
     await expect(failureMarker(page)).toHaveCount(0);
 
     // Switch to light, with the write failing underneath.
+    await page.getByRole("button", { name: /^Open menu/ }).click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page
       .getByRole("dialog", { name: "Settings", exact: true })

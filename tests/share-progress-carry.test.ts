@@ -10,7 +10,7 @@ import {
 
 /**
  * The prepare's per-item result, carried into the send (#1023, the Frank and
- * George blocker at `share-o4-view.ts`'s hand-off): a send begins from
+ * George blocker at `share-view.ts`'s hand-off): a send begins from
  * `hidden` once the prepare's busy phase has ended, so the prepare's `steps`
  * are gone by then. `carryFromPrepare` snapshots them while the prepare is
  * still up, and a `carry` event puts the snapshot on the send's busy state,

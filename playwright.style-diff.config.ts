@@ -15,7 +15,11 @@ import base from "./playwright.config";
  *
  * How a lane runs it, one command per step:
  *   1. Build the base and the head (`npm run build` and `npm run build:e2e`
- *      in a checkout of each), or copy each pair of builds aside.
+ *      in a checkout of each), or copy each pair of builds aside. Build
+ *      with NODE_ENV unset: a shell that exports NODE_ENV=development builds
+ *      with `import.meta.env.PROD` false, which compiles the worker snapshot
+ *      out, so `browser-boundary-smoke.spec.ts`'s purge test fails in the
+ *      capture run as it does in a plain e2e run of that build.
  *   2. Capture the base twice and the head once, each into its own empty
  *      directory, from the HEAD checkout (its specs drive all three runs):
  *        STYLE_CAPTURE_DIR=<dir> STYLE_DIFF_DIST=<dist> \
@@ -65,14 +69,42 @@ const moved = (baseURL: string | undefined): string => {
  */
 export const NOT_CAPTURED: readonly string[] = ["chromium-template-packages"];
 
-/** The base projects, less NOT_CAPTURED, each moved to its capture port. */
+/**
+ * Spec files the capture leaves out, by file name, each with its reason. A
+ * spec goes here only when it navigates the page on purpose while the
+ * capture reads a state, so that read is destroyed and counted as a capture
+ * error in every run. The verdict still fails on a capture error from any
+ * spec the capture runs, so an error nobody named stays loud.
+ */
+export const NOT_CAPTURED_SPECS: readonly { spec: string; reason: string }[] = [
+  {
+    spec: "stale-chunk-reload.spec.ts",
+    reason:
+      "the Export project tap reloads the page on purpose (#1421), so the read after it is destroyed mid-evaluate",
+  },
+];
+
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const SPEC_IGNORES = NOT_CAPTURED_SPECS.map(
+  ({ spec }) => new RegExp(`(^|[\\\\/])${escaped(spec)}$`)
+);
+
+/**
+ * The base projects, less NOT_CAPTURED, each moved to its capture port and
+ * told to ignore NOT_CAPTURED_SPECS on top of what it already ignores.
+ */
 export function captureProjects<
-  P extends { name?: string; use?: { baseURL?: string } },
+  P extends {
+    name?: string;
+    use?: { baseURL?: string };
+    testIgnore?: string | RegExp | (string | RegExp)[];
+  },
 >(projects: readonly P[]): P[] {
   return projects
     .filter((project) => !NOT_CAPTURED.includes(project.name ?? ""))
     .map((project) => ({
       ...project,
+      testIgnore: [...[project.testIgnore ?? []].flat(), ...SPEC_IGNORES],
       use: { ...project.use, baseURL: moved(project.use?.baseURL) },
     }));
 }

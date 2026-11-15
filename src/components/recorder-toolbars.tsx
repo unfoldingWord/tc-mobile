@@ -132,7 +132,7 @@ export function RecorderToolbar({
   // types at this position would remount it and drop focus.
   return mode === "record" ? (
     // Both modes reserve the same right-hand slot for the toggle.
-    <div className="recorder-toolbar pair grid items-center px-[16px]">
+    <div className="recorder-toolbar pair grid items-center px-[var(--c-toolbar-pad-x)]">
       <Control
         ref={rerecordRef}
         // Wipe and record again (#592), on the bar so a translator who
@@ -243,7 +243,7 @@ export function RecorderToolbar({
     // toggle. Redo is a visible button here (out of the menu). No menu
     // opener: the ⋮ stays in the header's top right in both modes (#1243,
     // reversing #863's toolbar ⋮).
-    <div className="recorder-toolbar edit grid items-center px-[16px]">
+    <div className="recorder-toolbar edit grid items-center px-[var(--c-toolbar-pad-x)]">
       <Control
         // The audition (#284) — the SAME glyph pair the record bar
         // uses, play/pause, because it is the same act: a non-reader

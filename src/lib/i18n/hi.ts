@@ -48,6 +48,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "टेम्पलेट लोड हो रहे हैं।",
   settingsChapterNumbers: "अध्याय संख्या हमेशा दिखाएँ",
   settingsNormalizeOnFinished: "पूर्ण होने पर आवाज़ बराबर करें",
+  settingsCompressOnFinished: "पूर्ण होने पर तेज़ हिस्सों को नरम करें",
   booksEmpty: "अपनी पहली पुस्तक शुरू करें",
   booksEmptyTeach: "पुस्तक में वे अध्याय होते हैं जो आप रिकॉर्ड करते हैं।",
   loadingBooks: "आपकी पुस्तकें लोड हो रही हैं।",
@@ -172,7 +173,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "यह रिकॉर्डिंग खुल नहीं सकी",
   loadFailedBody:
-    "आपकी रिकॉर्डिंग सुरक्षित है। फिर से कोशिश करें, या वापस जाकर सूची से इसे रीसेट करें।",
+    "आपकी रिकॉर्डिंग सुरक्षित है। फिर से कोशिश करें। अगर यह फिर भी नहीं खुलती, तो आप सूची से इसे रीसेट कर सकते हैं।",
   loadRetry: "फिर से कोशिश करें",
   loadBack: "वापस जाएँ",
   loadRetrying: "आपकी रिकॉर्डिंग खोली जा रही है…",
@@ -226,6 +227,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "कोई आवाज़ रिकॉर्ड नहीं हुई। फिर से कोशिश करें।",
   captureUndecodable: "इस डिवाइस पर रिकॉर्डिंग पढ़ी नहीं जा सकी।",
   captureUnfinished: "यह रिकॉर्डिंग पूरी नहीं हो सकी।",
+  captureStoppedSilent:
+    "रिकॉर्डिंग रुक गई, क्योंकि माइक्रोफ़ोन ने सिर्फ़ खामोशी सुनी। आपने जो रिकॉर्ड किया, वह सहेजा गया है।",
   blockedByTake:
     'रिकॉर्डिंग सहेजने के लिए "मेनू बंद करें", फिर "रिकॉर्डर बंद करें" चुनें।',
   micStarting: "माइक्रोफ़ोन अभी चालू हो रहा है।",
@@ -321,6 +324,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "प्रोजेक्ट निर्यात करें",
   tileExport: "निर्यात",
   exportProjectPreparing: "निर्यात के लिए प्रोजेक्ट तैयार किया जा रहा है।",
+  exportProjectWebPointer:
+    "निर्यात इंस्टॉल किए गए ऐप में काम करता है। इस प्रोजेक्ट को निर्यात करने के लिए ऐप खोलें।",
   exportProjectSuffix: "प्रोजेक्ट",
   exportProjectFilename(
     this: Strings,

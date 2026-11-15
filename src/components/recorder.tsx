@@ -19,7 +19,7 @@ import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
-import { O4Crumbs } from "./o4-crumbs";
+import { Crumbs } from "./crumbs";
 import { PermissionPanel } from "./permission-panel";
 import { RecorderMenu } from "./recorder-menu";
 import { PlayheadOverlay } from "./playhead-overlay";
@@ -113,7 +113,7 @@ import {
 } from "@/lib/takes/close-plan";
 import { cn, formatDuration } from "@/lib/utils";
 import { recorderLook } from "./recorder-look";
-import { RecorderStamp } from "./recorder-o4";
+import { RecorderStamp } from "./recorder-stamp";
 import { TakeCapMarker } from "./take-cap-marker";
 import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
@@ -215,7 +215,7 @@ interface RecorderProps {
    * commits edits and refuses over a held take), then the Segments Back the
    * adapter issues itself. Optional only so that a harness modelling no
    * Books screen need not stub it: without it the book crumb is a plain
-   * chip. App always passes it (`tests/o4-header-crumbs.test.ts` pins both
+   * chip. App always passes it (`tests/header-crumbs.test.ts` pins both
    * shapes).
    */
   onRequestBackToBooks?: () => void;
@@ -520,6 +520,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * it shows as a toolbar Notice with Record live — not the permission panel.
      */
     const [stopError, setStopError] = useState<string | null>(null);
+    /**
+     * The last take was sealed by the level tap on exact silence (#1294's R13)
+     * and saved, so the sheet says the recording stopped (#1986). In the same
+     * place as `stopError`, but on the `info` tone, because nothing failed (the
+     * DRI's pick, "Calmer info look"). The next Record clears it.
+     */
+    const [silenceStopped, setSilenceStopped] = useState(false);
     // A take whose decode failed on Stop, held as its raw container bytes so it is
     // NOT lost (#165). While set, the recovery panel owns the body: Try again
     // re-decodes on a fresh gesture, Share hands the bytes to the OS. There is no
@@ -596,7 +603,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // G5 (#979): the erase confirm, raised from the bar's bin.
     const g5 = confirmFrom === "rerecord";
     // Which workbench state the stage is in (#945). Read by
-    // `o4/recorder.css` through `data-o4-look`.
+    // `3-components/recorder.css` through `data-look`.
     const look = recorderLook({
       recording,
       playing: audio.playingBuffer,
@@ -1507,6 +1514,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             onExit(dirty.current);
             return;
           }
+          // A take the level tap sealed on exact silence (#1294's R13) was
+          // saved above like any other; nobody tapped Stop, so the sheet says
+          // the recording stopped (#1986), cleared by the next Record.
+          if (result.silenceSealed) setSilenceStopped(true);
           // The line comes to rest at the END of what was just recorded, so
           // "keep going" needs no drag: tap Record again and it continues
           // where this take stopped. `panAfterCommit` holds the rule, the F7
@@ -1633,6 +1644,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // (F9). It is an offset into the WORKING buffer, which is also the take's
         // splice base when it commits.
         setStopError(null);
+        setSilenceStopped(false);
         insertionOffset.current = win.centerlineSample;
         setCaptureContext(
           buildCaptureContext(
@@ -3604,7 +3616,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             where the sheet is already inert — deliberately so: this gate states
             the header's own invariant rather than depending on the sheet's. */}
           <header
-            className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[2px]"
+            className="flex items-center gap-[var(--p-space-3)] px-[var(--p-space-1)] py-[var(--c-header-pad-y)]"
             inert={overlayUp || undefined}
           >
             <Control
@@ -3629,9 +3641,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               onClick={onRequestBack}
             />
             {view ? (
-              // #1105: the same chips the O4 menus show, not a restyled
+              // #1105: the same chips the menus show, not a restyled
               // reading of the text trail below. NOT `aria-hidden`: unlike the
-              // menu, where `O4SheetHead`'s chips sit under a dialog title, no
+              // menu, where `SheetHead`'s chips sit under a dialog title, no
               // other element here names the place — the Back control's
               // `closeRecorder` names the action — so the chip text is the one
               // place book, chapter and segment reach assistive tech, as the
@@ -3650,7 +3662,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // segment list, named `goToChapter`. It runs `onRequestBack`,
               // the handler the Close control above runs, and is disabled
               // by the same expression (a held take, the close window;
-              // `tests/o4-header-crumbs.test.ts` pins the close window on
+              // `tests/header-crumbs.test.ts` pins the close window on
               // both); it sits in the same
               // header, so an overlay inerts both. So a crumb tap leaves
               // exactly as Back does: `close()` stops Play, seals and saves
@@ -3666,7 +3678,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // sheet has gone. Disabled by the same expression as the
               // other two, and inert with them under an overlay.
               <div className="min-w-0 flex-1">
-                <O4Crumbs
+                <Crumbs
                   className="min-w-0"
                   book={view.bookName}
                   chapter={chapterHeading}
@@ -3710,6 +3722,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             <Control
               icon="more"
               label={strings.recorderMenuOpen}
+              testId="recorder-menu-open"
               variant="quiet"
               // Also closed while `denied`: the permission panel owns the body
               // and its Retry/Back, and opening the menu inerts the sheet — which
@@ -3777,17 +3790,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           ) : (
             <>
               {stopError && (
-                <div className="px-[12px] pt-[var(--p-space-3)]">
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
                   <Notice>{stopError}</Notice>
                 </div>
               )}
+              {silenceStopped && (
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
+                  <Notice tone="info">{strings.captureStoppedSilent}</Notice>
+                </div>
+              )}
               {editor.error && (
-                <div className="px-[12px] pt-[var(--p-space-3)]">
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
                   <Notice>{strings.editFailed}</Notice>
                 </div>
               )}
               {eraseFailure && (
-                <div className="px-[12px] pt-[var(--p-space-3)]">
+                <div className="px-[var(--c-notice-inset-x)] pt-[var(--p-space-3)]">
                   {/* strings[key] (#172 part 2), not the fixed eraseFailed
                     sentence for every key — a full disk gets `noRoom`'s
                     actionable copy instead of the generic erase failure. */}
@@ -3795,7 +3813,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />
-              <div className="recorder-stage flex-1" data-o4-look={look}>
+              <div className="recorder-stage flex-1" data-look={look}>
                 {mode === "edit" && (
                   <div className="recorder-paste flex justify-center">
                     {/* Always mounted in edit mode, like `.recorder-cut` below
@@ -4125,7 +4143,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // #1005 ("Warn at 15, seal at 20"): the readout itself is
                     // the state-in-place marker — CSS tints the whole cluster
                     // to the warn role off this attribute (3-components.css,
-                    // o4/recorder.css). `TakeCapMarker` below only supplies
+                    // 3-components/recorder.css). `TakeCapMarker` below only supplies
                     // the remaining-minutes word that rides inside it.
                     data-near-limit={audio.takeCap.nearLimit || undefined}
                   >
@@ -4140,7 +4158,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 )}
                 {mode === "edit" ? (
                   // The edit-mode marker (D2, #1243): plain text in the
-                  // waveform's top right, where O4's stamp sits otherwise.
+                  // waveform's top right, where the stamp sits otherwise.
                   // Not a control — leaving edit mode is the toolbar's ✕
                   // (#557, #1252) — so it carries no
                   // role, name or tab stop, and a screen reader reads the word
@@ -4169,7 +4187,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // only animates while a take is live and rests empty otherwise —
                 // the sheet never re-renders per frame (D-LEVEL-PULL: it polls
                 // `audio.readLevel` on its own clock).
-                <div className="px-[16px]">
+                <div className="px-[var(--c-meter-pad-x)]">
                   <VuMeter
                     readLevel={audio.readLevel}
                     // Per-frame trust signal (#76): a wired tap whose context goes
@@ -4362,7 +4380,7 @@ export function LoadErrorPanel({
   return (
     <div
       role="alert"
-      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
+      className="flex flex-1 flex-col items-center justify-center gap-[var(--c-panel-gap)] px-[var(--c-panel-pad-x)] text-center"
     >
       <span className="text-live">
         <Icon name="alert" size={52} />
@@ -4445,7 +4463,7 @@ function SaveDecodeFailedPanel({
   return (
     <div
       role="alert"
-      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
+      className="flex flex-1 flex-col items-center justify-center gap-[var(--c-panel-gap)] px-[var(--c-panel-pad-x)] text-center"
     >
       <span className="text-live">
         <Icon name="alert" size={52} />
@@ -4521,7 +4539,7 @@ function SaveDecodeFailedPanel({
           />
         </>
       ) : null}
-      <div className="mt-[10px] flex flex-col items-center gap-[var(--p-space-3)]">
+      <div className="mt-[var(--c-panel-actions-inset)] flex flex-col items-center gap-[var(--p-space-3)]">
         <Control
           icon="trash"
           label={

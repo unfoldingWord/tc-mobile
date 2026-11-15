@@ -82,12 +82,12 @@
     /* --- Warning: storage pressure ----------------------------------------- */
     --p-warn-500: #d98b3a;
     --p-warn-950: #3a2810;
-    /* O4: the storage banner ground on light, and the warning ink on light. */
+    /* The storage banner ground on light, and the warning ink on light. */
     --p-warn-100: #fbe9d3;
     --p-warn-700: #8a4f0f;
 
-    /* --- O4 tile and cover families (workbench round 4, G9) ------------------
-       Taken from O4's screenshots. Each clears 5:1 under a white icon except
+    /* --- Tile and cover families (workbench round 4, G9) ------------------
+       Taken from the O4 design round's screenshots. Each clears 5:1 under a white icon except
        where the O4 design system doc says otherwise. */
     /* Violet: the Name tile and the naming pencil. */
     --p-violet-600: #7c4ddb;
@@ -117,7 +117,7 @@
     --p-radius-lg: 14px;
     --p-radius-xl: 18px;
     --p-radius-full: 999px;
-    /* O4's recurring radii (#937 D5), named by value: chapter rows and
+    /* The recurring radii (#937 D5), named by value: chapter rows and
        inputs, segment rows, tiles and the recorder stage, dialogs, sheets. */
     --p-radius-12: 12px;
     --p-radius-16: 16px;
@@ -125,7 +125,7 @@
     --p-radius-22: 22px;
     --p-radius-26: 26px;
 
-    /* --- Type: the current scale, then O4's (#937 D4) ---------------------- */
+    /* --- Type: the current scale, then the design round's (#937 D4) ---------------------- */
     /* system-ui first: no @font-face ships (R-13, #161) — naming a face here
        that never renders would just be wrong, not aspirational. */
     --p-font-ui: system-ui, ui-sans-serif, -apple-system, sans-serif;
@@ -137,8 +137,8 @@
     --p-weight-normal: 400;
     --p-weight-medium: 500;
     --p-weight-strong: 600;
-    /* O4's type scale (#937 D4), named by value. 12 and 21 are
-       `--p-text-sm` and `--p-text-lg` above; O4 reads those. */
+    /* The design round's type scale (#937 D4), named by value. 12 and 21 are
+       `--p-text-sm` and `--p-text-lg` above; the design round reads those. */
     --p-text-14: 14px;
     --p-text-15: 15px;
     --p-text-16: 16px;
@@ -156,7 +156,7 @@
     --p-dur-base: 140ms;
     --p-ease: cubic-bezier(0.2, 0, 0.2, 1);
 
-    /* --- Ambient motion (O4, #937 D6) ---------------------------------------
+    /* --- Ambient motion (#937 D6) ---------------------------------------
        Animations that run on their own to draw the eye, not transitions, so
        they are a separate group rather than more `--p-dur-*` steps. Named for
        the workbench keyframes (`aud` is audible). Iteration counts belong to

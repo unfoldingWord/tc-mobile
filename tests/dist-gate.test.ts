@@ -278,7 +278,7 @@ describe.each(GATED_FILES)("%s's skip condition", (file) => {
 // A gated suite runs only when a sanctioned caller names it: `npm test` skips
 // it, and each runner script passes vitest an explicit file list. A suite
 // left off both lists never runs anywhere, and nothing goes red (#954 found
-// `tests/o4-cascade.test.ts`'s build half in that state). So every suite that
+// `tests/area-stylesheets.test.ts`'s build half in that state). So every suite that
 // calls the resolver must be on one runner's list.
 describe("every gated suite has a runner (#954)", () => {
   const TESTS = path.resolve(import.meta.dirname);

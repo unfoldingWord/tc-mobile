@@ -55,6 +55,7 @@
 
 import { decodeMp3ToCanonical } from "./audio-io";
 import { reportFailure } from "./report-failure";
+import { CompressorRangeError } from "@/lib/audio/compressor-error";
 import { errorMessage } from "@/lib/failure-text";
 // The BUILT worker chunk's URL. `?worker&url` is the only form that yields it
 // outside a `new Worker(new URL(...))` literal: a bare
@@ -134,6 +135,8 @@ interface NormalizeRequest extends WholeEncodeRequest {
   readonly v: StreamProtocolVersion;
   readonly kind: "normalize";
   readonly sampleRate: number;
+  /** Run the speech compressor too (#1873); absent reads as false. */
+  readonly compress?: boolean;
 }
 
 /**
@@ -160,7 +163,12 @@ export type EncodeResponse =
       readonly kind: "normalized";
       readonly processing: ClipProcessing;
     } & WholeEncodeRequest)
-  | { readonly kind: "error"; readonly message: string };
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      /** Set when the speech compressor refused (#1873): not the encoder's failure. */
+      readonly stage?: "compressor";
+    };
 
 /**
  * The encoder stopped working: a worker that neither answered nor errored within
@@ -424,8 +432,14 @@ export async function withEncoder<T>(
       decodeMp3: decodeMp3ToCanonical,
       openMp3Stream: () => openStreamInWorker(signal),
       benchDsp: (seconds) => benchInWorker(seconds, signal),
-      normalizePcm: (samples, sampleRate, onProgress) =>
-        normalizeInWorker(samples, sampleRate, signal, onProgress),
+      normalizePcm: (samples, sampleRate, onProgress, options) =>
+        normalizeInWorker(
+          samples,
+          sampleRate,
+          options?.compress === true,
+          signal,
+          onProgress
+        ),
     });
   } finally {
     // Release only once the job ahead has finished too: an abort while still
@@ -904,11 +918,12 @@ async function benchInWorker(
 async function normalizeInWorker(
   samples: Int16Array,
   sampleRate: number,
+  compress: boolean,
   signal?: AbortSignal,
   onProgress?: (fraction: number) => void
 ): Promise<NormalizedPcm> {
   const { result } = await requestOnWorker(
-    { v: 1, kind: "normalize", sampleRate, ...pcmRequest(samples) },
+    { v: 1, kind: "normalize", sampleRate, compress, ...pcmRequest(samples) },
     [samples.buffer as ArrayBuffer],
     signal,
     onProgress
@@ -1538,6 +1553,11 @@ function runEncodeOnWorker(
         // A stream step landed. Not a finished encode, so health is left to
         // the `done` that ends the stream.
         resolve(null);
+      } else if (response.kind === "error" && response.stage === "compressor") {
+        // The speech compressor refused a chunk (#1873). The encoder was not
+        // asked to encode and did nothing wrong, so health is untouched; the
+        // sweep reports it under its own context and keeps the PCM.
+        reject(new CompressorRangeError(response.message));
       } else {
         // `error`, or a bench's answer to an encode: either way the encoder
         // did not produce what it was asked for.

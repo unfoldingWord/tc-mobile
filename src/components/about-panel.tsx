@@ -151,14 +151,14 @@ export function AboutPanel({
               button, not this off-phone link (George G2). `SourceOfferLink`
               defers the `__BUILD_SHA_FULL__` read to render time, so mounting a
               closed AboutPanel (every BooksScreen test) never evaluates it. */}
-          <div className="flex flex-col gap-[3px]">
+          <div className="flex flex-col gap-[var(--c-licence-gap-tight)]">
             <span>{strings.aboutSourceOffer}</span>
             <SourceOfferLink />
           </div>
 
           {/* The privacy policy (#1210), after the licence-text buttons for
               the same open-edge focus reason as the source offer. */}
-          <div className="flex flex-col gap-[3px]">
+          <div className="flex flex-col gap-[var(--c-licence-gap-tight)]">
             <span>{strings.aboutPrivacy}</span>
             <ExternalLink
               href={PRIVACY_POLICY_URL}
@@ -178,10 +178,13 @@ export function AboutPanel({
             </figure>
           )}
 
-          <section className="flex flex-col gap-[10px]">
+          <section className="flex flex-col gap-[var(--c-licence-gap-section)]">
             <h3 className="t-title">{strings.aboutThirdParty}</h3>
             {thirdPartyLicenses.map((lib) => (
-              <div key={lib.name} className="flex flex-col gap-[3px]">
+              <div
+                key={lib.name}
+                className="flex flex-col gap-[var(--c-licence-gap-tight)]"
+              >
                 <span>
                   <span className="t-title">{lib.name}</span> {lib.version}
                 </span>

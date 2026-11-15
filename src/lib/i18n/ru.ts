@@ -51,6 +51,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   loadingTemplates: "Загружаются шаблоны.",
   settingsChapterNumbers: "Всегда показывать номера глав",
   settingsNormalizeOnFinished: "Выравнивать громкость при отметке «Готово»",
+  settingsCompressOnFinished: "Смягчать громкие места при отметке «Готово»",
   booksEmpty: "Начните свою первую книгу",
   booksEmptyTeach: "В книге хранятся главы, которые вы записываете.",
   loadingBooks: "Загружаются ваши книги.",
@@ -183,7 +184,7 @@ export const table: Partial<Strings> & ThisType<Strings> = {
     }),
   loadFailedTitle: "Не удалось открыть эту запись",
   loadFailedBody:
-    "Ваша запись в безопасности. Повторите или вернитесь и сбросьте её в списке.",
+    "Ваша запись в безопасности. Повторите попытку. Если она всё ещё не открывается, вы можете сбросить её в списке.",
   loadRetry: "Повторить",
   loadBack: "Назад",
   loadRetrying: "Открываем вашу запись…",
@@ -241,6 +242,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   captureSilence: "Звук не записан. Повторите попытку.",
   captureUndecodable: "Не удалось прочитать запись на этом устройстве.",
   captureUnfinished: "Не удалось завершить эту запись.",
+  captureStoppedSilent:
+    "Запись остановлена: микрофон слышал только тишину. Записанное сохранено.",
   blockedByTake:
     "Чтобы сохранить запись, нажмите «Закрыть меню», затем «Закрыть диктофон».",
   micStarting: "Микрофон ещё запускается.",
@@ -387,6 +390,8 @@ export const table: Partial<Strings> & ThisType<Strings> = {
   exportProject: "Экспортировать проект",
   tileExport: "Экспорт",
   exportProjectPreparing: "Готовим проект к экспорту.",
+  exportProjectWebPointer:
+    "Экспорт работает в установленном приложении. Откройте приложение, чтобы экспортировать этот проект.",
   exportProjectSuffix: "проект",
   exportProjectFilename(
     this: Strings,

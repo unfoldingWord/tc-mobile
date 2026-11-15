@@ -112,6 +112,12 @@ describe("judgePending", () => {
     ).toBe("unexplained");
   });
 
+  it("unexplained: no row and a refused record, so a dropped take is never saved by a later replay (#1562 item 2)", () => {
+    expect(
+      judgePending(segment(3), null, undefined, record("refused"), take)
+    ).toBe("unexplained");
+  });
+
   it("unexplained: the take's own row, already marked refused", () => {
     expect(
       judgePending(segment(3), null, row(C, "superseded"), undefined, take)

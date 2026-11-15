@@ -1,6 +1,6 @@
 import { Menu } from "./menu";
-import { O4SheetHead } from "./o4-crumbs";
-import { Tile, TileGrid } from "./o4-tile-menu";
+import { SheetHead } from "./crumbs";
+import { Tile, TileGrid } from "./tile-menu";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
 
@@ -83,7 +83,7 @@ export interface RecorderMenuProps {
   bookName?: string;
   /**
    * The book's resolved cover colour (#949, #957), already a hex string —
-   * see `O4SheetHead`'s own docblock for how it is resolved and why absent
+   * see `SheetHead`'s own docblock for how it is resolved and why absent
    * means "no square", not "no colour". `recorder.tsx` passes
    * `view?.bookCoverHex ?? undefined`.
    */
@@ -162,7 +162,7 @@ export function RecorderMenu({
           mark that will stick is "finished", audio that will exist on close
           is "recorded", anything else is "empty". The workbench's "hear
           this" speaker is not drawn (spoken titles, #952). */}
-      <O4SheetHead
+      <SheetHead
         book={bookName}
         bookCoverHex={bookCoverHex}
         chapter={chapterHeading ?? chapterNumber}
@@ -203,7 +203,7 @@ export function RecorderMenu({
 
 /**
  * This menu's action tiles (#949, workbench G3 and G8), on the tile grid,
- * which `o4/menus.css` turns into a bottom sheet capped at half the screen,
+ * which `3-components/menus.css` turns into a bottom sheet capped at half the screen,
  * so the waveform above is meant to stay in view (#927).
  *
  *   - Record mode has no Edit tile. G3 (workbench round 4) took it out
@@ -214,7 +214,7 @@ export function RecorderMenu({
  *     the shared "Done" (D17).
  *
  * Every tile draws at the shared tile glyph size; `recorder-menu-tile` is
- * only the hook for this sheet's half-screen cap in `o4/menus.css`.
+ * only the hook for this sheet's half-screen cap in `3-components/menus.css`.
  */
 function RecorderMenuTiles({
   mode,
@@ -261,7 +261,7 @@ function RecorderMenuTiles({
           icon="check"
           // Fixed label, state on `pressed` (#351).
           // The tile's `is-on` ink loses to the tone's own ink: equal
-          // specificity, and `o4/` is imported after `3-components.css`.
+          // specificity, and `3-components/index.css` loads after `3-components.css`.
           label={strings.markFinished(ordinal ?? 0)}
           pressed={marked}
           caption={strings.tileFinished}

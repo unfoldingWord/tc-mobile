@@ -6,7 +6,7 @@ import type { LicenceId } from "@/types/template";
 import { Control } from "./control";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
-import { TileGrid } from "./o4-tile-menu";
+import { TileGrid } from "./tile-menu";
 
 /**
  * The choices D5 and R20 name, in their order. "Other" is not here: whether

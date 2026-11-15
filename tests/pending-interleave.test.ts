@@ -40,7 +40,8 @@ import { NO_STAGES_RUN } from "@/lib/audio/loudness";
  *
  * The invariant, per take the scenario made:
  *   I1  a take that had a copy (a slot, a whole row, or the active take)
- *       still has one, unless it is recorded saved or discarded, or a Discard
+ *       still has one, unless it is recorded saved, discarded or refused (a
+ *       replay refused it and dropped its audio, #1562 item 2), or a Discard
  *       was requested for it;
  *   I2  a take that had a durable copy (a whole row, or the active take)
  *       still has one, unless a record says why it ended (a kill would
@@ -287,8 +288,9 @@ function deleteBook(copy: Copy["name"]): Step {
 /**
  * The launch replay's conditional commit of a take this copy holds (rebuild
  * PR 3). Every outcome but `held` lets the slot go, as the replay does: the
- * take is then saved, recorded as ended, on disk as a marked row, or its
- * segment is gone. A rejection keeps it held.
+ * take is then saved, recorded as ended (a refused take is recorded
+ * `refused` and its audio dropped, #1562 item 2), or its segment is gone. A
+ * rejection keeps it held.
  */
 function replay(copy: Copy["name"], letter: string): Step {
   return {
@@ -475,7 +477,10 @@ function violations(
     const hasCopy =
       world.live.A.slot.has(id) || world.live.B.slot.has(id) || durable(after);
     const ended =
-      record === "saved" || record === "discarded" || after.segmentGone;
+      record === "saved" ||
+      record === "discarded" ||
+      record === "refused" ||
+      after.segmentGone;
     if (hadCopy && !hasCopy && !ended && !requested(id)) {
       found.push(`I1: ${letter}'s last copy was freed with no record`);
     }

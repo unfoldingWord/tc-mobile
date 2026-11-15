@@ -14,17 +14,17 @@ import { restartWideButtonClass } from "@/components/save-failed-armed";
  */
 describe("restartWideButtonClass (#1088 S9)", () => {
   it("unarmed: the plain wide guide button, nothing else", () => {
-    expect(restartWideButtonClass(false)).toBe("o4-err-wide");
+    expect(restartWideButtonClass(false)).toBe("err-wide");
   });
 
   it("armed: swaps to the armed variant — never the old red-on-blue text utility", () => {
     const className = restartWideButtonClass(true);
-    expect(className).toBe("o4-err-wide o4-err-wide--armed");
+    expect(className).toBe("err-wide err-wide--armed");
     // The regression this table exists to close: a red TEXT utility layered
-    // on top of the still-blue `.o4-err-wide` fill (S9). Also guards against
+    // on top of the still-blue `.err-wide` fill (S9). Also guards against
     // the fill class going missing on its own — an armed button with no base
-    // `o4-err-wide` would drop the 280×84 wide-guide-button geometry too.
+    // `err-wide` would drop the 280×84 wide-guide-button geometry too.
     expect(className).not.toMatch(/\btext-live\b/);
-    expect(className).toMatch(/\bo4-err-wide\b/);
+    expect(className).toMatch(/\berr-wide\b/);
   });
 });

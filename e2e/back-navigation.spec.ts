@@ -9,8 +9,7 @@ import { newBookCta, seedToRecorder, seedToSegments } from "./support/seed";
  * The Node suite covers the pure decisions the adapter composes (`popAction`,
  * `navDirection`, `screenFor`, `resumeNavIndex`, `beginBack` /
  * `settleOutstanding`, `routeBackToLayer`) and the ESLint history boundary. What
- * it structurally cannot cover — this repo runs Vitest in the Node environment
- * with no jsdom/renderer (AGENTS.md) — is the adapter's DOM wiring itself: the
+ * it does not cover is the adapter's DOM wiring in a real browser: the
  * single `popstate` listener, the mount-adopt effect (Amendment B), the
  * protective `history.pushState`/`history.back()` on each transition, and the
  * commit-close path. Those are what this spec drives, in real Chromium, by

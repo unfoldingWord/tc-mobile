@@ -9,7 +9,7 @@
 @import "./1-primitives.css";
 @import "./2-semantic.css";
 @import "./3-components.css";
-/* The O4 design (#938, epic #936). Imported last, sharing 3-components.css's
-   own @layer components — see src/app/styles/o4/index.css's header for the
-   scoping rule and why this ordering is load-bearing. */
-@import "./o4/index.css";
+/* The component layer's area files. Imported last, sharing 3-components.css's
+   own @layer components — see src/app/styles/3-components/index.css's header
+   for why this ordering is load-bearing. */
+@import "./3-components/index.css";

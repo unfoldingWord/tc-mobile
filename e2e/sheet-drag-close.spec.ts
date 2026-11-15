@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "./support/test";
 
 /**
- * Drag down to close, and the one ✕, on a new-look (O4) half-screen sheet at
+ * Drag down to close, and the one ✕, on a half-screen sheet at
  * phone width, against the shipped `dist/` build (#1268).
  *
  * The requirements owner's decision on #1268: "1. Yes, it should work as
@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from "./support/test";
  * X)?" The Books screen's ≡ menu is the sheet used here because it needs no
  * seeded book: it is a tile sheet like the book, chapter, segment and
  * recorder menus, and every one of them is the same `<Menu>` with the same
- * grip (`tests/sheet-close-o4.test.ts` pins that per caller).
+ * grip (`tests/sheet-close.test.ts` pins that per caller).
  *
  * This is the part jsdom cannot show: that the grip is laid out where a
  * finger lands, that the cascade lets the sheet follow the pointer, and

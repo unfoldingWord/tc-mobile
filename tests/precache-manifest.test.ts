@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -482,15 +483,27 @@ describe.skipIf(GATE === "skip")(
     // chunk, so a baked package lists offline. `template-bake.json` is the
     // build's own record of that chunk and the ids it baked; the chunk's text
     // is checked against it, so a record that drifted from the bundle fails.
-    it("precaches the chunk holding the baked template packages (#1450)", () => {
+    it("precaches the chunk holding the baked template packages (#1450)", async () => {
       const bake = JSON.parse(
         readFileSync(path.join(ROOT, "dist", "template-bake.json"), "utf8")
       ) as { chunk: string | null; packages: string[] };
       expect(bake.chunk).toMatch(/^assets\/[^/]+\.js$/);
       expect(precachedUrls()).toContain(bake.chunk);
-      const text = readFileSync(path.join(ROOT, "dist", bake.chunk!), "utf8");
-      for (const id of bake.packages) expect(text).toContain(id);
-      expect(text.includes("tc-mobile-template")).toBe(
+      const file = path.join(ROOT, "dist", bake.chunk!);
+      // Import the built chunk and read its `export default`: a string
+      // search finds an id in a comment or a dead branch, and finds nothing
+      // wrong with an empty bake (#1797).
+      const mod = (await import(
+        /* @vite-ignore */ pathToFileURL(file).href
+      )) as {
+        default?: unknown;
+      };
+      expect(Array.isArray(mod.default), "chunk has no default list").toBe(
+        true
+      );
+      const baked = mod.default as { pkg: { id: string } }[];
+      expect(baked.map((entry) => entry.pkg.id)).toEqual(bake.packages);
+      expect(readFileSync(file, "utf8").includes("tc-mobile-template")).toBe(
         bake.packages.length > 0
       );
     });

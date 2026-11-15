@@ -96,14 +96,14 @@ describe("ErrorBoundary", () => {
     expect(html).toContain(strings.appReloadTeach);
     // The 72px alert mark in the warn circle (state 18, #948) — what a
     // translator who does not read actually sees.
-    expect(html).toContain("o4-err-circle--warn");
+    expect(html).toContain("err-circle--warn");
     expect(html).toContain('width="72"');
     // Restart, labelled for what it does — not the Books shelf's `tryAgain` —
     // and the wide guide button, `--primary`, with a 34px glyph rather than
     // the 22px default.
     expect(html).toContain(`aria-label="${strings.appReload}"`);
     expect(html).toContain("control--primary");
-    expect(html).toContain("o4-err-wide");
+    expect(html).toContain("err-wide");
     expect(html).toContain('width="34"');
     expect(html).not.toContain(`aria-label="${strings.tryAgain}"`);
 

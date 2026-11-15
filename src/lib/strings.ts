@@ -106,10 +106,11 @@ export const stringsEn = {
   // Every OTHER menu passes its own `title` and still shows it.
   menuTitle: "Menu",
   menuClose: "Close menu",
-  // Settings (#1575): the gear in the Books header, and the screen it opens.
-  // The gear's name is the screen's title, so the heading a screen reader
-  // announces is the word the control carried. The screen's Back reads
-  // `backToBooks`. Theme rows reuse `useLightTheme` and `useDarkTheme`.
+  // Settings (#1575): the Settings tile in the Books ≡ menu (#1871), and the
+  // screen it opens. The tile's name is the screen's title, and its caption
+  // is `settingsTitle` itself, so the heading a screen reader announces is
+  // the word the tile carried. The screen's Back reads `backToBooks`. Theme
+  // rows reuse `useLightTheme` and `useDarkTheme`.
   settingsOpen: "Settings",
   settingsTitle: "Settings",
   templatesOpen: "Templates",
@@ -124,6 +125,11 @@ export const stringsEn = {
   // #1433 (U6b): the switch for the loudness chain the Done transcode runs.
   // Off when nothing is stored (PR #1746). The word is "done", as `markFinished` says (D17).
   settingsNormalizeOnFinished: "Even out the volume when done",
+  // #1873: the speech compressor's switch, shown under the one above while it
+  // is on (the compressor is a stage of that chain). Off when nothing is
+  // stored: the requirements owner's `compressor-off` pick on #1433. English
+  // is a proposal for the requirements owner; the other languages are AI drafts.
+  settingsCompressOnFinished: "Soften loud parts when done",
   booksEmpty: "Start your first book",
   // #406 item 3 (George round 2 residual, then George round 1 on #423 P2):
   // an earlier fix hedged this line with "unless space runs low" instead of
@@ -306,7 +312,7 @@ export const stringsEn = {
     return `Open segment ${this.segmentHeading(n, label)}`;
   },
   scrubSegment: (n: number): string => `Position in segment ${n}`,
-  // "done", not "finished" (D17, #949): the O4 tile's caption is the
+  // "done", not "finished" (D17, #949): the tile's caption is the
   // workbench's "Done", and the label must hold the caption (label-in-name).
   // One string for both menus (segment row and recorder). It
   // does not flip to "not done": `aria-pressed` carries the state (#351).
@@ -344,7 +350,7 @@ export const stringsEn = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
-  // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
+  // The menu tiles' visible captions (#949, `tile-menu.tsx`). Shown,
   // never announced: each tile's name is the label its current-look row
   // already had, and every caption is a word that label holds (label-in-name,
   // WCAG 2.5.3). Marking done says the workbench's "Done", and
@@ -467,9 +473,12 @@ export const stringsEn = {
   // corrupt clip. The sheet is a full panel, not a blank: the recording is
   // untouched, "Try again" resumes the context and re-decodes, and Back returns
   // to the Segments list, where the row's Reset (which does not decode) works.
+  // The body asks for Try again first and names Reset only as the fallback
+  // "if it still won't open" (#1933), since a transient failure is the common
+  // case and Reset discards the recording.
   loadFailedTitle: "This recording could not be opened",
   loadFailedBody:
-    "Your recording is safe. Try again, or go back to reset it from the list.",
+    "Your recording is safe. Try again. If it still won't open, you can reset it from the list.",
   loadRetry: "Try again",
   loadBack: "Go back",
   // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
@@ -660,6 +669,13 @@ export const stringsEn = {
   // sheet offers next after this code is `planClose`'s `stay`, which leaves the
   // recorder open with this Notice in place, not a named remedy.
   captureUnfinished: "Could not finish this recording.",
+  // Not a failure code: the take WAS saved. The level tap read exact silence
+  // on a running clock and sealed the take (#1294's R13, requirements owner:
+  // "A visible “recording stopped” state that saves what was captured"), so
+  // this says it stopped and that what was recorded is kept (#1986). It
+  // names no duration, so it cannot drift from `CAPTURE_SILENCE_MS`.
+  captureStoppedSilent:
+    "Recording stopped because the microphone heard only silence. What you recorded is saved.",
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ⋮-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
@@ -861,7 +877,7 @@ export const stringsEn = {
   // Back after the activity stopped (`resolveProvesDelivery`). So never
   // "sent", "delivered", "shared to", or an app's name; a test pins that.
   shareHandingOver: "Opening the phone's share sheet.",
-  // The O4 share circle (#947). D22: the core is a progress bar with this
+  // The share circle (#947). D22: the core is a progress bar with this
   // label, chapter and book alike. D21: the numbered chips above it are one
   // image with this label — how many of the items go out, of all of them.
   // The verb agrees with `out`, so the choice goes through `plural` rather
@@ -938,6 +954,8 @@ export const stringsEn = {
   exportProject: "Export project",
   tileExport: "Export",
   exportProjectPreparing: "Preparing the project to export.",
+  exportProjectWebPointer:
+    "Export works in the installed app. Open the app to export this project.",
   // ADR 0014 point 8 (amended 2026-10-22, #1627): `<book> - <word>.zip`, where
   // the word follows the app's language the way Share Book's chapter names do
   // (`chapterName`), so it differs from Share Book's `<book>.zip`. Sanitised
@@ -1382,13 +1400,13 @@ export const stringsEn = {
     "This phone is running low on space. Mark segments finished to free up room, or share your work and then remove it.",
   storageCritical:
     "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
-  // The O4 storage banner's own line (state 17, #983), word for word from
+  // The storage banner's own line (state 17, #983), word for word from
   // the workbench. It leads; the band's line above follows it, because the
   // workbench speaks that reason through a speaker button this app does not
   // have yet (#952).
   storageShareSoon: "Share your work soon",
 
-  // ── Share your work (#987, the O4 storage banner's button, #948 D14) ──────
+  // ── Share your work (#987, the storage banner's button, #948 D14) ──────
   // Every book on the phone as one zip, one folder per book. The labels
   // follow Share Book's; the gap lines speak in the library's own units
   // (`LibraryShareGap`): whole books left out, and chapters inside included

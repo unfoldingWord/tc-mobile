@@ -375,6 +375,9 @@ export default tseslint.config(
       ".react-hooks-refs-probe",
       // tests/nav-history-boundary.test.ts's probe dir — same pattern.
       ".nav-history-probe",
+      // The iOS Simulator harness's build output (#1840): Xcode copies
+      // Capacitor's native-bridge.js into it.
+      ".ios-sim",
       // Capacitor native projects (#262) — generated/managed by the `cap` CLI.
       // No first-party TS/TSX lives here; skip them so ESLint never trips on a
       // generated file inside the iOS/Android shells.
@@ -647,6 +650,9 @@ export default tseslint.config(
         TextEncoder: "readonly",
         TextDecoder: "readonly",
         setTimeout: "readonly",
+        clearTimeout: "readonly",
+        // ios-sim.mjs's CDP connection to the Simulator's WebView (#1840).
+        WebSocket: "readonly",
         // check-deploy.mjs's fetch timeout (round-1 Frank F2).
         AbortSignal: "readonly",
       },

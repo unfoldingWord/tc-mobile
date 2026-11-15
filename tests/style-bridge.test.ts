@@ -159,7 +159,7 @@ describe("the deleted bridge stays deleted (#164 L-14)", () => {
  * does not outrank a layer-3 rule, it just names a number that should have
  * been a token. The issue's rule is narrower than the colour sweep's total
  * ban: swap a literal for a token ONLY where the two are numerically
- * identical, so the rendered O4 UI does not move; a value with no exact
+ * identical, so the rendered UI does not move; a value with no exact
  * token stays put.
  *
  * This batch covers three of #460's nine files — `database-panel.tsx`,

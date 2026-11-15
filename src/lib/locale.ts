@@ -68,7 +68,8 @@ export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
 
 /**
  * The UI languages v2 supports (#1482; decision D6-languages, "The 10 level-4
- * languages in v2"), each stating its own direction for the reason above.
+ * languages in v2", plus the level-3 Vietnamese, Malay, Tagalog and Tok Pisin, #357),
+ * each stating its own direction for the reason above.
  * `SHIPPED_LOCALE` is the English entry itself, not a copy of it.
  *
  * Mandarin is `zh-Hans`: the Simplified script is part of the tag, because
@@ -77,7 +78,8 @@ export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
  *
  * An entry here is a language the resolver can pick, not a translation that
  * exists: a locale whose table is incomplete is skipped at runtime
- * (`completeLocales` in `lib/i18n/locales.ts`, ADR 0015 (g)).
+ * (`completeLocales` in `lib/i18n/locales.ts`, ADR 0015 (g)), and so is one
+ * on that file's go-live hold (`GO_LIVE_HELD`), whatever its table holds.
  */
 export const LOCALES: readonly Locale[] = [
   { tag: "ar", dir: "rtl" },
@@ -86,9 +88,13 @@ export const LOCALES: readonly Locale[] = [
   { tag: "fr", dir: "ltr" },
   { tag: "hi", dir: "ltr" },
   { tag: "id", dir: "ltr" },
+  { tag: "ms", dir: "ltr" },
   { tag: "pt", dir: "ltr" },
   { tag: "ru", dir: "ltr" },
   { tag: "sw", dir: "ltr" },
+  { tag: "tl", dir: "ltr" },
+  { tag: "tpi", dir: "ltr" },
+  { tag: "vi", dir: "ltr" },
   { tag: "zh-Hans", dir: "ltr" },
 ];
 

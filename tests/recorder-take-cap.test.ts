@@ -410,6 +410,11 @@ describe("the recorder hook: nearLimit and remaining time", () => {
     expect(ref.current?.recorder.state).toBe("processing");
     expect(ref.current?.recorder.elapsedMs).toBe(20 * MINUTE);
     expect(capRows()).toHaveLength(1);
+    // The row is written at the seal, and nothing has saved the take yet (no
+    // sheet is mounted here), so it must not say the take was saved (#1747).
+    expect((capRows()[0]![0] as Error).message).toBe(
+      "The take reached the 20-minute cap and was sealed; saving it comes after this row (#1005)"
+    );
     // The seal leaves the native recorder running for `stop()` to flush.
     expect(FakeMediaRecorder.last?.stopCalls).toBe(0);
 

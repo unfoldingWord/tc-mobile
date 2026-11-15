@@ -90,7 +90,7 @@ export interface Book {
   readonly createdAt: number;
   readonly updatedAt: number;
   /**
-   * Optional cover colour the facilitator picked from the O4 palette (#957,
+   * Optional cover colour the facilitator picked from the palette (#957,
    * from #937's D7/D8 — "people choose a colour", "a palette of 8–12"). The
    * chapter-name / segment-label pattern, one field over: `null` is the
    * default — no choice has been made — and `lib/cover-colour.ts`'s
@@ -333,15 +333,13 @@ export interface StoredPendingTake {
    */
   readonly baseGeneration?: number;
   /**
-   * Set when a replay refused to save this row and kept it instead (#38, the
-   * note's §4 "Keep, exactly"): `superseded` when the segment's audio moved
-   * since the base was read, `unexplained` when nothing says who owns it. The
-   * launch replay's classification marks the rest before any audio is read
-   * (the note's §3, "The replay's own reads"): `legacy` (no `baseRevision`),
-   * `sample-rate`, and a `stored` base that is `base-missing` or
-   * `base-changed`. A marked row is never saved by a replay; it keeps its
-   * audio until #1562 item 2 decides when refused audio may go. Absent on
-   * every other row.
+   * Set by a build before #1562 item 2 when a replay refused to save this row
+   * and kept it instead: `superseded` when the segment's audio moved since
+   * the base was read, `unexplained` when nothing says who owns it, and, from
+   * the launch's classification, `legacy` (no `baseRevision`), `sample-rate`,
+   * `base-missing` or `base-changed`. Nothing writes it now: a refused take is
+   * dropped, and the launch replay drops any row that still carries this
+   * (docs/design/pending-take-lifecycle.md §3). Read only to find those rows.
    */
   readonly refusal?: PendingRefusal;
 }
@@ -357,14 +355,17 @@ export type PendingRefusal =
 
 /**
  * Why a take stopped being pending (v13, #38), keyed by its `clipId`, written
- * in the same transaction as the act that ends its row. `given-up` may become
- * `saved` or `discarded`; those two are final. Deleted only with its segment.
- * See docs/design/pending-take-lifecycle.md, §3.
+ * in the same transaction as the act that ends its row. `refused` (#1562 item
+ * 2): a replay refused the take and dropped its audio. `given-up` may become
+ * `refused`, `saved` or `discarded`; `refused` may become `saved` or
+ * `discarded`; those two are final. No version step: nothing indexes `kind`.
+ * Deleted only with its segment. See docs/design/pending-take-lifecycle.md,
+ * §3.
  */
 export interface TakeDisposition {
   readonly clipId: ClipId;
   readonly segmentId: SegmentId;
-  readonly kind: "given-up" | "discarded" | "saved";
+  readonly kind: "given-up" | "refused" | "discarded" | "saved";
   /** Write time; diagnostic only, never a deletion clock. */
   readonly at: number;
 }

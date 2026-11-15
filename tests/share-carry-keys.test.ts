@@ -6,10 +6,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bookShareItems,
   chapterShareItems,
-  shareO4View,
+  shareView,
   type ShareChip,
-  type ShareO4View,
-} from "@/components/share-o4-view";
+  type ShareView,
+} from "@/components/share-view";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
 import { stepReporter } from "@/hooks/share-flow";
 import {
@@ -45,11 +45,11 @@ import { NO_STAGES_RUN } from "@/lib/audio/loudness";
 /**
  * #1044: the export names the items it counted (`keys`), and that list rides
  * from the export's step reports through the progress machine and the carry
- * to the O4 chips. An export leaves some items out BEFORE it fixes its count
+ * to the chips. An export leaves some items out BEFORE it fixes its count
  * (a segment with no resolvable audio, a dangling chapter id), so the chips
  * cannot map count positions onto the screen's items by position; these
  * cases run the real export, the real reporter and the real reducer, and read
- * the chips the O4 view draws from the result.
+ * the chips the view draws from the result.
  */
 
 beforeEach(clearAllStores);
@@ -64,15 +64,15 @@ function row(chips: readonly ShareChip[]): string {
 }
 
 /** The chip row's accessible label, as the panel renders it. */
-function goOutLabel(view: ShareO4View): string | null {
+function goOutLabel(view: ShareView): string | null {
   const container = render(
     createElement(ShareProgressPanel, {
       role: "status",
       text: "status",
-      o4: view,
+      view,
     })
   );
-  return one(container, ".share-o4-chips").getAttribute("aria-label");
+  return one(container, ".share-chips").getAttribute("aria-label");
 }
 
 /** A reducer the reporter dispatches into, starting from a busy prepare. */
@@ -159,12 +159,12 @@ describe("Share Chapter: a segment left out before the count (#1044)", () => {
       clipIds[2],
     ]);
     if (after.phase !== "busy") throw new Error("expected a busy prepare");
-    expect(row(shareO4View(after, "chapter", screen).chips)).toBe("v-v");
+    expect(row(shareView(after, "chapter", screen).chips)).toBe("v-v");
     const carried = carryFromPrepare(after);
     expect(carried).toBeDefined();
     const send = sendCarrying(carried!);
     if (send.phase === "hidden") throw new Error("expected a busy send");
-    expect(row(shareO4View(send, "chapter", screen).chips)).toBe("v-v");
+    expect(row(shareView(send, "chapter", screen).chips)).toBe("v-v");
   });
 });
 
@@ -212,12 +212,12 @@ describe("Share Chapter, all Finished (joined, #1004): a segment left out before
     const after = m.state();
     if (after.phase !== "busy") throw new Error("expected a busy prepare");
     expect(after.steps?.keys).toEqual([clipIds[0], clipIds[2]]);
-    const prepareView = shareO4View(after, "chapter", screen);
+    const prepareView = shareView(after, "chapter", screen);
     expect(row(prepareView.chips)).toBe("v-v");
     expect(goOutLabel(prepareView)).toBe("2 of 3 go out");
     const send = sendCarrying(carryFromPrepare(after)!);
     if (send.phase === "hidden") throw new Error("expected a busy send");
-    const sendView = shareO4View(send, "chapter", screen);
+    const sendView = shareView(send, "chapter", screen);
     expect(row(sendView.chips)).toBe("v-v");
     expect(goOutLabel(sendView)).toBe("2 of 3 go out");
   });
@@ -345,14 +345,14 @@ describe("Share Chapter, all Finished (joined, #1004): a later clip that is not 
       // attempt opened with: the SAME `plan.present` list, not a second,
       // possibly-different list `withStep` would have had to reject.
       expect(after.steps?.keys).toEqual(clipIds);
-      const prepareView = shareO4View(after, "chapter", screen);
+      const prepareView = shareView(after, "chapter", screen);
       expect(row(prepareView.chips)).toBe("vvv");
       expect(goOutLabel(prepareView)).toBe("3 of 3 go out");
       const carried = carryFromPrepare(after);
       expect(carried).toBeDefined();
       const send = sendCarrying(carried!);
       if (send.phase === "hidden") throw new Error("expected a busy send");
-      const sendView = shareO4View(send, "chapter", screen);
+      const sendView = shareView(send, "chapter", screen);
       expect(row(sendView.chips)).toBe("vvv");
       expect(goOutLabel(sendView)).toBe("3 of 3 go out");
     }
@@ -464,14 +464,14 @@ describe("Share Chapter, all Finished (joined, #1004 bench round 2): a later cli
     // The hollow is clip 0's position (index 0) — not clip 1's (index 1),
     // which is what the bug produced.
     expect(after.steps?.hollow).toEqual([0]);
-    const prepareView = shareO4View(after, "chapter", screen);
+    const prepareView = shareView(after, "chapter", screen);
     // Clip 0 (vanished, hollow) reads as excluded ("-"); clips 1 and 2
     // (both contributed audio in the end) read as finished ("v").
     expect(row(prepareView.chips)).toBe("-vv");
     expect(goOutLabel(prepareView)).toBe("2 of 3 go out");
     const send = sendCarrying(carryFromPrepare(after)!);
     if (send.phase === "hidden") throw new Error("expected a busy send");
-    const sendView = shareO4View(send, "chapter", screen);
+    const sendView = shareView(send, "chapter", screen);
     expect(row(sendView.chips)).toBe("-vv");
     expect(goOutLabel(sendView)).toBe("2 of 3 go out");
   });
@@ -600,7 +600,7 @@ describe("Share Chapter, all Finished (joined, #1004 bench round 2): joinMp3 ref
     if (after.phase !== "busy") throw new Error("expected a busy prepare");
     expect(after.steps?.done).toBe(after.steps?.total);
     expect(after.steps?.keys).toEqual(clipIds);
-    const prepareView = shareO4View(after, "chapter", screen);
+    const prepareView = shareView(after, "chapter", screen);
     expect(row(prepareView.chips)).toBe("vvv");
     expect(goOutLabel(prepareView)).toBe("3 of 3 go out");
   });
@@ -642,10 +642,10 @@ describe("Share Book: a dangling chapter left out before the count (#1044)", () 
     const after = m.state();
     if (after.phase !== "busy") throw new Error("expected a busy prepare");
     expect(after.steps?.keys).toEqual([chapters[0]!.id, chapters[2]!.id]);
-    expect(row(shareO4View(after, "book", screen).chips)).toBe("v-v");
+    expect(row(shareView(after, "book", screen).chips)).toBe("v-v");
     const send = sendCarrying(carryFromPrepare(after)!);
     if (send.phase === "hidden") throw new Error("expected a busy send");
-    expect(row(shareO4View(send, "book", screen).chips)).toBe("v-v");
+    expect(row(shareView(send, "book", screen).chips)).toBe("v-v");
   });
 });
 

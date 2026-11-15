@@ -7,9 +7,10 @@
  * `installStoredTheme()` uses), and again on a `languagechange` and on return
  * to the foreground (`usePhoneLocale`).
  *
- * Only locales whose tables are complete are candidates
- * (`completeLocales`, ADR 0015 (g)), so a screen is never half translated:
- * the walk goes on to the phone's next language and ends at English.
+ * Only locales whose tables are complete, and that are not on the go-live
+ * hold, are candidates (`completeLocales`, ADR 0015 (g)), so a screen is never
+ * half translated: the walk goes on to the phone's next language and ends at
+ * English.
  *
  * NEVER UNDER A TAKE (ADR 0015 (e)). While a take is open the follower is not
  * listening, so a change waits; when the take closes it re-reads the phone's

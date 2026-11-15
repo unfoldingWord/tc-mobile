@@ -94,6 +94,10 @@ Styling is layered separately, in `src/app/styles/`:
 3-components.css   component tokens and parts    (colour via layer 2 roles; structural primitives direct)
 ```
 
+The component layer also has a per-area folder, `src/app/styles/3-components/`
+(one stylesheet per screen area, wired in by its `index.css`), beside
+`3-components.css`, which stays where it is.
+
 `@layer primitives, semantic, components, utilities` fixes the cascade order
 once, so Tailwind utilities always win and a one-off utility stays a safe
 escape hatch rather than a specificity fight. Using a _colour_ primitive
@@ -336,9 +340,9 @@ new head, and whoever opens the file next reads them as current. A docblock may
 link that comment's URL; it may not restate its output. `docs/progress_tracker.md`
 **is** the run record, and a dated observation a file needs in order to explain
 itself is a reason rather than a run report. This rule binds prose you write or
-edit; the sweep of what already violates it is **#575**, which is where an
-existing docblock gets fixed, not here. Counts go in an assertion,
-not in prose: a CSS comment quoting its own grep named a count the tree no
+edit; the sweep of what already violated it finished on 2026-11-05 (#575,
+closed), so an instance found now is fixed in the file you are already
+editing. Counts go in an assertion, not in prose: a CSS comment quoting its own grep named a count the tree no
 longer returns, having counted four comment lines as declarations — one of them
 the sentence's own grep string. Do not name an environment: a docblock credited
 a pinned Chromium that resolved to a path with nothing at it, so the run it
@@ -363,8 +367,8 @@ false sentence went on propagating into every agent's context, because that is
 what AGENTS.md does. Correct a false claim where you find it, and prefer
 deleting it to restating it. Deferring is available only when the claim is
 quoted at several sites that have to move together and the deferral names the
-issue that moves them — #525 and #575 are the standing examples. A single
-false sentence does not qualify.
+issue that moves them — #525 is the standing example (#575 was another, now
+finished). A single false sentence does not qualify.
 
 This applies to **living instructions** — this file, `CONTRIBUTING.md`, the
 runbooks, docblocks, CSS comments. It does **not** apply to a dated entry in
@@ -414,10 +418,17 @@ if the durable write is what failed.
 
 **The channel being built is not the same as the app being wired into it, and
 this file will not blur the two.** What reaches the funnel today is: uncaught
-errors and unhandled rejections (`app/install-failure-listeners.ts`), render
+errors and unhandled rejections (`app/install-failure-listeners.ts`,
+`"uncaught-error"` and `"unhandled-rejection"`), render
 throws (`components/error-boundary.tsx`), encoder health and recovery
-(`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
-share _prepare_ (`hooks/share-flow.ts`), a share's zip spool that could not
+(`hooks/mp3-codec.ts`, `"encoder-health"` and `"encoder-recover"`), the
+transcode sweep (`hooks/finish-transcode.ts`, `"transcode-sweep"`, the
+per-segment `"transcode-segment"`, a segment the speech compressor refused
+`"transcode-compressor"` (#1873, which lights ≡ by the default: the segment
+stays unfinished as PCM and is refused again on every sweep, and only a defect
+can cause it), and the stall accounting
+`"transcode-stall-accounting"`), share _prepare_ (`hooks/share-flow.ts`,
+`"share-prepare"`), a share's zip spool that could not
 be deleted afterwards (`hooks/archive-spool.ts`, `"share-spool-release"`,
 #1003), a book's Scripture Bundle build that failed on a read, write or zip
 error (`hooks/use-book-export.ts`, `"book-export-bundle"`, #1457), the
@@ -430,9 +441,10 @@ recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
 never reaches the backstop below — and a track `stop()` that throws while the
-mic stream is released `"recorder-release-track"` #479, and a take sealed and
-saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
-the one durable record that a take was cut, so it goes out with the report
+mic stream is released `"recorder-release-track"` #479, and a take sealed at
+the 20-minute cap `"recorder-take-cap"` #1005 — written at the seal, before
+the recorder sheet's commit saves the take, like the capture-stalled row
+below; not a failure, but the one durable record that a take was cut, so it goes out with the report
 and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
 #1076: "Log it, don't light ≡ (Recommended)"), and a take sealed because
 the level tap read exact silence on a moving clock with no track or recorder
@@ -448,12 +460,17 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
 delete of the held take's pending row, or a hold that found another take's
 row and so kept no safety copy (same file, `"pending-take-write"`,
 `"pending-take-delete"`, #38), a save refused because the take was already
-discarded (same file, `"pending-take-refused"`, #38), a waiting take the
+discarded, or a replayed take refused and its audio dropped, the row naming
+the refusal, the verdict and the recorded length (same file and
+`hooks/replay-pending-takes.ts`, `"pending-take-refused"`, #38, #1562),
+a waiting take the
 launch replay saved (same file, `"pending-take-replayed"`, #38) — not a
 failure, but the one durable record that a waiting take existed and was
 saved, written only when the replay's commit saved its audio, so like the
-take-cap row it goes out with the report and does not light `≡` (DRI on PR
-#1706: "A: one text round + log row (Recommended)"), a failed book delete
+take-cap row it goes out with the report and does not light `≡` (the DRI's
+pick on PR #1706,
+<https://github.com/unfoldingWord/tc-mobile/pull/1706#issuecomment-6425490363>:
+"A: one text round + log row (Recommended)"), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
@@ -535,7 +552,30 @@ chunk that would not load after an update (`hooks/stale-chunk-reload.ts`,
 #1421 O1: `"stale-chunk-reload"` when the page reloads once for it — not a
 failure, so it does not light ≡ — and `"stale-chunk"` when no reload is
 allowed: already reloaded once for this build, or audio held only in memory),
-and the log's own share and clear paths. `SaveFailed` now
+the load and write paths the Books and chapter screens run through
+(`hooks/use-books.ts`: `"books-load"`, `"books-create"`, `"books-add-chapter"`,
+`"books-rename"`; `hooks/use-chapter-segments.ts`: `"chapter-load"`,
+`"chapter-add-segment"`, `"chapter-rename"`, `"chapter-set-finished"`), the
+template library (`hooks/use-template-library.ts`: `"template-load"`,
+`"template-create"`), the recorder screen's segment read
+(`hooks/use-recorder-segment.ts`: `"recorder-segment-load"` and
+`"recorder-segment-reload"`), the launch replay's read of the waiting-take
+store (`hooks/replay-pending-takes.ts`, `"pending-take-read"`), the Android
+Back-button bridge (`hooks/use-nav-stack.ts`: `"native-back-handler"`,
+`"native-back-exit"`, `"native-back-remove"`, `"native-back-listener"`), the
+native shell's service-worker cleanup (`hooks/register-service-worker.ts`:
+`"native-sw-unregister"` and `"native-sw-cache-cleanup"`), a storage-pressure
+listener that threw (`hooks/use-storage-pressure.ts`,
+`"storage-pressure-bump"`), a preference that could not be saved
+(`hooks/use-settings.ts`, `"use-settings: persist"`; `hooks/use-theme.ts`,
+`"use-theme: persist"`), the native shell's system bars not taking the
+theme's style (`hooks/system-bars.ts`, `"system-bars-style"`, #1973, written
+once per page and not lighting `≡`: the bars keep their previous style and
+nothing is lost), and the log's own share and clear paths
+(`hooks/use-failure-log-share.ts`: `"failure-log-share-prepare"` and
+`"failure-log-share-send"`; `hooks/failure-log.ts`: `"failure-log-clear"`). Each of the contexts added to this paragraph on
+2026-11-02 lights ≡, since none is in `lib/failure-marker.ts`'s lists, and no
+issue is cited for them here. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
@@ -599,7 +639,7 @@ export it hides.
 is stored as `@pivot` — which would silently ignore _any_ future export tagged
 `@pivot`-anything. Do not reintroduce a hyphen here.
 
-**Two blind spots remain. Do not read a green knip as "no dead code."**
+**Blind spots remain. Do not read a green knip as "no dead code."**
 
 1. **A `src/` module imported only by a test looks used.** `tests/**` is a knip
    entry point, so a test import satisfies the `files` check. This is how 372
@@ -611,6 +651,18 @@ is stored as `@pivot` — which would silently ignore _any_ future export tagged
    An orphaned custom property or component token is invisible to both; only
    the tests that read the stylesheets (see "Architecture — onion layers")
    can catch one, and only for what they pin.
+3. **A module whose namespace object is used as a whole has no checkable
+   exports.** A namespace object passed as a value, spread, or kept from an
+   `await import()`, in `src/` as well as in tests, makes knip treat every
+   export of that module as used, so a dead export there passes. Property
+   access (`ns.name`) does not: knip still reports the unused export.
+   `tests/pending-interleave.test.ts` was the incident that found it (#1863):
+   an export used only inside its own file went unreported. Prefer named
+   imports, or property access, for a module whose exports knip should check.
+   Where the caller needs the module value itself, keep the namespace object
+   and treat that module's exports as unchecked: a green knip says nothing
+   about them. Named imports do not close blind spot 1 either; the module
+   still looks used.
 
 What it does catch, on its first run: an unused `zustand`, an unused
 `lucide-react` that this document itself claimed was the icon library, and three
@@ -701,21 +753,36 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   09-06 (16 days, the only odd one); Sprint 2 = 09-07 → 09-20, Sprint 3 =
   09-21 → 10-04, Sprint 4 = 10-05 → 10-18, Sprint 5 = 10-19 → 11-01. Decided
   2026-10-05 by the DRI (`docs/progress_tracker.md`, that day's "Sprints").
-- **The sprint-end `staging -> main` promotion ships the minor.** That PR
-  bumps the minor and tags `main` (`git tag vX.Y.0`), and it goes to the DRI
-  as a go/no-go. A production hotfix between sprint
-  ends is a patch on the shipped minor.
+- **A minor is cut for testers at one sprint's end and goes to production at
+  the next sprint's end.** 1.2 is the worked example: cut from `develop` at
+  Sprint 5's end (DRI, 2026-10-28: "Cut 1.2 from develop"), promoted
+  `staging -> main` at Sprint 6's end (DRI, 2026-10-28: "11-15, Sprint 6 end
+  (Recommended)"). The `staging -> main` promotion goes to the DRI as a
+  go/no-go and tags `main` with the version it ships. A production hotfix
+  between sprint ends is a patch on the shipped minor.
+- **A no-go carries the minor forward** (DRI, 2026-10-30: "Carry it forward
+  (Recommended)"). Production stays on its current version. The held version
+  `X.Y.Z` is promoted at the next go as `X.Y.(Z+1)` on a new release branch,
+  even when no fixes landed (DRI, 2026-11-02: "Always cut a patch bump"); the
+  held branch is never reused. No extra minor is cut for it. The sprint
+  milestone closes as normal, and its description records the no-go and the
+  held version.
 - **One GitHub milestone per sprint, due on its last day; sprint milestones
-  replace version milestones.** Live titles read `Sprint N (MM-DD → MM-DD)`,
-  with the planned release appended (`Sprint 4 (10-05 → 10-18) — v1.1.0`);
-  that shape is current practice, not a separate decision. **Every closed
-  issue and merged PR goes in the milestone of the sprint it closed or merged
-  in.** Each sprint milestone's description records what shipped in it. Tags
-  and GitHub Releases are the version record.
+  replace version milestones.** Titles read
+  `Sprint N (YYYY-MM-DD → YYYY-MM-DD) — vX.Y.0`, for example
+  `Sprint 6 (2026-11-02 → 2026-11-15) — v1.3.0` (DRI, 2026-10-30: "Always
+  YYYY-MM-DD"). The version is the minor cut for testers at that sprint's end
+  (DRI, 2026-10-30: "Staging-cut rule, shift all"); a closed sprint that cut
+  nothing carries no version. **Every closed issue and merged PR goes in the
+  milestone of the sprint it closed or merged in.** Each sprint milestone's
+  description records what shipped in it. Tags and GitHub Releases are the
+  version record.
 - **Every open issue carries a milestone:** the current sprint if it was
-  pulled in, **Backlog** otherwise. File new issues into one. At sprint end,
-  anything still open in the sprint moves to the next sprint or Backlog
-  explicitly, never silently.
+  pulled in, **Backlog** otherwise. File new issues into one. An issue is
+  pulled in when it was planned into that sprint or work on it has started:
+  a scope comment, a branch or a PR (DRI, 2026-10-30: "Planned or started
+  (Recommended)"). At sprint end, anything still open in the sprint moves to
+  the next sprint or Backlog explicitly, never silently.
 - **A tester build is a GitHub pre-release tagged `tester-build-vX.Y.Z`**
   (the 1.0.0 release candidates were `tester-build-v1.0.0-rc.N`), with the
   APK and its QR code (`docs/native/README.md`, #629). The older

@@ -2,9 +2,9 @@
 
 Thank you for helping test tC Mobile. This guide walks you through installing
 the app on your phone. You do not need to be a developer — just follow the
-steps for the kind of phone you have. The current build is **1.0.1**; after
+steps for the kind of phone you have. The current tester build is **1.2.2**; after
 installing, the small build stamp at the bottom of the app's first screen
-should start `v1.0.1 ·`. <!-- source: GitHub release v1.0.1 (tag v1.0.1, the newest full release, published 2026-10-02); docs/progress_tracker.md "2026-10-02 ... v1.0.0 and v1.0.1 shipped"; src/components/build-stamp.tsx -->
+should start `v1.2.2 ·`. <!-- source: gh release view tester-build-v1.2.2 (Pre-release, published 2026-10-30); src/components/build-stamp.tsx -->
 
 If anything is unclear or does not work, that is useful to know. See
 [If something goes wrong](#if-something-goes-wrong) at the end.
@@ -26,13 +26,13 @@ tried on an iPad. <!-- source: ios/App/App.xcodeproj/project.pbxproj TARGETED_DE
    it. Search for "TestFlight", made by Apple.
 3. **Open the invitation** from your email and tap **Accept**, then **Install**.
    This installs tC Mobile onto your iPhone. TestFlight shows the app's
-   version as `1.2.2` with a long build number; that is normal — the app's own
-   build stamp (below) is the thing to check. <!-- source: docs/native/README.md §4a (MARKETING_VERSION is 1.2.2, CFBundleVersion is the run's unix timestamp, independent of the web version) -->
+   version as `1.3.0` with a long build number; that is normal — the app's own
+   build stamp (below) is the thing to check. <!-- source: docs/native/README.md §4a (MARKETING_VERSION is 1.3.0, CFBundleVersion is the run's unix timestamp, independent of the web version) -->
 4. **Open tC Mobile from your home screen** — tap the tC Mobile icon, not the
    TestFlight app. TestFlight is only there to deliver the app; you use tC
    Mobile itself from the home screen like any other app.
 5. **Check the build stamp** at the bottom of the first screen. It should
-   start `v1.0.1 ·`. If it shows an older name (for example `v1.0.0-rc.3`),
+   start `v1.2.2 ·`. If it shows an older name (for example `v1.0.1`),
    open TestFlight and tap **Update** on tC Mobile; if TestFlight offers no
    newer build, tell us rather than deleting the app — **deleting the app
    deletes every recording on it.** <!-- source: docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the old one; happened on 1.0.0-rc.1); docs/training/facilitator-runbook.md §2 (never uninstall to update) -->
@@ -52,12 +52,13 @@ kept up to date** (Play Store → Android System WebView → Update) — an olde
 phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor; DRI pick 2026-09-28 on #1017, "Keep Android 7 (Recommended)"); docs/native/system-requirements.md "Platform floors" (the "kept up to date" WebView wording is the standing product wording there; the tree pins no minimum WebView version) -->
 
 1. **Open the download link** we send you in your phone's web browser, or
-   scan the QR code we post with it. The durable address is
-   <https://github.com/unfoldingWord/tc-mobile/releases/latest> — GitHub
-   keeps it pointing at the newest full release — and every build is listed
-   at <https://github.com/unfoldingWord/tc-mobile/releases>. Open the newest
-   release (marked **Latest**; the earlier release candidates are the ones
-   marked **Pre-release**) and tap `app-release.apk`. <!-- source: GitHub release v1.0.1 is the newest full release ("Latest"), with app-release.apk and a QR image attached; the rc builds before it are pre-releases tagged tester-build-v1.0.0-rc.N (docs/native/README.md "Tester announcement template", docs/release/promotion-v1.0.0.md §3a); the older android-release-vX.Y.Z and tester-build-vX.Y.Z tags stay up so shared links work (#629); /releases/latest resolving to the newest non-pre-release is GitHub's behaviour, not this repo's; the repo is public so the asset link needs no login -->
+   scan the QR code we post with it. Use the link in the tester announcement:
+   tester builds are marked **Pre-release** on GitHub, so the "latest" address
+   (`github.com/unfoldingWord/tc-mobile/releases/latest`) still lands on
+   an older full release (1.0.1) and is not the build to install. If you have
+   no link, open <https://github.com/unfoldingWord/tc-mobile/releases>, pick
+   the newest release whose **tag** starts `tester-build-` (its title reads
+   like "tC Mobile 1.2.2 (tester build)"), and tap `app-release.apk`. <!-- source: gh release list --repo unfoldingWord/tc-mobile shows tester-build-v1.2.2 as Pre-release and v1.0.1 as Latest; /releases/latest resolving to the newest non-pre-release is GitHub's behaviour, not this repo's; gh release view tester-build-v1.2.2 shows name "tC Mobile 1.2.2 (tester build)" and tag tester-build-v1.2.2; tester builds are tagged tester-build-vX.Y.Z (docs/native/README.md "Tester announcement template", #629); the older android-release-vX.Y.Z tags stay up so shared links work; the repo is public so the asset link needs no login; same wording as the facilitator runbook (PR #1834) -->
    **Stay with one install route.** If you installed tC Mobile from one of
    these APKs, keep updating from them; do not switch to Google Play, or the
    other way round, without asking us first — switching may need an

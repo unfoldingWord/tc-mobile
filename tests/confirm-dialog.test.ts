@@ -1,0 +1,263 @@
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { JSDOM } from "jsdom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { EraseConfirm } from "@/components/erase-confirm";
+
+import {
+  areaRule,
+  areaScope,
+  fileRules,
+  readAreaCss,
+  scopeDeclarations,
+  scopeRules,
+} from "./area-css";
+import { declarationValue } from "./support";
+
+/**
+ * The confirm dialog (#946: states 13 Erase confirm, G5 Record again asks
+ * first, G6 Delete book asks first).
+ *
+ * 13 and G5 are the one `EraseConfirm`: the segment Erase and the recorder's
+ * Erase-and-record-again path each render it with their own copy. G6 asks
+ * inside the book sheet instead (`book-delete-ask.tsx`, #980), reusing
+ * this file's button rules. The look is CSS, in
+ * `src/app/styles/3-components/dialogs.css`. The last describe below pins focus landing
+ * and the Tab trap; focus return belongs to each caller, not to this
+ * component, and is not exercised here.
+ *
+ * Two halves, because each alone can pass vacuously:
+ *   1. the stylesheet's declarations carry the design values, and no
+ *      colour primitive leaks past layer 2
+ *      (each rule read by its selector and each value by its property,
+ *      comments stripped first, so a comment that names a selector cannot
+ *      capture the test — AGENTS.md);
+ *   2. every selector in that stylesheet matches real EraseConfirm markup —
+ *      a renamed class in the component would otherwise leave the rules
+ *      matching nothing while half 1 stayed green.
+ */
+
+const CSS = areaScope("dialogs");
+const RULES = scopeRules(CSS);
+
+/** The rule whose selector list holds `selector`, read a property at a time
+ *  (`declarationValue` throws on a missing or doubled one). */
+function decl(selector: string): (property: string) => string {
+  const body = areaRule(CSS, selector);
+  return (property) => declarationValue(body, property).replace(/\s+/g, " ");
+}
+
+describe("3-components/dialogs.css — the confirm dialog's O4 values (#946)", () => {
+  it("has rules at all (non-emptiness floor)", () => {
+    expect(RULES.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("dims behind the dialog and insets it 18px", () => {
+    const scrim = decl(".confirm-scrim");
+    expect(scrim("background")).toBe("var(--s-dim)");
+    expect(scrim("padding")).toBe("18px");
+    const panel = decl(".confirm-panel");
+    expect(panel("width")).toBe("100%");
+    expect(panel("border-radius")).toBe("22px");
+    expect(panel("box-shadow")).toBe("0 24px 48px rgba(0, 0, 0, 0.35)");
+    expect(panel("background")).toBe("var(--s-surface)");
+  });
+
+  it("sets the title at 22/800", () => {
+    const title = decl(".confirm-panel .t-title");
+    expect(title("font-size")).toBe("22px");
+    expect(title("font-weight")).toBe("800");
+  });
+
+  it("puts the erase badge on --s-live-quiet", () => {
+    const glyph = decl(".confirm-glyph");
+    expect(glyph("background")).toBe("var(--s-live-quiet)");
+    expect(glyph("color")).toBe("var(--s-live)");
+    expect(glyph("width")).toBe("76px");
+    expect(glyph("height")).toBe("76px");
+    expect(glyph("border-radius")).toBe("50%");
+  });
+
+  it("floats the preview row on --s-floor, with a 60px round Play/Pause transport (#979)", () => {
+    const preview = decl(".confirm-preview");
+    expect(preview("background")).toBe("var(--s-floor)");
+    expect(preview("height")).toBe("78px");
+    expect(preview("border-radius")).toBe("14px");
+    expect(preview("align-self")).toBe("stretch");
+    const play = decl(".confirm-preview-play");
+    expect(play("width")).toBe("60px");
+    expect(play("height")).toBe("60px");
+  });
+
+  it("lays the two buttons out in two columns, 76 tall, radius 14", () => {
+    const actions = decl(".confirm-actions");
+    expect(actions("display")).toBe("grid");
+    expect(actions("grid-template-columns")).toBe("1fr 1fr");
+    expect(actions("align-self")).toBe("stretch");
+    const button = decl(".confirm-actions > .control");
+    expect(button("height")).toBe("76px");
+    expect(button("width")).toBe("auto");
+    expect(button("border-radius")).toBe("14px");
+    const keep = decl(".confirm-actions > .confirm-cancel");
+    expect(keep("background")).toBe("var(--s-well)");
+    expect(keep("color")).toBe("var(--s-ink)");
+  });
+
+  it("reaches colour only through layer-2 roles", () => {
+    // The whole file, nested blocks included, not only the layer's rules.
+    const values = scopeDeclarations(readAreaCss("dialogs"));
+    expect(values.length).toBeGreaterThanOrEqual(15);
+    for (const [prop, value] of values)
+      expect(value, `${prop} reaches past layer 2`).not.toMatch(/--p-/);
+  });
+});
+
+let dom: JSDOM;
+let root: Root;
+
+beforeEach(() => {
+  dom = new JSDOM(
+    "<!doctype html><html><body><div id='root'></div></body></html>",
+    { url: "http://localhost/" }
+  );
+  vi.stubGlobal("window", dom.window);
+  vi.stubGlobal("document", dom.window.document);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  root = createRoot(dom.window.document.getElementById("root")!);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  dom.window.close();
+  vi.unstubAllGlobals();
+});
+
+async function mountConfirm() {
+  await act(async () => {
+    root.render(
+      createElement(EraseConfirm, {
+        open: true,
+        title: "Erase this recording?",
+        confirmLabel: "Erase",
+        cancelLabel: "Cancel",
+        onConfirm: vi.fn(),
+        onCancel: vi.fn(),
+      })
+    );
+  });
+}
+
+/**
+ * The bare mount above, plus `preview` (#979) — used only by the selector
+ * checks below, never by the focus-trap describe further down: that one
+ * stays on the bare `mountConfirm()` so its "two buttons" assertions are
+ * exactly what they were before this row existed (the focus trap unchanged,
+ * per #979's Done-when).
+ */
+async function mountConfirmWithPreview() {
+  // jsdom has no canvas 2D context; `Waveform`'s draw effect already bails
+  // out on a null one (its own early return), so this only silences the
+  // "not implemented" noise.
+  vi.spyOn(
+    dom.window.HTMLCanvasElement.prototype,
+    "getContext"
+  ).mockReturnValue(null);
+  await act(async () => {
+    root.render(
+      createElement(EraseConfirm, {
+        open: true,
+        title: "Erase this recording?",
+        confirmLabel: "Erase",
+        cancelLabel: "Cancel",
+        onConfirm: vi.fn(),
+        onCancel: vi.fn(),
+        preview: {
+          peaks: null,
+          playing: false,
+          onTogglePlay: vi.fn(),
+          playLabel: "Play what will be lost",
+          pauseLabel: "Pause",
+        },
+      })
+    );
+  });
+}
+
+describe("3-components/dialogs.css's selectors against EraseConfirm's real markup (#946, #979)", () => {
+  // Every selector in the whole file, every nested block included: "no
+  // selector matches nothing" is a ban, so it cannot stop at the layer.
+  const selectors = fileRules("dialogs").flatMap((r) => r.selectors);
+  const isPreview = (s: string) => s.includes(".confirm-preview");
+  const isRecord = (s: string) => s.includes(".confirm-panel-record");
+
+  it("every non-preview selector matches, no preview passed", async () => {
+    await mountConfirm();
+    const rest = selectors.filter((s) => !isPreview(s) && !isRecord(s));
+    expect(rest.length).toBeGreaterThanOrEqual(6);
+    for (const s of rest) expect(document.querySelector(s), s).not.toBeNull();
+  });
+
+  it("the record dot's selectors match the G5 dialog (glyph record, #1028)", async () => {
+    await act(async () => {
+      root.render(
+        createElement(EraseConfirm, {
+          open: true,
+          title: "Reset segment and start over",
+          confirmLabel: "Record again",
+          cancelLabel: "Keep it",
+          glyph: "record",
+          onConfirm: vi.fn(),
+          onCancel: vi.fn(),
+        })
+      );
+    });
+    const recordSelectors = selectors.filter(isRecord);
+    expect(recordSelectors.length).toBeGreaterThanOrEqual(2);
+    for (const s of recordSelectors)
+      expect(document.querySelector(s), s).not.toBeNull();
+  });
+
+  it("the record dot's selectors match nothing on the Clear dialog", async () => {
+    await mountConfirm();
+    for (const s of selectors.filter(isRecord))
+      expect(document.querySelector(s), s).toBeNull();
+  });
+
+  it("the preview row's selectors match once preview is passed", async () => {
+    await mountConfirmWithPreview();
+    const previewSelectors = selectors.filter(isPreview);
+    expect(previewSelectors.length).toBeGreaterThanOrEqual(2);
+    for (const s of previewSelectors)
+      expect(document.querySelector(s), s).not.toBeNull();
+  });
+});
+
+describe("EraseConfirm's focus (#946)", () => {
+  function tab(shiftKey = false) {
+    const e = new dom.window.KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    (document.activeElement ?? document.body).dispatchEvent(e);
+  }
+
+  it("lands on Cancel, and Tab wraps both ways inside the panel", async () => {
+    await mountConfirm();
+    const buttons = [
+      ...document.querySelectorAll<HTMLButtonElement>(".confirm-panel button"),
+    ];
+    expect(buttons).toHaveLength(2);
+    const [cancel, erase] = buttons;
+    expect(document.activeElement).toBe(cancel);
+
+    // Shift+Tab on the first control wraps to the last.
+    tab(true);
+    expect(document.activeElement).toBe(erase);
+    // Tab on the last control wraps back to the first.
+    tab();
+    expect(document.activeElement).toBe(cancel);
+  });
+});

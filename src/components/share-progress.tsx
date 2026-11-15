@@ -7,7 +7,7 @@ import {
   shareProgressText,
 } from "./share-error-copy";
 import { shareOverlayGlyph } from "./share-overlay-glyph";
-import { shareO4View, type ShareItem } from "./share-o4-view";
+import { shareView, type ShareItem } from "./share-view";
 import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
 import type {
@@ -49,7 +49,7 @@ interface ItemShareProgressProps extends ShareProgressCommonProps {
 }
 
 /**
- * Share your work (#987, #1045): every book at once, from the O4 storage
+ * Share your work (#987, #1045): every book at once, from the storage
  * banner. Its timeline's `partial` gap is in books and chapters
  * (`LibraryShareGap`), so it is a different type from the item scopes', and
  * it has no items: the library export reports no step count to place chips
@@ -71,9 +71,9 @@ type ShareProgressProps = ItemShareProgressProps | LibraryShareProgressProps;
 
 /**
  * What the overlay draws from, whatever the scope: a timeline the glyph and
- * O4 view can read, the secondary line, and the items. The library's
+ * the circle view can read, the secondary line, and the items. The library's
  * timeline differs from the item scopes' only in its `partial` gap, which
- * neither the glyph nor the O4 view reads, so it is handed on as the plain
+ * neither the glyph nor the view reads, so it is handed on as the plain
  * phases and the gap is spent here, on the line.
  */
 function overlayInput(props: ShareProgressProps): {
@@ -94,7 +94,7 @@ function overlayInput(props: ShareProgressProps): {
   };
 }
 
-/** Every field kept but the library gap, which the glyph and O4 view never read. */
+/** Every field kept but the library gap, which the glyph and circle view never read. */
 function withoutLibraryGap(progress: LibraryShareProgress): ShareProgressState {
   switch (progress.phase) {
     case "hidden":
@@ -330,7 +330,7 @@ export function ShareProgress(props: ShareProgressProps) {
         ref={panelRef}
         role={role}
         text={text}
-        o4={shareO4View(progress, scope, items)}
+        view={shareView(progress, scope, items)}
       />
     </div>,
     document.body

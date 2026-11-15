@@ -68,12 +68,13 @@ Each model was scored on four axes:
   2026-09-30 production gate and under three to the first-week-of-October
   training on Android phones;
 - **(d)** how much of the mechanism is Node-testable in `src/lib/nav`, the
-  layer Vitest can red-first cover (there is no jsdom or renderer here,
-  `AGENTS.md`). The nav adapter's own DOM paths (`use-nav-stack.ts`) are
-  covered by Playwright against the shipped build
-  (`e2e/back-navigation.spec.ts`), not by Vitest; `App.tsx`,
-  `books-screen.tsx`, `segments-screen.tsx` and `recorder.tsx`'s broader wiring
-  code stays review-only no matter which model wins.
+  layer Vitest could red-first cover when this was scored. There was no jsdom
+  or renderer here then, so the nav adapter's DOM paths (`use-nav-stack.ts`)
+  were covered only by Playwright against the shipped build
+  (`e2e/back-navigation.spec.ts`), and `App.tsx`, `books-screen.tsx`,
+  `segments-screen.tsx` and `recorder.tsx`'s broader wiring was review-only.
+  That has changed: Vitest suites under `@vitest-environment jsdom` now mount
+  all four and drive `use-nav-stack.ts` (e.g. `tests/nav-back-to-books.test.ts`).
 
 I re-verified, myself, in this worktree, the load-bearing facts the scoring
 turns on, rather than trusting the models' own citations at face value:
@@ -898,13 +899,12 @@ inference until it is run on an actual Android device.
 
 ## Constraints this design does not relax
 
-- No jsdom/renderer exists in this repo; `App.tsx`, `books-screen.tsx`,
-  `segments-screen.tsx`, `recorder.tsx` stay review-only regardless of this
-  document. Only the pure decisions in `src/lib/nav` are Vitest-covered —
-  which is why this design pushes as much as possible into that layer. The nav
-  adapter's DOM wiring (`use-nav-stack.ts`) has no Vitest coverage either, but
-  is exercised by Playwright against the shipped build
-  (`e2e/back-navigation.spec.ts`).
+- The nav adapter's DOM wiring (`use-nav-stack.ts`) is exercised in a real
+  browser only by Playwright against the shipped build
+  (`e2e/back-navigation.spec.ts`); the jsdom suites do not replace it. When
+  this design was written there was no jsdom or renderer here and only
+  `src/lib/nav` was Vitest-covered, which is why it pushes as much as possible
+  into that layer.
 - On-screen Back and system Back must continue to share exactly one code
   path (`goBack` → `history.back()` → the one `popstate` listener), per this
   repo's own stated "one Back path" design rationale from the original #168/#259

@@ -48,6 +48,19 @@ describe("one verb for removing a recording (#1233)", () => {
     loadFailedBody: strings.loadFailedBody,
   };
 
+  it("asks for Try again first and offers Reset only as the fallback (#1933)", () => {
+    // DRI pick (verbatim): "Try again first, Reset as fallback (Recommended)".
+    expect(strings.loadFailedBody).toBe(
+      "Your recording is safe. Try again. If it still won't open, you can reset it from the list."
+    );
+    const sentences = strings.loadFailedBody.split(/(?<=\.)\s+/);
+    const retryAt = sentences.indexOf(`${strings.loadRetry}.`);
+    const resetAt = sentences.findIndex((s) => /\breset\b/i.test(s));
+    expect(retryAt).toBeGreaterThan(-1);
+    expect(resetAt).toBeGreaterThan(retryAt);
+    expect(sentences[resetAt]).toMatch(/^If it still won't open,/);
+  });
+
   it.each(Object.entries(removing))(
     "%s says reset, not clear",
     (_key, text) => {

@@ -1,8 +1,8 @@
 import type { ReactNode, Ref } from "react";
 
 import { Control } from "./control";
-import { TileGrid } from "./o4-tile-menu";
-import { TILE_GLYPH, tileClass } from "./o4-tile-look";
+import { TileGrid } from "./tile-menu";
+import { TILE_GLYPH, tileClass } from "./tile-look";
 import { shareControlAffordance } from "./control-affordance";
 import { Notice } from "./notice";
 import { shareErrorText } from "./share-error-copy";
@@ -63,7 +63,7 @@ export interface ShareMenuSectionProps {
    * the grid rather than sit in it.
    */
   tiles: { before?: ReactNode; after?: ReactNode };
-  /** The book menu's four tiles take the compact size (`o4-tiles--compact`). */
+  /** The book menu's four tiles take the compact size (`tiles--compact`). */
   compact?: boolean;
 }
 
@@ -109,6 +109,7 @@ export function ShareMenuSection({
         className={tileClass("send", cn(affordance.className, "is-armed"))}
         size={TILE_GLYPH}
         caption={strings.tileShare}
+        testId={`tile-share-${scope}`}
         autoFocus
         onClick={onSend}
       />
@@ -131,6 +132,7 @@ export function ShareMenuSection({
         className={tileClass("send")}
         size={TILE_GLYPH}
         caption={strings.tileShare}
+        testId={`tile-share-${scope}`}
         busy={affordance.busy}
         onClick={onPrepare}
       />
@@ -142,7 +144,7 @@ export function ShareMenuSection({
   // any error code mapped above. After the grid, never inside it.
   return (
     <>
-      <TileGrid className={compact ? "o4-tiles--compact" : undefined}>
+      <TileGrid className={compact ? "tiles--compact" : undefined}>
         {tiles.before}
         {control}
         {tiles.after}

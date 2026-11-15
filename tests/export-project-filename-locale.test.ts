@@ -12,6 +12,7 @@ import { FILENAME_LABEL_MAX_BYTES } from "@/lib/utils";
  * The suffix words are AI drafts, like the rest of each table.
  */
 const EXPECTED: ReadonlyArray<readonly [string, string]> = [
+  ["ar", "Mark - مشروع.zip"],
   ["es", "Mark - proyecto.zip"],
   ["fr", "Mark - projet.zip"],
   ["hi", "Mark - प्रोजेक्ट.zip"],
