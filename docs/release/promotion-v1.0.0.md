@@ -320,7 +320,9 @@ freeze note on every new PR to `develop`.
    promotion above): its `update` rule on `develop`, `staging` and `main`
    has only the repository admin role as bypass. `--admin` also skips every
    other base-branch requirement, so run it only after the checks above pass.
-   An agent hands this command over unchanged and never runs `gh pr merge`.
+   An agent hands this command over unchanged and does not run `gh pr merge`
+   itself, except under the `tc-release` skill's remote merge and only when
+   every condition written there holds.
    The merge commit is
    `PROMO_SHA`; every channel below is built from it. Check that
    `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2` prints `STAGING_SHA` then
@@ -403,11 +405,15 @@ freeze note on every new PR to `develop`.
     source, per AGENTS.md).
 
 **Who runs what.** Human-only (the DRI), from their own terminal or via `!`:
-every merge (picked fixes, the bump, the promotion, `staging → main`), any
+every merge (picked fixes, the bump, the promotion, `staging → main`; the
+bump and the promotion only outside the exception below), any
 manual workflow dispatch (the lanes start on the promotion by themselves,
 #1281), the go/no-go, the `v1.0.0` Release publish, the
 `v1.0.0` tag, the Play Console release and the TestFlight assignment. An agent
-never passes `--admin`. Agent-allowed: preparing bodies and release notes, the
+never passes `--admin`, with one exception: the `tc-release` skill's remote
+merge, under which the agent may run the bump merge or the `release/vX.Y.Z` →
+`staging` promotion merge, and only those, on the conditions written there.
+Agent-allowed: preparing bodies and release notes, the
 red team, the release branch and promotion PR, the tester pre-release publish
 (only under step 9's two conditions), read-only checks
 (`check:deploy`, the `baseRefOid` and merge-parent checks of step 6 and of
