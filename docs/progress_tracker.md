@@ -11,6 +11,70 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-17 — Sprint 7 day 2: `tester-build-v1.3.0` published, Sprint 6 closed
+
+One session: start of day, then the rest of the v1.3.0 tester release. No code changed.
+
+The DRI's words (verbatim): "help me get the 1.3 published and finish all of that release work for the test release", then "store work is done, testers have it". The Play "What's new", the TestFlight "What to Test" and the TestFlight group were the DRI's, done outside this session.
+
+### Published
+
+- **`tester-build-v1.3.0`**: https://github.com/unfoldingWord/tc-mobile/releases/tag/tester-build-v1.3.0, a pre-release on `PROMO_SHA` `05da3869e30416a2a5195b137a6f24ec8acd73a8`, with `app-release.apk` and its QR code. Publish record: https://github.com/unfoldingWord/tc-mobile/pull/1992#issuecomment-6951561708.
+- Checks before publishing: the three native runs (Play `43660588619`, TestFlight `43660588310`, APK `43660588275`) built `PROMO_SHA`; `check:redispatch` said "already built" for each lane; the APK's v2 signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2` equals 1.2.2's; the embedded `version.json` reads 1.3.0 at `PROMO_SHA`. APK SHA-256 `0922d41fd9760cea9a6d4ca189d3cabc7cde32a1eebff72c297132b7c545ae2d`. TestFlight build `1794863868`.
+- Download-back: the hash matches, the tag points at `PROMO_SHA`, the link returns 200 and the published QR decodes to the APK URL.
+
+### Sprint 6 closed
+
+The milestone is closed with 0 open, and its description now records v1.3.0 as shipped to testers. Carried to Sprint 7: #974, #1464, #1486, #1936, #1940, #1941, #1944, #1972, #1973, #1974, #1986. To Backlog: #1960 (DRI: "please skip these tests"), #1954, and the draft spikes #1612 and #1532.
+
+### Open
+
+- **R18's phone pass is not recorded.** The pick was "Lanes green + one phone each (Recommended)". The lanes are green; no Android or iPhone install, record, play, share and back pass is recorded for 1.3.0.
+- The Zulip tester announcement (drafted on #1992) is the DRI's to post; whether it was posted is not recorded here.
+- Dependabot #1982–#1984 and the #1925 follow-ups carry over from 2026-11-16.
+
+---
+
+## 2026-11-16 — Sprint 7 day 1: v1.3.0 on staging confirmed, its native lanes released and green, store blurbs drafted
+
+One session: start of day, the DRI's approval of the two waiting native lanes, the store blurbs and the tester announcement, end of day. No code changed.
+
+The v1.3.0 cut itself ran on 2026-11-14 and 11-15 and has no tracker entry of its own. Its record is on #1992: the release red-team summary, the DRI's go (verbatim, 2026-11-14: "go"), and the merge by the DRI at 2026-11-15T00:55:21Z (`PROMO_SHA` `05da3869e30416a2a5195b137a6f24ec8acd73a8`). Production stayed on v1.0.1 under the 11-13 no-go recorded in the Sprint 6 milestone's description.
+
+### Deploy confirmation (staging, v1.3.0)
+
+Run on 2026-11-16 from a checkout, against `origin/staging`:
+
+```
+Checking https://tc-mobile-staging.unfoldingword.workers.dev against version=1.3.0 sha=05da386
+Deployed: version=1.3.0 sha=05da386 builtAt=2026-11-15T00:57:14.382Z
+PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.
+```
+
+Both production origins served `version=1.0.1 sha=d0eb545` when read the same day (a `version.json` fetch, not `check:deploy:prod`).
+
+### Native lanes on `05da3869`
+
+- **Google Play** (run 43660588619): green on 2026-11-15.
+- **iOS TestFlight** (run 43660588310) and **Android APK** (run 43660588275): both waited on the `release-signing` environment from 2026-11-15 00:55 UTC until the DRI approved them on 2026-11-16. Both went green at 21:19 UTC. The TestFlight run's redispatch check printed "UPLOAD: no earlier testflight upload at 05da3869…", and fastlane logged "Successfully uploaded the new binary to App Store Connect". The APK artifact `android-apk-05da3869…` expires 2026-11-30.
+
+### Merged to develop since the cut
+
+- #1965, #1925's v15 card-store schema step, merged 2026-11-15T02:15Z after the cut, as held. Develop CI passed on its merge commit `dfc7d31d`.
+
+### Drafted, not yet pasted or posted
+
+The TestFlight "What to Test", the Play "What's new" (en-US) and a Zulip tester announcement are drafted on #1992: https://github.com/unfoldingWord/tc-mobile/pull/1992#issuecomment-6931077846. They were written from #1990's tester notes. The announcement leaves its thanks names for the DRI.
+
+### Open
+
+- **R18** (DRI: "Lanes green + one phone each (Recommended)"): the lanes are now green, but one Android phone and one iPhone must pass install, record, play, share and back before `tester-build-v1.3.0` is published and the TestFlight group is assigned. Not run.
+- **Sprint 6 close-out:** 13 issues are still open in the Sprint 6 milestone, which ended 2026-11-15, and need to move to Sprint 7 or Backlog. Its description still reads "Shipped: nothing yet".
+- **Dependabot #1982–#1984:** approved with every check green, but GitHub marks them BLOCKED. The admin-merge ruleset is the likely cause (inference, not checked). #1984 (jsdom 31) needs its engine range read against the Node range in AGENTS.md first.
+- **#1925 follow-ups** before any real card location is written, and a v14 → v15 row on the v1.4.0 device sheet.
+
+---
+
 ## 2026-11-13 (Mac device session) — the Android device run on 1.2.2 for #974 and #1486; the schema-9 upgrade row not reached
 
 One Mac session driving a phone over adb with the DRI beside it, from the coordinator session's runbook. This entry records the device run only. The coordinator session posted the results and filed the follow-ups; its own entry is the record of that work.
