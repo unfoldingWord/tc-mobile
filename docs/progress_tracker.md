@@ -11,6 +11,30 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-11-17 — Sprint 7 day 2: `tester-build-v1.3.0` published, Sprint 6 closed
+
+One session: start of day, then the rest of the v1.3.0 tester release. No code changed.
+
+The DRI's words (verbatim): "help me get the 1.3 published and finish all of that release work for the test release", then "store work is done, testers have it". The Play "What's new", the TestFlight "What to Test" and the TestFlight group were the DRI's, done outside this session.
+
+### Published
+
+- **`tester-build-v1.3.0`**: https://github.com/unfoldingWord/tc-mobile/releases/tag/tester-build-v1.3.0, a pre-release on `PROMO_SHA` `05da3869e30416a2a5195b137a6f24ec8acd73a8`, with `app-release.apk` and its QR code. Publish record: https://github.com/unfoldingWord/tc-mobile/pull/1992#issuecomment-6951561708.
+- Checks before publishing: the three native runs (Play `43660588619`, TestFlight `43660588310`, APK `43660588275`) built `PROMO_SHA`; `check:redispatch` said "already built" for each lane; the APK's v2 signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2` equals 1.2.2's; the embedded `version.json` reads 1.3.0 at `PROMO_SHA`. APK SHA-256 `0922d41fd9760cea9a6d4ca189d3cabc7cde32a1eebff72c297132b7c545ae2d`. TestFlight build `1794863868`.
+- Download-back: the hash matches, the tag points at `PROMO_SHA`, the link returns 200 and the published QR decodes to the APK URL.
+
+### Sprint 6 closed
+
+The milestone is closed with 0 open, and its description now records v1.3.0 as shipped to testers. Carried to Sprint 7: #974, #1464, #1486, #1936, #1940, #1941, #1944, #1972, #1973, #1974, #1986. To Backlog: #1960 (DRI: "please skip these tests"), #1954, and the draft spikes #1612 and #1532.
+
+### Open
+
+- **R18's phone pass is not recorded.** The pick was "Lanes green + one phone each (Recommended)". The lanes are green; no Android or iPhone install, record, play, share and back pass is recorded for 1.3.0.
+- The Zulip tester announcement (drafted on #1992) is the DRI's to post; whether it was posted is not recorded here.
+- Dependabot #1982–#1984 and the #1925 follow-ups carry over from 2026-11-16.
+
+---
+
 ## 2026-11-16 — Sprint 7 day 1: v1.3.0 on staging confirmed, its native lanes released and green, store blurbs drafted
 
 One session: start of day, the DRI's approval of the two waiting native lanes, the store blurbs and the tester announcement, end of day. No code changed.
